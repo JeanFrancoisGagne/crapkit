@@ -1,0 +1,8 @@
+{
+ "error": {
+  "exit": 3,
+  "kind": "config",
+  "message": "no scope named 'no-such-scope'; declared: py, legacy, web, native, scripts, vendor"
+ },
+ "schema": 1
+}

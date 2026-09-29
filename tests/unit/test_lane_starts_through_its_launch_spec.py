@@ -30,7 +30,8 @@ def _silent(seen: list) -> object:
     return run_bounded
 
 
-def test_a_silent_lane_is_killed_and_named_from_its_own_directory(tmp_path, monkeypatch):
+def test_a_silent_lane_is_killed_and_named_from_its_own_directory(tmp_path, monkeypatch,
+                                                                    on_a_host):
     (tmp_path / "web").mkdir()
     seen: list = []
     monkeypatch.setattr(lanes, "run_bounded", _silent(seen))

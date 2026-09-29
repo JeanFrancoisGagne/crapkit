@@ -76,9 +76,20 @@ def test_a_wait_spells_a_bound_only_when_its_number_is_under_the_hang_bound(call
     assert _spells_a_bound(ast.parse(call, mode="eval").body) is spelled
 
 
+def code_tree(path):
+    """The file's syntax tree, read as bytes so a BOM or a coding line reads as
+    Python reads it. A corpus file written for a newer Python than this one
+    (tests/accuracy/corpus_goldens/small holds PEP 750 and PEP 758 sources) gives an
+    empty module: this interpreter cannot run it, so it waits on nothing."""
+    try:
+        return ast.parse(path.read_bytes())
+    except SyntaxError:
+        return ast.Module(body=[], type_ignores=[])
+
+
 def _spelled_bounds(path):
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    return [(_relative(path), ast.unparse(node)) for node in ast.walk(tree) if _spells_a_bound(node)]
+    return [(_relative(path), ast.unparse(node)) for node in ast.walk(code_tree(path))
+            if _spells_a_bound(node)]
 
 
 def test_no_wait_spells_a_bound_under_the_hang_bound():

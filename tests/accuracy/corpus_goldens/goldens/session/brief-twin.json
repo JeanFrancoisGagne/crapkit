@@ -1,0 +1,143 @@
+{
+ "attempts": [],
+ "churn": {
+  "authors": 1,
+  "commits": 1,
+  "weight": 1.0
+ },
+ "commands": {
+  "gate": "crapkit rescore src/py/twins.py --gate",
+  "refresh": "crapkit coverage --reuse-unchanged",
+  "refresh_writes_run": true,
+  "scoped_tests": "crapkit test-scoped src/py/twins.py",
+  "verify": "crapkit verify"
+ },
+ "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+ "coupling": [],
+ "duplication_twins": [],
+ "est_splits": 0,
+ "est_uncovered_paths": 1,
+ "file_functions": [
+  {
+   "ccn": 3,
+   "crap": 6.796875,
+   "end": 15,
+   "function": "run( self , mode = \"fast\" )",
+   "occurrence": 1,
+   "remedy": "add-tests",
+   "start": 10
+  },
+  {
+   "ccn": 1,
+   "crap": 1.0,
+   "end": 20,
+   "function": "run( self )",
+   "occurrence": 1,
+   "remedy": "ok",
+   "start": 19
+  },
+  {
+   "ccn": 3,
+   "crap": 12.0,
+   "end": 24,
+   "function": "helper( values )",
+   "occurrence": 1,
+   "remedy": "add-tests",
+   "start": 23
+  },
+  {
+   "ccn": 2,
+   "crap": 2.5,
+   "end": 30,
+   "function": "helper( values )",
+   "occurrence": 1,
+   "remedy": "ok",
+   "start": 27
+  }
+ ],
+ "file_totals": {
+  "crap_load": 22.3,
+  "functions": 4,
+  "over_target": 2
+ },
+ "function": "helper( values )",
+ "gate_rule": {
+  "binds": "changed functions only; a ratchet mark pardons standing debt at or under it",
+  "ceiling": 6,
+  "diff_uncovered_max": null,
+  "mark_age_days": null,
+  "ratchet_mark": null
+ },
+ "handle": "helper#2",
+ "lane": {
+  "artifact": ".crapkit/cov/py.json",
+  "command": "python -c \"import os,shutil,sys,time;a=sys.argv[1:];p=list(zip(a[::2],a[1::2]));[os.makedirs(os.path.dirname(d) or '.',exist_ok=True) for s,d in p];[shutil.copyfile(s,d) for s,d in p];t=time.time_ns();[os.utime(d,ns=(t,t)) for s,d in p]\" recorded/py.json .crapkit/cov/py.json recorded/py-junit.xml .crapkit/cov/py-junit.xml",
+  "cwd": "",
+  "env": {
+   "COVERAGE_PROCESS_CONFIG": "",
+   "COV_CORE_DATAFILE": ""
+  },
+  "name": "py",
+  "parser": "coveragepy",
+  "timeout_seconds": "<timeout_seconds>"
+ },
+ "notes": {
+  "repo": null,
+  "scope": null
+ },
+ "params": [
+  {
+   "name": "values",
+   "type": null
+  }
+ ],
+ "path": "src/py/twins.py",
+ "ratchet_mark": null,
+ "regrowth": {
+  "history": [
+   [
+    1,
+    2
+   ],
+   [
+    2,
+    2
+   ]
+  ],
+  "regrown": false
+ },
+ "remedy": "ok",
+ "run_id": 2,
+ "schema": 1,
+ "scored": {
+  "ccn": 2,
+  "ccn_mod": 2,
+  "ccn_std": 2,
+  "cognitive": 1,
+  "cov": 0.5,
+  "crap": 2.5,
+  "end": 30,
+  "flag": "measured",
+  "long_name": "helper( values )",
+  "nesting": 1,
+  "nloc": 4,
+  "occurrence": 1,
+  "params": 1,
+  "path": "src/py/twins.py",
+  "remedy": "ok",
+  "scope": "py",
+  "start": 27
+ },
+ "source": "def helper(values):\n    if not values:\n        return []\n    return sorted(values)",
+ "stale": false,
+ "target": 6,
+ "uncovered_lines": [
+  29
+ ],
+ "versions": {
+  "analysis_version": 13,
+  "crapkit": "<crapkit>",
+  "lizard": "1.24.0",
+  "python": "<python>"
+ }
+}

@@ -1,10 +1,14 @@
 """Ratchet seed/prune: first-class entry and exit for marks. Seeding never raises one."""
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 from crapkit.ratchet import RatchetEntry, prune_ratchet, seed_ratchet
 from crapkit.score import ScoredRow
 
 
 def scored(path="src/a.ts", name="f( )", ccn=8, cov=0.0, scope="src"):
-    c = ccn * ccn * (1 - cov) ** 3 + ccn
+    c = float(exact.crap(ccn, Fraction(cov)))
     return ScoredRow(scope, path, name, 1, 9, ccn, ccn, ccn, 5, 1, 1, cov, "measured", c, "decompose")
 
 

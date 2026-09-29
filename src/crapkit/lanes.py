@@ -31,7 +31,8 @@ from .errors import GitError, ToolError
 from .gitio import GitFacts, untracked_files
 from .gitpaths import readable, shown
 from . import lane_results
-from .lane_command import launch_spec, pytest_python
+from .invocation import shell_arg
+from .lane_command import install_python, launch_spec, pytest_python
 from .lane_freshness import (Freshness, Proof, ReuseVerdict, measurement_proof,  # noqa: F401
                              uncommitted_changes, unproved)
 from .lane_outputs import declared_files, declared_outputs, owned, owners, put_back, retest_owner
@@ -252,8 +253,10 @@ def _pytest_cov_home(root: Path, lane: Lane) -> str:
     word = pytest_python(lane.command)
     if not word:
         return "the environment the lane's suite runs in"
-    resolved = launch_spec(root, lane).resolve(word) or word
-    return f"the environment `{word}` runs in (`{pip_install(resolved, 'pytest-cov', word)}`)"
+    spec = launch_spec(root, lane)
+    resolved = spec.resolve(word) or word
+    return (f"the environment `{word}` runs in "
+            f"(`{pip_install(resolved, 'pytest-cov', install_python(word, spec))}`)")
 
 
 def _missing_plugin_hint(tail: str, root: Path, lane: Lane) -> str:
@@ -291,7 +294,9 @@ def _shard_hint(root: Path, lane: Lane) -> str:
     The `-o` target is printed relative to the shard directory, because that is
     where the operator is told to stand. `artifact` is repo-relative, so a lane
     with a `cwd` that pasted the key verbatim wrote the JSON one directory below
-    the path crapkit reads, and the next run refused it again.
+    the path crapkit reads, and the next run refused it again. The target goes
+    in as one word of the operator's shell, and the recipe is two commands, not
+    a chain: Windows PowerShell 5.1 has no `&&`.
     """
     if lane.parser != "coveragepy":
         return ""
@@ -306,8 +311,8 @@ def _shard_hint(root: Path, lane: Lane) -> str:
     noun, verb = ("shard", "sits") if len(shards) == 1 else ("shards", "sit")
     return (f"; {len(shards)} coverage {noun} ({shards[0].name}, ...) {verb} in "
             f"{shard_dir}, which is what a killed parallel run leaves behind: "
-            f"`coverage combine && coverage json -o {target}` there, then a "
-            "re-run with --reuse-artifacts, scores what that suite did measure")
+            f"`coverage combine` followed by `coverage json -o {shell_arg(target)}` "
+            "there, then a re-run with --reuse-artifacts, scores what that suite did measure")
 
 
 def _unreadable_shard_name(shard_dir: Path, shard: Path) -> str:
@@ -548,14 +553,43 @@ def refusal_stamp(root: Path, lane: Lane, error: object) -> dict[str, dict]:
     return refusal_entry(read(root), lane, refused) if refused else {}
 
 
+def _junit_seconds(path: Path) -> float | None:
+    """The wall seconds a JUnit report claims, or None when there is no report
+    or it cannot be read: not XML, not a file."""
+    from .junitparse import suite_seconds
+
+    try:
+        return suite_seconds(path.read_bytes())
+    except (OSError, ValueError, ToolError):
+        return None
+
+
+def lane_seconds(root: Path, stamps: dict, lane: Lane) -> float | None:
+    """What this lane costs, best signal first: the duration its own run
+    recorded, else the wall time its JUnit report claims. A lane whose artifact
+    was reused, or whose stamps were cleaned, has only the report. None means
+    the lane left no cost signal on disk, which is not the same as costing 0.
+
+    The start order and doctor --tune both read this, so the order a parallel
+    run starts its lanes in is the order doctor --tune's estimate assumes."""
+    recorded = recorded_seconds(stamps, lane)
+    if recorded is not None or not lane.results_artifact:
+        return recorded
+    return _junit_seconds(root / lane.results_artifact)
+
+
 def lane_order(root: Path, lanes: list[Lane], stamps: Stamps | None = None) -> list[Lane]:
-    """Longest recorded lane first: with lanes running concurrently the makespan
-    is the slowest lane, so starting it last wastes exactly its own duration.
-    Sorting is stable, so unrecorded lanes and ties keep declaration order.
-    A recorded duration only ever changes WHICH lane starts first — results are
-    merged in declaration order regardless, so it cannot move a score."""
-    stamps = stamps if stamps is not None else read(root)
-    return sorted(lanes, key=lambda lane: -(stamps.seconds(lane) or 0.0))
+    """Longest lane first, by `lane_seconds`: with lanes running concurrently the
+    makespan is the slowest lane, so starting it last wastes exactly its own
+    duration. Read as 0 s, a lane that never ran here but had a JUnit report
+    started last: lanes of 5, 5 and 10 s on two slots took 15 s where doctor
+    --tune said 10. Sorting is stable, so unmeasured lanes and ties keep
+    declaration order. A duration only ever changes WHICH lane starts first:
+    results are merged in declaration order regardless, so it cannot move a
+    score. A report that cannot be read leaves its lane unmeasured, since this
+    runs ahead of every parallel coverage run."""
+    raw = (stamps if stamps is not None else read(root)).raw
+    return sorted(lanes, key=lambda lane: -(lane_seconds(root, raw, lane) or 0.0))
 
 
 def _warn_stale_artifact(git, lane: Lane, scope_paths: dict | None,

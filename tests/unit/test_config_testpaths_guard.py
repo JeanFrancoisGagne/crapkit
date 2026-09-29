@@ -41,6 +41,20 @@ def test_a_positional_equal_to_a_configured_testpath_is_not_narrowing(tmp_path):
     assert cfg.lanes[0].full_suite is True, "the lane stays a full-suite lane"
 
 
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_redirection_touching_a_configured_testpath_leaves_the_testpath(tmp_path, monkeypatch,
+                                                                          shell_is_cmd):
+    """Both shells hand pytest `tests` for `tests>lane.log` (POSIX 2.3; verified
+    cmd.exe argv: ["tests"]). The guard read one word, `tests>lane.log`, named
+    no configured testpath, and refused a lane that runs the whole suite."""
+    monkeypatch.setattr(config_module, "SHELL_IS_CMD", shell_is_cmd)
+    _write(tmp_path, "pyproject.toml", PYPROJECT)
+
+    cfg = load_config_text(_toml("python -m pytest tests>lane.log --cov=app"), root=tmp_path)
+
+    assert cfg.lanes[0].full_suite is True
+
+
 def test_without_a_root_the_guard_reads_no_testpaths_and_refuses_as_before():
     with pytest.raises(ConfigError, match="positional argument 'tests' narrows a full-suite"):
         load_config_text(_toml("python -m pytest tests --cov=app"))

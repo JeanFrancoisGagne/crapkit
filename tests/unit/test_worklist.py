@@ -64,8 +64,9 @@ def test_non_positive_top_is_rejected_loudly():
 
 
 def test_composite_rank_puts_the_hotter_file_first_at_equal_ccn():
+    # Three commits at the newest end of the log weigh 0.5 each (README "Risk").
     churn = {"src/warm.ts": FileChurn(commits=20, authors=2, weight=1.0),
-             "src/blaze.ts": FileChurn(commits=3, authors=1, weight=9.0)}
+             "src/blaze.ts": FileChurn(commits=3, authors=1, weight=1.5)}
     rows = [row(path="src/warm.ts", ccn=9), row(path="src/blaze.ts", ccn=9)]
     wl = build_worklist(rows, churn, floor=5, top=10)
     assert [e.path for e in wl.active] == ["src/blaze.ts", "src/warm.ts"], \
@@ -75,7 +76,7 @@ def test_composite_rank_puts_the_hotter_file_first_at_equal_ccn():
 
 def test_hot_simple_code_is_promoted_past_the_floor():
     churn = {f"src/f{i}.ts": FileChurn(commits=1, authors=1, weight=0.1) for i in range(8)}
-    churn["src/burning.ts"] = FileChurn(commits=30, authors=4, weight=25.0)
+    churn["src/burning.ts"] = FileChurn(commits=30, authors=4, weight=15.0)
     rows = [row(path="src/burning.ts", name="hot( )", ccn=4)] + \
            [row(path=f"src/f{i}.ts", ccn=9) for i in range(8)]
     wl = build_worklist(rows, churn, floor=5, top=50)

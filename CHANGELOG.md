@@ -3,19 +3,22 @@
 ## 0.8.1 — unreleased
 
 A deploy suite now installs crapkit the way the docs say, through each channel and into
-each agent, fresh and as an upgrade, and this release fixes what it found.
+each agent, fresh and as an upgrade, and a calculation-accuracy suite checks every number
+crapkit computes against outside tools and hand tables. This release fixes what both found.
 
 ### Upgrading from 0.8.0
 
-- The coverage.py reader and two source reads move to analysis version 12: a UTF-16
-  source, and an identifier holding a byte cp1252 leaves undefined (see Text that is not
-  UTF-8 below). Every repo re-seeds its marks once: `crapkit coverage`, then `crapkit
+- The coverage.py reader, two source reads and the readers under Analysis version 13
+  below move the analysis version from 11 to 13 in one step. The two source reads are a
+  UTF-16 source, and an identifier holding a byte cp1252 leaves undefined (see Text that
+  is not UTF-8 below). Every repo re-seeds its marks once: `crapkit coverage`, then `crapkit
   ratchet prune`, then `crapkit ratchet seed`.
   When a failed verify pins the baseline, pass the new run to both, `crapkit ratchet prune
   --baseline N` and then `crapkit ratchet seed --baseline N`. Until then `verify` refuses
   the marks as recorded under another metric version. The first `inventory` or `coverage`
   analyzes every file again. See the [upgrade
-  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-12).
+  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-13).
+  (accuracy changes C2 and C7)
 - The `py` and `dev` extras require coverage.py 7.13.1 or newer. Coverage 7.6 to 7.13.0
   write a function's region with no `start_line`, and `crapkit coverage` now refuses
   such an artifact at exit 5 (see the coverage readers below). Upgrade coverage where
@@ -87,10 +90,11 @@ each agent, fresh and as an upgrade, and this release fixes what it found.
   them doctor on a repo with no lane and worklist, brief and digest before the first run.
   A script or a test that matches one of those lines has to match ` - ` now. A path or a
   function name crapkit quotes keeps its own characters.
-- The churn window is counted on the UTC calendar. On a machine whose local date is not
-  the UTC date, a commit on the window's first day can move in or out of churn once, and
-  worklist and brief can rank a function differently from 0.8.0 on that machine. Scores
-  do not move, and it needs no re-seed of its own: the one re-seed above covers it.
+- The churn window counts back from HEAD's commit date on the UTC calendar, never from
+  the day of the run (see The churn window ends at HEAD's commit date below). worklist and
+  brief can rank a function differently from 0.8.0 on a repo whose HEAD commit is older
+  than the day it is measured, and on a machine whose local date is not the UTC date.
+  Scores do not move, and it needs no re-seed of its own.
 - A partial run's `crap_load` sums only the scopes it measured, so `coverage --json` and
   the run line report less than 0.8.0 did on a run with a failed or skipped lane: 0.8.0
   added that lane's functions at the cov-0 stand-in. `by_scope` still carries each
@@ -133,6 +137,37 @@ each agent, fresh and as an upgrade, and this release fixes what it found.
   command prints the whole answer from the CLI. JSON-RPC codes move too: `params` that
   are not an object answer `-32602` and a message with an `id` and nothing to do answers
   `-32600`, each listed in the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#mcp-answers-in-081).
+
+### Analysis version 13
+
+- `nesting` reads crapkit's cognitive pass in every language, as Python's has since
+  0.5.0, where the other languages read lizard's ND column, and `cognitive` reads each
+  language's own rules: recursion is a call that reaches the function, and a body with
+  no braces pays the nesting it sits in.
+- C, C++, Objective-C, Java and Swift list the functions lizard's readers hid, invented
+  or misnamed, count every parameter a function declares, and read a C++ reference's
+  `&&`, a Swift optional mark, `??` and a string's `\( )` the way the language does. A
+  Rust `#` keeps the rest of its line.
+- Shell reads the depth of its blocks, the commands inside its strings and a function's
+  whole name. PowerShell reads keywords in any case, the expression inside a quoted
+  subexpression, and the functions and parameters it lost.
+- `duplication` and brief's twins shingle each function from its own lines and read a
+  comment line the way its language writes one; no score moves with them. (accuracy
+  change C8)
+- Go and Zig functions are read to where their signature ends, and no Go type switch,
+  comment or Zig multiline string ends one early. A `//` comment ends at its line in
+  every language but C, C++ and Objective-C. A Zig switch and a Go `select` count as the
+  switch they are, Zig and shell words that decide nothing stop counting, and shell
+  arithmetic counts its conditional operator.
+- Rust reads its own syntax: a signature, a `for` that is no loop and a closure's `||`
+  decide nothing, `loop` counts as a loop, and a signature with no body is no function.
+- A shell heredoc line ends where bash ends it, and JavaScript and TypeScript coverage
+  stays with its own function below a lone CR or U+2028.
+- Coverage lands on the function that owns it: an uncalled arrow or method reads 0.
+- A function its coverage tool was told to leave out reads the new flag `excluded` and
+  scores `crap = ccn`.
+- CRAP comes out the same on Windows and Linux, and a CRAP exactly at its ceiling reads
+  ok.
 
 ### A lane with no test results is not a lane that ran 0 tests or failed none
 
@@ -504,8 +539,7 @@ version bump under Upgrading from 0.8.0 above.
   subprocess's reader thread. Every git crapkit starts passes
   `-c i18n.logOutputEncoding=UTF-8`, so in a repo that sets `i18n.commitEncoding` or
   `i18n.logOutputEncoding` a name stored as UTF-8 comes back as stored, where `José` and
-  `Josè` had counted as one author. A CR inside an author name no longer cuts the commit
-  off its dates and doubles its churn weight. A `core.hooksPath` holding a Latin-1 byte no
+  `Josè` had counted as one author. A `core.hooksPath` holding a Latin-1 byte no
   longer ends `doctor`, and `verify --base` on such a ref gets its exit-4 sentence.
 - `mutate` builds and resets its worktree pool at a HEAD whose subject is not UTF-8.
   `git worktree add` and a kept tree's `checkout --force` print that subject, and the
@@ -825,10 +859,6 @@ The exit codes, the lane environment and the files that change on upgrade are in
 
 ### The same repo prints the same bytes on every machine
 
-- The churn window counts months on the UTC calendar, so a CI runner and a laptop in
-  another time zone rank the same repo the same way. git counted `N months ago` on the
-  local calendar, and where the local and UTC dates fell on either side of a day the
-  earlier month lacks, the window began a day apart.
 - Tracked files missing from the working tree are named in path order. inventory,
   coverage and verify printed one line per missing file in an order that changed with
   Python's hash seed from one run to the next.
@@ -842,7 +872,7 @@ The exit codes, the lane environment and the files that change on upgrade are in
   answered `'.\\mini' is not a subcommand`, and doctor named a lane's cwd `'sub\\dir'`.
 - A next step crapkit prints runs as printed in Git Bash. It names `crapkit` when PATH
   finds this installation's console script, and otherwise the interpreter running it,
-  spelled with forward slashes. Before the first run, an MCP tool on Windows named
+  spelled as A command crapkit prints for the reader to paste (below) says. Before the first run, an MCP tool on Windows named
   `C:\venv\Scripts\python.exe -m crapkit coverage` as the step to run, and Git Bash
   answered `C:venvScriptspython.exe: command not found`. A uv tool or pipx install on
   Windows counts as this installation: both copy the launcher into their bin directory
@@ -1178,8 +1208,7 @@ The exit codes, the lane environment and the files that change on upgrade are in
   log and the coupling cache rebuild from the whole history. Their keys held HEAD but not
   how much history the clone holds, so `worklist` kept a shallow clone's churn (1 commit
   where the history held 6) and `coupling` kept zero pairs until the UTC date rolled
-  over, and deleting the coupling cache alone changed nothing. A cache 0.8.0 wrote reads
-  as a full clone's, so an upgrade does not walk a full clone's history again.
+  over, and deleting the coupling cache alone changed nothing.
 
 ### A process that exits while a lane stops no longer fails the lane
 
@@ -1890,6 +1919,1379 @@ nothing. Each of these now gets a line naming the object and the next step:
   clone, stopped at `no crapkit.toml` before any verdict. Workflow 3 shows the `doctor`
   run `init` leaves, `doctor: no problems found`, where it showed two FAIL lines for
   scopes `init` already marks `coverage_optional = true`.
+
+### `mutate` keeps an operator its language reads as one token whole
+
+- `mutate` read Go's channel arrow `<-` as the comparison `<`: `ch <- v` grew `ch <=- v`
+  and `v := <-ch` grew `v := >=-ch`. Neither compiles, so the compiler killed them and
+  the run counted kills no test made, which raised a Go file's kill rate. The same split
+  hit `>>>` and `>>>=` in JavaScript, TypeScript, Vue and Java (`a >>> b` grew
+  `a >><= b` and `a >>>= b`), C++'s `<=>` and its `<%` and `%>` digraphs, and Swift,
+  which reads any run of operator characters as one operator (`x |> f` grew `x |>= f`).
+  These operators now make no mutant, and a comparison beside one still makes its own.
+  Kill rates on such files can fall. No CRAP score changes.
+- The decrement `--` split the other way. C, C++, Objective-C, Java, JavaScript and
+  TypeScript read `n-->0` as `n-- > 0`, but `mutate` read an arrow `->` out of it, so
+  the loop bound grew no mutant and a test that never reached zero read as enough.
+  `n-->0` and `n --> 0` now grow `n-->=0` and `n--<=0`, as `n-- > 0` always did, and
+  `p--->y`, which is `(p--)->y`, still grows none. Kill rates on such files can move
+  either way. No CRAP score changes.
+
+### `mutate` flips a `&&` or `||` only where it joins two operands
+
+- In Rust a `||` with nothing on its left is a closure with no parameters and a `&&`
+  there borrows twice, and in C++ `auto&& x`, `int&& y` and `Foo&& other` declare
+  references. `mutate` flipped them all, so `spawn(move || ...)` grew
+  `spawn(move && ...)` and `Foo&& other` grew `Foo|| other`. It also flipped the name a
+  declaration gives an operator (`bool operator<(const A&) const;` grew `operator<=`,
+  and Swift's `static func <` grew `static func <=`), and it read the type argument in
+  `static_cast<T&&>(x)` as two comparisons. None of these compiles, so each counted as
+  a kill no test made. They now make no mutant. A connective after an operand,
+  including one that starts a rustfmt continuation line, still makes its own. `mutate`
+  cannot tell a type name from any other name, so in C, C++ and Objective-C files the
+  layout decides after a name: a `&&` hugged to one side (`Foo&& x`, `Foo &&x`,
+  `ok&& ready`) or followed by `)`, `,` or `>` is a reference and makes no mutant, and
+  one spaced on both sides or on neither (`a && b`, `a&&b`) is a connective, so a
+  reference written `Foo && x` still makes a mutant. Kill rates on Rust, C, C++,
+  Objective-C and Swift files can fall. No CRAP score changes.
+
+### `mutate` flips Zig's `and` and `or`, and leaves its `||` alone
+
+- Zig joins booleans with `and` and `or`. Its `||` merges two error sets, and `&&` is
+  no Zig operator. `mutate` gave Zig the C-family table, so `const E = A || B;` grew
+  `const E = A && B;`, which does not compile and counted as a kill no test made,
+  while `a and b` grew no mutant at all. Zig now has a table of its own: the same
+  comparisons and boolean literals, and `and` and `or` flipped into each other. Zig
+  files can gain mutants, and their kill rates can move either way. No CRAP score
+  changes.
+
+### `mutate` flips Swift's `==` and `===`
+
+- Pygments' Swift lexer calls `=` punctuation, and `mutate` looked only at operators
+  there, so `a == b` and `a === b` grew no mutant, and a Swift test that never checked
+  an equality read as enough. Both now mutate, to `a != b` and `a !== b`. An unspaced
+  `a<b` still makes no mutant: a `<` before a name is also how Swift opens a generic's
+  angles (`Foo<Bar>`). Swift files gain mutants, and their kill rates can move either
+  way. No CRAP score changes.
+
+### Recovery recognizes an abandoned temporary mutation run of any size
+
+- Startup recovery and `crapkit clean` refused a temporary mutation receipt that recorded
+  more than 100 workers. `mutation_workers` has no upper bound, and a concurrent run
+  records the smaller of `mutation_workers` and its mutant count, so an abandoned run of
+  101 or more workers read `unproven` and its worktrees stayed on disk. Any count of 1 or
+  more is now recognized. `crapkit clean` also stops printing `()` after a run it
+  recognized: only a refusal prints a reason.
+
+### Batches are placed by the risk of all their rows
+
+- `worklist --batches` hands out files, and groups of co-changing files, largest summed
+  `risk` first, each to the batch with the least `risk` so far. It ordered them by their
+  riskiest row, so a file of many middling rows went out late, onto a batch that was
+  already full. Six files at 4.36, 3.53, 3.49, 2.19, 0.01 and 0.01, where the 3.49, the
+  2.19 and one 0.01 change together, split into two batches of 9.22 and 4.37; they now
+  split 7.89 and 5.70, the best split there is. That order is LPT scheduling, so under
+  `--batches N` the heaviest batch stays within 4/3 - 1/(3N) times the best split's
+  heaviest: 9.205 here, which the old 9.22 passed. On an unchanged store a file can move
+  to another batch; no score moves.
+
+### Parallel lanes start in the order doctor --tune costs them
+
+- Under `max_parallel_lanes` above 1, a lane with no recorded run, because its artifact
+  was reused or `.crapkit/` was cleaned, starts by the time its `results_artifact` JUnit
+  report claims. It read as 0 s and started last, while `doctor --tune` costed it by that
+  report: lanes of 5, 5 and 10 s on two slots took 15 s where `doctor --tune` said 10.
+  Lane results still merge in declaration order, so no score moves.
+- `doctor --tune` no longer ends in a traceback on a JUnit report that is not UTF-8. Such
+  a report, like one that is not XML, gives its lane no duration.
+
+### A command crapkit prints for the reader to paste runs in Git Bash and PowerShell
+
+- When `python -m crapkit` started crapkit, every next step and refusal names the
+  interpreter's path, and on Windows two of the shells a reader pastes into could not
+  run that line. Printed bare, `C:\app\.venv\Scripts\python.exe -m crapkit coverage`
+  reached Git Bash as `C:app.venvScriptspython.exe` and exited 127, because bash reads
+  each backslash as an escape. A path holding a space went in double quotes, which
+  PowerShell reads at the start of a line as a string, so the line stopped at `-m` with
+  a parse error. The path now prints with forward slashes, which cmd.exe, PowerShell and
+  Git Bash all open, and a segment holding a space or a shell operator is quoted on its
+  own, `C:/"Program Files"/Python311/python.exe`, so the line never opens with a quote.
+- One case trades cmd.exe for PowerShell. A venv's `python.exe`, run from cmd.exe, ends
+  its own name at the first space unless the line opens with a quote, and PowerShell
+  cannot run a line that opens with one, so no line runs a venv in a spaced directory in
+  every shell. Before quoting a segment, crapkit looks for a spelling of the same file
+  with no space: the directories a link points at, then the 8.3 short name. When there
+  is none, as on a volume that keeps no 8.3 names, the line runs in PowerShell, pwsh and
+  Git Bash and no longer runs in cmd.exe, where the 0.8.0 spelling, the whole path in
+  double quotes, did. In cmd.exe, put the whole path in double quotes by hand.
+  [docs/adr/0003](docs/adr/0003-a-pasted-command-never-opens-with-a-quote.md) says why
+  PowerShell won.
+- On POSIX an interpreter path that needs quoting goes in single quotes, so sh no longer
+  expands a `$` or a backtick inside it.
+- `crapkit <path>` is refused with the command to run instead, `crapkit inventory --repo
+  <path>`, and the path went into that command as it came: a space split it into two
+  arguments in every shell, and Git Bash read the backslashes of `C:\work\app` as
+  escapes. The path now goes in with forward slashes, and in one pair of double quotes
+  when it holds a space or a shell operator: `--repo "my repos/app"`. Quoting only the
+  spaced segment is not enough after the command word, because PowerShell ends a word
+  that opens with a quote at the closing one and read `"my repos"/app` as two arguments.
+  The fix doctor prints for a hook committed without the executable bit, `git
+  update-index --chmod=+x <path>`, quotes the path the same way, so a hooks directory
+  whose name holds a space stays one path.
+- The note init and doctor print for a lane whose python cannot import pytest_cov, and
+  the refusal after pytest rejects `--cov`, end with an install line built on the lane's
+  python. When the lane names that python by path, as init writes a repo's venv on
+  Windows, the line was `.venv\Scripts\python.exe -m pip install pytest-cov`: Git Bash
+  ran it as `.venvScriptspython.exe` and exited 127, and from any directory but the
+  lane's no shell found the file. The line now names the file the path resolves to,
+  spelled the way a next step spells crapkit's own interpreter. A lane that names
+  `python` still gets `python -m pip install pytest-cov`.
+- The recipe a refused coveragepy lane prints for the shards a killed parallel run left
+  behind was `coverage combine && coverage json -o <target>`. Windows PowerShell 5.1
+  has no `&&` and stopped at a parse error before either command ran. The recipe now
+  names the two commands one after the other, and the target goes in as one word.
+
+### A SARIF log names a schema URI that answers
+
+- Every SARIF log `--sarif` writes named its schema at
+  `https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json`,
+  which answers HTTP 404, so a validator that fetches `$schema` failed. SARIF 2.1.0
+  section 3.13.3 asks for a URI the schema can be obtained from. `$schema` is now
+  `https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json`,
+  where OASIS publishes the schema and the id the schema declares for itself. The
+  results, rules and every other field do not change.
+
+### The churn window ends at HEAD's commit date
+
+- The churn window reaches `churn_window_months` back from HEAD's commit date. It was
+  cut with `git log --since=12.months.ago`, which git reads against today's date, so a
+  tree measured a year after its last commit ranked every file dormant: a four-commit
+  repo listed four active files one day after its newest commit and none 400 days
+  after it. README's promise that a fixed tree ranks identically forever now holds, on
+  any day and any machine: the month arithmetic runs in UTC.
+- Churn weights, `risk`, the `worklist` and `next-item` order and the ranked
+  co-change pairs change for any repo whose HEAD commit is older than the day it is
+  measured. CRAP scores and ratchet marks do not, so nothing re-seeds. See the
+  [upgrade guide](docs/upgrading.md#the-churn-window-ends-at-heads-commit-date).
+- The churn caches move to `churn-cache-v3.json`, `churn-log-v3.z` and
+  `coupling-cache-v2.json`. Each file 0.4.5 to 0.8.0 wrote holds a window cut at the
+  wall clock, and the same key would have served it on the day of an upgrade, so the
+  first churn read walks the window once. Those files stay on disk, untouched, so an
+  older crapkit sharing the working tree keeps its own caches warm.
+- The `churn_window_months` description in `crapkit.schema.json`, which editors show on
+  hover, the MCP descriptions of `churn_window_months` and `window_months`, and the
+  `report` page's footer say the window counts back from HEAD's commit date.
+
+### Coupled pairs that tie rank by their paths
+
+- `coupling` ranks two pairs whose support x confidence are equal by their paths, and
+  brief's `coupling` partners and `worklist --batches` read that order. crapkit
+  multiplied in binary floating point, where 3 x 0.1111 is 0.33330000000000004 and
+  1 x 0.3333 is 0.3333, so two tied pairs ranked by that rounding noise and `--top` kept
+  whichever it put first. The coupling cache ranks the pairs it reads the same way, so a
+  cache an older crapkit wrote serves the new order from the first run after the upgrade.
+- A coupling cache holding a count or confidence of `Infinity` or `NaN` reads as cold. An
+  `Infinity` count stopped `coupling`, `brief` and `worklist --batches` with
+  `OverflowError`, and a non-number confidence was served as a real pair.
+
+### Marks that rose by the same amount list in path order
+
+- `verify` lists `ratchet_regressions` largest rise first, and rises equal at 4 places
+  in path order. The rise was a float difference, where 10.3 - 10.1 is
+  0.20000000000000107 and 20.3 - 20.1 is 0.1999999999999993, so two marks that rose by
+  0.2 listed in that noise's order and the `--override` refusal named whichever came
+  first.
+
+### Batches whose risks sum to the same total
+
+- `worklist --batches` sums each batch's `risk` exactly, in whole ten-thousandths, the
+  places a risk is rounded to. It summed floats, where 0.7 + 0.1 is 0.7999999999999999,
+  so of two batches holding 0.8 that one read as lighter: it took the next file instead
+  of the batch with fewer entries, and batches of equal risk came out of file order. On
+  Python 3.11 three risks that add up to exactly 117.4173 read 117.41729999999998, so
+  the same worklist also split differently on 3.11 and 3.12.
+
+### `explain --history` returns each commit message as git stored it
+
+- A body line that was `\x02` ended its commit's record there, and a body line starting
+  with `\x01` opened a commit that does not exist. With fewer than three words after the
+  `\x01`, `explain --history` exited 1 with a `ValueError` traceback. A body with no final
+  newline came back empty. explain framed every record with those two characters, and a
+  commit message can hold them. It now asks `git log -L` for the commits' names alone
+  and reads their messages with NUL between the fields, the one byte a message cannot
+  hold.
+- A `\r` in a subject or body, and a form feed, `\x1c` or `\x85` in a body, came back in
+  `--json` as a line break: git's output was read in text mode and split with
+  `str.splitlines`. They now come back as committed. The text output still starts a new
+  indented line at each of them, so a `\r` cannot move the cursor back over the indent.
+- A function in a file that is not UTF-8, or a repo whose `i18n.logOutputEncoding` names
+  another encoding, made `explain --history` fail with a traceback. explain no longer
+  reads the span's hunks, and asks git for the messages in UTF-8.
+- Scores, marks and the JSON field names do not change.
+
+### Churn reads an author name as one name, whatever bytes it holds
+
+- git keeps a `\r` or a `\x02` inside an author name. The churn window's log was read in
+  text mode, which split a name at its `\r`, and each commit's header was cut at its
+  first `\x02`, so the rest of the name was read as the commit's dates. That commit lost
+  both dates, its author counted as another, and after a `\r` the next carried refresh
+  dropped the commit as older than the window. The churn `authors` and `weight` of every
+  file it touched moved, and with them the `risk` that ranks the worklist. The log is now
+  split at LF alone and each header is read from the right.
+- The churn caches under `.crapkit/` change their path-format key, so the first command
+  that reads churn after upgrading walks the window once more. Scores and marks do not
+  change.
+
+### A user's log settings no longer change what crapkit reads from history
+
+- With `log.showSignature=true`, git checks each signed commit's signature and prints the
+  result ahead of the commit's record. The churn window read that line
+  (`Good "git" signature for ...`, or `No signature`) as a file every signed commit
+  changed, and the ratchet history carried it inside each patch. Each walk also ran
+  `ssh-keygen` or `gpg` once per signed commit: a cold churn walk over 60 SSH-signed
+  commits took 10.7 s where it now takes 0.3 s.
+- With `log.follow=true`, git follows a lone path across a rename, and its `--follow`
+  drops commits from a log read oldest first. Once the ratchet file had been renamed,
+  `ratchet report` lost the commits after the rename, so its repayments, velocity and
+  ages came up short.
+- With `log.showRoot=false`, git lists no files and prints no patch for the root commit.
+  The files it added got no churn from it, and the marks it added never entered
+  `ratchet report`.
+- Every git crapkit runs now sets `log.showSignature=false`, `log.follow=false` and
+  `log.showRoot=true`, git's own defaults, beside the `diff.relative` and
+  `core.quotePath` it already sets. `explain --history` (above) reads under the same
+  settings. A repo without these settings reads as before. Under `log.showRoot=false`
+  the churn `commits`, `authors` and `weight` of the root commit's files move, and with
+  them `risk`; no score or mark moves. The churn caches already walk the window once
+  more after upgrading (above), so no stored count keeps the old reading.
+
+### A comment is one line per LF
+
+- lizard counted a comment's lines with `str.splitlines`, which also ends a line at a
+  vertical tab, a form feed, `\x1c`, `\x1d`, `\x1e`, U+0085, U+2028 and U+2029. A
+  comment holding one of them moved every function below it down one line per
+  character, in every language. `brief`, `worklist` and the gates named lines the
+  function does not sit on, and a span moved onto the next function joined that
+  function's coverage: a function its tests call scored its uncalled neighbour's 0%. A
+  comment now counts one line per LF, as git, Python's compiler, coverage.py, c8 and
+  `@vitest/coverage-v8` count it.
+- JavaScript's own rule, which Babel, TypeScript source maps and V8's stack traces
+  number by, also ends a line at U+2028 and U+2029. The istanbul reader now moves
+  those numbers onto crapkit's lines (below), so a JavaScript or TypeScript function
+  below such a comment reads its own coverage under `@vitest/coverage-v8`,
+  `@vitest/coverage-istanbul`, jest and nyc alike. Before, a V8 lane on a JavaScript
+  file gave it its neighbour's.
+- Those functions' spans, coverage and CRAP change, so this release raises the analysis
+  version and every marks file re-seeds once. See the [upgrade
+  guide](docs/upgrading.md#line-ends).
+
+### Every refused file is counted and named, once per run
+
+- A file no reader can tokenize is named on stderr under its own path, whatever another
+  file holds. A cold run reads identical bytes once and hands the result to every copy,
+  and through 0.8.0 a refusal went along with it: two refused files with the same bytes,
+  such as a vendored copy or two stubs cut off at the same signature, printed `1 file(s)
+  could not be tokenized` and named only the first path. Each copy of a refused file is
+  now read under its own path, so the count and the names match the files. Scores do not
+  change.
+- The pre-commit hook on a change of fewer than 16 files noted each staged file on its
+  own. Two refused files printed two `1 file(s) could not be tokenized` counts, and every
+  file that defines a name more than once took a line of its own. The hook now prints one
+  count, and names five such files before counting the rest, as its pooled arm and every
+  other run do.
+
+### A lone CR no longer hides a changed function from the gates
+
+- git's diff ends a line at LF only, and crapkit's reader, like Python and coverage.py,
+  also ends one at a lone CR. The commit gate, `rescore --gate`, `verify`, `mutate` and
+  the advisory hook matched git's line numbers against the reader's lines unmapped, so
+  each lone CR above a function moved the diff one line up from it. A new file saved
+  with CR-only line ends is one line to git, and the gate judged only its first
+  function. An edit to a def line below one lone CR touched no function at all. Either
+  way a function over the ceiling passed the gates and `verify`, and `verify` checked
+  the wrong lines against coverage for `diff_uncovered_max`. `mutate` grew its mutants
+  on the line above the one the edit changed, and the advisory hook stayed silent.
+- Each of them now places a changed line by the bytes of the file it changed: the staged
+  blob for the commit gate, the working tree for the rest. A file with no lone CR reads
+  as before. No score moves, and marks need no re-seed.
+- `explain --history` made the same mistake the other way: it handed `git log -L` the
+  function's span in the reader's lines, so below a lone CR git followed the lines one
+  below the function and missed the commits that changed its def line. The span now
+  goes to git in git's lines, placed by HEAD's copy of the file.
+
+### A form feed no longer moves a function in `brief`, `mutate` and `duplication`
+
+- Python's `str.splitlines` ends a line at a form feed, a vertical tab, `\x1c`-`\x1e`,
+  NEL, U+2028 and U+2029 as well as at LF and CR. `brief`, `mutate` and `duplication`
+  numbered a file's lines with it, so each such character above a function put the
+  function one line lower than its span. Below a form feed, `brief` showed the lines
+  above the function, `mutate` grew no mutant on the line the edit changed, and
+  `duplication` missed a twin.
+- `mutate` also dropped any line end but LF from the line it mutated. In a file saved
+  with CR-only line ends the mutated line ran into the next one, the mutant failed to
+  compile, and it counted as killed.
+- All three now end a line at LF, CRLF and a lone CR only, the way the scores number
+  it, and a mutated line keeps its own line end. The stored twin index changes format
+  and is built again once, the first time `brief` or `duplication` reads a run. No score
+  moves.
+
+### A form feed on a heredoc line no longer ends the heredoc in the shell reader
+
+- The shell reader blanks every heredoc body before it counts, and it found the body's
+  lines with `str.splitlines`. bash ends a heredoc line at LF only. A body line such as
+  `note<FF>EOF` closed the body one line early, so the lines up to the real `EOF`
+  counted as code: an `if a && b` there added 2 to `ccn`. Code after a form feed on the
+  line that opens a heredoc read as body and did not count.
+- The reader now ends a heredoc line where bash does. `ccn`, cognitive, nesting and
+  NLOC move for a `.sh` or `.bash` function with a vertical tab, form feed,
+  `\x1c`-`\x1e`, NEL, U+2028 or U+2029 on a heredoc line or on the line that opens one.
+  This is part of analysis version 13, so marks re-seed once with it; see
+  [docs/upgrading.md](docs/upgrading.md#line-ends).
+
+### JavaScript and TypeScript coverage stays with its own function below a lone CR or U+2028
+
+- Coverage producers number a file's lines by their own rule. `@vitest/coverage-v8`
+  ends a JavaScript line at LF only. Babel, which jest, nyc and
+  `@vitest/coverage-istanbul` instrument with, and the source maps a TypeScript file's
+  positions come back through, also end one at a lone CR, U+2028 and U+2029. crapkit
+  ends one at LF, CRLF and a lone CR, and it took an istanbul artifact's line numbers
+  as its own. Five lone CRs above a function in a JavaScript file under a V8 lane gave
+  the function, run both ways, the 0% of the uncalled function below it; five U+2028
+  in a TypeScript string did the reverse. A file saved with CR-only line ends is one
+  line to V8, so every function in it shared one span.
+- The istanbul reader now places each position on crapkit's lines. For a file that
+  holds a lone CR, U+2028 or U+2029 it reads the source and takes the rule under which
+  each named function's name sits on its declaration line, and uses the column to find
+  the line inside one that V8 counted whole. A file with no named function has nothing
+  to decide by and keeps its numbers. Every other file keeps its numbers as they are.
+- `cov`, CRAP and the uncovered lines `verify` checks a diff against move for
+  JavaScript and TypeScript functions in such files, so this is part of analysis
+  version 12 too. The reader reads each measured file once per parse to tell: about 3 s
+  more on a 24 s parse of 29,615 file records on Windows.
+
+### Go and Zig signatures end where the language ends them
+
+- A function type no longer opens a function. After a package-level `var hooks
+  []func()` the next Go function had no row. A local `var cb func(int) error`, or
+  Zig's `const cb: *const fn (u8) void = &f;`, took the enclosing function's next
+  block as its body: an anonymous row held that block's `if`, and the function lost
+  it from `ccn`, `cognitive` and `nesting`. A Zig `extern fn` prototype took the next
+  function's body the same way, and that function had no row.
+- A function whose result type holds braces spans its body: Go's `struct{ a int }`,
+  Zig's `struct { usize, usize }`, `error{Oops}!u8` and `union(enum) {...}`. It ended
+  on its signature line at ccn 1.
+- A package-level Go literal with a result, `var f = func(a int) error {...}` or
+  `func(a int) List[int] {...}`, is an anonymous function like the literal without
+  one. It had no row. One whose result is a function type, `func(a int) func(b int)
+  int {...}`, reads `(a int)` where lizard read a method named `func`, `(a int)func b
+  int`.
+- A composite literal of functions, `[]func(){f, g}` or `map[string]func() func()
+  int{...}`, is a literal, not a function. lizard listed it as an anonymous row at
+  ccn 1. A function literal inside a package-level composite literal keeps its row
+  and reads like any package-level literal, `(i int)`, where it read ` i int` and
+  took the handle `i`.
+- A Zig function named by a string, `fn @"weird name"(x: i32) i32`, is listed under
+  that name, and its handle is the whole `@"weird name"`. It had no row.
+- `params` counts a parameter of function type once, where `f func(int, string)
+  error` and Zig's `lessThan: fn (T, T) bool` read 2, and counts a parameter whose
+  type ends in a brace, where `v interface{}` read 0. Those long names do not
+  change, so their marks keep their keys.
+- `params` counts a package-level Go literal's parameters. lizard read its list as a
+  method's receiver, so `var f = func(a, b int) {...}` read 0 and now reads 2. Its
+  long name stays `(a,b int)`.
+
+### A `//` comment ends at its line
+
+- A `//` comment that ends in a backslash, such as `// C:\dir\`, ends at its line in
+  Go, Zig, Java, JavaScript, TypeScript, TSX, Vue, Swift and Rust. lizard read it on
+  into the next line, as a C preprocessor splices lines, so that line counted as
+  comment: a function whose signature sat there had no row, and one whose `if` sat
+  there ended at that `if`'s `}`. C, C++ and Objective-C keep the splice, because
+  their preprocessor joins the lines before it reads any comment.
+
+### Go and Zig blocks and strings end where the language ends them
+
+- A Go type switch, `switch x := v.(type) {`, is a switch. lizard read its `type` as
+  a type declaration that took the switch's `{`, so the switch's `}` ended the
+  function: the code after the switch counted nowhere, and `ccn` fell by each
+  decision there. A function with a type switch can read higher and go over its
+  ceiling.
+- Each line of a Zig multiline string, `\\...`, is text. lizard read it as code: a
+  `}` in it ended the function, a `{` took the functions after it into that one, and
+  an `if`, `and` or `or` in it counted.
+- A `}` that closes nothing at file level, such as the one a type switch left, no
+  longer costs each Go method after it its row.
+
+### Switch prongs and select count as the switch they belong to
+
+- A Zig switch's `else =>` and `_ =>` prongs no longer count as a case, as `default`
+  does not in C. A switch of two prongs and an `else` read `ccn_std` 4 and now reads
+  3, and its cognitive `else` +1 is gone: `else =>` is the switch's default, not an
+  else.
+- `ccn_mod` reads a Zig switch once, where it added the switch without taking its
+  prongs back and read above `ccn_std`, and a Go `select` once, where each `case`
+  took a point off and the `select` added none. `ccn` is the smaller column, so a
+  Zig function with a switch of three prongs and an `else` reads 2 where it read 5,
+  and a Go function with a `select` of two cases and a default reads 2 where it read
+  1 and can now be over its ceiling.
+
+### Words that decide nothing stop counting
+
+- A Zig `try` opens no nesting level. lizard's nesting extension counted it as a
+  structure that never closed, so three tries in a row read `nesting` 3.
+- A Zig `?` marks an optional type (`?usize`) or unwraps one (`p.?`). It read as a
+  conditional operator, cognitive +1 and a nesting level; it now costs nothing.
+- A Zig `||` merges two error sets, `(A || B)!T`, and no longer costs cognitive +1 as
+  a boolean operator; Zig's boolean or is `or`. lizard's nesting extension still
+  reads it as a level.
+- `case`, `def` and `foreach` are names in Zig and open no nesting level.
+- A shell `?` outside arithmetic is a glob character (`ls a?b`). The cognitive column
+  charged each one as a conditional operator, and now charges none.
+
+### Shell arithmetic reads as C
+
+- Inside `(( ))` and `$(( ))` bash reads C, and `a ? b : c` is C's conditional
+  operator. It now counts one in `ccn` as in C, where no shell `?` counted, and one
+  in `cognitive`, as it did in 0.8.0. `f() { echo $(( x > 0 ? 1 : 0 )); }` reads
+  `ccn` 2 where it read 1.
+- A C-style `for ((;;))` counts its loop once. Its `;;` read as a case arm's end, so
+  the loop read `ccn` 3.
+
+### Rust reads its own syntax, not C's
+
+- A Rust signature decides nothing. A `where` clause, a `?Sized` bound and a `for<'a>`
+  binder each added 1 to ccn; the body's `{` now sets the function back to its base of
+  1, and cognitive reads nothing before it.
+- A `for` that is no loop decides nothing in a function's body either. Rust spells three
+  things `for`: a loop, a `for<'a>` binder, which has a `<` right after it, and the
+  `for` of `impl Trait for Type`, which has a name or a `>` right before it. A trait
+  implemented inside a function, the way a test defines the stub it needs, cost that
+  function 1 in ccn and 1 plus its nesting in cognitive, a binder in a `let`'s type the
+  same, and the `?` of a `?Sized` bound on such an item 1 in ccn. Each now costs nothing
+  in those two columns. The nesting column is lizard's and still reads such a `for` as
+  a level.
+- A `||` or `&&` with no operand before it is no operator. `move || n` and
+  `unwrap_or_else(|| 0)` open a closure with no parameters, and `|&&x|` takes a double
+  reference. Each cost 1 in ccn, 1 in cognitive and usually a nesting level, and now
+  costs nothing.
+- A let-else counts one decision in ccn, the one its `if let` twin counts.
+- `?` is no increment in cognitive and opens no nesting level: it returns early on an
+  error, or relaxes a bound in `?Sized`. It keeps its 1 in ccn.
+- `loop` is a loop: +1 and the nesting it sits in, in cognitive, and a level in
+  nesting. The `if` inside a `loop` cost 1 where the same `if` inside a `while` cost 2.
+- `catch`, `switch`, `foreach`, `case` and `def` are names in Rust, not keywords. A
+  method `.catch()` cost 1 in ccn, in cognitive and in nesting, `.switch()` 1 in
+  ccn_mod and in cognitive, and a loop variable named `case` a nesting level each time
+  it appeared.
+- A signature that reaches a `;` before any `{` has no body: a trait's required method,
+  an `extern` block's foreign function, a `fn` pointer type. lizard waited through the
+  `;` for a `{`, listed the signature as a function that ran through the next body, and
+  gave the function it swallowed no row. Such a signature is now no function. A `fn`
+  pointer type is told apart at its `(`, so one inside a generic, `Vec<fn(i32) -> bool>`
+  or `Vec::<fn()>::new()`, no longer takes the block after its `let` and the decisions
+  in it.
+- A comma inside a parameter's type or pattern, `(char, char)`, `HashMap<K, V>` or a
+  struct pattern's `Point { x, y }`, parts no parameters. The long name keeps its
+  spelling.
+- A parameter that binds an array or struct pattern, `[a, b]: [u8; 2]` or
+  `Pair { a, b }: Pair<u8>`, counts once in `params`. lizard counts a parameter only
+  where it finds a name at the end of its text or right before its `:`, and such a
+  parameter has neither.
+- Measured over 229 files of a Rust workspace: ccn rises in 184 of 3,523 rows and falls
+  in 215, cognitive falls in 993 and rises in 27, and nesting falls in 861 and rises
+  in 8. Every rise in cognitive or nesting holds a `loop`. Six rows of bodiless
+  signatures are gone, three functions get the row they never had, and `params` falls
+  in 8 and rises in 1. Four test functions that implement a trait in their body fall in ccn and
+  cognitive. Six more rows fall where lizard's tokenizer reads a raw string's quoted
+  contents as code, and a word `for` in that text counted as a loop.
+- A parameter typed `&&T` now reads `& &` in the function's long name, so that
+  function's ratchet key changes; the workspace has none.
+- In Python and shell, a name spelled `switch` no longer adds 1 to ccn_mod. Neither
+  language has a switch statement, and `def pick(switch): return switch` read ccn_mod
+  3. Over 43,771 standard-library and site-packages files, 205 Python rows fall. The
+  gated ccn takes the lower of the two columns and moves in none.
+- The change is part of analysis version 13, which makes each marks file re-seed once
+  ([upgrading](docs/upgrading.md#rust-rows)).
+
+### The lane guard reads a command the way sh and cmd.exe read it
+
+No score moves and no analysis-version bump. The full-suite guard and `doctor` read these
+lane commands the way the shell that runs them does:
+
+- An operator touching a word still ends the command. `...py.json&& python -m coverage
+  json` is two commands on both shells and was refused naming `python`; `&`, `|` and
+  `||` read the same way, and on sh so does `;` (`;echo done`).
+- A redirection keeps its target when the target is quoted (`>"lane.log"`,
+  `2>"lane err.log"`, and `>'lane.log'` on sh), and leaves the word it touches:
+  `tests>lane.log` hands pytest `tests`. Each of these was refused with exit 3.
+- On Windows the line is read in two passes, cmd.exe's and then the runner's. A quote a
+  caret hands on opens no run for cmd.exe, so `-k ^"x & python -m pytest pylib/unit^"`
+  starts a second, narrowed pytest. That lane loaded and took its coverage from the
+  narrowed run; it now exits 3. The runner reads `\"` as a quote inside its quoted run,
+  so `-k "a\" tests \"b"` is one value and loads.
+- On sh a line break ends the command, a backslash at the end of a line joins it to the
+  next, and a `#` that starts a word starts a comment. cmd.exe runs the first line only,
+  drops carriage returns, and lets a quote that never closes take the rest of the line.
+- cmd.exe's delimiters are `;`, `,`, `=` and a non-breaking space as well as the blanks.
+  It skips them before a command or a redirection target, ends the program's name and a
+  target at them, and drops them between two redirections: `>lane.log ; 2>&1` hands
+  pytest nothing and loads, where it was refused naming `;`. A digit touching `>` is the
+  stream when a delimiter, a quote, `&`, `|` or a parenthesis stands in front of it, so
+  `a^|2>x` hands on `a|`.
+- On cmd.exe a `(` where a command starts opens a block and its `)` ends the command,
+  so `(python -m pytest --cov=src ) > lane.log` loads and `doctor` finds python in it; a
+  block left open runs nothing on the line. `doctor` also stops naming the `2` of
+  `&2>err.log` as a runner.
+
+### `test-scoped` reads a test file the way the scored corpus does
+
+- A file outside every scope runs under the one templated scope only from a `test`,
+  `tests` or `__tests__` directory, in any case. `test-scoped` also took a name,
+  `test_*.py`, `*.test.*` or `*.spec.*`, as a test, so `tools/test_helper.py`, which
+  the scored corpus reads as source, ran the only template's command on a file no scope
+  owns. It now exits 3: `tools/test_helper.py belongs to no declared scope, and only a
+  file under a test, tests or __tests__ directory runs without one`. Move the file under
+  a scope's `paths` or into a test directory to run it.
+- A test file outside every scope when no scope declares a template now says so, where
+  it said the file belonged to no declared scope.
+
+### `brief` marks a coupled test file by the rule `init` and `doctor` read
+
+- A coupling partner's `is_test` came from a name rule `brief` kept for itself. It said
+  `false` for `x_test.go` and `x_test.py`, which the default exclude globs drop as
+  tests, and `true` for `tools/test_deploy.sh`, which the scored corpus scores as
+  source. It now reads the test-file rule `init` and `doctor` use: a `test`, `tests` or
+  `__tests__` directory, or `test_x.py`, `x_test.py`, `x_test.go`, `x.test.*` and
+  `x.spec.*`. The MCP `get_function_brief` packet carries the same field.
+
+### Coverage lands on the function that owns it
+
+- The istanbul reader places each counter by line and column: a statement counts from a
+  function's body on, a branch from its declaration on. For `const f = (x) => x * 2`
+  istanbul writes a statement for the declaration, which starts ahead of the arrow's body
+  and runs at import. It counted for the arrow, so an arrow no test called read 0.5 under
+  vitest (v8 and istanbul providers), nyc and Jest. It now counts for the code around the
+  arrow, and the arrow reads 0. A ternary or `&&` that opens ahead of a callback on the
+  same line, as in `if (ok && list.some((x) => x.ready))`, moves from the callback to the
+  function around it. Under raw v8-to-istanbul output (c8, Jest's v8 provider) the line
+  that opens an indented method or arrow counts for the code around it, so an uncalled
+  class method reads 0 where it read 1/6. Over a 658-function artifact from a large
+  consumer repo, 12 functions change coverage: 5 rise and 7 fall. A fall raises CRAP on
+  a function nobody edited, so the change is part of analysis version 13, which makes
+  each marks file re-seed once. [What the istanbul parser
+  reads](docs/lanes.md#what-the-istanbul-parser-reads) states the rule.
+- A new flag, `excluded`, marks a function its coverage tool was told to leave out:
+  `# pragma: no cover` or an exclude pattern that takes every statement in it under
+  coverage.py (from coverage.py 7.10.1 its default patterns take a stub whose body is
+  `...`), `/* istanbul ignore next */` or `/* v8 ignore next */` under istanbul. It
+  scores `crap = ccn` and its remedy is `ok` or `decompose`, the way a `cc-only`
+  function scores. It read cov 0, flagged `untested` or `measured`, at
+  `crap = ccn^2 + ccn` with `add-tests`, advice no test could follow, and a large one
+  sat over the ceiling for good. istanbul drops an ignored function from `fnMap`, so a
+  function missing from the `fnMap` of an instrumented file, one with statements, that
+  lists others reads `excluded` as well. A file with no `fnMap` entries, or a hand-built
+  entry with no statements, keeps reading `untested`. rescore keeps an excluded function
+  excluded, and a one-line def under `# pragma: no cover` reads `excluded` rather than
+  taking the def-line floor. The coverage summary counts the flag as `excluded` (JSON)
+  and `N excluded` (text), the MCP schemas list it, and the README's Flags table
+  explains it. Excluded functions fall from `ccn^2 + ccn` to `ccn`, so marks tighten at
+  the next ratchet update; this is part of analysis version 13.
+
+### Every platform computes the same CRAP
+
+- `crap` cubes `1 - cov` with two products instead of `** 3`. IEEE 754 rounds a product
+  correctly everywhere and leaves `pow()` to each C library, so Windows and Linux gave
+  some scores different last bits. CRAP(36, 53/120) is exactly 261.57225 and now prints
+  261.5722, not 261.5723: the `** 3` double sat just above the tie on both. Measured on
+  Windows over ccn 1 to 60 and every coverage fraction up to 240ths, 21 scores print a
+  different 4 dp value: 12 fall by 0.0001 and 9 rise by 0.0001. One prints a different
+  2 dp value: CRAP(25, 19/50) is exactly 173.955 and now prints 173.96, not 173.95.
+  Marks are stored at 4 dp, and seed never raises a mark, so after the re-seed a marked
+  function whose score rose reads as a ratchet regression nobody caused, such as
+  CRAP(20, 3/200) at `402.2686 -> 402.2687`; raise that mark by hand. The change is part
+  of analysis version 13, which makes each marks file re-seed once.
+  [Upgrading](docs/upgrading.md#score-arithmetic) lists what moves.
+
+### A CRAP exactly at its ceiling reads ok
+
+- CRAP(18, 2/3) is exactly 30, and its float is 30.000000000000004. At `target = 30`,
+  the crap4j threshold README recommends, `remedy` said `add-tests`, the run totals and
+  a brief's file totals counted it over target and lowered the grade, `ratchet seed`
+  marked it, `verify`'s gate refused it when an edit touched it, and the digest named it
+  new over ceiling. Every comparison with a ceiling now counts a score within a relative
+  2^-48 of it as the ceiling. Over ccn 1 to 60 and coverage fractions up to 400ths, the
+  float strays no more than 5.2 units in its last place from the exact value, and an exact
+  CRAP that is not a whole ceiling misses it by at least 1/64,000,000. `trend` keys its
+  stored rollups on the rule, so its first run after the upgrade counts every run again.
+  Scores do not move. A mark on a function whose CRAP is exactly its ceiling leaves the
+  marks file at the next `verify` that passes and tightens.
+
+### `est_uncovered_paths` rounds the exact product
+
+- `next-item` and `brief` round `(1 - cov) * ccn` half to even on the exact product
+  rather than on its float. (1 - 5/12) * 6 is exactly 3.5 and now reads 4; the float
+  was 3.4999999999999996 and read 3. Over ccn 1 to 40 and coverage fractions up to
+  120ths, 127 of the 820 exact halves move by 1. The number is not stored, so nothing
+  re-seeds. `docs/agent-json.md`, AGENTS.md and the MCP output schemas now say half to
+  even, where they gave a bare `round()` that reads as half up.
+
+### The CRAP load is the exact sum of the scores
+
+- `crap_load` in `coverage`, `trend`, the digest and a brief's file totals adds the
+  scores with `math.fsum` and rounds once. Python 3.11's `sum()` adds left to right and
+  SQLite's `SUM()` adds in scan order before SQLite 3.43, so eleven scores that add up to
+  507.62500000000006 printed 507.62 in one row order and 507.63 in another. `trend` also
+  added each scope's rounded load, so on any Python a run whose three scores add up to
+  257.12500000000006 printed 257.12 in `trend` and 257.13 in `coverage`. The rollup now
+  stores the whole run's totals beside each scope's, so the first `trend` after the
+  upgrade sums every run again; a first fill of 960,000 scored rows takes 6.6 s, up
+  from 5.9 s. A run with no scored function prints a load of `0.0`, not `0`. Loads are not
+  stored in the marks file, so nothing re-seeds.
+
+### crapkit stops before it stores or prints a number that breaks its definition
+
+- Every number crapkit writes to the store, the marks file or a report now passes a
+  check against its documented bound first: a CRAP outside `ccn` to `ccn^2 + ccn`, or
+  other than `ccn^2 + ccn` at coverage 0; a flag or remedy that does not follow the
+  README tables; a mark that rises; a worklist out of risk order; a verify exit that
+  breaks the 6, 7, 8, 9 precedence. A check that fails stops the command with exit 5
+  and error kind `internal`, names the check and the function it caught, and says what
+  was not written. It is a crapkit bug, not a problem in your repo: report the message
+  and `crapkit --version`. See [agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md).
+- A hand-typed mark in `crapkit-ratchet.tsv` with more than four decimals reads as the
+  four-decimal value the file format holds, the value every rewrite of the file already
+  gave it. A mark below any CRAP, such as 0 or -1, is still read and kept as written.
+- lizard is capped below 1.25 (`lizard>=1.24.0,<1.25`). Its readers decide every `ccn`
+  crapkit stores, so a new lizard release can no longer move scores unannounced; a
+  nightly job scores a corpus under the newest lizard so a move is known before the cap
+  is lifted.
+
+### The field definitions say what the code computes
+
+- `docs/agent-json.md`, CONTEXT.md and the MCP output schemas state `cov`'s fallbacks
+  (statement coverage with no branches, invoked-or-not with no statements) and that a
+  Python `and` or `or` adds to `ccn` with no branch arc for coverage to record. They
+  also give `crap`'s formula, when `flag` reads `untested` for a measured function, the
+  half-even rounding of `est_uncovered_paths` and what `target` bounds.
+- The README's Languages section states that the Rust and shell readers count each
+  `match` or `case` arm in the modified column too, so the arms are gated: a seven-arm
+  `match` gates at `ccn` 8, where a C `switch` with seven cases gates at 2.
+  `docs/agent-json.md` states that `scored.params` counts a Python signature up to its
+  first `)`, as lizard reads it, which keeps each def's ratchet key. Neither number
+  moves.
+
+### For contributors
+
+- The calculation-accuracy suite (`tests/accuracy`, [docs/accuracy.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md))
+  checks every calculation against outside tools, hand tables and models written from
+  the docs, on every push and nightly. Install `pip install -e ".[dev,accuracy-push]"`:
+  `git-hooks/pre-push` runs change control, which stops a push that moves a golden or a
+  metric without a declared change.
+- The goldens, rulings, hand tables, probes and oracles are locked
+  (`tests/accuracy/change_control/goldens.lock`, change C1). Changing one takes a
+  `CHANGES.tsv` row first:
+  `python tools/accuracy/change_control.py declare <id> --kind fix --calcs "<calc>" --reason "<why>"`.
+  A change to a module a calc lives in takes one too, and change control's refusal
+  prints the command it needs.
+- The nightly tier reads the full corpus from the cache `python tools/accuracy/corpus.py fetch`
+  fills, with no setting; `CRAPKIT_ACCURACY_CORPUS` points it at another copy.
+- Each past calculation bug replays its check at the commit before its fix and at the
+  fix (`tools/accuracy/retro.py`); [Past bugs](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md#past-bugs)
+  says what a replay proves and when a bug needs a probe.
+- `tools/accuracy/run.py` fails a check whose test file is missing and names the file and
+  the checks row to fix; under `-n N` it had passed that check as `empty`. The four lane
+  unit tests that assumed a host now pass inside the accuracy image.
+- [docs/accuracy.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md)
+  says how to run each tier locally and what the change-control rules ask of a golden,
+  and lists every calculation and every ruling. `python tools/docs/generate.py` writes
+  those tables, and pyproject.toml's `[tool.mutmut]` `paths_to_mutate`, from the
+  `calcs.tsv` and `rulings.tsv` tables; the unit suite fails while one is out of date.
+- The rulings this release's fixes close read `fixed`, and their strict xfails are gone.
+  The fixes that move no scored cell are declared together (accuracy change C3).
+
+### Digest lines that tie list by path
+
+- `digest` lists functions whose CRAP moved by the same amount, or new functions with the
+  same CRAP, in path order. It sorted each section by a float alone, where 10.4 - 9.0 is
+  1.3999999999999986 and 6.6 - 5.2 is 1.4000000000000004, so two functions that rose by
+  1.4 listed in that noise's order and the five-line cut kept whichever it put first.
+  Moves and scores now compare at 4 decimal places.
+
+### Functions with the same CRAP rank by their tie-break
+
+- `next-item`, `brief --batch`, `verify`'s `gate_violations` and a bare twin name in `brief`
+  and `explain` compare CRAP at 4 decimal places, so equal scores tie and the stated
+  tie-break decides: more commits, then path and start line for the queue, path then
+  start line for the gate, the first in the file for twins. ccn 25 at 80% coverage and
+  ccn 5 at none both score 30, but the floats read 29.999999999999996 and 30.0, so
+  `next-item` handed out the function in the quieter file first and a bare twin name
+  picked the later twin.
+### The C family counts every parameter a function declares
+
+- `params` counts each declaration in the parameter list. lizard named a parameter
+  after the last word of its declaration and left it out when that word was not a
+  name: `f(int*, char)` read 1, `f(const int arr[4])` and `f(const int (&arr)[4])` read
+  0, `main(int argc, char *argv[])` read 1, and `g(void (*r)())` read 0. `(void)` and a
+  lone `...` still declare none.
+- An Objective-C method counts its arguments: `- (int)pairFor:(int)a to:(int)b` reads
+  2, where every method read 0.
+- A `<` inside a parenthesized default argument, `f(bool b = (1 < 2))`, no longer
+  breaks the functions after it. lizard left its bracket stack one deep, so every later
+  function in the file read `params` 0 and printed its long name without spaces,
+  `g(int a,int c)`. Those functions now read `g( int a , int c)`, a new ratchet key.
+- `params` is reported and never gated.
+
+### C, C++ and Objective-C functions that were hidden, invented or misnamed
+
+- A `<` comparison in a default template argument, `template <int N, bool E = (N < 19)>`,
+  or in a member initializer, `static constexpr bool v = N < 19;`, no longer hides
+  every function after it. lizard read the `<` as a template bracket and read on to the
+  next `>` in the file: fmt 11.0.2's chrono.h kept rows for its first 1,102 lines of
+  2,432, 113 functions. This fix lists 285, and with the local-class members below the
+  file lists 297. Each new row is scored, gated and ratcheted for the first time.
+- A declaration whose trailing return type holds braces, `static auto check(int) ->
+  decltype(all(Tag{}));`, has no row. The braces read as a body.
+- An attribute between the parameter list and the body keeps the function's name and
+  start line. `int run(int a) __attribute__((noinline)) {` read `__attribute__`, a
+  destructor with a lock annotation, `S::~S() LOCKS_EXCLUDED(mu) {`, read
+  `LOCKS_EXCLUDED`, and an Objective-C method with `API_AVAILABLE(ios(10))` or
+  `NS_SWIFT_NAME(...)` read `)`, started on the attribute's line and counted 1 of
+  cognitive for recursion on the body's first `)`. These rows take their real name, a
+  new ratchet key, so a mark recorded under `__attribute__((noinline))`,
+  `API_AVAILABLE( ios(10))`, `LOCKS_EXCLUDED( mu)` or `)` is no longer seen; `ratchet
+  prune` drops it. A macro with arguments before the name, `static int EXPORT(x) f(int
+  a, int b)`, still names f. One shape keeps lizard's reading: after a list of unnamed
+  parameters of a named type, `int run(Foo) LOCKS_EXCLUDED(mu) {` is still named
+  `LOCKS_EXCLUDED`.
+- An Objective-C instance-variable block, `@interface Extension () { int _first; }`, is
+  no function. It read as one named `Extension()`, or after its last variable when the
+  extension adopted a protocol.
+- In a `.m` or `.mm` file, a C function's parameter list no longer names a method
+  after the word that follows it. A prototype, `int f(int);`, followed by an array
+  initializer's braces gave a function named after the array.
+- A member function of a class defined inside a function has a row of its own, named
+  after both, `outer.Local::twice`. lizard read the class as part of the function around
+  it, which paid for the member's decisions: fmt 11.0.2's `compute_width` read ccn 27
+  with no decision of its own and now reads 1, with the 27 on
+  `compute_width.count_code_points::operator ( )`. In four fmt headers 29 members get a
+  row and 6 enclosing functions lose ccn.
+- A class head holding an attribute or a macro keeps the class in its members' names.
+  `struct alignas(16) Vec {` and `class __declspec(dllexport) Foo {` read as a function
+  named after the attribute, whose body was the class, and an export macro spelled
+  every member `Q_CORE_EXPORTQString::size` or `testing::GTEST_API_Test::SetUpTestSuite`.
+  They read `QString::size` and `testing::Test::SetUpTestSuite`, a new ratchet key: 194
+  rows in Qt 6.7's qstring.h and 60 in GoogleTest 1.14's gtest.h change name and
+  nothing else.
+- A function whose declarator sits in parentheses is named after itself. A function
+  returning a function pointer, `int (*get(int k))(int)`, read `int( * get(int k))(
+  int)`, whose bare name is `int`, and counted its return type's parameters: SQLite
+  3.46's `unixDlSym` read `params` 0 for its 3. After a return type ending in `*` or
+  `&`, `char *(*get(void))(void)`, lizard read no function at all. A name in
+  parentheses, `static constexpr T (max)() noexcept`, read `T( max)`, and a name built
+  by a macro, `STRINGLIB(find)(const STRINGLIB_CHAR *str, ...)`, read `STRINGLIB`. They
+  read `get`, `max` and `find`, a new ratchet key: 94 rows in the MSVC STL's `<limits>`
+  and `<random>` and 24 in CPython 3.13's stringlib change name and nothing else.
+- A C++20 requires-clause no longer hides the function it constrains. lizard read a
+  trailing `requires`, `void f(T t) requires C<T> {`, as an old-style C parameter: the
+  function had no row, and a row was named after the first statement of its body,
+  `if( t)`, or after a constructor's first member initializer, with the rest of the
+  body left out. A concept's requires-expression, `concept C = requires (T a) { a + 1;
+  };`, read as a function named `requires`. In the MSVC STL's `<ranges>`, 458
+  functions get a row and 66 rows that were no function go; `<concepts>` and
+  `<iterator>` lose 14 more and gain 19. A `&&` in the clause opens no nesting level,
+  so 13 functions that had a row read one `nesting` level less.
+- A namespace head holding an attribute or a macro with arguments no longer reads as a
+  function whose body is the whole namespace. `namespace std _GLIBCXX_VISIBILITY(default)
+  {` opens every libstdc++ header, and each one was a single row: GCC 14.2's
+  `stl_vector.h` read one function, `_GLIBCXX_VISIBILITY( default)`, at ccn 105, and now
+  lists 146, `stl_algobase.h` 109 and `basic_string.tcc` 36. Each new row is scored,
+  gated and ratcheted for the first time. `namespace ns __attribute__((visibility(...)))
+  {` read the same way. A word after the name, `namespace ns ABI_TAG {`, and `inline` in
+  a nested definition, `namespace a::inline b {`, no longer join the name: members read
+  `ns::f` and `a::b::f`, where they read `nsABI_TAG::f` and `a::inlineb::f`.
+- A function-try-block, `int main() try { ... } catch (...) { ... }`, is one function
+  with its handlers. The function ended at the try block's `}`, each handler read as a
+  function named `catch( ...)`, and a constructor's row, `S::S(int a) try : x(a) {`,
+  was named after its first member initializer, `x( a)`. The function now reads as it
+  would with a try statement around its body: it ends at its last handler, and each
+  `catch` adds 1 to its `ccn` and 1 to its `cognitive`, which can put it over its
+  ceiling.
+- A constructor whose member initializer list ends in a pack expansion, `S(B... b) :
+  B(b)... {`, keeps its body. lizard read the `...` as the next initializer and the
+  body as that initializer's braced value: the constructor read `ccn` 1 whatever its
+  body held, and the next function's body closed it, so that function had no row. The
+  constructor's `ccn` and `cognitive` now count its body, which can put it over its
+  ceiling, and the function after it is scored for the first time.
+
+### Java methods that were hidden, invented or misnamed
+
+- An annotation with arguments on a local variable, `@SuppressWarnings("unchecked") int
+  x = (int) o;`, no longer hides every method after the one that holds it. lizard read
+  the arguments with the counter the method body kept its braces in and never saw them
+  close. In 13 files of Guava 33.2.1, Gson 2.11.0, Commons Lang 3.14.0 and JUnit
+  5.10.2, 451 methods that had no row now have one, most of them after an annotated
+  local: Futures.java listed 2 of its 61.
+- A second annotation with arguments, `@Deprecated @InlineMe(...) int inlined(int n)`,
+  no longer names the row: lizard dropped the token after a bare annotation, so the row
+  read `InlineMe( replacement = ...)`, and `@Deprecated record P(int x) {...}` read as a
+  method named P that hid the record's methods. These rows take their real name, a new
+  ratchet key.
+- An enum constant with a body, `ONE() { int value(int n) {...} }`, is no method, and the
+  methods its body declares have rows. The same holds for an anonymous class created in
+  a field of a top-level interface, which read as a method named after its type.
+- An annotation element's default, `String[] alternate() default {};`, is no body. A
+  braced default read as one, and any other default ran on to the next `{` in the file
+  and hid what followed.
+- A method of an anonymous or local class inside a method is named with its class once:
+  `A::go.run()`, where it read `A::A::go.run()`. The name is a new ratchet key.
+- A record declared first in a class or interface body, `class A { record S(int y)
+  {...} }`, is no method. lizard took the `{` before `record` for part of a name, read
+  the record as a method named `S` and gave the record's methods no row.
+- A method is named after every enum, interface and record around it, as it was after
+  every class: `A::F::g()` for a method of enum `F` in class `A`, where it read
+  `A::g()`, so the methods of two enums in one class no longer share a name told apart
+  by an ordinal. `sealed class Shape permits Circle, Square` names its methods
+  `Shape::area()`, where they read `ShapepermitsCircle,Square::area()`. A method of an
+  anonymous class is named after the classes that hold its method: it read
+  `B::go.run()` when a class `B` was declared before `go`, and `G::e.run()` inside a
+  nested class `G`, where it now reads `A::G::e.run()`. In 13 files of Guava, Gson and
+  JUnit and 8 of OpenJDK, 127 rows change name. One of them also loses 1 of cognitive:
+  recursion counted when a call spelled a method's whole name, which only the methods
+  of a top-level interface had, so OpenJDK's `ClassFile.of(Option...)` counted its call
+  to the overload `of()`.
+- A text block, `"""` over lines (JLS sec. 3.10.6), is one string. lizard read `""` and
+  then a string that ended at the first quote of the block's text, so the text between
+  two of its quotes was code: `a "{" b` in a block hid the next method, and `x "a && b"
+  y` added 1 to ccn. A block whose quotes hold no code reads as before: 646 blocks in
+  two OpenJDK test files change no row.
+- A record or an interface declared inside a method, `record R(int x) {...}` or
+  `interface I {...}` (JLS sec. 14.3), has rows for its methods. lizard read their
+  methods as statements of the method around them, which paid their `ccn`. A local
+  variable named `record` still declares nothing.
+- A field or an abstract method at the end of an anonymous or local class no longer
+  takes the row of the method the class sits in. lizard kept the member's name current,
+  so the row came out as `A::outer.y`, starting on the field's line. The method now
+  counts the class's field and annotation lines in its `nloc` wherever they stand;
+  those before the class's first method counted for no function, so Guava's
+  `Iterators.cycle` reads `nloc` 13 where it read 11.
+- `params` counts `String args[]`, which read 0.
+- A parameter list opens no nesting level, as in C++: a wildcard `?` that lizard read
+  as a conditional, `BiFunction<? super K, ? super @Nullable V, ...>`, read one level.
+
+### The `&&` of a C++ reference decides nothing
+
+- A `&&` that declares a reference costs nothing in `ccn`, `cognitive` or `nesting`:
+  `for (auto&& x : r)` read ccn 3 for one loop, `static_cast<Widget&&>(w)` and a lambda
+  taking `auto&&` read ccn 2 with no decision, `auto&& w = make();` cost 1 of
+  cognitive, and `void take(Widget&& w)` read nesting 1 with no structure. In eight
+  fmt 11.0.2 headers, 9 functions lose ccn (`range_begin`, `range_end` and
+  `range_mapper::map` among them), 19 lose cognitive and 54 lose nesting. `.mm` files
+  read the same.
+- `while (n > 0 && (p = next(p)) != 0)` counts its `&&` again. lizard refunded any `&&`
+  an `=` followed before the next `;`, `{`, `}` or `)`, taking this one for a reference
+  bound to `p`; lua's `lmemfind` reads ccn 6 where it read 5.
+- A parameter list opens no nesting level: a `?:` in a default argument read nesting 1.
+  A function whose parameter list held a `&&` can read one level deeper after this (6
+  of the fmt functions):
+  lizard's nesting column counts a braceless `if` followed by a later structure one
+  level too deep, and the `&&` had hidden that by flipping the counter's state. The
+  function now reads what the same body reads with `T` for `T&&`.
+
+### Swift functions the reader hid get their rows
+
+- Swift files go through crapkit's own reader, built on lizard 1.24.0's. lizard's reader
+  took seven Swift shapes for a declaration or a preprocessor line, and each one opened
+  a function or dropped a brace where the code has neither: the function holding the
+  shape ran on to a later `}`, and the functions after it had no row. `super.init(...)`
+  and `.init(...)`, `r.get()` and `case .get`, `Socket(protocol: p)`, `return type`,
+  `#fileID` and `if #available(...) {`, a failable `init?`, and a closure passed after a
+  comma now read as the code says. Measured on Alamofire 5's 44 source files against
+  tree-sitter-swift: 52 of the 832 functions it parses had no row and 13 more ended on
+  the wrong line; now all 832 start and end where it says. The 51 rows that were made
+  up are gone.
+- A function named by a raw identifier, any text between backticks (Swift 6.2,
+  SE-0451), is listed. Swift Testing names tests that way,
+  ``@Test func `keeps onboarding if offline`() {``, and lizard read a backtick name
+  only when it was one word, so each such function had no row and an `if`, `for` or
+  `while` among the words counted as a decision where the name was called. Its long
+  name keeps the backticks, and `brief`, `explain` and the other commands that take a
+  name accept the whole backticked name. Alamofire 5 has none; a large consumer repo
+  gains 3,057 rows.
+- A function that swallowed its neighbours shrinks, and its ccn and cognitive fall
+  with them; a function that had no row is listed, and the gate reads it the next time
+  its file changes. A function lizard already read whole keeps its long name, so its
+  mark keeps its key.
+
+### Swift decisions count the way the McCabe text counts them
+
+- The `case` of `if case`, `guard case`, `while case` and `for case` no longer counts as a
+  switch case, +1 ccn_std and a nesting level. A keyword spelled as an argument label,
+  `func value(for name: String)`, no longer counts as a loop, an if or a catch in ccn,
+  cognitive or nesting. An optional mark, `(any Error)?`, `[Int]?` or `Int?.self`, is no
+  decision; after `)`, `]` or `>` it counted as a conditional operator. `Empty?.none`,
+  `Int?.some(1)` and `Int?.init(1)` name a member of the optional type, so their `?` is
+  a mark too. Each `?` of an optional chain, `a?.b`, `f()?.g`, `c?()` or `d?[0]`, adds
+  1 to ccn and nothing to cognitive or nesting, the way `?.` counts in TypeScript:
+  after a name it counted nothing, and after `)` or `]` it counted as a conditional
+  operator with a nesting level. The conditional operator, which Swift writes with
+  spaces on both sides, still counts. Each `??` now adds 1 to ccn, as `&&` does. On
+  Alamofire 5 the gated ccn rises on 117 functions and falls on 82. Against
+  tree-sitter-swift's count plus one per optional chain, ccn_std now differs on 4 of
+  832 functions, down from 201 of the 780 that 0.8.0 listed. Those 4 hold a `&&` or
+  `||` in a `#if` line or an `@unknown default`, which crapkit counts as no decision on
+  purpose.
+- `params` no longer counts a comma inside one parameter (`pair: (Int, Int)`,
+  `(A, B) -> Void`, `[1, 2]`, `Dictionary<String, Int>()`), and `nesting` no longer
+  rises at each `try`. A comparison in a default value, spaced or not
+  (`a: Bool = x > 0`, `x<0`, `{ $0 < $1 }`, `1<<2`, `0..<n`), is no bracket, so the
+  comma after it still ends a parameter: a `<` opens a generic clause only when its
+  `>` comes before a `:`, an `=`, a brace or the end of the bracket around it. Neither
+  column is in the score. On Alamofire 5, params falls on 28
+  functions and nesting on 179, and cognitive falls on 81 with the labels and optional
+  marks.
+
+### A Swift interpolation reads as code
+
+- A Swift string holds an expression in `\( )`, and that expression can hold a string of
+  its own: `"\(d["key"] ?? "none")"`. The reader ended the outer string at the inner
+  string's first quote, so the inner string's words read as code, and a `{` or `}` in it
+  moved the brace count: the function holding it had no row. A string with no inner
+  quote came out as one token, so a `&&`, `||`, `??` or `?:` inside its `\( )` counted
+  nothing in ccn or cognitive. A multi-line string between triple quotes ended at the
+  first quote of its text, so an `if` or `for` in the text after it counted.
+- Every `\( )`, and `\#( )` in a raw string, now reads as code, and the text around it
+  reads as a string that keeps its lines. On Alamofire 5's 101 Swift files, ccn rises by
+  1 or 2 on 13 of 1,993 functions, each for a `??` inside `\( )`; no row appears, goes or
+  moves.
+
+### A Rust `#` keeps the rest of its line
+
+- The Rust reader read `#` the way lizard's C reader does, as a preprocessor line that
+  runs to the end of the line. `#[inline] fn f() {` on one line lost its `fn` and `{`,
+  and the function had no row. A raw string (`r#"..."#`), a raw identifier (`r#type`) or
+  an attribute before code on the same line lost that code too, with any decision or
+  brace in it. An attribute's `#[` and the whole of a raw string or raw identifier are
+  now one token each, and the rest of the line reads as code. A raw string in Swift or
+  Rust ends where as many hashes as opened it close it, however many. ripgrep's 13
+  files in the accuracy corpus hold no such line and read the same; a repo that writes
+  `#[test] fn t() {` gains a row per such function.
+
+### Shell reads the depth of its blocks and the commands inside its strings
+
+[Upgrading](docs/upgrading.md#shell-and-powershell-rows) says what moves.
+
+- A shell function's `nesting` is how deep its blocks go. lizard's ND column closed a
+  level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
+  `done` and `esac`, so every block leaked a level: seven ifs side by side read 6, four
+  nested read 3, and a `case` read 0. They read 1, 4 and 1 now, the depth crapkit's
+  cognitive pass measures, and `&&` or `||` opens no level. `nesting` is reported and
+  never gated, so no gate verdict moves with it.
+- A command inside a quoted substitution counts. `x="$(cmd || true)"` read ccn 1,
+  because the whole double-quoted run was one string token; it reads 2 now, as
+  `x=$(cmd || true)` does, and its cognitive score rises by the same `||`. The same
+  holds for backticks inside quotes, `$(( ))`, a substitution inside `${v:-...}` and
+  one substitution inside another. A heredoc opened inside a quoted substitution, as
+  in `v="$(node - "$f" <<'JS'`, is now a body, so the program in it adds no ccn and no
+  NLOC.
+- A heredoc opener is judged by everything open where it stands, carried from the
+  lines above it. Its own line's quotes decided before, so a `<<'JS'` on the line
+  that closed a multi-line `X="$(...)"` read as quoted, and the program in its body
+  counted as shell: one consumer function read ccn 33 and cognitive 418 where 10 and
+  11 are right. A `<<` on the second line of a multi-line string, or in a multi-line
+  single-quoted program, is text and opens nothing.
+- A case statement inside a quoted substitution ends at its `esac`. Each pattern ends
+  in a bare `)`, and `"$(case $os in Linux) echo l;; esac)"` was cut at `Linux)`, so
+  its arms counted nothing, and a quote or a brace in an arm could hide the next
+  function. The same `)` no longer ends a function whose body is a subshell,
+  `f() ( case ... esac )`: on a large consumer repo one such function ended 72 lines
+  early, and now spans its 140 lines and reads ccn 46 where it read 26.
+- A quoted substitution reads eight levels of parens, up from three, so the `|| true`
+  after a `node -e '...'` program with five levels of calls in it counts.
+- A reserved word counts only where shell reads one: first in a command, straight
+  after another reserved word, as a for's `do` and as a case's `esac` (POSIX XCU
+  2.4). `echo done` closed the loop around it, so an if after it in the loop paid no
+  nesting. The `for` of `git for-each-ref`, the `select` of `xcode-select` and the
+  `if` of a `--exit-if-exists)` pattern each counted a decision or opened a block
+  that never closed, and the `done` of `done=1` closed one. A `;;` outside a case,
+  as in `for ((;;))`, no longer counts as an arm. On a large consumer repo 3
+  functions fall, by up to 1 in ccn and 2 to 24 in cognitive; of the 2,826 functions
+  in Ubuntu's bash-completion scripts 18 fall and none rise.
+- A `#` inside a word is part of the word, not a comment (POSIX XCU 2.3). The reader
+  opened a comment at every `#`, so the rest of the line was lost: the `&&` after a
+  regex holding `[#/]` counted nothing, and `elif (( (8#$mode & 0111) == 0111 ))`
+  hid its own `))` and `then`, which left the function open to the end of its file.
+  One 3,500-line script in a branch of a large consumer repo reported 16 of its 101
+  functions and reports all 101 now; on the repo's main line 5 functions rise in
+  ccn, by 1 to 5.
+- A `?` is a decision only inside arithmetic. Outside `$(( ))`, `(( ))` and
+  `for (( ))` it matches one character, as in `ls a?b`, a `-[PUGOF]?*)` pattern or a
+  `=~` regex, and the cognitive pass charged each one as a ternary, +1 and its
+  nesting. Inside arithmetic it is C's `?:`, and ccn now counts it there as it counts
+  a C ternary. `break 2` and `continue 1` pay their cognitive +1 only as commands, not
+  as the words of `echo break 2`; an array literal's words stay words over every line
+  they span; and `goto`, which shell does not have, costs nothing. On a large consumer
+  repo 14 functions fall in cognitive, by 1 to 4, and no ccn moves.
+- An unpaired double quote before many substitutions no longer stalls the shell
+  reader. With no closing quote left in the file, the string rule tried every way of
+  reading each `$( )` after it, twice the time per substitution: 7 s for 24 of them.
+
+Measured on a large consumer repo's 1,613 shell functions: 146 rise in ccn, by 1 to
+20; 2 fall, by 1 and 23, where a heredoc body had counted as shell; 6 lose 4 to 39
+NLOC of heredoc body; and the subshell-bodied function above gains 71. No function
+appears or disappears. A function the rise puts over its ceiling fails the gate the
+next time its file changes.
+
+### PowerShell reads the expression inside a quoted subexpression
+
+- A `-and`, `-or`, `if` or loop inside a `$( )` subexpression in a double-quoted
+  string counts. `"$($a -and $b)"` read ccn 1 and reads 2 now, as `$($a -and $b)`
+  does, and its cognitive score rises by the same decisions. An `if` or loop there
+  also opens its `nesting` level, as it does outside the string. The string rule
+  takes the subexpression whole, so the quotes inside it pair among themselves:
+  `"$(Get-Item "x{")"` ended at its second quote, left a `{` in code, and the
+  function around it had no row. The rule reads eight levels of parens, so
+  `"$(f (g (h ($a -and $b))))"` counts its `-and` and `"$(f (g (h ("x{"))))"` hides
+  no function. On a large consumer repo 6 of 339 PowerShell functions rise by 1 in
+  ccn and by 1 or 2 in cognitive (an `else` costs 1 too), one reads a level deeper
+  in `nesting`, and no span moves.
+
+### Cognitive complexity reads each language's own rules
+
+`cognitive` follows Sonar's Cognitive Complexity paper (v1.7). The pass that measures it
+read one set of keywords and one recursion and sequence rule for every language, so on
+common shapes it charged recursion, logical sequences and nesting that were not there
+and missed some that were. Each rule now reads the language it is in:
+
+- Recursion is a call to the function itself. Before, any token spelled like the name
+  lizard held when the body began counted: a local variable named like the function,
+  another object's method (`self.inner.close()`), `super().__init__()` inside an
+  `__init__`, a constructor inside C++'s `File::open`. A Go, shell or PowerShell
+  function that called itself, a Java method, a C++ method in a namespace or class and
+  a nested Python def cost nothing. A call now counts through no receiver, through
+  `self`, `this`, `Self`, `cls` or the function's own qualifier, as a command word in
+  shell and PowerShell, as a message to `self` with the whole selector in Objective-C,
+  and through a Go method's own receiver. In C++, Java and Swift, where several
+  functions can share a name, it must also pass as many arguments as the function
+  takes, and no other function of that name in the file may take them too, so an
+  overload that forwards to another is not recursion. crapkit reads no types, so a
+  function that calls itself with the same number of arguments as another overload
+  takes, `walk(n - 1)` beside `walk(String s)`, reads no recursion either. Swift's
+  argument labels are part of a function's name, so `description(for: headers)`
+  inside `description(of request:)` calls another function, and a closure after the
+  call's `)` is one more argument: `each(n - 1) { body($0) }` inside
+  `each(_ n:, _ body:)` is recursion.
+- In Python, JavaScript, TypeScript, Go and Rust a method is reached only through its
+  object or its type, so a bare name in its body is another function: `return
+  open(self.path)` in a method `open` calls the builtin and costs nothing, and so does
+  `walk(n)` inside a Rust `impl`. `T.walk(n - 1)` in a static method is recursion,
+  through the class's name, and so are `R::spin(n - 1)` in a Rust impl, `A.f(n - 1)`
+  in a Swift type and `R.f(n - 1)` in a Zig container. A parameter, an import or an
+  assignment spelled like the function hides it in Python, JavaScript, TypeScript, Go,
+  Rust and Swift: `from json import dumps` in `def dumps`, `use
+  std::os::unix::fs::symlink;` in `fn symlink` and `const route = app.route` in
+  `function route` each make the call the bound value's. An arrow whose body is an
+  expression, `const fact = (n) => n ? n * fact(n - 1) : 1`, calls itself; it read no
+  recursion before.
+- A sequence of logical operators costs +1 per bracket, across line breaks. A sequence
+  continued on the next line cost twice, a comma in a call's arguments split it, and a
+  negated group joined the sequence around it: `if (a && !(b && c))` reads 3, as the
+  paper scores it, where it read 2. `??` costs nothing: Swift charged it as an operator,
+  and lizard's JavaScript, TypeScript and PowerShell tokenizers split it into two `?`,
+  so `a ?? 0` cost 2. `and` and `or` are operators only in Python, Zig and the C family,
+  and not before a `:`, where they name an Objective-C selector part. GCC's `a ?: b`
+  costs what a conditional operator costs.
+- The operators of a sequence read left to right through a plain group, as Sonar's
+  reference implementation flattens a logical expression: `a && (b || c) && d` changes
+  operator twice and costs 3. A group that is the operand of a comparison, an
+  arithmetic operator or a call, `(a || b) == c`, holds a sequence of its own, even of
+  the same operator: `a && (b && c) == d && e` reads 2 where it read 1. So do a list, a
+  dict and an Objective-C message, and each operand of a conditional expression:
+  `x && y ? a && b : c && d` reads 4 where it read 2. A conditional inside a group makes
+  the group one operand of the sequence around it, so `a && (b ? c : d) && e` costs 2,
+  and `a && (b && c ? d : e) && a` costs 3 where it read 2. A braceless
+  body's statement is a sequence apart from its header's, so `if (a && b) return c && d;`
+  reads 3 like its braced form. In shell and PowerShell a line break inside `( ... )` or
+  `$( ... )` ends a sequence, because those brackets hold commands.
+- A word is a control structure only in a language that has it. `c.do(1)` in Python
+  and `do(n)` in Go read as do-while loops, `p.then(g).catch(h)` and `Symbol.for(k)` as
+  a catch and a loop, and Swift's `do`, which only opens the scope a `catch` handles, as
+  a loop. A word right after a `.` on its line names a member in every language.
+  Structures a language spells its own way cost nothing before and now cost what a loop,
+  an `if` or a `switch` costs: Swift's `repeat` and `guard`, Rust's `loop`, Go's
+  `select`, PowerShell's `trap` and a Python `match` statement. `match` is a soft
+  keyword, so `match = re.match(p, s)` still costs nothing. A Python case guard's
+  `if` now sits one level inside its `match`, so a match with one guarded case at the
+  top of a function reads 3 where it read 1, as a Rust match with a guard reads.
+- A `while` right after a `}` is a do-while's tail only when a `do` (Swift: `repeat`)
+  opened that block. A loop after an `if` block or a Python dict literal cost nothing.
+  A do-while without braces, `do a--; while (a > 0);`, is one loop too, where it cost
+  2, and the loop or `if` around it keeps its body to the `;` after the condition.
+- A `break` or `continue` costs +1 only with a label as the language spells one:
+  `'outer` in Rust, `:blk` in Zig, a count in shell, a name elsewhere. A Rust arm's
+  `Err(_) => continue,`, a Zig prong's `.eq => continue,`, a TypeScript key
+  `continue: false` and, in Go and Swift, a bare `break` before the next `case` each
+  read as a jump to a label.
+- A body without braces holds a nesting level in C, C++, Objective-C, Java,
+  JavaScript, TypeScript and Zig, so `for (const x of xs) if (x) visit(x);` reads 3
+  where it read 2. The structure also stops waiting for a `{` at the end of its
+  statement: after `if (a) return 0;` a bare block, a lambda's body or a switch's
+  `default: {` no longer sits one level too deep.
+- The block around a JavaScript or TypeScript arrow with a block body closes at its `}`.
+  lizard gives the arrow's `{` to the function around it, so that block never closed
+  its level and every structure after it sat one level deeper: a zod parser with many
+  `.then((r) => { ... })` calls read 159 in 0.8.0 and reads 109, 24 of the 50 through
+  this rule.
+- A Python comprehension's level closes with its bracket, so
+  `[p for p in a] + [q for q in b]` reads `cognitive` 2 and `nesting` 1 where it read 3
+  and 2. A line that continues a bracket starts no statement, so a conditional
+  expression split over lines costs 1, not 2, and a filter on its own line costs what
+  it costs on one line.
+- A Zig `else |err| if (...)` is an else-if and costs the flat +1 an else-if costs.
+
+Measured over 12,432 functions in 20 open-source projects: 1,082 move `cognitive`, 953
+down and 129 up. Python moves most, 621 of 5,967 rows; 473 of its 576 drops are the
+recursion rule, most of them a method that calls another object's method of the same
+name, as an `__init__` calls `super().__init__()` or a `close` calls
+`self.x.close()`. TypeScript moves 185 of 1,948, Swift 90 of 871, Objective-C 62 of
+288, and C and C++ 49 of 1,344; every other language moves fewer than 25. Python `nesting`
+comes from this pass and moves in 69 rows, 68 of them through the comprehension and
+continuation-line rules; a `match` statement and a loop after a dict literal now open
+a level. The next section moves every other language's `nesting`. No `ccn` value moves.
+
+`cognitive` and `nesting` are reported and never gated, and neither `ccn` nor coverage
+moves, so no CRAP score, gate verdict or mark value moves
+([upgrading](docs/upgrading.md#cognitive-complexity-per-language)).
+
+### Nesting reads block depth in every language
+
+- `nesting` comes from crapkit's cognitive pass in every language, as it has for
+  Python since 0.5.0. The other languages read lizard's ND column, which
+  closed a level at every `}` and at the first `;` after a structure without braces,
+  and opened one for `&&`, `||`, `case`, `try` and even a parameter named `def`: three
+  nested loops read 2, a Go `if a && b && c || d` read 4, a Go switch with three cases
+  read 3, a PowerShell `if ($a -and $b -or $c)` read 3 and its `switch` 0, a shell
+  `[ "$a" ] && [ "$b" ] || echo no` read 2, and a braceless `if` before a loop left
+  its level open over the loop's body.
+  Now each `if`, `else`, loop, `switch` and `catch` body is a level whether it has
+  braces or not, a conditional operator's arms are one, and logical operators, case
+  labels, `try`, bare blocks and a `?` with no `:` open none. The [`nesting`
+  row](docs/agent-json.md#item-fields) lists what counts in each language.
+- A structure whose body has no braces stops waiting for one at the end of its
+  statement. After `if (a) return;` the next block of any kind, a bare `{`,
+  `synchronized`, `@autoreleasepool` or a lambda's body, read as the `if`'s body, so
+  `cognitive` charged every structure inside it one level of nesting too many, and
+  `nesting` counted the block as a level. A Java method holding `if (a) return;` and
+  then a lambda with one `if` in it read `cognitive` 3 and `nesting` 2; it reads 2
+  and 1.
+- A `{` in a structure's header is no longer its body. Go's `for _, x := range
+  []string{"a", "b"} {`, a table-driven test's `range []struct{...}{...} {`, C++'s
+  `for (auto x : {1, 2})`, Java's `new int[]{...}`, a destructuring `for (const { a }
+  of xs)`, and a lambda or an object literal passed in a condition each took the
+  header's first `{` for the body, so the real body sat outside the structure: an
+  `if` inside such a loop read `nesting` 1 and cost 1 in `cognitive`, where it is 2
+  and costs 2. The same rule stops a Swift argument label spelled `for` and a
+  PowerShell `[switch]` parameter from turning the function's own body into a
+  level, and a Rust match guard's `if` from taking the next arm's block. For the
+  `[switch]` parameter only `cognitive` moves (3 to 2 for one `if` in the body):
+  lizard's ND never read the word, so `nesting` was already 1.
+- A word spelled like a structure keyword is no structure where it is a name. Go
+  and Zig have no do-while, so `do(n)`, a Go method or closure named `do` and a Zig
+  `fn do` are names, and so is a `do` after a `.` in any language but Python
+  (`obs.do(fn)`). No structure keyword is followed by a `:`, so an object's key
+  `{if: 1, do: 2}`, a type's member `{ for: string }` and a Swift argument label
+  `g(for: x)` are names too. Each one cost `cognitive` +1 plus its nesting. In Go a
+  `do` also took the next `{`, a method's body or a literal, for its block, so the
+  structures inside paid a level too many: a Go method named `do` holding one `if`
+  read `cognitive` 3 and reads 1, and a recursive Go closure named `do` in
+  `go/types` read 45 and reads 9. lizard's ND never read `do`, so `nesting` does not
+  move for it; a keyword key opened a level per key, so a function holding `{if: 1,
+  for: 2, while: 3, do: 4, switch: 5, catch: 6}` read `nesting` 4 and `cognitive` 6,
+  and reads 0 and 0.
+- A `while` right after a `}` is the tail of a do-while only where that `}` closed
+  the `do`'s block (or a Swift `repeat`'s). Every `while` after a `}` read as a tail,
+  so a loop after an `if` block, an object literal or a Python dict cost nothing and
+  opened no level: a C function with an `if` block and then a loop holding one `if`
+  read `cognitive` 2 and reads 4. lizard's ND read its `nesting` right, 2, where the
+  cognitive pass read 1, so without this rule those rows would have lost a level
+  with the move to the cognitive pass. Go has no `while`, so there the word is a
+  name, as `do` is: a Go variable named `while` cost +1 at each use.
+- Zig's `else =>` is a switch's default prong and opens no level, as a `case` label
+  opens none; it waited for a block and took the prong's `{` for a level. An else
+  with a payload and no braces, `else |err| return err;`, ends at its `;`: the
+  payload's first `|` read as the token after the else, so the else waited on and
+  the next block in the function, a labeled block or a struct literal, took its
+  level. Read past its payload, `else |err| if (...)` is one else-if link that costs
+  +1, as `else if` does, where the `if` paid +1 of its own, and a `switch` after
+  `else |err|` sits in the else's body, as after a plain `else`. In the Zig standard
+  library this rule alone moves `nesting` in 45 of 3,475 functions, 37 down and 8
+  up, and lowers `cognitive` in 12.
+- An `if` in a Zig return type, `fn f(x: anytype) if (A) u8 else u16 {`, sits in the
+  function's declaration, and its arms end at the function's `{`. Its else took that
+  `{` for its block and held the whole body one level down: a body holding one `if`
+  read `nesting` 2 and `cognitive` 4, as 0.8.0 did, and reads 1 and 3.
+  `std.simd.prefixScanWithFunc` reads `cognitive` 15 where 0.8.0 read 21. An `if` in
+  a Zig field's or variable's type ends at the `=` after the type, so the `if` in
+  `called: if (safety) bool else void = if (safety) false else {},` that gives the
+  value sits beside the first, not in its else. In the Zig standard library these
+  two rules alone lower both columns in 4 of 3,487 functions.
+- A `,` ends a body with no braces in Zig, where an `if` is a value that sits in a
+  list and there is no comma operator: each `if` in a switch's prongs or an
+  argument list sits at its own level. In C, C++, Objective-C, Java and JavaScript
+  the `,` is the comma operator and the body goes on past it, so in `if (a) x++, y =
+  b ? 1 : 2;` the conditional operator sits in the if's body, `nesting` 2, as 0.8.0
+  read it.
+- Measured over 21,099 functions in 20 open-source projects: 1,489 of the 6,465
+  functions outside Python move `nesting`, 1,289 down and 200 up, and 54 move
+  `cognitive`, 36 down and 18 up. No Python row moves `nesting`, 3 move `cognitive`
+  (a `while` after a dict literal), and no `ccn` value moves. Against an independent
+  tree-sitter reading of Sonar's nesting rules over 3,228 functions in C, C++,
+  Objective-C, Java, Go, Rust, Swift, Zig and shell, crapkit agreed on 2,295 before
+  and 2,962 now. Most of the rest are closures, which open no level in crapkit's
+  reading and one in that oracle's. Over 24,540 functions in the Go standard library
+  and actionlint, 4,137 move `nesting`, 3,387 down and 750 up, and 271 move
+  `cognitive`: 264 up from the header literals above and 7 down from `do` and
+  `while`.
+- `nesting` and `cognitive` are reported and never gated, so no gate verdict moves
+  with them ([upgrading](docs/upgrading.md#nesting-in-every-language)).
+
+### PowerShell reads keywords in any case and counts PowerShell 7's operators
+
+- A keyword that starts a statement counts in any case, as PowerShell reads it: `IF`,
+  `ForEach`, `ElseIf`, `Default`, `Function`. A capitalized `if` used to count
+  nothing, a capitalized `Default` arm cost a point as if it tested something, and a
+  function declared with `Function` got no row.
+- A keyword word that is a command, an argument or a member counts nothing in any case:
+  `$xs | foreach { }` (the ForEach-Object alias), `$xs.foreach({ })`, `git switch main`,
+  `Write-Output if`. Written in lower case, each cost a loop, a condition or a
+  cognitive switch that the capitalized spelling did not.
+- `-And`, `-OR` and `-Xor` count as their lower-case spelling does.
+- `-and`, `-or` and `-xor` in a command's arguments count nothing, since PowerShell
+  reads them there as parameter names: `if (Test-Path $a -or $b)` hands `-or` to
+  Test-Path, so it costs 1 for the `if` where it cost 2. `(Test-Path $a) -or $b` still
+  counts the operator.
+- A keyword word that is a hashtable key counts nothing: `@{ if = 1; while = 2 }` cost
+  2. Neither does one in a command's arguments after a string, a `)` or a
+  line-continuing backtick (`Write-Output 'a' if`), which only a word, a parameter or a
+  pipe right before it made an argument.
+- PowerShell 7's pipeline chains `&&` and `||` count one decision each. They counted
+  nothing.
+- `??` and `??=` count one decision each. `??` read as two `?` ternaries and cost 2.
+- PowerShell 7.1's null-conditional `${a}?.Name` and `${a}?[0]` count one decision each,
+  as `??` does, and no cognitive complexity. `?[` read as a ternary and cost a
+  cognitive point.
+- A variable name holding a `?` or written in braces reads as one name: `$?`, `$ok?`,
+  `${if}`, `${env:ProgramFiles(x86)}`. `$?` cost a ternary's point in `ccn`, and in
+  cognitive complexity outside parentheses; a keyword in braces counted as that keyword;
+  and the braces of `${env:ProgramFiles(x86)}` in a loop's condition read as the loop's
+  block, so every structure inside the loop scored one nesting level too shallow.
+- `-and` and `-or` open no nesting level, since an operator is no structure. Each used
+  to add a level of its own, so one `if ($a -and $b -or $c)` read nesting 3; it reads 1.
+- `ccn_mod` counts a switch's arms the way `ccn_std` does. It read one higher for every
+  `switch`, and for every `[switch]` parameter type as well. `ccn` is the smaller of
+  the two columns, so it does not move.
+- A `[switch]` parameter type costs no cognitive complexity. It read as a switch
+  statement: +1, and the block after it counted one level deeper.
+- A switch arm whose pattern is a script block, `{ $_ -gt 5 } { 'big' }`, costs 1. The
+  pattern's braces counted as a second arm, so it cost 2.
+- A switch whose flags or subject hold a `]` or a `;` counts its arms: `switch
+  ($m['k'])` and `switch -file $paths[0]` counted none.
+- `switch` opens a switch only where it starts a statement. `git switch main` opened
+  one, the next block became its body, and every block directly inside that one cost
+  a point as an arm.
+
+### PowerShell finds the functions it lost
+
+- A function whose name carries a scope or dots gets a row under the whole name:
+  `function script:Get-Thing` reports `script:Get-Thing` and `function Get.Thing`
+  reports `Get.Thing`. It had no row, and its decisions counted toward no function.
+- A declaring word that declares nothing opens nothing: `dotnet build --configuration
+  $c`, `$o.filter`, `@{ filter = '*.txt' }`, `Write-Output function`. It opened a
+  function, so the function around the word lost its row, and a phantom row named
+  after a later token, such as `$c`, could take its place.
+- The decisions in a class's methods count toward no function. They counted toward the
+  function whose body declares the class. Methods still get no row.
+- A `//` or a `/*` in a word hides nothing. PowerShell has neither comment, but lizard's
+  C rules read `Invoke-RestMethod https://h/p ; while ($a) { }` as one token from the
+  `//` on, the loop and its braces with it, and `Get-Item a/*` ran on to the next `*/`
+  in the file, every function between the two included.
+- A `#` inside a word is part of the word, as PowerShell reads it: `Write-Host a#b;
+  if ($a) {` counts its `if`, and `C#`, `https://h/p#top`, `1#c` in a command's
+  arguments and `function Get-A#B` keep what follows them on the line. The `#` opened
+  a comment that took the rest of the line, a `{` with it, so the function ended at the
+  first `}` after it. A `#` after a space, a key, a closed string, a `)`, or a number or
+  a variable in an expression (`$x = 1#c`) still opens a comment.
+- Neither change moved a row in the 2,000 PowerShell functions measured (a large
+  consumer repo, posh-git, and the modules Windows PowerShell ships): their URLs and
+  hashes sit in strings. Reading a word through its `#` costs the tokenizer about a
+  quarter more time on PowerShell files.
+- `params` counts the parameters of the `param(...)` block that opens a function body,
+  so an advanced function no longer reads 0. Counting the block changes no key: the
+  long name, which is the ratchet key, holds only the header list.
+- A parameter counts once whatever its entry holds, in the header list and in the
+  `param(...)` block. A comma inside an attribute or a default value,
+  `[Parameter(Mandatory, Position = 0)]` or `$Items = @(1, 2, 3)`, added a parameter,
+  and a name in braces, `${Pattern}`, or holding a `?`, `$ok?`, counted none.
+  `params` is reporting only, so no score moves.
+- A header parameter written in braces keeps its braces in the long name:
+  `function A(${x}, ${y})` reads `A ${x} , ${y}` where it read `A $ { x } , $ { y }`,
+  so that function's ratchet key changes.
+- A header list that holds `$?`, or a keyword or operator in capitals, changes its key
+  too: `function A($x = $?)` reads `A $x = $?` where it read `A $x = $ ?`, and `-AND`,
+  `-Or`, `IF` and `ELSE` in a default value or an attribute read `-and`, `-or`, `if`
+  and `else`, the spelling that now counts.
+- Rows appear, phantom rows go and some keys change, so upgrade in this order:
+  `crapkit coverage`, then `crapkit ratchet prune` to drop marks left under names the
+  run no longer has, then `crapkit ratchet seed`.
+
+### Shell keeps a function's whole name
+
+- A function whose name holds `-`, `.` or `:` gets a row under the whole name:
+  `do-thing()`, `function log::info`, `lib.util()`. `name()` was reported under the part
+  after its last separator, so two helpers such as `app-config` and `app-show-config`
+  shared one key, and `function name` got no row at all.
+- A keyword inside a longer word counts nothing: `xcode-select` read as a `select` loop
+  that never closed, so one install helper scored cognitive 34 for a hand count of 10;
+  `wait-for-device` cost a `for` condition; `snapshot-switch` cost a switch in `ccn_mod`.
+- `switch` costs nothing in `ccn_mod`. Shell has no switch statement, and
+  `git switch main` read `ccn_mod` 2.
+- Rows are renamed, so upgrade in the same order as for PowerShell: `crapkit coverage`,
+  `crapkit ratchet prune`, `crapkit ratchet seed`.
+
+### Near-duplicate functions
+
+`duplication` and brief's `duplication_twins` list different pairs. No score, mark or
+analysis version moves: duplication feeds no CRAP input. The run's stored shingle index
+is rebuilt at the first `duplication` or `brief` after upgrading.
+
+- A function is shingled from its own lines. The lines of a function nested in it, past
+  that function's first line, are the nested function's: the way `nloc` already counts
+  them. A factory was shingled with its closure's body, so every clone of a closure was
+  reported twice, once for the closure and once for the factory, even a factory with 3
+  lines of its own under `--min-lines 8`. An arrow that returns an arrow, `load = (id) =>
+  async (dispatch) => {`, is one span to lizard, and the outer one now keeps only its
+  first line, so a clone of the inner body pairs once there too.
+- A brief on a closure no longer lists its factory as a twin at 1.0: the factory's own
+  lines hold none of the closure's. `contained` still marks a twin that nests with the
+  target, now only where the enclosing function's own lines copy the nested one.
+- A comment line is what the file's language calls one. One prefix list served every
+  language, so a line starting with `#`, `//`, `/*`, `*` or three quotes was left out
+  everywhere: a Python `**options` or `// 2` line, a C `*out = x;` or `#define` line, a
+  Rust `#[attr]` line, a JavaScript generator's `*name() {` line. Two functions that
+  differ in one such line share 5 of 10 shingles and read 8 of 9, 0.8889, a pair at the
+  default 0.8. Python leaves out `#` lines and, as before, a line starting with three
+  quotes; shell leaves out `#`; PowerShell `#` and `<# #>`; Zig `//`; every other
+  language `//` and `/* */`, where a block comment's lines without a leading `*` were
+  read as code. A line that holds code after a block comment's closer is code now:
+  `/*@__PURE__*/ build(a)`, `/* lead */ x += 1;` and `*/ x = a` were left out for their
+  first characters.
+- A block comment opened after code, `int x = a; /* starts here`, leaves its later lines
+  out, where only those starting with `*` were left out before. The line is read from its
+  start: an opener inside a string or after a `//` opens nothing, and a `//` inside a
+  closed string does not stop one, so `s = "http://x"; /* note` opens a block comment. An
+  opener that no later line of the function closes opens nothing either: a line starting
+  with `/*` inside a template literal is code, as are the lines after it. Raw strings and
+  regex literals read as plain strings here, and the README's `duplication` row names
+  the few lines that misreads.
 
 ## 0.8.0 — 2026-09-23
 

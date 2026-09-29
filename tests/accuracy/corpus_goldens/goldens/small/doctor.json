@@ -1,0 +1,40 @@
+{
+ "analysis_version": 13,
+ "lanes": [
+  {
+   "artifact": ".crapkit/cov/py.json",
+   "artifact_present": true,
+   "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+   "name": "py",
+   "seconds": "<seconds>"
+  },
+  {
+   "artifact": ".crapkit/cov/js.json",
+   "artifact_present": true,
+   "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+   "name": "js",
+   "seconds": "<seconds>"
+  }
+ ],
+ "newest_run": {
+  "id": 2,
+  "kind": "coverage",
+  "verdict_ok": null
+ },
+ "problems": [
+  "scope 'legacy' is in no lane's scopes list — its functions can only score no-lane (declare a lane, or coverage_optional = true)"
+ ],
+ "resources": "<resources>",
+ "schema": 1,
+ "store": {
+  "path": ".crapkit/crap.sqlite",
+  "present": true,
+  "size_bytes": 266240
+ },
+ "versions": {
+  "crapkit": "<crapkit>",
+  "lizard": "1.24.0",
+  "python": "<python>"
+ },
+ "warnings": []
+}

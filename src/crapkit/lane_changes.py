@@ -6,16 +6,13 @@ or edited, and which are new and untracked. Each answer is one git process.
 Asked one after another they cost the sum of all of them; started together they
 cost about the slowest one.
 
-Every read also takes the paths in question as a pathspec. `ls-files --others`
-over a large untracked tree that no lane reads (drafts, output nobody ignored)
-was most of the cost, and none of its answer could change a verdict.
+Every read also takes the paths in question as a pathspec. Listing a large
+untracked tree that no lane reads (drafts, output nobody ignored) was most of
+the cost, and none of its answer could change a verdict.
 
-One read waits for another: the worktree `git diff` writes .git/index when it
-refreshes a stat-dirty entry, and on Windows a read that opens the index while
-that write swaps it in fails with `index file open failed: Permission denied`.
-A same-bytes touch was enough, and the failure read as a changed file. The
-staged diff and the untracked listing read the index, so they start once the
-worktree diff has finished.
+Staged, unstaged and untracked files come from one `git --no-optional-locks
+status` (gitio.STATUS says why): it compares a touched file's content and
+leaves .git/index alone, so the reads started beside it never meet a rewrite.
 """
 from __future__ import annotations
 
@@ -24,6 +21,8 @@ from pathlib import Path
 
 from .errors import GitError
 from .gitpaths import nul_paths
+from .gitio import FLAGS, SHOW_PREFIX, STATUS, UNTRANSLATED, ancestry_answer, status_records
+from .repotext import escaped
 
 _NAMES = ("--name-only", "--no-renames", "--ignore-submodules=none", "-z")
 
@@ -33,10 +32,15 @@ def _start(root: Path, *args: str):
 
     gitio owns how crapkit spawns git: the diff.relative and core.quotePath
     flags and the display state it strips. `--literal-pathspecs` makes every
-    path a path, so a scope named `src/[id]` is not read as a glob."""
+    path a path, so a scope named `src/[id]` is not read as a glob.
+
+    The ancestry read runs with git's messages untranslated: ancestry_answer
+    tells a failed read from a plain "no" by git's `error:` prefix. The other
+    reads keep the user's locale, which the filters `git status` runs inherit."""
     from .gitio import start_read
 
-    return start_read(root, "--literal-pathspecs", *args)
+    pinned = UNTRANSLATED if args[0] == "merge-base" else ()
+    return start_read(root, "--literal-pathspecs", *args, pinned=pinned)
 
 
 def _names(out: bytes) -> tuple[str, ...]:
@@ -65,10 +69,7 @@ class ChangeReads:
     concurrent run can rewrite the stamps between two reads of them. With no
     paths nothing can change under them, so no diff or status read starts at
     all. Use it as a context manager: on the way out it waits for every read
-    nobody collected and drops the answer. None is killed: a worktree `git diff`
-    refreshes the index under .git/index.lock when tracked files are stat-dirty,
-    and one killed mid-refresh leaves the lock behind, after which every `git
-    add` and commit in the checkout fails.
+    nobody collected and drops the answer, so no git process outlives it.
     """
 
     def __init__(self, root: Path, commits, paths) -> None:
@@ -77,6 +78,7 @@ class ChangeReads:
         self._ancestry: dict = {}
         self._diffs: dict = {}
         self._answers: dict = {}
+        self._flags = None
         try:
             self._status = self._start_all(commits)
         except GitError:
@@ -89,15 +91,8 @@ class ChangeReads:
             self._diff_read(commit)
         if not self._paths:
             return ()
-        return (self._begin("diff", *_NAMES, *self._spec),)
-
-    def _index_reads(self) -> tuple:
-        """The reads that open .git/index, started after the worktree diff that
-        may rewrite it has finished (see the module docstring)."""
-        if not self._paths:
-            return ()
-        return (self._begin("diff", *_NAMES, "--cached", *self._spec),
-                self._begin("ls-files", "--others", "--exclude-standard", "-z", *self._spec))
+        self._flags = self._begin(*FLAGS, *self._spec)
+        return self._begin(*SHOW_PREFIX), self._begin(*STATUS, *self._spec)
 
     def _begin(self, *args: str):
         read = _start(self._root, *args)
@@ -109,13 +104,13 @@ class ChangeReads:
         self._uncollected.discard(read)
         return read.result()
 
-    def _succeeds(self, read) -> bool:
-        """`merge-base --is-ancestor` answers in its exit code alone: 0 is yes, and
-        anything else, a commit this clone does not hold included, is no."""
+    def _succeeds(self, read, commit: str) -> bool:
+        """`merge-base --is-ancestor` answers in its exit code and stderr, read
+        by gitio.ancestry_answer: a failed read raises GitError, never "no"."""
         try:
             self._collect(read)
-        except GitError:
-            return False
+        except GitError as failure:
+            return ancestry_answer(self._root, commit, read.returncode, read.stderr, str(failure))
         return True
 
     def _ancestor_read(self, commit: str):
@@ -135,28 +130,29 @@ class ChangeReads:
 
     def is_ancestor(self, commit: str) -> bool:
         return self._once(("ancestor", commit),
-                          lambda: self._succeeds(self._ancestor_read(commit)))
+                          lambda: self._succeeds(self._ancestor_read(commit), commit))
 
     def diff_names_since(self, commit: str) -> tuple[str, ...]:
         read = self._diff_read(commit)
         return self._once(("diff", commit), lambda: _names(self._collect(read)) if read else ())
 
     def status_names(self) -> tuple[str, ...]:
-        return self._once("status", self._dirty)
+        return self._once("status", self._status_names)
 
-    def _dirty(self) -> tuple[str, ...]:
-        """Unstaged, then staged and untracked, and the edits git's diff never
-        compares. The worktree diff is collected before the index reads start."""
-        worktree = self._read_names(self._status)
-        return tuple(sorted(worktree | self._read_names(self._index_reads()) | self._hidden()))
-
-    def _read_names(self, reads) -> set[str]:
-        return {name for read in reads for name in _names(self._collect(read))}
+    def _status_names(self) -> tuple[str, ...]:
+        """Staged, unstaged and untracked from the one status read, and the
+        edits git never compares (`hidden_edits`)."""
+        if not self._status:
+            return ()
+        prefix, out = (escaped(self._collect(read)) for read in self._status)
+        return tuple(sorted({path for _, path in status_records(out, prefix)} | self._hidden()))
 
     def _hidden(self) -> set[str]:
-        from .gitio import hidden_edits
+        """Read from the flag listing started with the status read: the files
+        still to hash are the flagged ones, and a checkout rarely holds any."""
+        from .gitio import flagged_edits
 
-        return set(hidden_edits(self._root, *self._spec[1:])) if self._paths else set()
+        return set(flagged_edits(self._root, _names(self._collect(self._flags))))
 
     def changed_since(self, commit: str) -> tuple[str, ...]:
         """Committed, staged, unstaged or untracked: every change under the paths."""

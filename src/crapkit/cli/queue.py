@@ -18,7 +18,7 @@ from ..invocation import _self
 from ..repopath import Fragment, fragments
 from ..keys import claim_key, key_names, key_of, lookup, position, split_ordinal
 from ..named import first_few
-from ..score import SCORED_COLUMNS, unjoined
+from ..score import CRAP_PLACES, SCORED_COLUMNS, unjoined
 from ..store import SnapshotStore
 from ..uncovered import load_uncovered
 from ..worklist import (NO_RATCHET, Marks, RatchetMarks, Worklist, admission, build_worklist,
@@ -392,8 +392,13 @@ def _no_lane_gap(r, adm) -> bool:
 
 
 def _next_ranked(scored, adm):
+    """Worst CRAP first, compared at the 4 places a mark holds so equal scores
+    tie; then the file with more commits, then path and start line. Unrounded,
+    ccn 25 at 80% coverage read 29.999999999999996 against 30.0 for ccn 5 at
+    none, and the quieter file's function came first."""
     ranked = sorted((r for r in scored if _rankable(r, adm)),
-                    key=lambda r: (-r.crap, -adm.of(r.path).commits, r.path, r.start))
+                    key=lambda r: (-round(r.crap, CRAP_PLACES), -adm.of(r.path).commits,
+                                   r.path, r.start))
     return ranked, sum(1 for r in scored if _no_lane_gap(r, adm))
 
 
@@ -616,16 +621,19 @@ def _brief_churn(churn: dict, path: str) -> dict | None:
 
 
 def _brief_coupling(ranked: list, path: str) -> list[dict]:
-    """This file's partners, cut out of the ranking every path in a batch shares."""
-    from .verifying import _is_test_path
+    """This file's partners, cut out of the ranking every path in a batch shares.
+    A partner is a test by the rule init and doctor read, directory or runner
+    naming convention, so x_test.go counts and tools/test_deploy.sh does not."""
+    from ..universe import is_test_file
 
-    return packet.coupling_partners(ranked, path, _is_test_path)
+    return packet.coupling_partners(ranked, path, is_test_file)
 
 
 def _brief_twins(loader, row) -> list[dict]:
     from ..dup import twins_in
 
-    return packet.with_contained(twins_in(loader.twin_index(), row, loader.source(row.path)))
+    return packet.with_contained(twins_in(loader.twin_index(), row, loader.source(row.path),
+                                          loader.scored_file(row.path)))
 
 
 class _BriefLoader:

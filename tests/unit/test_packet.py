@@ -329,6 +329,22 @@ def test_coupling_ranks_before_it_cuts():
     assert [p["path"] for p in out] == ["tests/test_alpha.py"]
 
 
+@pytest.mark.parametrize("partner, is_test", [
+    ("tests/test_alpha.py", True), ("core/Tests/AlphaTests.swift", True),
+    ("core/alpha_test.go", True), ("core/alpha_test.py", True), ("core/alpha.spec.ts", True),
+    ("core/test_deploy.sh", False), ("core/beta.py", False)])
+def test_a_coupled_partner_is_a_test_by_the_rule_init_and_doctor_read(partner, is_test):
+    """docs/agent-json.md: `is_test` says the partner is a test file. brief read a
+    name rule of its own, which missed the Go and pytest `_test` suffix that the
+    default exclude globs drop, and called core/test_deploy.sh a test while the
+    scored corpus scores it as source."""
+    from crapkit.cli.queue import _brief_coupling
+
+    ranked = [{"files": ["core/alpha.py", partner], "support": 6, "confidence": 1.0}]
+
+    assert _brief_coupling(ranked, "core/alpha.py")[0]["is_test"] is is_test
+
+
 def test_a_twin_the_dup_module_did_not_flag_is_not_contained():
     twins = [{"path": "x.py", "similarity": 0.9}, {"path": "y.py", "similarity": 1.0,
                                                    "contained": True}]

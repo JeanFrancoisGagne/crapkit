@@ -13,6 +13,7 @@ two-pass implementation they replaced.
 from pathlib import Path
 
 import lizard
+import pytest
 
 from crapkit import analyze
 from crapkit.analyze import analyze_one
@@ -88,6 +89,80 @@ def test_a_property_named_case_moves_both_columns_exactly_as_it_always_did(tmp_p
     assert (rec.ccn_std, rec.ccn_mod) == (4, 2)
 
 
+DEFAULT_ONLY = {
+    "p.c": "int f(int x) {\n  switch (x) { default: return 1; }\n}\n",
+    "p.m": "int f(int x) {\n  switch (x) { default: return 1; }\n}\n",
+    "p.java": "class A { int f(int x) {\n  switch (x) { default: return 1; }\n} }\n",
+    "p.ts": "function f(x: number) {\n  switch (x) { default: return 1; }\n}\n",
+    "p.js": "function f(x) {\n  switch (x) { default: return 1; }\n}\n",
+    "p.vue": ("<script>\nexport default { methods: { f(x) {\n"
+              "  switch (x) { default: return 1; }\n} } }\n</script>\n"),
+    "p.go": "func f(x int) int {\n  switch x {\n  default:\n    return 1\n  }\n}\n",
+    "p.swift": "func f(x: Int) -> Int {\n  switch x {\n  default:\n    return 1\n  }\n}\n",
+    "p.zig": "fn f(x: i32) i32 {\n    switch (x) {\n        else => return 1,\n    }\n}\n",
+}
+
+
+@pytest.mark.parametrize("name", sorted(DEFAULT_ONLY))
+def test_a_switch_with_only_a_default_reads_one_above_in_the_modified_column(tmp_path, name):
+    """lizard -m adds the switch's point and takes one back per `case`, so a
+    switch with no case keeps it: ccn_mod reads one above ccn_std, as lizard
+    reads it. ccn is the smaller column, so the gate never sees the point."""
+    (rec,) = _records(tmp_path, name, DEFAULT_ONLY[name])
+
+    assert (rec.ccn_mod, rec.ccn) == (rec.ccn_std + 1, rec.ccn_std)
+
+
+def test_a_powershell_switch_costs_its_arms_in_both_columns(tmp_path):
+    """A PowerShell arm has no `case` to take the opener's point back, so the
+    opener gets none: a default-only switch reads the two columns equal, and
+    each other arm costs one point in both (see crapkit.lizardpowershell)."""
+    only_default = "function F {\n  switch ($x) { default { 1 } }\n}\n"
+    two_arms = "function G {\n  switch ($x) { 1 { 'a' } 2 { 'b' } default { 'c' } }\n}\n"
+    (f,) = _records(tmp_path, "f.ps1", only_default)
+    (g,) = _records(tmp_path, "g.ps1", two_arms)
+
+    assert [(r.ccn_std, r.ccn_mod) for r in (f, g)] == [(1, 1), (3, 3)]
+
+
+SEVEN_ARMS = {
+    "Rust": ("s.rs", "fn f(x: i32) -> i32 {\n  match x {\n"
+             + "".join(f"    {n} => {n},\n" for n in range(1, 8)) + "    _ => 0,\n  }\n}\n"),
+    "shell": ("s.sh", "f() {\n  case \"$1\" in\n"
+              + "".join(f"    {n}) echo {n} ;;\n" for n in range(1, 8)) + "  esac\n}\n"),
+    "PowerShell": ("s.ps1", "function F($x) {\n  switch ($x) {\n"
+                   + "".join(f"    {n} {{ {n} }}\n" for n in range(1, 8)) + "  }\n}\n"),
+}
+C_SEVEN_CASES = ("int f(int x) {\n  switch (x) {\n"
+                 + "".join(f"  case {n}: return {n};\n" for n in range(1, 8)) + "  }\n  return 0;\n}\n")
+
+
+def _readme_sentence(fragment: str) -> str:
+    text = " ".join((Path(__file__).resolve().parents[2] / "README.md")
+                    .read_text(encoding="utf-8").split())
+    start = text.index(fragment)
+    return text[text.rfind(". ", 0, start) + 2:text.index(". ", start) + 1]
+
+
+def _columns(tmp_path: Path, name: str, source: str) -> tuple:
+    (rec,) = _records(tmp_path, name, source)
+    return rec.ccn_std, rec.ccn_mod, rec.ccn
+
+
+@pytest.mark.parametrize("lang", sorted(SEVEN_ARMS))
+def test_the_readme_names_every_reader_that_gates_each_arm(tmp_path, lang):
+    """README's Languages section names the readers whose arms cost a point in
+    the modified column too, with a seven-arm example that gates at 8 where a
+    C switch gates at 2. A reader left out reads to a user as lizard -m."""
+    sentence = _readme_sentence("in the modified column too")
+
+    assert _columns(tmp_path, *SEVEN_ARMS[lang]) == (8, 8, 8)
+    assert _columns(tmp_path, "s.c", C_SEVEN_CASES) == (8, 2, 2)
+    assert lang in sentence
+    assert "gates at `ccn` 8" in sentence
+    assert "seven cases is 2" in sentence
+
+
 def test_analyze_one_reads_each_file_in_a_single_lizard_pass(tmp_path, monkeypatch):
     """Two passes over a 14k-file corpus cost 10.7 s of the cold run's lizard
     phase; one costs 6.4 s. Counting analyzer runs is what keeps it at one."""
@@ -108,11 +183,12 @@ def test_analyze_one_reads_each_file_in_a_single_lizard_pass(tmp_path, monkeypat
 def _two_pass(abs_path: str, rel_path: str):
     """analyze_one as it stood before the single pass, kept as the reference.
 
-    Standard+ND for every column but one, modified for ccn_mod, merged on
+    Standard for every column but one, modified for ccn_mod, merged on
     (path, start, end, long_name). Nothing calls this in production any more; it
-    is here so the replacement stays provably equal to it.
+    is here so the replacement stays provably equal to it. lizard's ND extension
+    left it with the column it fed: `nesting` is the cognitive pass's depth.
     """
-    std = _raw(abs_path, rel_path, [Cognitive()] + lizard.get_extensions(["ND"]))
+    std = _raw(abs_path, rel_path, [Cognitive()] + lizard.get_extensions([]))
     mod = _raw(abs_path, rel_path, lizard.get_extensions(["modified"]))
     return merge_passes(std, mod)
 
@@ -122,18 +198,16 @@ def _raw(abs_path: str, rel_path: str, extensions):
     return [RawFn(path=rel_path, long_name=f.long_name, start=f.start_line,
                   end=f.end_line, ccn=f.cyclomatic_complexity, nloc=f.nloc,
                   params=len(f.parameters),
-                  nesting=_nesting(rel_path, f),
+                  nesting=_nesting(f),
                   cognitive=getattr(f, "cognitive_complexity", 0) or 0)
             for f in analysis.function_list]
 
 
-def _nesting(rel_path: str, f) -> int:
-    """0.5.0, spec item 15: a Python row's nesting is the depth the cognitive
-    pass measured; every other language keeps lizard's ND column. The reference
-    spells the rule out rather than importing the production helper."""
-    if rel_path.endswith(".py"):
-        return getattr(f, "cognitive_nesting", 0) or 0
-    return getattr(f, "max_nesting_depth", 0) or 0
+def _nesting(f) -> int:
+    """A row's nesting is the depth the cognitive pass measured, in every
+    language (Python's since 0.5.0, spec item 15). The reference spells the rule
+    out rather than reading the production record."""
+    return getattr(f, "cognitive_nesting", 0) or 0
 
 
 def _corpus() -> list[Path]:
@@ -177,4 +251,5 @@ def test_every_column_survives_the_single_pass(tmp_path):
     (rec,) = _records(tmp_path, "f.ts", src)
 
     assert (rec.path, rec.start, rec.end) == ("f.ts", 1, 6)
-    assert (rec.nloc, rec.params, rec.nesting, rec.cognitive) == (6, 2, 3, 4)
+    # nesting 2, the for and the if: the `&&` in the condition opens no level.
+    assert (rec.nloc, rec.params, rec.nesting, rec.cognitive) == (6, 2, 2, 4)

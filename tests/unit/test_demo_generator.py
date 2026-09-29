@@ -112,17 +112,32 @@ def test_redaction_removes_a_wall_clock_stamp(tmp_path):
     assert "2026" not in text and "12.4s" not in text
 
 
-def test_redaction_spells_the_module_run_as_the_console_script(tmp_path):
+def test_redaction_spells_the_module_run_as_the_console_script(tmp_path, monkeypatch):
     """The generator runs `python -m crapkit`, so every next-step crapkit prints
     names the interpreter by its absolute path (`invocation._self`). The frames
     show the spelling a reader installs, and the path check would otherwise
     refuse the whole render."""
-    import sys
+    from crapkit.invocation import _self
 
-    quoted = f'"{sys.executable}"' if " " in sys.executable else sys.executable
-    line = f"detected 1 lane(s): py - next: run `{quoted} -m crapkit coverage`"
+    monkeypatch.setattr(sys, "argv", [str(Path("crapkit") / "__main__.py")])
+    line = f"detected 1 lane(s): py - next: run `{_self()} coverage`"
 
     text = demo_run.redact(line, tmp_path)
 
     assert text == "detected 1 lane(s): py - next: run `crapkit coverage`"
     assert demo_run.absolute_paths([text]) == []
+
+
+@pytest.mark.parametrize("interpreter", [
+    "C:/wt/app/.venv/Scripts/python.exe",
+    'C:/"Program Files"/Python311/python.exe',
+    "C:/Users/JOHNSM~1/app/.venv/Scripts/python.exe",
+    "'/home/a b/.venv/bin/python'",
+])
+def test_redaction_folds_every_spelling_of_the_interpreter(tmp_path, interpreter):
+    """An interpreter path holding a space prints with only its spaced segment
+    quoted on Windows, as its 8.3 short name where the volume keeps one, and in
+    single quotes on POSIX. Each still folds to `crapkit`."""
+    text = demo_run.redact(f"then run `{interpreter} -m crapkit coverage`", tmp_path)
+
+    assert text == "then run `crapkit coverage`"

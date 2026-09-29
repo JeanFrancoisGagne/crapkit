@@ -1,0 +1,51 @@
+worklist @ 901b727247a (run 2, floor ccn>=5, churn 12mo) - 50 of 100 active (worklist_top 50), 0 dormant
+  risk      4.6  ccn   9  crap    19.1  cov  50%    3c/1a  src/py/signatures.py:34  __init__( self , args , bufsize = - 1 , executable = None , stdin = None , stdout = None , stderr = None , preexec_fn = None , close_fds = True , shell = False , cwd = None , env = None , universal_newlines = None , startupinfo = None , creationflags = 0 , restore_signals = True , start_new_session = False , pass_fds = ( )
+  risk      4.0  ccn   8  crap    10.4  cov  67%    2c/1a  src/py/grades.py:18  curve( scores , mode , floor , ceiling , skip_none )
+  risk      3.5  ccn   7  crap    13.1  cov  50%    1c/1a  src/web/nullish.ts:8  firstSet ( a , b , c )
+  risk      2.6  ccn   5  crap     8.1  cov  50%    3c/1a  src/py/signatures.py:18  make( name , * , bases = ( )
+  risk      2.6  ccn   5  crap    30.0  cov   0%    3c/1a  src/py/nested.py:23  unused_branchy( flag , other )
+  risk      2.5  ccn   5  crap     8.1  cov  50%   13c/2a  src/web/arrows.js:9  dispatch ( event )
+  risk      2.5  ccn   5  crap     5.1  cov  83%    3c/2a  src/py/données.py:4  café( orders , sugar )  ok
+  risk      2.5  ccn   5  crap     8.1  cov  50%    1c/1a  src/web/nullish.ts:2  withDefaults ( options port host null )
+  risk      2.1  ccn   4  crap     6.0  cov  50%    3c/1a  src/py/with space.py:4  spaced( a , b )  ok
+  risk      2.1  ccn   4  crap    20.0  cov   0%    3c/1a  src/py/untested.py:4  orphan( a , b , c )
+  risk      1.6  ccn   3  crap     6.8  cov  25%    4c/1a  src/py/twins.py:10  run( self , mode = "fast" )
+  risk      1.6  ccn   3  crap    12.0  cov   0%    4c/1a  src/py/twins.py:23  helper( values )
+  risk      1.6  ccn   3  crap     3.0  cov 100%    3c/1a  src/py/tstrings.py:12  render( template )  ok
+  risk      1.5  ccn   3  crap     4.1  cov  50%    3c/1a  src/py/pragmas.py:4  safe_ratio( covered , total )  ok
+  risk      1.5  ccn   3  crap     3.3  cov  67%    3c/1a  src/py/pragmas.py:18  platform_name( system )  ok
+  risk      1.5  ccn   3  crap    12.0  cov   0%    3c/1a  src/py/oneline.py:7  clamp( value , low , high )
+  risk      1.5  ccn   3  crap     3.0  cov 100%    3c/1a  src/py/nested.py:4  outer( rows , limit )  ok
+  risk      1.5  ccn   3  crap     4.1  cov  50%    3c/1a  src/py/nested.py:5  outer.middle( row )  ok
+  risk      1.5  ccn   3  crap     3.0  cov 100%    3c/1a  src/py/nested.py:6  outer.middle.inner( cell )  ok
+  risk      1.5  ccn   3  crap     4.1  cov  50%    3c/1a  src/py/matching.py:4  describe( value )  ok
+  risk      1.5  ccn   3  crap    12.0  cov   0%    3c/1a  src/py/crlf.py:12  count_words( text )
+  risk      1.5  ccn   3  crap    12.0  cov   0%    3c/1a  src/py/cr_only.py:4  normalize( text , strip )
+  risk      1.5  ccn   3  crap    12.0  cov   0%    3c/1a  src/py/bom.py:12  count_words( text )
+  risk      1.5  ccn   3  crap    12.0  cov   0%   13c/2a  src/web/arrows.js:7  up ( x )
+  risk      1.5  ccn   3  crap    12.0  cov   0%   13c/2a  src/web/arrows.js:7  down ( x )
+  risk      1.5  ccn   3  crap    12.0  cov   0%    2c/1a  src/py/grades.py:46  pick( a , b )
+  risk      1.5  ccn   3  crap     6.8  cov  25%    1c/1a  src/web/Counter.vue:2  tone ( count )
+  risk      1.5  ccn   3  crap    12.0  cov   0%    1c/1a  src/web/esm.mjs:14  retry ( fn , times )
+  risk      0.0  ccn  38  crap    38.0  cov   0%    1c/1a  vendor/ky/merge.ts:207  deepMergeInternal ( isRoot , sources Array )
+  risk      0.0  ccn  37  crap    37.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:807  apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)
+  risk      0.0  ccn  29  crap    29.0  cov   0%    1c/1a  vendor/gson/ISO8601Utils.java:147  ISO8601Utils::parse( String date , ParsePosition pos)
+  risk      0.0  ccn  29  crap    29.0  cov   0%    1c/1a  vendor/nvm/install.sh:401  nvm_do_install()
+  risk      0.0  ccn  29  crap    29.0  cov   0%    1c/1a  vendor/posh-git/Utils.ps1:99  Add-PoshGitToProfile
+  risk      0.0  ccn  21  crap    21.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:484  sort_list( cJSON * list , const cJSON_bool case_sensitive)
+  risk      0.0  ccn  20  crap    20.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:1141  create_patches( cJSON * const patches , const unsigned char * const path , cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)
+  risk      0.0  ccn  19  crap    19.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:604  compare_json( cJSON * a , cJSON * b , const cJSON_bool case_sensitive)
+  risk      0.0  ccn  18  crap    18.0  cov   0%    1c/1a  vendor/nvm/install.sh:152  install_nvm_from_git()
+  risk      0.0  ccn  18  crap    18.0  cov   0%    1c/1a  vendor/posh-git/Utils.ps1:249  Remove-PoshGitFromProfile
+  risk      0.0  ccn  17  crap    17.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:120  compare_pointers( const unsigned char * name , const unsigned char * pointer , const cJSON_bool case_sensitive)
+  risk      0.0  ccn  17  crap    17.0  cov   0%    1c/1a  vendor/ky/merge.ts:148  appendSearchParameters ( target , source )
+  risk      0.0  ccn  15  crap    15.0  cov   0%    1c/1a  vendor/nvm/install.sh:119  nvm_download()  ok
+  risk      0.0  ccn  14  crap    14.0  cov   0%    1c/1a  vendor/nvm/install.sh:310  nvm_detect_profile()  ok
+  risk      0.0  ccn  13  crap    13.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:1391  generate_merge_patch( cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)  ok
+  risk      0.0  ccn  12  crap    12.0  cov   0%    1c/1a  vendor/posh-git/Utils.ps1:393  Get-PromptPath  ok
+  risk      0.0  ccn  11  crap    11.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:301  get_item_from_pointer( cJSON * const object , const char * pointer , const cJSON_bool case_sensitive)  ok
+  risk      0.0  ccn  10  crap    10.0  cov   0%    1c/1a  vendor/click/parser.py:51  _unpack_args( args : cabc . Sequence [ str ] , nargs_spec : cabc . Sequence [ int ] )  ok
+  risk      0.0  ccn   9  crap     9.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:198  cJSONUtils_FindPointerFromObjectTo( const cJSON * const object , const cJSON * const target)  ok
+  risk      0.0  ccn   9  crap     9.0  cov   0%    1c/1a  vendor/click/parser.py:390  _match_short_opt( self , arg : str , state : _ParsingState )  ok
+  risk      0.0  ccn   9  crap     9.0  cov   0%    1c/1a  vendor/nvm/install.sh:255  install_nvm_as_script()  ok
+  risk      0.0  ccn   9  crap     9.0  cov   0%    1c/1a  vendor/requests/cookies.py:423  _find_no_duplicates( self , name : str , domain : str | None = None , path : str | None = None )  ok

@@ -549,3 +549,41 @@ def test_posix_folds_a_backslash_the_tree_holds_in_a_file_name(tmp_path):
     (tmp_path / "pylib" / "we\\ird.py").write_text("x = 1\n", encoding="utf-8")
 
     assert _read_keyed(tmp_path, "pylib/we\\ird.py") == ["pylib/we/ird.py"]
+
+
+# --- a function its coverage tool was told to leave out ---------------------------
+
+def _excluded_region(executed, excluded, start_line):
+    return {"start_line": start_line, "executed_lines": executed, "missing_lines": [],
+            "excluded_lines": excluded,
+            "summary": {"covered_lines": 0, "num_statements": 0, "num_branches": 0,
+                        "covered_branches": 0, "excluded_lines": len(excluded)}}
+
+
+# 92 def excluded(value):  # pragma: no cover      97 def stub():
+# 93     if value and value > 0:                   98     ...
+# 94         return 1                              99 def partly(value):
+# 95     return 0                                 100     if value is None:
+#                                                 101         raise NotImplementedError
+#                                                 102     return value
+def _pragma_report():
+    return {"meta": {"branch_coverage": True, "version": "7.16.1"}, "files": {"m.py": {
+        "functions": {
+            "excluded": _excluded_region([], [93, 94, 95], 92),
+            "stub": _excluded_region([], [98], 97),
+            "partly": {"start_line": 99, "executed_lines": [100, 102], "missing_lines": [],
+                       "excluded_lines": [101],
+                       "summary": {"covered_lines": 2, "num_statements": 2, "num_branches": 0,
+                                   "covered_branches": 0, "excluded_lines": 1}},
+        }}}}
+
+
+def test_a_region_whose_every_statement_is_excluded_is_marked_excluded():
+    """coverage.py keeps the region of a `# pragma: no cover` def, and of a
+    stub whose body is `...`, with no statements and its lines excluded. A
+    region that keeps any statement is measured as before, and ends on its
+    last line, excluded or not."""
+    fns = parse_coveragepy(json.dumps(_pragma_report()), path_prefix="")["m.py"]
+
+    assert [(fn.name, fn.start, fn.end, fn.excluded) for fn in fns] == [
+        ("excluded", 92, 95, True), ("stub", 97, 98, True), ("partly", 99, 102, False)]

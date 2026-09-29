@@ -13,6 +13,7 @@ from typing import NamedTuple
 from .. import __version__
 from ..cache import merged_cache
 from ..errors import ConfigError, CrapkitError, GitError, ToolError
+from ..invariants import check_rows
 from ..gitio import GitFacts, ls_files
 from ..invocation import _self
 from ..repopath import typed_path
@@ -162,6 +163,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     db_path = typed_path(args.db) if args.db else state_dir / "crap.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = SnapshotStore(db_path)
+    check_rows(rows, cfg.ceiling_of)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=rows, kind="inventory")
     _record_twin_index(root, store, run_id)
 
@@ -421,11 +423,11 @@ def _over_target_at_zero(members, cfg):
     complexity 2 scores 6 at zero coverage, so no ceiling of 6 can fail it.
     The count carries those; the named lines are the ones worth splitting.
     """
-    from ..score import crap
+    from ..score import crap, over_ceiling
 
     for span in members:
         worst = max(span, key=lambda row: row.ccn)
-        if crap(worst.ccn, 0.0) > cfg.ceiling_of(worst.scope):
+        if over_ceiling(crap(worst.ccn, 0.0), cfg.ceiling_of(worst.scope)):
             yield worst
 
 
@@ -519,7 +521,7 @@ def _export_scored(root: Path, export: str, scored) -> None:
 
 
 def _flag_counts(scored) -> dict[str, int]:
-    flags = {"measured": 0, "untested": 0, "no-lane": 0, "cc-only": 0}
+    flags = {"measured": 0, "untested": 0, "excluded": 0, "no-lane": 0, "cc-only": 0}
     for r in scored:
         flags[r.flag] += 1
     return flags
@@ -542,24 +544,29 @@ def _judged_rows(scored, unmeasured: list[str]) -> list:
 
 
 def _coverage_summary(run_id: int, run: _ScoredRun, cfg, shape: _RunShape, db_path) -> dict:
-    from ..score import grade
+    """The run's summary, its counts and grade checked against their bounds
+    before anything prints it (`invariants.check_summary`)."""
+    from ..invariants import check_summary
+    from ..score import crap_load, grade, over_ceiling
 
     flags = _flag_counts(run.scored)
     judged = _judged_rows(run.scored, shape.unmeasured)
-    over = sum(1 for r in judged if r.crap > cfg.ceiling_of(r.scope))
-    return {
+    over = sum(1 for r in judged if over_ceiling(r.crap, cfg.ceiling_of(r.scope)))
+    summary = {
         "run_id": run_id, "commit": run.commit, "files": run.corpus.files,
         "functions": len(run.scored), "cache_hits": run.cache_hits,
         "measured": flags["measured"], "untested": flags["untested"],
-        "no_lane": flags["no-lane"], "cc_only": flags["cc-only"],
+        "excluded": flags["excluded"], "no_lane": flags["no-lane"], "cc_only": flags["cc-only"],
         "skipped_max_bytes": run.corpus.skipped_max_bytes, "empty_scopes": run.corpus.empty_scopes,
         "unreadable_names": _unreadable_json(run.corpus.unreadable),
         "over_target": over, "grade": grade(over, len(judged)),
         "by_scope": _by_scope(run.scored, cfg),
-        "crap_load": round(sum(r.crap for r in judged), 2), "lanes": run.provenance,
+        "crap_load": round(crap_load(r.crap for r in judged), 2), "lanes": run.provenance,
         "lane_failures": run.lane_errors, "db": str(db_path),
         "kind": shape.kind, "unmeasured_scopes": shape.unmeasured, "ceilings": cfg.ceilings,
     }
+    check_summary(summary, len(judged))
+    return summary
 
 
 def _lanes_word(names: list[str]) -> str:
@@ -579,9 +586,10 @@ def _partial_opening(shape: _RunShape) -> str:
 
 
 def _bucket_text(summary: dict) -> str:
-    """The four flags counted, zero buckets dropped: `2 measured / 1 no-lane`."""
+    """The five flags counted, zero buckets dropped: `2 measured / 1 no-lane`."""
     buckets = [(summary["measured"], "measured"), (summary["untested"], "untested"),
-               (summary["no_lane"], "no-lane"), (summary["cc_only"], "cc-only")]
+               (summary["excluded"], "excluded"), (summary["no_lane"], "no-lane"),
+               (summary["cc_only"], "cc-only")]
     return " / ".join(f"{n} {word}" for n, word in buckets if n)
 
 
@@ -671,6 +679,7 @@ def cmd_coverage(args: argparse.Namespace) -> int:
     store = SnapshotStore(db_path)
     _warn_suite_drop(store, run.provenance)
     shape = _run_shape(lanes, cfg, run)
+    check_rows(run.scored, cfg.ceiling_of)
     run_id = store.write_run(commit=run.commit, tool_versions=run.tool_versions, rows=run.scored,
                              lanes=run.provenance, kind=shape.kind, sources=run.sources)
     _record_twin_index(root, store, run_id)
@@ -873,10 +882,10 @@ def _ceiling_breaches(rows, ceilings: dict[str, int], keys: dict | None = None) 
 def _changed_since_head(root: Path) -> dict:
     """The spans the working tree changed against HEAD, index included, which is
     the set the pre-commit hook will see."""
-    from ..diffparse import changed_ranges
+    from ..diffparse import worktree_ranges
     from ..gitio import diff_since
 
-    return changed_ranges(diff_since(root, "HEAD"))
+    return worktree_ranges(diff_since(root, "HEAD"), root)
 
 
 def _gate_candidates(rows: list, ranges: dict, untracked: set[str]) -> list:
@@ -957,6 +966,9 @@ def _unpardoned_breaches(root: Path, cfg, overlay, touched: list) -> list:
 
 def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int],
                   unread: dict[str, str], unjoined: set = frozenset()) -> _GateVerdict:
+    """The verdict, once the rescored rows and the breaches meet their bounds
+    against the parsed config (`invariants.check_gate`)."""
+    from ..invariants import check_gate
     from ..keys import key_names
 
     untracked = _untracked_of(root, {r.path for r in overlay} | set(unread))
@@ -964,6 +976,7 @@ def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int],
     candidates = _gate_candidates(overlay, ranges, untracked)
     touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
     breaches = _unpardoned_breaches(root, cfg, overlay, touched)
+    check_gate(overlay, breaches, cfg.ceiling_of)
     changed = {path: unread[path] for path in unread if path in ranges or path in untracked}
     return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked), changed,
                         _unmeasured_keys(candidates, unjoined))

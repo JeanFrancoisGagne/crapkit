@@ -1,0 +1,328 @@
+{
+ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+ "runs": [
+  {
+   "results": [
+    {
+     "level": "error",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 4
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "route( a , b , c , d ): CRAP 90.0 (ccn 9, cov 0%) -> decompose"
+     },
+     "ruleId": "crapkit/gate"
+    },
+    {
+     "level": "error",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/grades.py"
+        },
+        "region": {
+         "startLine": 8
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "letter( score ): CRAP 13.1 (ccn 7, cov 50%) -> decompose"
+     },
+     "ruleId": "crapkit/gate"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 4
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 5
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 6
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 7
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 8
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 9
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 10
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 11
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 12
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 13
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 14
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 15
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    },
+    {
+     "level": "warning",
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "src/py/fresh.py"
+        },
+        "region": {
+         "startLine": 16
+        }
+       }
+      }
+     ],
+     "message": {
+      "text": "changed line has no coverage: no lane ran it"
+     },
+     "ruleId": "crapkit/diff-uncovered"
+    }
+   ],
+   "tool": {
+    "driver": {
+     "informationUri": "https://github.com/JeanFrancoisGagne/crapkit",
+     "name": "crapkit",
+     "rules": [
+      {
+       "id": "crapkit/over-target",
+       "shortDescription": {
+        "text": "CRAP score above the scope ceiling"
+       }
+      },
+      {
+       "id": "crapkit/gate",
+       "shortDescription": {
+        "text": "touched function over the complexity gate"
+       }
+      },
+      {
+       "id": "crapkit/ratchet-regression",
+       "shortDescription": {
+        "text": "a recorded CRAP mark got worse"
+       }
+      },
+      {
+       "id": "crapkit/diff-uncovered",
+       "shortDescription": {
+        "text": "a changed line no lane ever ran"
+       }
+      }
+     ],
+     "version": "<crapkit>"
+    }
+   }
+  }
+ ],
+ "version": "2.1.0"
+}

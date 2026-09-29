@@ -1,0 +1,60 @@
+{
+ "by_scope": {
+  "py": {
+   "crap_load": 19.12,
+   "functions": 5,
+   "grade": "A+",
+   "over_target": 0
+  },
+  "ts": {
+   "crap_load": 13.4,
+   "functions": 4,
+   "grade": "A+",
+   "over_target": 0
+  }
+ },
+ "cache_hits": 3,
+ "cc_only": 0,
+ "ceilings": {
+  "default": 6
+ },
+ "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
+ "crap_load": 32.51,
+ "db": "<root>/repo/.crapkit/crap.sqlite",
+ "excluded": 0,
+ "files": 3,
+ "functions": 9,
+ "grade": "A+",
+ "kind": "coverage",
+ "lane_failures": {},
+ "lanes": {
+  "py": {
+   "artifact_sha256": "d0a6a7d0c50cd7953f1dab98bb857c1deab22072ccd5872973b11c27ee2bd886",
+   "exit_code": 0,
+   "failures": [],
+   "parser": "coveragepy",
+   "results_artifact_sha256": "6a8e84fba8c217e0e65ccdf19ba9995d40fa8d7f12387426b8482328790bbae9",
+   "scopes": [
+    "py"
+   ],
+   "tests_skipped": 0,
+   "tests_total": 3
+  },
+  "ts": {
+   "artifact_sha256": "17887e7a447a4a16982c8df110cc507b30efcce7666894e1c7f7ad515d4977a3",
+   "exit_code": 0,
+   "parser": "istanbul",
+   "scopes": [
+    "ts"
+   ]
+  }
+ },
+ "measured": 8,
+ "no_lane": 0,
+ "over_target": 0,
+ "run_id": 2,
+ "schema": 1,
+ "skipped_max_bytes": 0,
+ "unmeasured_scopes": [],
+ "untested": 1
+}

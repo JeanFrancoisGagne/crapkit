@@ -4,10 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from crapkit import lane_changes
+from crapkit import gitio, lane_changes
 from crapkit.errors import GitError
-from crapkit.lane_changes import ChangeReads
+from crapkit.lane_changes import ChangeReads, visible_paths
 from hang_guard import HANG_SECONDS
+from translated_git import speak_french
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -75,10 +76,57 @@ def test_a_commit_it_was_not_built_for_is_read_when_asked(repo):
         assert reads.diff_names_since(second) == ()
 
 
+@pytest.mark.parametrize("language", ["git's own", "French"])
+def test_an_unreadable_commit_since_the_stamp_is_no_answer(repo, language, tmp_path_factory,
+                                                           monkeypatch):
+    """`merge-base --is-ancestor` exits 1, its "no", and prints `error: Could
+    not read <sha>` when a commit between the stamp and HEAD is unreadable. A
+    French git prints `erreur :`, so the read asks for git's own words."""
+    root, first = repo
+    if language == "French":
+        speak_french(tmp_path_factory.mktemp("catalog"), monkeypatch)
+    _write(root, "docs/n.md", "two\n")
+    lost = _commit(root, "two")
+    _write(root, "docs/n.md", "three\n")
+    _commit(root, "three")
+    loose = root / ".git" / "objects" / lost[:2] / lost[2:]
+    loose.chmod(0o644)
+    loose.unlink()
+
+    with ChangeReads(root, (first,), ("src",)) as reads, pytest.raises(GitError, match=lost):
+        reads.is_ancestor(first)
+
+
+def test_trace_output_on_a_plain_no_is_still_no(repo, monkeypatch):
+    """GIT_TRACE=1 puts trace lines on stderr beside a plain "no". Read as a
+    failed read, next-item said git could not tell which files changed where
+    the stamp commit had left history."""
+    root, first = repo
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--amend", "-m", "amended")
+    monkeypatch.setenv("GIT_TRACE", "1")
+
+    with ChangeReads(root, (first,), ("src",)) as reads:
+        assert reads.is_ancestor(first) is False
+
+
 def test_a_commit_this_clone_does_not_hold_is_not_behind_head(repo):
     root, _ = repo
     with ChangeReads(root, ("0" * 40,), ("src",)) as reads:
         assert reads.is_ancestor("0" * 40) is False
+
+
+def test_a_failed_ancestry_read_is_no_answer(repo, monkeypatch):
+    """merge-base exits 128 on a commit this clone holds: git could not read
+    the repository, which answers nothing about ancestry."""
+    root, first = repo
+    real = lane_changes._start
+    failing = ("rev-parse", "--verify", "refs/crapkit/no-such-ref")
+    monkeypatch.setattr(lane_changes, "_start", lambda r, *args: real(
+        r, *(failing if args[0] == "merge-base" else args)))
+
+    with ChangeReads(root, (first,), ("src",)) as reads:
+        with pytest.raises(GitError, match="no-such-ref"):
+            reads.is_ancestor(first)
 
 
 def test_a_failed_spawn_waits_for_the_reads_already_started(repo, monkeypatch):
@@ -100,3 +148,36 @@ def test_a_failed_spawn_waits_for_the_reads_already_started(repo, monkeypatch):
 
     assert len(started) == 2
     assert all(read._proc.returncode is not None for read in started), "each one was reaped"
+
+
+def test_only_the_ancestry_read_asks_for_git_s_own_words(repo, monkeypatch):
+    """The French test above skips on a machine with no locale that loads a
+    catalog, so the locale each read runs under is also read where it is set."""
+    root, first = repo
+    started = []
+    real = gitio.start_read
+    monkeypatch.setattr(gitio, "start_read", lambda r, *args, pinned=(): (
+        started.append(("merge-base" in args, args[0], pinned)), real(r, *args, pinned=pinned))[1])
+
+    with ChangeReads(root, (first,), ("src",)) as reads:
+        reads.changed_since(first)
+
+    assert set(started) == {(True, "--literal-pathspecs", gitio.UNTRANSLATED),
+                            (False, "--literal-pathspecs", ())}
+    assert len(started) == 4
+
+
+def test_each_commit_gets_its_own_ancestry_answer(repo):
+    root, first = repo
+    with ChangeReads(root, (first, "0" * 40), ("src",)) as reads:
+        assert (reads.is_ancestor(first), reads.is_ancestor("0" * 40)) == (True, False)
+
+
+def test_visible_paths_reads_each_path_as_a_path(repo):
+    """`src/[id]` as a glob also matches the file `src/d`; `-draft` read as an
+    option is an unknown switch; and a file under no path is not listed."""
+    root, _ = repo
+    for rel in ("src/[id]/a.py", "src/d", "-draft/c.py"):
+        _write(root, rel)
+
+    assert visible_paths(root, ("src/[id]", "-draft")) == ("-draft/c.py", "src/[id]/a.py")

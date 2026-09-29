@@ -528,6 +528,18 @@ def test_doctor_names_one_missing_runner_per_segment(tmp_path):
                         "does not resolve on PATH"]
 
 
+@pytest.mark.parametrize("shape", ['("{py}" -m pytest --cov) > lane.log',
+                                   '"{py}" -m pytest --cov &2>err.log "{py}" -m coverage json'])
+def test_doctor_under_cmd_names_the_program_cmd_exe_starts(tmp_path, monkeypatch, shape):
+    """cmd.exe starts python in a block's `(python ...)` and after `&2>err.log`,
+    where the 2 is a handle because `&` stands before it (verified argv). Doctor
+    read `(C:/.../python` and `2` as runners and failed a lane that runs."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    command = shape.format(py=sys.executable)
+
+    assert _lane_command_problems(tmp_path, _doctor_lane(command)) == []
+
+
 def test_doctor_says_nothing_about_a_test_path_inside_a_quoted_value(tmp_path):
     """-k "tests/gone.py or x" is one argument to pytest, not a file the repo
     owes. The split read '"tests/gone.py' as a named script and doctor failed a
@@ -963,6 +975,24 @@ def test_the_pytest_cov_note_names_the_python_it_asked(tmp_path, monkeypatch, ca
     assert str(tmp_path) in err, "and where that word resolves on this machine"
     assert "python -m pip install pytest-cov" in err, "an install bound to that interpreter"
     assert '"crapkit[py]"' in err
+
+
+def test_the_install_line_names_the_file_a_lane_path_resolves_to(tmp_path):
+    r"""init writes a repo's venv as `.venv\Scripts\python.exe` on Windows, and
+    the note's install line carried that word as written: Git Bash ran it as
+    `.venvScriptspython.exe`, and from any directory but the lane's no shell
+    found it. The note still names the word the lane names."""
+    from crapkit.invocation import interpreter_word
+
+    python = tmp_path / ".venv" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"")
+    word = str(Path(".venv", "Scripts", "python.exe"))
+
+    note = admin._missing_pytest_cov_note("py", word, LaunchSpec(tmp_path))
+
+    assert f"names `{word}`" in note
+    assert f"run `{interpreter_word(str(python))} -m pip install pytest-cov`" in note
 
 
 # --- and a runner the LANE's own environment supplies -------------------------

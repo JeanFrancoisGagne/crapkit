@@ -1,0 +1,74 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	equivalence.sh	straight	start	1	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function starts on its defining line	
+eq-straight	equivalence.sh	straight	end	4	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function ends on the last line of its body	
+eq-straight	equivalence.sh	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	equivalence.sh	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	equivalence.sh	straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	equivalence.sh	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	equivalence.sh	straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	equivalence.sh	straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	equivalence.sh	straight	params	0	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a shell function declares no parameters	
+eq-four-deep	equivalence.sh	four_deep	start	6	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function starts on its defining line	
+eq-four-deep	equivalence.sh	four_deep	end	17	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function ends on the last line of its body	
+eq-four-deep	equivalence.sh	four_deep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	equivalence.sh	four_deep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	equivalence.sh	four_deep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	equivalence.sh	four_deep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	equivalence.sh	four_deep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	AO-SH-NESTING-DEEP
+eq-four-deep	equivalence.sh	four_deep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	equivalence.sh	four_deep	params	0	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a shell function declares no parameters	
+eq-nested-loops	equivalence.sh	nested_loops	start	19	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function starts on its defining line	
+eq-nested-loops	equivalence.sh	nested_loops	end	29	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function ends on the last line of its body	
+eq-nested-loops	equivalence.sh	nested_loops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	equivalence.sh	nested_loops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	equivalence.sh	nested_loops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	equivalence.sh	nested_loops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	equivalence.sh	nested_loops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	AO-ND-LOOPS
+eq-nested-loops	equivalence.sh	nested_loops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	equivalence.sh	nested_loops	params	0	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a shell function declares no parameters	
+eq-flat-seven	equivalence.sh	flat_seven	start	31	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function starts on its defining line	
+eq-flat-seven	equivalence.sh	flat_seven	end	55	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function ends on the last line of its body	
+eq-flat-seven	equivalence.sh	flat_seven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	equivalence.sh	flat_seven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	equivalence.sh	flat_seven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	equivalence.sh	flat_seven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	equivalence.sh	flat_seven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	AO-SH-NESTING-FLAT
+eq-flat-seven	equivalence.sh	flat_seven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	equivalence.sh	flat_seven	params	0	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a shell function declares no parameters	
+c-branches	constructs.sh	branches	start	1	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function starts on its defining line	
+c-branches	constructs.sh	branches	end	9	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function ends on the last line of its body	
+c-branches	constructs.sh	branches	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and else if; else adds no decision	
+c-branches	constructs.sh	branches	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-branches	constructs.sh	branches	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else if +1, else +1	
+c-branches	constructs.sh	branches	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each arm's body one level deep	
+c-branches	constructs.sh	branches	params	0	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a shell function declares no parameters	
+c-pick	constructs.sh	pick	start	11	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function starts on its defining line	
+c-pick	constructs.sh	pick	end	18	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function ends on the last line of its body	
+c-pick	constructs.sh	pick	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; three case labels, default excluded	AO-SH-CASE-DEFAULT
+c-pick	constructs.sh	pick	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; the switch is one decision	AO-SH-CASE-MOD
+c-pick	constructs.sh	pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; switch +1	
+c-pick	constructs.sh	pick	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the case bodies sit inside the switch	AO-N-SH-CASE
+c-pick	constructs.sh	pick	params	0	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a shell function declares no parameters	
+c-logic	constructs.sh	logic	start	20	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function starts on its defining line	
+c-logic	constructs.sh	logic	end	25	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function ends on the last line of its body	
+c-logic	constructs.sh	logic	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and three short-circuit operators	
+c-logic	constructs.sh	logic	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-logic	constructs.sh	logic	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the && run +1, || +1	
+c-logic	constructs.sh	logic	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	AO-N-LOGICAL-NO-PARENS
+c-logic	constructs.sh	logic	params	0	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a shell function declares no parameters	
+c-loops	constructs.sh	loops	start	27	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function starts on its defining line	
+c-loops	constructs.sh	loops	end	36	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function ends on the last line of its body	
+c-loops	constructs.sh	loops	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops	
+c-loops	constructs.sh	loops	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-loops	constructs.sh	loops	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two loops at nesting 0, +1 each	
+c-loops	constructs.sh	loops	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; two loops side by side	
+c-loops	constructs.sh	loops	params	0	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a shell function declares no parameters	
+c-fact	constructs.sh	fact	start	38	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function starts on its defining line	
+c-fact	constructs.sh	fact	end	44	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a function ends on the last line of its body	
+c-fact	constructs.sh	fact	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+c-fact	constructs.sh	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-fact	constructs.sh	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
+c-fact	constructs.sh	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
+c-fact	constructs.sh	fact	params	0	POSIX.1-2024 Shell Command Language sec. 2.9.5 Function Definition Command: a shell function declares no parameters	
+s-quoted-subst	shapes.sh	quoted_subst	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the && inside the substitution	AO-SH-QUOTED-SUBST
+s-heredoc	shapes.sh	heredoc_msg	nloc	6	lizard 1.24.0 README: NLOC counts lines of code without comments; the function's six lines, the heredoc body's two among them	AO-SH-HEREDOC-NLOC

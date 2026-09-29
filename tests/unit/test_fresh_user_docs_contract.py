@@ -247,7 +247,8 @@ def test_the_handbook_links_out_by_url_not_by_relative_path():
     assert 'href="../' not in page
     assert not re.search(r'href="[^"#:]*[.]md[#"]', page),         "the handbook links a .md file by relative path; Pages downloads those"
     for name in ("README.md", "AGENTS.md", "docs/lanes.md", "docs/ratchet.md",
-                 "docs/configuration.md", "docs/agent-json.md", "docs/adoption.md"):
+                 "docs/configuration.md", "docs/agent-json.md", "docs/adoption.md",
+                 "docs/accuracy.md"):
         assert f'href="{BLOB}/{name}"' in page, f"the handbook lost its {name} link"
 
 

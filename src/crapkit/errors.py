@@ -64,3 +64,16 @@ class GitError(CrapkitError):
 class ToolError(CrapkitError):
     exit_code = 5
     kind = "tool"
+
+
+class InternalCheckError(ToolError):
+    """A number crapkit calculated broke its documented bound before it was
+    stored or printed (`invariants`). That is a crapkit bug, never the repo's.
+
+    Exit 5 like a tool failure, so a CI wrapper that tests for nonzero still
+    fails. `kind` tells an agent apart from a lane that died: retrying the
+    command or editing crapkit.toml cannot fix it, and the message says what
+    to report. The one argument is the whole message, so the error crosses a
+    pool worker's pickle boundary intact.
+    """
+    kind = "internal"

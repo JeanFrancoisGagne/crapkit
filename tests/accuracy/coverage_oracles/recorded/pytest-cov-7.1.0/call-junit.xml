@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="0" timestamp="0" hostname="0"><testcase classname="py.test_drive" name="test_call" time="0" /></testsuite></testsuites>

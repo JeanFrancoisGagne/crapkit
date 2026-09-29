@@ -1,0 +1,12 @@
+# The image needs the pins, the lock files and the scripts in image/; the
+# node_modules a developer's npm ci left behind would add hundreds of MB.
+**
+!pins.toml
+!requirements-nightly.txt
+!image/install-tools.sh
+!image/entry.sh
+!image/requirements-build.txt
+!node/push/package.json
+!node/push/package-lock.json
+!node/nightly/package.json
+!node/nightly/package-lock.json

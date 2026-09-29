@@ -1,4 +1,4 @@
-"""A Rust reader that counts match arms. Upstream defect: lizard #494.
+"""A Rust reader that counts match arms and reads `#` as Rust does. Upstream defect: lizard #494.
 
 lizard 1.24.0 lists `match` in `RustReader._control_flow_keywords` and counts
 arms zero times, so the whole block costs 1 no matter how many ways it branches.
@@ -14,8 +14,41 @@ counts and `default` does not:
 
 A match with 6 conditional arms and a `_` arm scores 7, the same as the
 equivalent if/else-if/else chain. An exhaustive match of 7 non-wildcard arms
-scores 8, the same as 7 ifs with no else. Everything else lizard counts for Rust
-(if, for, while, where, &&, ||, ?) is untouched.
+scores 8, the same as 7 ifs with no else. lizard's other Rust conditions (if,
+for, while, &&, ||, ?) still count, with four corrections where the stock
+reader read a Rust token as the C token of the same spelling:
+
+  * a let-else's `else` counts one. It runs when the pattern does not match,
+    the decision an `if let` makes. An if-else's `else` always follows the `}`
+    of its if block, and a let-else's never can (the Rust Reference refuses a
+    let-else whose expression ends in `}`), so the token before `else` tells
+    the two apart.
+  * a signature decides nothing. Everything from `fn` to the body's `{` only
+    declares: a `where` clause, a `?Sized` bound, a `for<'a>` binder. The
+    body's `{` sets the function back to its base of 1, the way lizard's C
+    reader confirms a function at its body, and `where` leaves the keyword set
+    for the items it bounds outside a signature.
+  * a `||` or `&&` with no operand before it is no operator. `move || n` opens
+    a closure with no parameters and `|&&x|` takes a double reference. The
+    reader splits such a pair into its two characters before any column reads
+    it, so ccn, cognitive and nesting all see the `|x|` or `&x` they already
+    read as nothing. A parameter typed `&&T` spells `& &` in its long name.
+  * a `for` that is no loop decides nothing, in a body too. Rust spells three
+    things `for`: a loop, a `for<'a>` binder, which has a `<` right after it,
+    and the `for` of `impl Trait for Type`, which has the trait's name or the
+    `>` of its arguments right before it. A loop starts a statement or an
+    expression, so no name stands before one. The `?` of a `?Sized` bound is
+    no decision either, wherever it stands. `RustDecisionStates` takes back
+    the point lizard counted for each.
+
+Three more corrections decide which functions exist and what they declare, in
+`CorrectedRustStates`: a signature that reaches a `;` or a `}` before any `{`
+has no body and is listed as no function, a `fn` with its `(` right after it
+is a pointer type and opens no function wherever it stands, and a comma inside
+a parameter's type or pattern parts no parameters. Each function it opens is a
+`RustFunction`, which counts a parameter that binds a pattern, `[a, b]: [u8; 2]`,
+where lizard's name regex found none. `loops` hands lizard's nesting column
+Rust's structures in place of C's.
 
 Accepted, documented, not solved
 --------------------------------
@@ -25,10 +58,28 @@ Accepted, documented, not solved
 * `?` error propagation stays counted: upstream puts it in
   `_ternary_operators`, and this reader inherits that as measured rather than
   changing two things at once. tests/unit/test_lizardrust.py pins it at +1.
+* The `for` of a `for<'a>` binder, and of an `impl Trait for Type` inside a
+  function, stays in the token stream; crapkit's cognitive pass tells it from
+  a loop (lizardcognitive._resolve_for), and the nesting column reads that
+  pass. Gluing the binder into one token would break the `<`/`>` count lizard
+  uses to skip a generic parameter list. test_rust_cognitive_nesting.py and
+  test_rust_for.py pin both columns.
 * `ccn_mod` (analyze.py's modified column) is unchanged, so a Rust match now
   costs the same in both columns. lizard's modified pass keys off
   `reader._keyword_match`, which upstream never sets for Rust; setting it here
   would add a point for the block and subtract nothing for the arms.
+
+`#`
+---
+lizard's tokenizer, shared with its C reader, reads `#` and the rest of its
+line as one preprocessor token. Rust has no preprocessor, and a line that
+carried `#[inline] fn f() {` lost its `fn` and `{`: the function had no row.
+A raw string (`r#"..."#`, `br##"..."##`) and a raw identifier (`r#type`) lost
+the rest of their line the same way, and with it any decision or brace there.
+`generate_tokens` reads a raw string or a raw identifier as one token and an
+attribute's `#[` or `#![` as one token, so the attribute's contents and the
+code after it read as code. A raw string ends at a quote followed by as many
+hashes as opened it, however many.
 
 Registration
 ------------
@@ -53,32 +104,135 @@ The contract for the caller (analyze.py owns the wiring):
      register in their own interpreter
   3. bump `ANALYSIS_VERSION`, because cached Rust records predate the fix
 
+A `//` comment
+--------------
+The reader also ends a `//` comment at its line's end (crapkit.lizardlinecomment
+says why). `RustReader.generate_tokens` drops the addition it is handed, so this
+reader restates its one rule, `_LIFETIME`, instead of calling it;
+tests/unit/test_lizardlinecomment.py fails the day lizard's Rust tokens change.
+
 Retirement
 ----------
-tests/unit/test_lizardrust.py pins the stock reader's wrong answer. It fails on
-the lizard release that fixes #494. Delete this module then, along with the
-`register()` call, rather than repairing it.
+tests/unit/test_lizardrust.py pins the stock reader's wrong answers, one per
+correction, and each pin fails on the lizard release that fixes its defect. Drop
+a correction when its pin fails. Once every pin fails, lizard ends a Rust `//`
+comment at its line and its Rust tokenizer reads `#` as Rust does, delete this
+module along with the `register()` call rather than repairing it.
 """
 from __future__ import annotations
+
+import re
 
 from ._pygdefer import deferred_pygments
 
 with deferred_pygments():  # lizard's Erlang reader would load pygments here
     import lizard
     import lizard_languages
-    from lizard_languages.code_reader import CodeStateMachine
+    from lizard_languages.code_reader import CodeReader, CodeStateMachine
     from lizard_languages.rust import RustReader as _StockRustReader
     from lizard_languages.rust import RustStates
+
+    from .lizardlinecomment import LINE_COMMENT
+
+# lizard's one Rust tokenizer rule: a lifetime or a label, `'a`.
+_LIFETIME = r"|(?:'\w+\b)"
 
 _ARM = "=>"
 _WILDCARD = "_"
 
+# Tried before lizard's `#`, which takes the rest of the line: a raw string, over
+# lines too, closed by as many hashes as opened it, however many; a raw
+# identifier; an attribute's `#[` or `#![`. The group is named so it cannot clash
+# with a group number in lizard's own pattern.
+_HASH_TOKENS = r'|b?r(?P<rust_raw>\#+)".*?"(?P=rust_raw)|r\#\w+|\#!?\['
+
 # Any filename picks the reader; the file is never opened.
 _PROBE = "crapkit_registration_probe.rs"
 
+# The Rust Reference's keywords, strict and reserved, less the five that can end
+# an operand: self, Self, true, false and the `await` of `.await`. A `||` or
+# `&&` right after one of these has no left operand.
+_NO_VALUE_KEYWORDS = frozenset("""
+    abstract as async become box break const continue crate do dyn else enum
+    extern final fn for gen if impl in let loop macro match mod move mut override
+    priv pub ref return static struct super trait try type typeof unsafe unsized
+    use virtual where while yield
+""".split())
 
-class MatchArmStates(CodeStateMachine):
-    """One condition per match arm, wildcard arms free.
+# The last character of a token that can end an operand, beside the word
+# characters of a name or a number: a closing bracket, the `?` of error
+# propagation, a name's trailing `_`, a string or char literal's quote.
+_OPERAND_TAIL = frozenset(")]}?_\"'")
+
+# The two operators Rust also writes as a pair of one-character tokens.
+_PAIRS = frozenset({"||", "&&"})
+
+# Two code tokens that declare, where lizard counted the first as a decision:
+# a `for<'a>` binder and a `?Sized` bound.
+_DECLARING_PAIRS = frozenset({("for", "<"), ("?", "Sized")})
+
+# What a bracket inside a signature does to its type depth. Parentheses are
+# counted apart, by the state machine that reads the parameter list. In that
+# list a `{` also opens a struct pattern's fields, `Point { x, y }: Point`;
+# after it, a `{` opens the body. A parameter's attribute closes with a `]`,
+# and a tokenizer that reads Rust's `#[` as one token opens it with that token.
+_TYPE_DEPTH = {"<": 1, "[": 1, ">": -1, "]": -1}
+_PARAMETER_DEPTH = {**_TYPE_DEPTH, "{": 1, "}": -1, "#[": 1}
+
+
+def _ends_operand(token: str | None) -> bool:
+    """Whether `token` can end the left operand of a binary operator."""
+    if not token or token in _NO_VALUE_KEYWORDS:
+        return False
+    return token[-1].isalnum() or token[-1] in _OPERAND_TAIL
+
+
+def implements_for(previous: str | None) -> bool:
+    """Whether a `for` right after `previous` is the `for` of `impl Trait for
+    Type`, which is no loop.
+
+    The trait's name or the `>` closing its arguments stands before that
+    `for`. A loop starts a statement or an expression, so what stands before a
+    loop's is a `;`, a brace, an attribute's `]`, a `=`, a label's `:` or an
+    arm's `=>`, never a name.
+    """
+    if previous == ">":
+        return True
+    return _ends_operand(previous) and (previous[0].isalpha() or previous[0] == "_")
+
+
+def _code_token(token: str, previous: str | None) -> str | None:
+    """The last code token once `token` is read: whitespace and comments leave it."""
+    if token.isspace() or token.startswith(("//", "/*")):
+        return previous
+    return token
+
+
+def split_operator_pairs(tokens):
+    """Each `||` and `&&` with no operand before it, as its two characters.
+
+    lizard's tokenizer reads `||` and `&&` greedily, so `move || n` and
+    `|&&x|` carried a logical operator that ccn, cognitive and nesting all
+    counted. A binary operator needs a left operand; without one the `||` is
+    a closure's empty parameter list and the `&&` two borrows.
+    """
+    previous = None
+    for token in tokens:
+        if token in _PAIRS and not _ends_operand(previous):
+            yield from token
+        else:
+            yield token
+        previous = _code_token(token, previous)
+
+
+class RustDecisionStates(CodeStateMachine):
+    """The decisions Rust spells without a keyword lizard counts, and the
+    tokens lizard counts that decide nothing in Rust.
+
+    One condition per match arm, wildcard arms free, and one per let-else.
+    An `else` is a let-else's unless a `}` stands before it (see the module
+    docstring). lizard's count loses one for each `for` that is no loop and
+    for the `?` of each `?Sized`, wherever they stand.
 
     Runs as a parallel state of the reader, next to the RustStates machine that
     finds functions, and reports through the same `context.add_condition()` hook
@@ -94,25 +248,174 @@ class MatchArmStates(CodeStateMachine):
     def _state_global(self, token):
         if token == "\n":
             return
-        if token == _ARM and self.previous_code_token != _WILDCARD:
+        if self._decides(token):
             self.context.add_condition()
+        elif self._declares(token):
+            self.context.add_condition(-1)
         self.previous_code_token = token
 
+    def _decides(self, token: str) -> bool:
+        if token == _ARM:
+            return self.previous_code_token != _WILDCARD
+        return token == "else" and self.previous_code_token != "}"
 
-class CorrectedRustReader(_StockRustReader):
-    """lizard's RustReader with the match rule of lizard #494 replaced.
+    def _declares(self, token: str) -> bool:
+        """A token that takes back a condition lizard counted: the `for` of an
+        implementation, the `<` that makes the `for` before it a binder, and
+        the `Sized` that makes the `?` before it a relaxed bound."""
+        if token == "for":
+            return implements_for(self.previous_code_token)
+        return (self.previous_code_token, token) in _DECLARING_PAIRS
 
-    Subtracting `match` from the inherited keyword set (rather than restating
-    the set) keeps every other keyword upstream counts, including ones a later
-    lizard adds.
+
+def _join_comma(fn) -> None:
+    """A comma inside one parameter's type or pattern, kept in that parameter.
+
+    The long name gets the ` ,` lizard has always written there, because the
+    long name is the ratchet key.
+    """
+    fn.add_to_long_name(" ,")
+    if fn.full_parameters:
+        fn.full_parameters[-1] += " ,"
+
+
+# lizard's own reading of a parameter's name, from `FunctionInfo.parameters`:
+# a word at the end of the parameter's text or right before its ` =` or ` :`.
+_LIZARD_PARAMETER_NAME = re.compile(r"(\w+)(\s=.*)?(\s:.*)?$")
+
+
+def _parameter_name(entry: str) -> str:
+    """The name lizard reads in a parameter's text, else the text itself."""
+    named = _LIZARD_PARAMETER_NAME.search(entry)
+    return named.group(1) if named else entry.strip()
+
+
+class RustFunction(lizard.FunctionInfo):
+    """A Rust function, with one parameter per entry of its parameter list.
+
+    lizard lists an entry only when its regex finds a name in it. A Rust
+    parameter binds a pattern, and `[a, b]: [u8; 2]` or `Pair { a, b }:
+    Pair<u8>` has no name at its end or right before its `:`, so lizard listed
+    no parameter for it. `CorrectedRustStates` keeps a parameter's inner
+    commas in its entry, so every entry with text is one parameter. The empty
+    entry after a trailing comma is none.
     """
 
-    # pylint: disable=too-few-public-methods
-    _control_flow_keywords = _StockRustReader._control_flow_keywords - {"match"}
+    @property
+    def parameters(self):
+        return [_parameter_name(entry) for entry in self.full_parameters if entry]
+
+
+class CorrectedRustStates(RustStates):
+    """lizard's RustStates, with a signature read the way Rust declares it.
+
+    * The conditions counted between `fn` and the body's `{` came from tokens
+      that only declare, so the `{` sets the function back to its base of 1.
+    * A signature that reaches a `;` or a `}` before any `{` has no body: a
+      trait's required method, an `extern` block's foreign function, a
+      signature in a macro's input. It is listed as no function. lizard waited
+      for a `{` through both, so the next function's body became the
+      signature's and the next function got no row.
+    * A `fn` pointer type, `fn(i32) -> bool`, is no function either. It is
+      told apart at its `(`, because inside `Vec<fn()>` the `;` after it is
+      not at the signature's depth.
+    * A comma inside a parameter's type or pattern, `(char, char)`,
+      `HashMap<K, V>` or `Point { x, y }`, parts no parameters, and each
+      function opened is a `RustFunction`, which counts every parameter.
+
+    `type_depth` counts the `<` and `[` open in the signature, and the `{` of a
+    struct pattern in its parameter list, so the comma in `HashMap<K, V>` and
+    the `;` in `-> [u8; 4]` read as the type's own.
+    """
 
     def __init__(self, context):
         super().__init__(context)
-        self.parallel_states = [RustStates(context), MatchArmStates(context)]
+        self.type_depth = 0
+
+    def _state_global(self, token):
+        super()._state_global(token)
+        if token == self.FUNC_KEYWORD:
+            # lizard's context builds every function as a FunctionInfo.
+            self.context.current_function.__class__ = RustFunction
+
+    def _function_name(self, token):
+        """A `fn` right before a `(` spells a pointer type and opens no
+        function. Rust has no anonymous function item, and a pointer type
+        can stand inside brackets opened before it, `Vec<fn()>`, where no `;`
+        after it is at the signature's depth."""
+        if token == "(":
+            self._no_body(token)
+        else:
+            super()._function_name(token)
+
+    @CodeStateMachine.read_inside_brackets_then("()", "_expect_function_impl")
+    def _function_dec(self, token):
+        if token in "()":
+            return
+        self.type_depth += _PARAMETER_DEPTH.get(token, 0)
+        if token == "," and self._nested():
+            _join_comma(self.context.current_function)
+        else:
+            self.context.parameter(token)
+
+    def _nested(self) -> bool:
+        """Inside a bracket of the parameter's own: a parenthesis, an angle
+        bracket, a square bracket or a struct pattern's brace."""
+        return self.br_count > 1 or self.type_depth > 0
+
+    def _expect_function_impl(self, token):
+        if token == "{":
+            self._body(token)
+        elif token in (";", "}") and self.type_depth == 0:
+            self._no_body(token)
+        else:
+            self.type_depth += _TYPE_DEPTH.get(token, 0)
+
+    def _body(self, token):
+        self.type_depth = 0
+        self.context.current_function.cyclomatic_complexity = 1
+        super()._expect_function_impl(token)
+
+    def _no_body(self, token):
+        """Drop the function the signature opened and hand `token` to the block
+        around it, where a `}` closes that block."""
+        self.type_depth = 0
+        self.context.current_function = self.context.stacked_functions.pop()
+        self.next(self._state_global, token)
+
+
+class CorrectedRustReader(_StockRustReader):
+    """lizard's RustReader with the match rule of lizard #494 replaced, and a
+    `//` comment ended at its line's end.
+
+    Subtracting from the inherited keyword set (rather than restating the set)
+    keeps every other keyword upstream counts, including ones a later lizard
+    adds.
+    """
+
+    # pylint: disable=too-few-public-methods
+    _control_flow_keywords = _StockRustReader._control_flow_keywords - {"match", "where", "catch"}
+
+    # The tokens lizard's nesting column (lizard_ext/lizardnd.py) opens a level
+    # on, which it takes from a reader's `loops` before its own default. That
+    # default is C's: it holds `?`, which Rust spells for error propagation and
+    # `?Sized`, and `case`, `def`, `catch`, `foreach` and `try`, which Rust code
+    # uses as names (`for case in cases`), and it lacks `loop`. `match` stays
+    # out as upstream has it: lizard opens a level per `case`, and a Rust match
+    # has none.
+    loops = frozenset({"if", "for", "while", "loop", "&&", "||"})
+
+    def __init__(self, context):
+        super().__init__(context)
+        self.parallel_states = [CorrectedRustStates(context), RustDecisionStates(context)]
+
+    @staticmethod
+    def generate_tokens(source_code, addition="", token_class=None):
+        """lizard's Rust tokens, with a `//` comment ended at its line's end, a raw
+        string, a raw identifier and an attribute's `#[` read as one token each, and
+        each operator pair split (`split_operator_pairs`)."""
+        return split_operator_pairs(CodeReader.generate_tokens(
+            source_code, LINE_COMMENT + _HASH_TOKENS + _LIFETIME + addition, token_class))
 
 
 def register() -> None:

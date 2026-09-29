@@ -2,13 +2,14 @@
 
 Each is admitted the way Rust was — `SUPPORTED_LANGUAGES` plus
 `LANGUAGE_EXTENSIONS` — because lizard already ships a reader for each and the
-probe battery hand-counted every one of them against its reader. No new reader,
-no chain placement, no default exclude.
+probe battery hand-counted every one of them against its reader. No chain
+placement and no default exclude; Zig reads through crapkit.lizardgolike's
+subclass of lizard's reader, which ends a signature where Zig ends it.
 
 What the battery found per language is pinned below: Vue scores the `<script>`
 block and nothing else, Objective-C names a method by its selector, Java refunds
-`switch` arms exactly as TypeScript does, and Zig's `switch` counts its `else`
-prong as a case — the one wrong number in the four, and it inflates.
+`switch` arms exactly as TypeScript does, and Zig's `switch` counts each prong
+but the `else` one, as C counts each `case` but `default`.
 """
 import json
 from pathlib import Path
@@ -137,7 +138,7 @@ def test_every_claimed_suffix_resolves_to_the_reader_it_was_graded_on():
 
     assert resolved == {".m": "ObjCReader", ".mm": "ObjCReader",
                         ".vue": "VueReader", ".java": "JavaReader",
-                        ".zig": "ZigReader"}
+                        ".zig": "CorrectedZigReader"}
 
 
 def test_sources_join_a_scope_that_declares_their_language():
@@ -215,16 +216,14 @@ def test_zig_counts_its_word_operators():
     assert (record.ccn, record.cognitive) == (3, 2)
 
 
-def test_a_zig_switch_counts_its_else_prong_as_a_case():
-    """The battery's one wrong number in these four, pinned so it reads as a
-    known quirk. Hand count is 4: the base plus three prongs that match a value.
-    lizard reads 5, because `else =>` is a prong like any other to a reader that
-    counts `=>`. The error is inflation only — a Zig switch never scores under
-    its hand count — so it can cost a refactor that was not needed but can never
-    hide one that was."""
+def test_a_zig_switch_counts_each_prong_but_the_else_one():
+    """Hand count is 4: the base plus three prongs that match a value. lizard's
+    own reader read 5, because `else =>` is a prong like any other to a reader
+    that counts `=>`; crapkit's counts the default prong as C counts `default`.
+    ccn_mod reads the switch once, 2, and ccn is the smaller of the two."""
     (record,) = analyze_source("src/classify.zig", ZIG_SWITCH)
 
-    assert record.ccn == 5, "hand count is 4; the else prong is the extra point"
+    assert (record.ccn_std, record.ccn_mod, record.ccn) == (4, 2, 2)
 
 
 # --- the surfaces that publish the language set -------------------------------

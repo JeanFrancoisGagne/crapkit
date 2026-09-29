@@ -88,8 +88,9 @@ exist for any agent that ever works this repo.
 
 A `{files}` template on a scope whose tests live outside its `paths` is what springs it.
 `init` no longer writes one there and `doctor` fails one it finds, but a hand-written
-config can still carry it. A test file that lives outside every scope's `paths` routes to
-the single scope that declares a template. With two templated scopes there is no single
+config can still carry it. A test file that lives outside every scope's `paths`, under a
+`test`, `tests` or `__tests__` directory, routes to the single scope that declares a
+template. With two templated scopes there is no single
 owner, and `crapkit test-scoped tests/test_stats.py` exits 3. Naming a source file instead
 routes fine and then hands the runner a source path to collect tests from: no tests ran,
 runner exit 5, crapkit exit 1.
@@ -177,7 +178,7 @@ either way. Twins are the exception: the store keeps the run's shingle index, so
 brief that finds none stored shingles the repo.
 
 **The coupling cache is per checkout, and the first run in each pays for it.** Ranked
-co-change pairs live in `.crapkit/coupling-cache-v1.json`, which `init` already gitignores
+co-change pairs live in `.crapkit/coupling-cache-v2.json`, which `init` already gitignores
 along with the rest of `.crapkit/`. Warm, `coupling` costs 0.11 s instead of 1.05 s and
 `worklist --batches` 62% less. A fleet of ten worktrees is ten cold runs, once each. Passing
 `--min-support` or `--min-confidence` off their defaults bypasses the cache every time, so

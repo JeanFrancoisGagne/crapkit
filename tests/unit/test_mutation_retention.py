@@ -42,7 +42,8 @@ def test_a_concurrent_public_run_uses_a_recoverable_private_directory(mutation_r
 
 @pytest.mark.parametrize('change', ['missing-receipt', 'wrong-root', 'wrong-run',
                                     'wrong-version', 'boolean-version', 'float-version',
-                                    'invalid-count', 'missing-lease'])
+                                    'invalid-count', 'zero-count', 'negative-count',
+                                    'text-count', 'missing-lease'])
 def test_recovery_keeps_unproven_directories_and_their_bytes(mutation_repo, change):
     root, _ = mutation_repo
     base = root / '.crapkit/mutate-tmp' / ('a' * 32)
@@ -55,7 +56,9 @@ def test_recovery_keeps_unproven_directories_and_their_bytes(mutation_repo, chan
     receipt = {'version': 1, 'root': str(root.resolve()), 'run': base.name, 'workers': 1}
     changes = {'wrong-root': ('root', str(root.parent)), 'wrong-run': ('run', 'b' * 32),
                'wrong-version': ('version', 2), 'boolean-version': ('version', True),
-               'float-version': ('version', 1.0), 'invalid-count': ('workers', True)}
+               'float-version': ('version', 1.0), 'invalid-count': ('workers', True),
+               'zero-count': ('workers', 0), 'negative-count': ('workers', -1),
+               'text-count': ('workers', '2')}
     if change in changes:
         key, value = changes[change]
         receipt[key] = value

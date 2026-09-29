@@ -5,10 +5,14 @@ floor, next-item did not, and neither admitted a function whose CRAP was over
 target but whose ccn sat under the floor. A ccn-4 function at 0% coverage
 scores CRAP 20 against a ceiling of 6, and the queue reported empty.
 """
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 import pytest
 
 from crapkit.churn import FileChurn
-from crapkit.cli.queue import _no_lane_gap, _rankable, _skip_reason
+from crapkit.cli.queue import _next_ranked, _no_lane_gap, _rankable, _skip_reason
 from crapkit.repopath import fragments
 from crapkit.score import ScoredRow, crap
 from crapkit.worklist import HOT_MIN_CCN, Marks, admission, over_target_floor, sql_floor
@@ -17,7 +21,7 @@ from crapkit.worklist import HOT_MIN_CCN, Marks, admission, over_target_floor, s
 def scored(path="util/stats.py", ccn=4, remedy="add-tests", flag="untested",
            name="dark( a , b , c )", scope="util"):
     return ScoredRow(scope, path, name, 1, 9, ccn, ccn, ccn, 8, 3, 2,
-                     0.0, flag, crap(ccn, 0.0), remedy)
+                     0.0, flag, float(ccn * ccn + ccn), remedy)
 
 
 CHURN = {"util/stats.py": FileChurn(commits=3, authors=1, weight=0.9)}
@@ -41,7 +45,8 @@ def test_a_row_at_its_ceiling_still_answers_to_the_floor():
 
 def hot_churn() -> dict:
     churn = {f"src/f{i}.py": FileChurn(commits=1, authors=1, weight=0.1) for i in range(8)}
-    churn["src/burning.py"] = FileChurn(commits=30, authors=4, weight=25.0)
+    # 30 commits weigh at most 15: a commit's weight rises to 0.5 at most (README, Risk).
+    churn["src/burning.py"] = FileChurn(commits=30, authors=4, weight=12.0)
     return churn
 
 
@@ -118,14 +123,14 @@ def test_the_pushdown_floor_never_hides_a_row_that_could_be_over_target():
     score can clear the smallest ceiling has to leave SQLite."""
     for ceiling in (6, 4, 1, 20):
         for ccn in range(1, sql_floor(99, ceiling)):
-            assert crap(ccn, 0.0) <= ceiling, \
-                f"ccn {ccn} can reach CRAP {crap(ccn, 0.0)} over ceiling {ceiling}"
+            worst = exact.crap(ccn, 0)
+            assert worst <= ceiling, f"ccn {ccn} can reach CRAP {worst} over ceiling {ceiling}"
 
 
 def test_the_pushdown_floor_is_tight_at_the_configured_ceilings():
     assert over_target_floor(6) == 3, "ccn 2 tops out at CRAP 6, ccn 3 at 12"
     assert over_target_floor(4) == 2, "a per-scope ceiling of 4 reaches ccn 2"
-    assert crap(over_target_floor(4), 0.0) > 4
+    assert exact.crap(over_target_floor(4), 0) > 4
 
 
 def test_the_pushdown_floor_never_rises_above_the_rules_it_serves():
@@ -183,3 +188,18 @@ def test_an_excluded_row_reports_the_flag_that_ate_it(tmp_path):
 
     excludes = fragments(["dark"], tmp_path)
     assert _skip_reason(scored(), adm, excludes) == "excluded_by_flag"
+
+
+def test_rows_with_the_same_crap_go_to_the_busier_file_first():
+    """next-item breaks a CRAP tie on the file's commits. ccn 25 at 80% coverage
+    and ccn 5 at none both score 30, but the floats read 29.999999999999996 and
+    30.0, so the quiet file's function came first."""
+    quiet = scored(path="util/quiet.py", ccn=5, remedy="add-tests")
+    busy = scored(path="util/busy.py", ccn=25, remedy="decompose")._replace(
+        cov=0.8, crap=crap(25, 0.8))
+    churn = {"util/quiet.py": FileChurn(commits=1, authors=1, weight=0.1),
+             "util/busy.py": FileChurn(commits=9, authors=2, weight=4.0)}
+
+    ranked, _ = _next_ranked([quiet, busy], admission(churn, floor=5))
+
+    assert [r.path for r in ranked] == ["util/busy.py", "util/quiet.py"]

@@ -17,7 +17,9 @@ rather than editing any row: see prune_keep_set for what it may never take.
 """
 from __future__ import annotations
 
+from itertools import groupby
 import json
+from operator import itemgetter
 import sqlite3
 import sys
 import zlib
@@ -28,6 +30,7 @@ from .keys import (claim_holds, claim_in_run, claim_key, expression_group,
                    expression_reader_current, key_names, position,
                    refuse_ambiguous, split_ordinal)
 from .dup import SHINGLE_FORMAT
+from .score import AT_CEILING, crap_load
 from .snapshot import InventoryRow
 from .worklist import Marks
 from .errors import CrapkitError, ToolError
@@ -71,7 +74,7 @@ _CODE_DDL = """CREATE TABLE IF NOT EXISTS {table} (
 # stores that met the same names in a different order hold different integers,
 # and a store is a file people copy between machines. A name from outside this
 # list is still stored, at a code minted after these.
-_CODE_SEEDS = {"flags": ("measured", "untested", "no-lane", "cc-only"),
+_CODE_SEEDS = {"flags": ("measured", "untested", "no-lane", "cc-only", "excluded"),
                "remedies": ("ok", "add-tests", "decompose", "split-lines")}
 
 # One run's shingle index, for brief's twins and for duplication: the marker
@@ -411,21 +414,35 @@ def _ceiling_key(target: int, scope_targets: dict[str, int] | None) -> str:
 
     _own_ceilings, not the raw dict. A scope whose target IS the repo target
     changes no answer, and keying on it would split the cache and pay for a
-    second full scan of history for nothing. Nothing else belongs in the key:
-    a run's rows never change after it is written, so within one ceiling a
-    stored number cannot go stale.
+    second full scan of history for nothing. A run's rows never change after it
+    is written, so within one ceiling a stored number goes stale only when the
+    rule that decided it changes, and _ROLLUP_RULES names that rule.
     """
-    return json.dumps([target, _own_ceilings(target, scope_targets)],
+    return json.dumps([_ROLLUP_RULES, target, _own_ceilings(target, scope_targets)],
                       separators=(",", ":"), sort_keys=True)
 
 
-# The rollup, cut per (run, scope): run_scope_totals answers it as-is and
-# run_totals adds each run's scopes up, so one scan feeds both. `scope = ''` is
-# the marker a filled run leaves whether or not it scored anything, and every
-# read excludes it.
+# 2: a CRAP that is exactly its ceiling is not over it (score.over_ceiling).
+# Keys without the number were decided by the plain `crap > ceiling`, which
+# counted CRAP(18, 2/3) = 30.000000000000004 over a target of 30.
+# 3: every load is score.crap_load of the stored scores, and the whole run's
+# totals are the `scope = ''` row's. Rule 2 wrote SQL SUMs and a zero there.
+_ROLLUP_RULES = 3
+
+
+# The rollup, one row per (run, scope) plus the `scope = ''` row, which holds
+# the whole run: run_scope_totals answers the first and run_totals the second,
+# so one scan feeds both. The whole run is summed from its scores, never from
+# the scopes' rounded loads, which add up to a different double. A run that
+# scored nothing leaves only that row, at zero functions, so it reads as filled
+# and every read leaves it out.
 _ROLLUP_COLS = "run_id, ceiling_key, scope, functions, over_target, crap_load"
 _ROLLUP_READ = ("SELECT run_id, scope, functions, over_target, crap_load FROM run_rollup "
-                "WHERE ceiling_key = ? AND scope <> '' ORDER BY run_id, scope")
+                "WHERE ceiling_key = ? AND functions > 0 ORDER BY run_id, scope")
+# The fill streams the scores out in run order and adds them up in Python:
+# SQLite's SUM() adds in scan order before 3.43, so it cannot give crap_load.
+_ROLLUP_SCAN = ("SELECT f.run_id, i.scope, f.crap, f.crap > ({ceiling}) * ? " + _JOINED
+                + " WHERE f.crap IS NOT NULL AND f.run_id IN ({holes}) ORDER BY f.run_id")
 
 
 # Same-line collision groups, one row per (run, identity), cached like the
@@ -461,11 +478,26 @@ def _one_run(run_id: int | None, column: str) -> tuple[str, tuple]:
     return ("", ()) if run_id is None else (f" AND {column} = ?", (run_id,))
 
 
-def _summed(by_scope: dict[str, tuple]) -> tuple:
-    """One run's scopes added back up into the whole-run triple."""
-    parts = list(by_scope.values())
-    return (sum(n for n, _o, _l in parts), sum(o for _n, o, _l in parts),
-            sum(load for *_x, load in parts))
+def _whole_and_scopes(by_scope: dict[str, tuple]) -> tuple[tuple, dict[str, tuple]]:
+    """One run's rollup split into the whole-run triple, which the '' row
+    holds, and the per-scope triples."""
+    scopes = dict(by_scope)
+    return scopes.pop("", (0, 0, 0.0)), scopes
+
+
+def _run_rollup(scores) -> dict[str, tuple]:
+    """One run's (functions, over_target, crap_load) per scope and, under '',
+    for the whole run, from its (run_id, scope, crap, over) rows. Scopes come
+    back sorted, the order the cached read hands them back in."""
+    craps: dict[str, list[float]] = {"": []}
+    overs: dict[str, int] = {"": 0}
+    for _run_id, scope, crap, over in scores:
+        craps.setdefault(scope, []).append(crap)
+        craps[""].append(crap)
+        overs[scope] = overs.get(scope, 0) + over
+        overs[""] += over
+    return {scope: (len(values), overs[scope], crap_load(values))
+            for scope, values in sorted(craps.items())}
 
 
 def _by_run(rows) -> dict[int, dict[str, tuple]]:
@@ -1167,28 +1199,28 @@ class SnapshotStore:
         numbers back rather than re-reading them is what lets the write fail
         without failing the command.
         """
-        scored, pending = self._rollup_values(key, run_ids, target, scope_targets)
+        filled, pending = self._rollup_values(key, run_ids, target, scope_targets)
         self._store_rollup(pending)
-        return _by_run(scored)
+        return filled
 
     def _rollup_values(self, key: str, run_ids: list[int], target: int,
-                       scope_targets: dict[str, int] | None) -> tuple[list, list]:
-        """Compute missing values without publishing during a read snapshot."""
+                       scope_targets: dict[str, int] | None) -> tuple[dict, list]:
+        """Compute missing values without publishing during a read snapshot.
+
+        One run's scores at a time are held, never the whole history's. Every
+        run gets its '' row, zero for a run that scored nothing, so it reads
+        as filled.
+        """
         if not run_ids:
-            return [], []
+            return {}, []
         ceiling = _ceiling_expr(target, scope_targets)
-        holes = ",".join("?" * len(run_ids))
         cur = self._conn.execute(
-            f"SELECT f.run_id, i.scope, COUNT(*), SUM(f.crap > {ceiling.expr}), "
-            f"SUM(f.crap) {_JOINED} WHERE f.crap IS NOT NULL AND f.run_id IN ({holes}) "
-            "GROUP BY f.run_id, i.scope ORDER BY f.run_id, i.scope",
-            (*ceiling.params, *run_ids))
-        scored = cur.fetchall()
-        # the marker first, so a run that scored nothing still reads as filled
-        pending = ([(rid, key, "", 0, 0, 0.0) for rid in run_ids]
-                   + [(rid, key, scope, n, over, load)
-                      for rid, scope, n, over, load in scored])
-        return scored, pending
+            _ROLLUP_SCAN.format(ceiling=ceiling.expr, holes=",".join("?" * len(run_ids))),
+            (*ceiling.params, AT_CEILING, *run_ids))
+        filled = {rid: _run_rollup(scores) for rid, scores in groupby(cur, itemgetter(0))}
+        pending = [(rid, key, scope, *agg) for rid in run_ids
+                   for scope, agg in filled.get(rid, {"": (0, 0, 0.0)}).items()]
+        return filled, pending
 
     def _store_rollup(self, rows: list[tuple]) -> None:
         """Best effort. trend and report WRITE now, and two crapkit processes
@@ -1221,20 +1253,20 @@ class SnapshotStore:
 
     def run_totals(self, *, target: int,
                    scope_targets: dict[str, int] | None = None) -> dict[int, tuple]:
-        """Per-run (functions, over_target, crap_load), added up from the rollup.
+        """Per-run (functions, over_target, crap_load), off the rollup's '' rows.
 
-        Summing the per-scope rows is what keeps the whole history one scan
-        instead of two: the per-scope cut is the finer one, and the whole-run
-        numbers fall out of it.
+        The fill that writes the per-scope rows writes these beside them, so
+        the whole history stays one scan instead of two.
         """
-        return {run_id: _summed(by_scope)
+        return {run_id: _whole_and_scopes(by_scope)[0]
                 for run_id, by_scope in self._rollup(target, scope_targets).items()}
 
     def run_scope_totals(self, *, target: int,
                          scope_targets: dict[str, int] | None = None) -> dict[int, dict[str, tuple]]:
         """run_totals cut one level finer: (functions, over_target, crap_load) per
-        (run, scope). The grain the rollup is stored at, so this is the raw read."""
-        return self._rollup(target, scope_targets)
+        (run, scope)."""
+        return {run_id: _whole_and_scopes(by_scope)[1]
+                for run_id, by_scope in self._rollup(target, scope_targets).items()}
 
     def history_totals(self, *, target: int, scope_targets: dict | None = None) -> list[tuple]:
         """Trusted run metadata and both totals from one short read snapshot.
@@ -1247,12 +1279,12 @@ class SnapshotStore:
         try:
             runs = self.list_runs()
             totals = _by_run(self._conn.execute(_ROLLUP_READ, (key,)))
-            scored, pending = self._rollup_values(key, self._unrolled(key), target, scope_targets)
-            totals.update(_by_run(scored))
+            filled, pending = self._rollup_values(key, self._unrolled(key), target, scope_targets)
+            totals.update(filled)
         finally:
             self._conn.execute("RELEASE history_totals")
         self._store_rollup(pending)
-        return [(run, _summed(totals.get(run["id"], {})), totals.get(run["id"], {}))
+        return [(run, *_whole_and_scopes(totals.get(run["id"], {})))
                 for run in runs if is_trusted(run)]
 
     def function_span(self, run_id: int, path: str, long_name: str) -> tuple | None:

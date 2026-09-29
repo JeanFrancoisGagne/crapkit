@@ -495,7 +495,7 @@ def test_two_leftover_files_are_named_in_the_plural(tmp_path):
     assert "the cov.json and junit.xml on disk predate it and are the previous run's" in message
 
 
-def test_the_lanes_page_quotes_the_leftover_refusal_a_run_prints(tmp_path):
+def test_the_lanes_page_quotes_the_leftover_refusal_a_run_prints(tmp_path, on_a_host):
     """The page's lane declares a results file, as every lane init writes does,
     so the transcript names both files the run left."""
     lanes_page = (Path(__file__).resolve().parents[2] / "docs" / "lanes.md").read_text(

@@ -217,7 +217,7 @@ def test_coverage_end_to_end_scores_and_flags(mini_repo: Path):
     assert {"cov", "flag", "crap", "remedy"} <= set(cols)
     d = by_name["dispatch"]
     assert d["flag"] == "measured" and float(d["cov"]) == 0.75
-    assert abs(float(d["crap"]) - (4 * 0.25 ** 3 + 2)) < 1e-9
+    assert float(d["crap"]) == 2.0625  # 2^2 * (1 - 0.75)^3 + 2 = 4/64 + 2, exact in binary
     assert by_name["plain"]["flag"] == "untested"
     g = by_name["guarded"]
     assert g["flag"] == "measured" and float(g["cov"]) > 0, "xdist fragments must combine into real branch data"

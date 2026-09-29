@@ -34,29 +34,73 @@ def pair_order(pair):
     return -pair["similarity"], tuple(map(function_order, pair["functions"]))
 
 
-def oracle(rows, sources, min_lines, threshold, top):
+def nested_in(outer, inner) -> bool:
+    """inner is another function inside outer's span: a shorter span, or on
+    outer's own span a later occurrence."""
+    return (inner.path == outer.path and outer.start <= inner.start and inner.end <= outer.end
+            and ((inner.start, inner.end) != (outer.start, outer.end)
+                 or inner.occurrence > outer.occurrence))
+
+
+def taken_lines(function, rows) -> set[int]:
+    """Every line past the first of a function nested in `function`."""
+    return {n for inner in rows if nested_in(function, inner)
+            for n in range(inner.start + 1, inner.end + 1)}
+
+
+def own_lines(function, rows, file_lines):
+    """function's lines, less every line past the first of a function nested in it."""
+    taken = taken_lines(function, rows)
+    return [file_lines[n - 1] for n in range(function.start, min(function.end, len(file_lines)) + 1)
+            if n not in taken]
+
+
+def oracle_lines(function, rows, sources):
+    """Every source here is Python: a comment line starts with #, and a line
+    starting with three quotes is left out too."""
+    lines = own_lines(function, rows, sources[function.path].splitlines())
+    return ["".join(line.split()) for line in lines if line.strip()
+            and not line.strip().startswith(("#", '"""', "'''"))]
+
+
+def oracle_index(rows, sources, min_lines):
     indexed = []
     for function in rows:
         if function.path not in sources:
             continue
-        lines = sources[function.path].splitlines()[function.start - 1:function.end]
-        lines = ["".join(line.split()) for line in lines if line.strip()
-                 and not line.strip().startswith(("#", "//", "/*", "*", '"""', "'''"))]
+        lines = oracle_lines(function, rows, sources)
         if len(lines) >= min_lines:
             indexed.append((function, {tuple(lines[i:i + 4]) for i in range(len(lines) - 3)}))
-    pairs = []
-    for (a, left), (b, right) in itertools.combinations(indexed, 2):
-        count = len(left & right)
-        nested = a.path == b.path and ((a.start <= b.start and b.end <= a.end)
-                                        or (b.start <= a.start and a.end <= b.end))
-        if not count or nested:
-            continue
-        score = count / min(len(left), len(right))
-        if score >= threshold:
-            functions = [{key: getattr(r, key) for key in ("path", "long_name", "start", "end", "nloc")}
-                         for r in (a, b)]
-            pairs.append({"functions": sorted(functions, key=function_order),
-                          "similarity": round(score, 4), "contained": False})
+    return indexed
+
+
+def encloses(a, b) -> bool:
+    return a.start <= b.start and b.end <= a.end
+
+
+def spans_nest(a, b) -> bool:
+    return a.path == b.path and (encloses(a, b) or encloses(b, a))
+
+
+def oracle_payload(a, b, score):
+    functions = [{key: getattr(r, key) for key in ("path", "long_name", "start", "end", "nloc")}
+                 for r in (a, b)]
+    return {"functions": sorted(functions, key=function_order),
+            "similarity": round(score, 4), "contained": False}
+
+
+def oracle_pair(a, left, b, right, threshold):
+    count = len(left & right)
+    if not count or spans_nest(a, b):
+        return None
+    score = count / min(len(left), len(right))
+    return oracle_payload(a, b, score) if score >= threshold else None
+
+
+def oracle(rows, sources, min_lines, threshold, top):
+    pairs = [pair for (a, left), (b, right)
+             in itertools.combinations(oracle_index(rows, sources, min_lines), 2)
+             if (pair := oracle_pair(a, left, b, right, threshold)) is not None]
     return sorted(pairs, key=pair_order)[:top]
 
 

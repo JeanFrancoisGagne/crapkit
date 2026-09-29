@@ -15,7 +15,7 @@ import pytest
 
 from crapkit import keys
 from crapkit.errors import CrapkitError
-from crapkit.score import ScoredRow
+from crapkit.score import ScoredRow, crap
 
 PATH = "src/iso.py"
 POST_INIT = "__post_init__( self )"
@@ -79,6 +79,14 @@ def test_the_twin_selector_picks_by_file_order_not_by_score():
 
 def test_equal_twins_resolve_to_the_first_in_the_file():
     tied = [scored(POST_INIT, 18, 30.0), scored(POST_INIT, 7, 30.0)]
+
+    assert keys.select(tied, "__post_init__") == [(POST_INIT, POST_INIT)]
+
+
+def test_twins_whose_crap_is_equal_resolve_to_the_first_whatever_the_floats_say():
+    """ccn 25 at 80% coverage and ccn 5 at none both score 30. The floats read
+    29.999999999999996 and 30.0, which made the second twin the worse one."""
+    tied = [scored(POST_INIT, 7, crap(25, 0.8)), scored(POST_INIT, 18, crap(5, 0.0))]
 
     assert keys.select(tied, "__post_init__") == [(POST_INIT, POST_INIT)]
 

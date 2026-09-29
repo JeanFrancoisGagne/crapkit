@@ -123,3 +123,19 @@ def test_the_octal_escapes_are_decoded_before_slashes_are_normalized():
     (pair,) = change_coupling(log, min_support=3, min_confidence=0.5)
 
     assert not [f for f in pair["files"] if "303" in f], pair["files"]
+
+
+def test_pairs_whose_support_times_confidence_tie_rank_by_their_paths():
+    """a.py and b.py share 1 of their 3 commits, 1 x 0.3333. y.py and z.py share
+    3 of their 27, 3 x 0.1111: the same 0.3333, so the paths decide. In binary
+    floating point 3 x 0.1111 is 0.33330000000000004, which ranked y.py's pair
+    first and let a top of 1 keep it."""
+    log = _log(["src/a.py", "src/b.py"], *[["src/a.py"], ["src/b.py"]] * 2,
+               *[["src/y.py", "src/z.py"]] * 3, *[["src/y.py"], ["src/z.py"]] * 24)
+
+    pairs = change_coupling(log, min_support=1, min_confidence=0, top=None)
+    (first,) = change_coupling(log, min_support=1, min_confidence=0, top=1)
+
+    assert [(p["files"], p["support"], p["confidence"]) for p in pairs] == [
+        (["src/a.py", "src/b.py"], 1, 0.3333), (["src/y.py", "src/z.py"], 3, 0.1111)]
+    assert first["files"] == ["src/a.py", "src/b.py"]

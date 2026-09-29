@@ -4,6 +4,17 @@ notes = [
   "Run tests/unit with -n 4 and tests/e2e with -n 8. Use tools/testing/run.py --unit-workers 1 for a serial unit reproduction. Both suites run before a change is done.",
   "Every function crapkit ships stays at ccn <= 6. The ceiling is not a number to argue with: decompose the function, never raise it.",
 ]
+# `crapkit mutate` on this repo: the suite run once per mutant is tests/unit plus
+# every accuracy test that spawns nothing and compares crapkit with no copy of
+# itself (golden, change-control and cross-surface tests are left out). The
+# killer puts the mutation worktree's src/ first on PYTHONPATH, because an
+# editable install points at the main checkout and would test unmutated code.
+# The deadline is three times the killer's slowest measured clean run: 546 s
+# alone on four CPUs, 1114 s inside a loaded nightly shard, where
+# test_mutation_command_is_sound times it.
+mutation_command = "python tools/accuracy/mutation.py killer"
+mutation_timeout_seconds = 3600
+mutation_workers = 1
 
 # One command per scope. No {files} placeholder on purpose: the tests live in
 # tests/, which no scope owns, so substituting a source path would hand pytest a
@@ -34,6 +45,18 @@ languages = ["python"]
 # reproduction. Nothing under here has a lane: coverage_optional keeps the ccn
 # ceiling on them and asks for nothing else. The demo's sample repo and its
 # history are excluded above; they are the subject of the demo, not crapkit.
+coverage_optional = true
+
+# The calculation-accuracy tools: the tier runner, change control, the retro
+# replay, the mutation gate and the wheel diff. They decide whether a number
+# crapkit prints is right, so they sit one under the product's ceiling. Their
+# tests are tests/accuracy, which the py lane does not run; mutation floors
+# (tests/accuracy/suite_strength/mutation/floors.tsv) measure them instead.
+[[scope]]
+name = "accuracy"
+paths = ["tools/accuracy"]
+languages = ["python"]
+target = 5
 coverage_optional = true
 
 [[lane]]

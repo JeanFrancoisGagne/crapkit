@@ -23,11 +23,12 @@ from itertools import chain
 from pathlib import Path
 from typing import NamedTuple
 
-from .analyze import analyze_jobs, analyze_source, decode_source, unread_reasons
+from .analyze import analyze_jobs, analyze_sources, decode_source, unread_reasons
 from .config import Config
-from .diffparse import changed_ranges
+from .diffparse import changed_ranges, reader_ranges
 from .gitio import GitReads
 from .gitpaths import readable
+from .invariants import check_violations
 from .keys import key_names, key_of
 from .merge import FunctionRecord
 from .universe import _source_extensions, exclude_matcher, excluded, scan_files
@@ -100,8 +101,7 @@ def staged_records(blobs: dict[str, bytes], *, worker_budget: int = 0) -> dict[s
     materializes, because a worker process reads its own files.
     """
     if commit_sized(blobs):
-        return {rel: analyze_source(rel, decode_source(blob))
-                for rel, blob in sorted(blobs.items())}
+        return analyze_sources({rel: decode_source(blob) for rel, blob in sorted(blobs.items())})
     with tempfile.TemporaryDirectory() as tmp:
         jobs = _materialized(Path(tmp), blobs)
         return analyze_jobs(jobs, workers=min(len(jobs), _HOOK_MAX_WORKERS),
@@ -135,6 +135,7 @@ def _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, i
         violations.extend(_file_violations(rel, records_by_path[rel], ranges_by_path[rel],
                                            by_file[rel]))
     violations.sort(key=lambda v: (-v.ccn, v.path, v.start))
+    check_violations(violations, in_scope, cfg.ceiling_of)
     return violations
 
 
@@ -192,8 +193,10 @@ def _gate_ranges(cfg: Config, reads, ranges_by_path: dict, staged: dict) -> Stag
     unscoped = _unscoped_sources(sorted(staged), set(checked_files), cfg)
     if not checked_files:
         return StagedGate([], unscoped, unreadable=universe.unreadable)
-    records_by_path = staged_records(reads.staged_blobs(checked_files),
-                                     worker_budget=cfg.analysis_worker_budget)
+    blobs = reads.staged_blobs(checked_files)
+    records_by_path = staged_records(blobs, worker_budget=cfg.analysis_worker_budget)
+    # The staged blob is the diff's new side: its bytes place git's lines.
+    ranges_by_path = reader_ranges(ranges_by_path, blobs.get)
     return StagedGate(
         _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, in_scope),
         unscoped, tuple(chain.from_iterable(records_by_path.values())),

@@ -1,0 +1,53 @@
+{
+ "runs": [
+  {
+   "avg": 4.1017,
+   "by_scope": {
+    "legacy": {
+     "crap_load": 32.0,
+     "functions": 2,
+     "grade": "F",
+     "over_target": 1
+    },
+    "native": {
+     "crap_load": 78.0,
+     "functions": 24,
+     "grade": "B",
+     "over_target": 1
+    },
+    "py": {
+     "crap_load": 284.72,
+     "functions": 48,
+     "grade": "F",
+     "over_target": 12
+    },
+    "scripts": {
+     "crap_load": 31.0,
+     "functions": 8,
+     "grade": "A+",
+     "over_target": 0
+    },
+    "vendor": {
+     "crap_load": 1134.0,
+     "functions": 304,
+     "grade": "B",
+     "over_target": 12
+    },
+    "web": {
+     "crap_load": 142.48,
+     "functions": 29,
+     "grade": "F",
+     "over_target": 7
+    }
+   },
+   "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+   "crap_load": 1702.21,
+   "created_at": "<created_at>",
+   "functions": 415,
+   "over_target": 33,
+   "run_id": 2
+  }
+ ],
+ "schema": 1,
+ "target": 6
+}

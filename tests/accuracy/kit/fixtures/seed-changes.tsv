@@ -1,0 +1,6 @@
+id	date	kind	calcs	analysis_version	lizard_version	changelog	reason
+K1	2026-09-24	none					the kit's seed goldens: its self-test, not a calculation change
+K2	2026-09-24	none					the seed lanes say container_ok so they score in the accuracy image; only the fixture commit moved
+K3	2026-09-27	none					the report footer says the churn window is the months before HEAD's commit date; no value moved
+K4	2026-09-28	none					the coverage summary counts the new excluded flag, a SARIF log names the OASIS errata01 schema URI and doctor reports analysis version 12 (the merged calculation fixes); no seed value moved
+K5	2026-09-29	fix	Cognitive complexity; Nesting depth				doctor reports analysis version 13, and the seed's TypeScript label(user?) reads cognitive 0 and nesting 0: the ? of an optional parameter and the ?. and ?? in its body are no conditional operator

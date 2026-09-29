@@ -1,0 +1,2 @@
+crapkit: 2 source line span(s) hold more than one function; coverage cannot say whose is whose, so those functions score as uncovered, and splitting the definitions onto separate lines measures them; 1 of them hold a function over its target:
+crapkit:   src/web/arrows.js:7 (complexity 3)

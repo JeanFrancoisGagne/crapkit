@@ -17,8 +17,11 @@ the process uvx starts has on PATH. `uvx crapkit init` told its reader to run
 `crapkit coverage`, and the shell answered 127.
 """
 import os
+import shlex
+import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,7 +29,7 @@ from uvx_process import CACHE_TAG, as_uvx as _as_uvx, cached_env, run_from
 
 from crapkit import invocation
 from crapkit.errors import CrapkitError
-from crapkit.invocation import _self
+from crapkit.invocation import _self, shell_arg, shell_path
 
 LAUNCHER = "crapkit.exe" if os.name == "nt" else "crapkit"
 
@@ -79,10 +82,18 @@ def test_a_console_script_this_interpreter_installed_names_itself(on_path):
     assert _self() == "crapkit"
 
 
+def _named_file(spelled: str) -> str:
+    """The path a spelled interpreter word names, its quotes read back."""
+    if os.name == "nt":
+        return spelled.replace('"', "")
+    return shlex.split(spelled)[0]
+
+
 def test_no_console_script_on_path_names_the_interpreter_that_is_running(off_path):
     """Not bare `python`: the reader may have no activated venv (the hook case),
     and the interpreter running this process is the one crapkit is installed in."""
-    assert _self() == f"{invocation._quoted(invocation._forward(sys.executable))} -m crapkit"
+    assert _self().endswith(" -m crapkit")
+    assert os.path.samefile(_named_file(_self().removesuffix(" -m crapkit")), sys.executable)
 
 
 def test_a_console_script_of_another_environment_is_not_named(tmp_path, monkeypatch):
@@ -152,27 +163,11 @@ def test_the_scripts_dirs_hold_this_interpreters_own_environment():
     assert own in invocation._scripts_dirs()
 
 
-def test_a_windows_interpreter_is_spelled_with_forward_slashes():
-    r"""Git Bash drops every backslash of `C:\venv\Scripts\python.exe`, and
-    cmd.exe and PowerShell run the forward-slash form as well."""
-    assert invocation._forward(r"C:\venv\Scripts\python.exe", "\\") == "C:/venv/Scripts/python.exe"
-    assert invocation._forward("/usr/bin/python3", "/") == "/usr/bin/python3"
-
-
 @pytest.mark.skipif(os.name != "nt", reason="sys.executable holds backslashes on Windows only")
 def test_the_module_form_on_windows_holds_no_backslash(off_path, monkeypatch):
     monkeypatch.setattr(sys, "executable", r"C:\venv\Scripts\python.exe")
 
     assert _self() == "C:/venv/Scripts/python.exe -m crapkit"
-
-
-def test_an_interpreter_path_holding_a_space_is_quoted(off_path, monkeypatch):
-    """`C:/Program Files/Python311/python.exe` is an ordinary Windows install,
-    and unquoted it reaches cmd.exe as `C:/Program` plus two arguments."""
-    spaced = os.sep.join(["", "opt", "my python", "python.exe"])
-    monkeypatch.setattr(sys, "executable", spaced)
-
-    assert _self() == f'"{invocation._forward(spaced)}" -m crapkit'
 
 
 def test_an_interpreter_path_without_a_space_is_left_bare(off_path, monkeypatch):
@@ -213,6 +208,158 @@ def test_an_installed_tool_under_uv_names_the_console_script(tmp_path, monkeypat
     monkeypatch.setenv("PATH", str(scripts))
 
     assert _self() == "crapkit"
+
+
+@pytest.fixture()
+def windows(monkeypatch):
+    """invocation spelling paths for the Windows shells, on any OS."""
+    monkeypatch.setattr(invocation, "os", SimpleNamespace(name="nt"))
+
+
+@pytest.fixture()
+def posix(monkeypatch):
+    monkeypatch.setattr(invocation, "os", SimpleNamespace(name="posix"))
+
+
+def test_a_windows_path_is_spelled_with_forward_slashes(windows):
+    r"""Git Bash reads each bare backslash as an escape, so the next step
+    `C:\wt\app\.venv\Scripts\python.exe -m crapkit coverage` ran as
+    `C:wtapp.venvScriptspython.exe` and exited 127. cmd.exe, PowerShell and Git
+    Bash all open a path spelled with forward slashes."""
+    assert shell_path(r"C:\wt\app\.venv\Scripts\python.exe") == "C:/wt/app/.venv/Scripts/python.exe"
+
+
+def test_a_windows_segment_holding_a_space_is_quoted_alone(windows):
+    r"""A double quote at the start of a line is a string to PowerShell, and the
+    `-m` after it a parse error, so `"C:\Program Files\...\python.exe" -m crapkit`
+    never ran there. Quoting the segment keeps the line's first character bare,
+    and cmd.exe, PowerShell and Git Bash each read the path back as one word."""
+    spelled = shell_path(r"C:\Program Files (x86)\Python311-32\python.exe")
+
+    assert spelled == 'C:/"Program Files (x86)"/Python311-32/python.exe'
+
+
+def test_a_windows_segment_holding_a_shell_operator_is_quoted(windows):
+    """cmd.exe ends a command word at `&`, `;`, `,` and `=`, and PowerShell at `;`
+    and `(`: each segment holding one goes in double quotes."""
+    assert shell_path(r"C:\a&b\c;d\e,f\g=h\py(3)\python.exe") == (
+        'C:/"a&b"/"c;d"/"e,f"/"g=h"/"py(3)"/python.exe')
+
+
+def test_a_windows_path_of_word_characters_is_left_bare(windows):
+    assert shell_path(r"D:\tools\py-3.12_x64\~cache+\python.exe") == (
+        "D:/tools/py-3.12_x64/~cache+/python.exe")
+
+
+def test_a_posix_path_is_quoted_the_way_sh_reads_it(posix):
+    """Double quotes let sh expand `$` and backticks inside them; single quotes
+    hand every character on as it is."""
+    assert shell_path("/home/a b/$HOME/bin/python") == "'/home/a b/$HOME/bin/python'"
+
+
+def test_a_posix_path_without_anything_to_quote_is_left_bare(posix):
+    assert shell_path("/usr/bin/python3") == "/usr/bin/python3"
+
+
+def test_a_windows_argument_that_needs_quotes_goes_in_one_pair(windows):
+    """After the command word, PowerShell ends a word that opens with a quote at
+    the closing quote: `"my repos"/app` is two arguments there. A whole quoted
+    word is one argument in cmd.exe, PowerShell and Git Bash."""
+    assert shell_arg(r"my repos\app") == '"my repos/app"'
+    assert shell_arg(r"C:\a&b\x") == '"C:/a&b/x"'
+
+
+def test_a_windows_argument_of_word_characters_is_left_bare(windows):
+    assert shell_arg(r"C:\work\app") == "C:/work/app"
+
+
+def test_a_posix_argument_is_quoted_the_way_sh_reads_it(posix):
+    assert shell_arg("my repos/$app") == "'my repos/$app'"
+
+
+def test_a_windows_module_run_names_the_interpreter_with_forward_slashes(windows, monkeypatch):
+    monkeypatch.setattr(sys, "executable", r"C:\wt\app\.venv\Scripts\python.exe")
+
+    assert invocation._module_form() == "C:/wt/app/.venv/Scripts/python.exe -m crapkit"
+
+
+def test_a_posix_module_run_names_the_interpreter_bare(posix, monkeypatch):
+    monkeypatch.setattr(sys, "executable", "/usr/bin/python3")
+
+    assert invocation._module_form() == "/usr/bin/python3 -m crapkit"
+
+
+# --- a spaced Windows interpreter: the same file, spelled without the space ---
+
+windows_only = pytest.mark.skipif(os.name != "nt", reason="junctions and 8.3 names are Windows")
+
+
+def _junction(link: Path, target: Path) -> Path:
+    link.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True,
+                   capture_output=True)
+    return link
+
+
+@windows_only
+def test_an_interpreter_reached_through_a_spaced_link_is_named_by_its_target(tmp_path, off_path,
+                                                                            monkeypatch):
+    """No one line runs a venv's python.exe from a spaced path in both cmd.exe
+    and PowerShell: the venv launcher ends its own name at the first space unless
+    the line starts with a quote, and PowerShell reads a leading quote as a
+    string. The directory the link points at spells the same interpreter with
+    no space at all."""
+    target = tmp_path / "real"
+    (target / "Scripts").mkdir(parents=True)
+    (target / "Scripts" / "python.exe").write_bytes(b"")
+    link = _junction(tmp_path / "with space" / "venv", target)
+    monkeypatch.setattr(sys, "executable", str(link / "Scripts" / "python.exe"))
+    try:
+        word = _self().removesuffix(" -m crapkit")
+        named = _named_file(word)
+    finally:
+        os.rmdir(link)
+
+    assert " " not in word
+    assert Path(named) == (target / "Scripts" / "python.exe").resolve()
+
+
+@windows_only
+def test_a_spaced_interpreter_with_no_other_spelling_keeps_its_quoted_segments(tmp_path, off_path,
+                                                                              monkeypatch):
+    """A real directory holding a space: its 8.3 short name when the volume keeps
+    one, else the path with that segment quoted and the line's first character
+    bare. That line runs in PowerShell, pwsh and Git Bash; for a venv's launcher
+    cmd.exe loses it, and docs/adr/0003 says why that trade was taken."""
+    python = tmp_path / "with space" / "python.exe"
+    python.parent.mkdir()
+    python.write_bytes(b"")
+    monkeypatch.setattr(sys, "executable", str(python))
+
+    word = _self().removesuffix(" -m crapkit")
+
+    quoted_alone = word.endswith('/"with space"/python.exe') and not word.startswith('"')
+    assert " " not in word or quoted_alone, word
+    assert os.path.samefile(_named_file(word), python)
+
+
+SPACED = r"C:\with space\venv\Scripts\python.exe"
+SHORT = r"C:\WITHSP~1\venv\Scripts\python.exe"
+
+
+@pytest.mark.parametrize(("linked", "short", "spelled"), [
+    (r"C:\real\venv\Scripts\python.exe", SHORT, "C:/real/venv/Scripts/python.exe"),
+    (SPACED, SHORT, "C:/WITHSP~1/venv/Scripts/python.exe"),
+    (SPACED, SPACED, 'C:/"with space"/venv/Scripts/python.exe')])
+def test_a_spaced_interpreter_takes_the_first_spelling_without_a_space(windows, monkeypatch,
+                                                                       linked, short, spelled):
+    """The link's target first, then the 8.3 short name, then the path with its
+    spaced segment quoted. The two lookups are faked so every OS runs the
+    choice; the Windows-only tests above run the real ones."""
+    monkeypatch.setattr(invocation, "_unlinked", lambda path: linked)
+    monkeypatch.setattr(invocation, "_short_name", lambda path: short)
+
+    assert invocation.interpreter_word(SPACED) == spelled
 
 
 # --- the messages ------------------------------------------------------------

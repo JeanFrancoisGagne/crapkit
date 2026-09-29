@@ -43,9 +43,11 @@ _TEMPLATE_READERS = (TypeScriptReader, JavaScriptReader, TSXReader)
 # token it reads can, so a search for these finds the template starts lizard
 # finds. Each alternative opens on its own first character, which lets the search
 # skip every other one; the lookbehind after a number's first digit is lizard's
-# token boundary, since a digit after a word character is part of that word.
+# token boundary, since a digit after a word character is part of that word. A
+# line comment ends at its line, as crapkit.lizardlinecomment has the tokenizer
+# end it: a template on the line after `// C:\dir\` is code.
 _LIZARD_SKIPS = re.compile(
-    r"/\*.*?\*/|//(?:\\\n|[^\n])*|(?P<tick>`)|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*?'"
+    r"/\*.*?\*/|//[^\n]*|(?P<tick>`)|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*?'"
     r"|\d(?<!\w\d)\d*'(?:\d+')*\d+|0(?<!\w0)x(?:[0-9A-Fa-f]+')+[0-9A-Fa-f]+"
     r"|0(?<!\w0)b(?:[01]+')+[01]+",
     re.S)

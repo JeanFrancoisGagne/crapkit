@@ -55,6 +55,8 @@ answered about `'.\\\\mini'`, a token nobody typed.
 from __future__ import annotations
 
 import os
+import re
+import shlex
 import shutil
 import sys
 import sysconfig
@@ -62,6 +64,11 @@ from pathlib import Path
 
 _CONSOLE_SCRIPT = "crapkit"
 _CACHE_TAG = "CACHEDIR.TAG"
+
+# A path segment cmd.exe, PowerShell and Git Bash all read as part of one bare
+# word. cmd.exe ends a word at a space, `&`, `;`, `,` or `=`, and PowerShell at
+# `(` or `;`; a segment holding anything outside this set goes in double quotes.
+_BARE_SEGMENT = re.compile(r"[\w.:~+-]*")
 
 
 def _self() -> str:
@@ -83,7 +90,7 @@ def console_script() -> str:
 
 
 def _module_form() -> str:
-    return f"{_quoted(_forward(sys.executable))} -m {_CONSOLE_SCRIPT}"
+    return f"{interpreter_word(sys.executable)} -m {_CONSOLE_SCRIPT}"
 
 
 def _runs_here(found: str | None) -> bool:
@@ -118,10 +125,6 @@ def _scripts_dirs() -> set[Path]:
     return {Path(sysconfig.get_path("scripts", scheme)).resolve() for scheme in schemes}
 
 
-def _forward(path: str, sep: str = os.sep) -> str:
-    return path.replace(sep, "/")
-
-
 def runs_from_cache() -> bool:
     """Whether this interpreter's environment lies inside a runner's cache: a
     directory above it carries CACHEDIR.TAG. The environment's own tag does not
@@ -143,13 +146,95 @@ def path_without_own_cache() -> str | None:
     return os.pathsep.join(entry for entry in entries if not Path(entry).is_relative_to(own))
 
 
-def _quoted(interpreter: str) -> str:
-    r"""`C:/Program Files/Python311/python.exe` is an ordinary Windows install,
-    and unquoted it reaches cmd.exe as `C:/Program` plus two arguments. Double
-    quotes are the one form cmd, bash and zsh all read. PowerShell runs the
-    quoted line only with `& ` in front, and no spelling runs unchanged in
-    all four."""
-    return f'"{interpreter}"' if " " in interpreter else interpreter
+def interpreter_word(path: str) -> str:
+    """The interpreter at `path` as the first word of a line a reader pastes:
+    `shell_path` of the spelling without a space, where Windows has one."""
+    if os.name != "nt":
+        return shell_path(path)
+    return shell_path(_spaceless(path))
+
+
+def shell_path(path: str) -> str:
+    r"""`path` as the command word of a line, one word that the shells a reader
+    pastes into read back as `path`.
+
+    POSIX quoting for sh. On Windows one line has to serve cmd.exe, PowerShell
+    and Git Bash, and the obvious spellings each lose one of them. Git Bash
+    reads a bare backslash as an escape, so `C:\wt\x` runs as `C:wtx`, exit
+    127. PowerShell reads a double quote at the start of a line as a string, so
+    `"C:\Program Files\...\python.exe" -m crapkit` stops at `-m`. Forward
+    slashes open the file in all three, and a segment that needs quoting is
+    quoted on its own, `C:/"Program Files"/...`, which keeps the first
+    character bare.
+
+    One case loses cmd.exe: a venv's python.exe whose path holds a space
+    (`_spaceless`). docs/adr/0003 records that trade.
+
+    Inside double quotes some shell still reads `%`, `!`, `$` and a backtick,
+    so a directory name holding one of them is not safe here.
+    """
+    if os.name != "nt":
+        return shlex.quote(path)
+    return "/".join(map(_windows_segment, path.replace("\\", "/").split("/")))
+
+
+def shell_arg(path: str) -> str:
+    """`path` as one argument after the command word, read back as `path` by
+    the shells a reader pastes into.
+
+    Not `shell_path`'s spelling. After the command word PowerShell ends a word
+    that opens with a quote at the closing quote, so `--repo "my repos"/app`
+    reached crapkit as `my repos` and `/app`. One pair of double quotes around
+    the whole path is one argument in cmd.exe, PowerShell and Git Bash, and
+    forward slashes keep Git Bash off the backslashes. POSIX quoting for sh.
+    As in `shell_path`, `%`, `!`, `$` and a backtick are not safe inside the
+    quotes.
+    """
+    if os.name != "nt":
+        return shlex.quote(path)
+    word = path.replace("\\", "/")
+    return word if _BARE_SEGMENT.fullmatch(word.replace("/", "")) else f'"{word}"'
+
+
+def _windows_segment(segment: str) -> str:
+    return segment if _BARE_SEGMENT.fullmatch(segment) else f'"{segment}"'
+
+
+def _spaceless(path: str) -> str:
+    """The same file spelled without a space, when Windows has such a spelling.
+
+    A venv's python.exe is a launcher that ends its own name at the first space
+    of the line cmd.exe hands it, unless that line opens with a double quote,
+    and PowerShell reads a line that opens with one as a string. So no single
+    line runs a venv interpreter whose path holds a space in both shells. The
+    directories a link points at, or the 8.3 short name the volume keeps, can
+    name the same file with no space at all. `path` itself when neither does,
+    and then `shell_path` keeps PowerShell, pwsh and Git Bash and gives up
+    cmd.exe, which ran the whole-path-quoted spelling crapkit printed up to
+    0.8.0 (docs/adr/0003).
+    """
+    if " " not in path:
+        return path
+    return next((spelling for spelling in (_unlinked(path), _short_name(path))
+                 if " " not in spelling), path)
+
+
+def _unlinked(path: str) -> str:
+    """`path` with the links its directories cross resolved. The file itself is
+    left alone: a venv's python may be a link to the base interpreter, which has
+    no crapkit. A mapped drive that resolves to a network share keeps `path`."""
+    given = Path(path)
+    resolved = given.parent.resolve() / given.name
+    return str(resolved) if len(resolved.drive) == 2 else path
+
+
+def _short_name(path: str) -> str:
+    """The 8.3 name Windows keeps for `path`, or `path` where the volume keeps none."""
+    import ctypes
+
+    buffer = ctypes.create_unicode_buffer(32768)
+    length = ctypes.windll.kernel32.GetShortPathNameW(path, buffer, len(buffer))
+    return buffer.value if 0 < length < len(buffer) else path
 
 
 def quoted_path(value: str | os.PathLike) -> str:

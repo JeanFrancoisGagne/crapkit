@@ -44,8 +44,12 @@ classifiers = [
 requires-python = ">=3.11"
 # lizard 1.24.0 is the PyPI release cut from the exact commit crapkit was built
 # against (tag 1.24.0 == 308b1c3e); earlier releases lack the TSX handling.
+# The cap keeps a new lizard from moving a score unannounced: its readers decide
+# every ccn crapkit stores. Lifting it needs a row in
+# tests/accuracy/change_control/CHANGES.tsv, and the nightly lizard-edge job
+# scores the small corpus under the newest lizard so the move is known first.
 dependencies = [
-    "lizard>=1.24.0",
+    "lizard>=1.24.0,<1.25",
 ]
 
 [project.urls]
@@ -83,6 +87,58 @@ dev = ["pytest>=8", "pytest-cov>=5", "pytest-xdist>=3.7", "coverage>=7.13.1", "P
 # `pip install "crapkit[py]"` when those are the same environment. Double
 # quotes: single ones do not survive cmd.exe.
 py = ["pytest-cov>=5", "coverage>=7.13.1"]
+# The calculation-accuracy suite (tests/accuracy, tools/accuracy). Every oracle
+# is pinned exactly: an oracle is the expected value, and a new release of one
+# moves expectations the way a crapkit change moves results. The hashed lock
+# files in tools/accuracy are what CI installs; these lists are their source.
+# accuracy-push is what every push runs; accuracy adds the nightly oracles.
+accuracy-push = [
+    "hypothesis==6.168.1",
+    "radon==6.0.1",
+    "mccabe==0.7.0",
+    "complexipy==8.0.1",
+    "coverage==7.16.1",
+    "unidiff==1.0.1",
+    "junitparser==5.0.3",
+    "numpy==2.4.6",
+    "filelock==4.0.3",
+    "html5lib==1.1",
+    "jsonschema==4.26.0",
+    "rfc3986==2.0.0",
+]
+accuracy = [
+    "hypothesis==6.168.1",
+    "radon==6.0.1",
+    "mccabe==0.7.0",
+    "complexipy==8.0.1",
+    "coverage==7.16.1",
+    "unidiff==1.0.1",
+    "junitparser==5.0.3",
+    "numpy==2.4.6",
+    "filelock==4.0.3",
+    "html5lib==1.1",
+    "jsonschema==4.26.0",
+    "rfc3986==2.0.0",
+    "pylint==4.0.9",
+    "pydriller==2.12",
+    "pygit2==1.20.1",
+    "networkx==3.6.1",
+    "mlxtend==0.25.0",
+    "slipcover==1.1.0",
+    "diff-cover==10.6.0",
+    "pytest-reportlog==1.0.0",
+    "mutmut==3.8.0",
+    "tree-sitter==0.26.0",
+    "tree-sitter-bash==0.25.1",
+    "tree-sitter-c==0.24.2",
+    "tree-sitter-cpp==0.23.4",
+    "tree-sitter-go==0.25.0",
+    "tree-sitter-java==0.23.5",
+    "tree-sitter-objc==3.0.2",
+    "tree-sitter-rust==0.24.2",
+    "tree-sitter-swift==0.7.3",
+    "tree-sitter-zig==1.1.2",
+]
 
 [project.scripts]
 crapkit = "crapkit.cli:main"
@@ -113,3 +169,95 @@ faulthandler_timeout = 600
 # `parallel = true` follows automatically; .coverage* is already gitignored.
 [tool.coverage.run]
 patch = ["subprocess"]
+
+# mutmut 3.8.0 runs in the accuracy image (tools/accuracy/mutation.py). The
+# accuracy plan mutates every module a tests/accuracy/*/calcs.tsv row names, so
+# paths_to_mutate is that union, and tests/accuracy/kit/test_kit_contract.py
+# fails when the two differ. Regenerate the list with
+# `python -c "from accuracy.kit import calcs; print(calcs.modules(calcs.load()))"`
+# run with PYTHONPATH=tests. The weekly and nightly stages pass mutmut their own
+# source_paths from the same tables; this key is what a bare `mutmut run` reads.
+# also_copy carries the accuracy suite's data into mutmut's copy of
+# the tree: fixtures, probes, recordings, goldens, the pins and the node oracles.
+[tool.mutmut]
+# The union of every tests/accuracy/*/calcs.tsv row's modules; after editing a
+# calcs.tsv, `python tools/docs/generate.py` rewrites it.
+# generated:mutmut-paths
+paths_to_mutate = [
+    "src/crapkit/analyze.py",
+    "src/crapkit/cache.py",
+    "src/crapkit/churn.py",
+    "src/crapkit/churn_cache.py",
+    "src/crapkit/churn_commits.py",
+    "src/crapkit/churn_log.py",
+    "src/crapkit/cli/admin.py",
+    "src/crapkit/cli/analyses.py",
+    "src/crapkit/cli/claude_hook.py",
+    "src/crapkit/cli/queue.py",
+    "src/crapkit/cli/ratchet_cmds.py",
+    "src/crapkit/cli/reports.py",
+    "src/crapkit/cli/scoring.py",
+    "src/crapkit/cli/verifying.py",
+    "src/crapkit/config.py",
+    "src/crapkit/coupling.py",
+    "src/crapkit/coupling_cache.py",
+    "src/crapkit/coverage_istanbul.py",
+    "src/crapkit/coverage_py.py",
+    "src/crapkit/covstream.py",
+    "src/crapkit/diffparse.py",
+    "src/crapkit/digest.py",
+    "src/crapkit/doctor.py",
+    "src/crapkit/dup.py",
+    "src/crapkit/gitio.py",
+    "src/crapkit/hook.py",
+    "src/crapkit/invariants.py",
+    "src/crapkit/invocation.py",
+    "src/crapkit/istanbul_lines.py",
+    "src/crapkit/junitparse.py",
+    "src/crapkit/keys.py",
+    "src/crapkit/lane_changes.py",
+    "src/crapkit/lane_command.py",
+    "src/crapkit/lanes.py",
+    "src/crapkit/lizardclike.py",
+    "src/crapkit/lizardcognitive.py",
+    "src/crapkit/lizardgolike.py",
+    "src/crapkit/lizardjava.py",
+    "src/crapkit/lizardlinecomment.py",
+    "src/crapkit/lizardpowershell.py",
+    "src/crapkit/lizardpython.py",
+    "src/crapkit/lizardrust.py",
+    "src/crapkit/lizardshell.py",
+    "src/crapkit/lizardswift.py",
+    "src/crapkit/lizardtypescript.py",
+    "src/crapkit/mcp_server.py",
+    "src/crapkit/mutate.py",
+    "src/crapkit/mutate_pool.py",
+    "src/crapkit/override.py",
+    "src/crapkit/packet.py",
+    "src/crapkit/ratchet.py",
+    "src/crapkit/ratchet_report.py",
+    "src/crapkit/ratchetfile.py",
+    "src/crapkit/records.py",
+    "src/crapkit/report.py",
+    "src/crapkit/sarif.py",
+    "src/crapkit/scaffold.py",
+    "src/crapkit/score.py",
+    "src/crapkit/snapshot.py",
+    "src/crapkit/sourcelines.py",
+    "src/crapkit/store.py",
+    "src/crapkit/uncovered.py",
+    "src/crapkit/universe.py",
+    "src/crapkit/verify.py",
+    "src/crapkit/watch.py",
+    "src/crapkit/worklist.py",
+    "tools/accuracy/change_control.py",
+    "tools/accuracy/mutation.py",
+    "tools/accuracy/retro.py",
+    "tools/accuracy/run.py",
+    "tools/accuracy/wheel_diff.py",
+    "tools/action/comment.py",
+    "tools/release/release.py",
+]
+# /generated:mutmut-paths
+also_copy = ["tests/", "tools/accuracy/pins.toml", "tools/accuracy/node/",
+             "tools/accuracy/checks/"]

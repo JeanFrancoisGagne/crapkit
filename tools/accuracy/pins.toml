@@ -1,0 +1,760 @@
+# Every outside tool the accuracy suite reads an expected value from, pinned.
+#
+# An oracle is the expected value. A new release of one moves expectations the
+# way a crapkit change moves results, so each is pinned here and nowhere else:
+#
+#   kind      python   imported from the hashed lock in tools/accuracy/requirements-*.txt
+#             node     installed by npm ci from tools/accuracy/node/<tier>/package-lock.json
+#             producer a coverage or test runner whose recorded artifacts a packet replays;
+#                      it runs only when a recording is regenerated
+#             binary   installed into the accuracy image by tools/accuracy/image/install-tools.sh
+#   tier      push or nightly: which lock or node directory holds it
+#   url       the exact artifact installed (the sdist for Python, the npm tarball, the
+#             linux/amd64 release asset for a binary)
+#   sha256    that artifact's digest; install-tools.sh refuses a download that differs
+#   command   how kit.oracles asks a binary its version; {bin} is the resolved path
+#   version_line  what the version answer must contain. A binary pinned by `check =
+#             "sha256"` has no version flag worth reading, so its installed file at
+#             `path` must hash to sha256 instead.
+#
+# kit.oracles reads this file. In the nightly and release tiers a difference
+# between the installed tool and its pin fails the test that asked for it:
+# "oracle radon is 6.0.2, pins.toml says 6.0.1".
+
+[snapshot]
+# apt in the image reads snapshot.debian.org at this instant, so a rebuild with
+# unchanged pins installs the same packages. The base is trixie because two
+# pinned binaries need a newer C library than bookworm's glibc 2.36:
+# cargo-crap 0.5.0 needs glibc 2.39, SwiftLint 0.65.1 glibc 2.38.
+debian = "20260920T000000Z"
+base = "debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a"
+python_build_standalone = "20260901"
+
+[oracle."cpython-3.11"]
+kind = "binary"
+tier = "push"
+version = "3.11.16"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.11.16%2B20260901-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+sha256 = "64427febea27864d136db46c8efe968eb6fa5ca2813ce1dca4bb95aec31cb2e4"
+command = ["python3.11", "--version"]
+version_line = "Python 3.11.16"
+
+[oracle."cpython-3.12"]
+kind = "binary"
+tier = "push"
+version = "3.12.14"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14%2B20260901-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+sha256 = "72748da13197c1fb161e3afeef20a6a385ff24f2165e6e2758e47008e7faba4c"
+command = ["python3.12", "--version"]
+version_line = "Python 3.12.14"
+
+[oracle."cpython-3.13"]
+kind = "binary"
+tier = "push"
+version = "3.13.15"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.13.15%2B20260901-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+sha256 = "8a689a077337bea6d1c4bc0b7df1d52fcaa28f5f67e50df8bf417c1e3f9d8874"
+command = ["python3.13", "--version"]
+version_line = "Python 3.13.15"
+
+[oracle."cpython-3.14"]
+kind = "binary"
+tier = "push"
+version = "3.14.7"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.14.7%2B20260901-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+sha256 = "3959f92825141e04adf44982d3a83ee57af0877e893b0796e04c1468749d9b04"
+command = ["python3.14", "--version"]
+version_line = "Python 3.14.7"
+
+[oracle.hypothesis]
+kind = "python"
+tier = "push"
+package = "hypothesis"
+version = "6.168.1"
+url = "https://files.pythonhosted.org/packages/aa/31/b54cd138ee36a32d0047d40fe7bdcb63cefd57ce098a26024161332d15fd/hypothesis-6.168.1.tar.gz"
+sha256 = "fd8acb5c67f260dfbdcc1b2dc95ff48b2b3f90708ae595c76f591bbf3f6f8eeb"
+version_line = "6.168.1"
+
+[oracle.radon]
+kind = "python"
+tier = "push"
+package = "radon"
+version = "6.0.1"
+url = "https://files.pythonhosted.org/packages/b1/6d/98e61600febf6bd929cf04154537c39dc577ce414bafbfc24a286c4fa76d/radon-6.0.1.tar.gz"
+sha256 = "d1ac0053943a893878940fedc8b19ace70386fc9c9bf0a09229a44125ebf45b5"
+version_line = "6.0.1"
+
+[oracle.mccabe]
+kind = "python"
+tier = "push"
+package = "mccabe"
+version = "0.7.0"
+url = "https://files.pythonhosted.org/packages/e7/ff/0ffefdcac38932a54d2b5eed4e0ba8a408f215002cd178ad1df0f2806ff8/mccabe-0.7.0.tar.gz"
+sha256 = "348e0240c33b60bbdf4e523192ef919f28cb2c3d7d5c7794f74009290f236325"
+version_line = "0.7.0"
+
+[oracle.complexipy]
+kind = "python"
+tier = "push"
+package = "complexipy"
+version = "8.0.1"
+url = "https://files.pythonhosted.org/packages/eb/80/4b257f04a98dd74c7a40c39ae83a156f498d5a12dedea7f6609ef019d1c7/complexipy-8.0.1.tar.gz"
+sha256 = "1739c0781a50ae590eaa74d6362c505b8a6b3a5a87e1a3599f4790a84f6d3331"
+version_line = "8.0.1"
+
+[oracle.coverage]
+kind = "python"
+tier = "push"
+package = "coverage"
+version = "7.16.1"
+url = "https://files.pythonhosted.org/packages/65/2d/c738872f477f5687152acae68635790387425d407ae37dd3d3a8a6692307/coverage-7.16.1.tar.gz"
+sha256 = "f83981779bcf9dfa06fa0a8d4cb43e0faec1706328ce07aa3e7b665b4ac0f210"
+version_line = "7.16.1"
+
+[oracle.unidiff]
+kind = "python"
+tier = "push"
+package = "unidiff"
+version = "1.0.1"
+url = "https://files.pythonhosted.org/packages/9f/7a/f891dba8225c20cce4417443073e67f33e01fae9715a6477f59eb32654ae/unidiff-1.0.1.tar.gz"
+sha256 = "d9425bc516390c54743a1045b2c1c97f02d245a913a241dd499f958adb2df998"
+version_line = "1.0.1"
+
+[oracle.junitparser]
+kind = "python"
+tier = "push"
+package = "junitparser"
+version = "5.0.3"
+url = "https://files.pythonhosted.org/packages/6c/c9/edeb58b0565b74ba0ffedf822d63aa40368bb4ff2da49751768eea696f5a/junitparser-5.0.3.tar.gz"
+sha256 = "f824ec1b7afbf2fd3b6813b87967b02fcda750e135d27be17cae497147419a04"
+version_line = "5.0.3"
+
+[oracle.numpy]
+kind = "python"
+tier = "push"
+package = "numpy"
+version = "2.4.6"
+url = "https://files.pythonhosted.org/packages/d0/ad/fed0499ce6a338d2a03ebae59cd15093910c8875328855781952abf6c2fe/numpy-2.4.6.tar.gz"
+sha256 = "f3a3570c4a2a16746ac2c31a7c7c7b0c186b95ce902e33db6f28094ed7387dda"
+version_line = "2.4.6"
+
+[oracle.filelock]
+kind = "python"
+tier = "push"
+package = "filelock"
+version = "4.0.3"
+url = "https://files.pythonhosted.org/packages/4f/b8/9ba8f569df649beb7058db5eb392a5f779bdbc3b82cf3942f0be439fb99e/filelock-4.0.3.tar.gz"
+sha256 = "87296d60478e14204fd9406e79831400fef76693bae2895deec236c98e87a8aa"
+version_line = "4.0.3"
+
+[oracle.html5lib]
+kind = "python"
+tier = "push"
+package = "html5lib"
+version = "1.1"
+url = "https://files.pythonhosted.org/packages/ac/b6/b55c3f49042f1df3dcd422b7f224f939892ee94f22abcf503a9b7339eaf2/html5lib-1.1.tar.gz"
+sha256 = "b2e5b40261e20f354d198eae92afc10d750afb487ed5e50f9c4eaf07c184146f"
+version_line = "1.1"
+
+[oracle.jsonschema]
+kind = "python"
+tier = "push"
+package = "jsonschema"
+version = "4.26.0"
+url = "https://files.pythonhosted.org/packages/b3/fc/e067678238fa451312d4c62bf6e6cf5ec56375422aee02f9cb5f909b3047/jsonschema-4.26.0.tar.gz"
+sha256 = "0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326"
+version_line = "4.26.0"
+
+[oracle.rfc3986]
+kind = "python"
+tier = "push"
+package = "rfc3986"
+version = "2.0.0"
+url = "https://files.pythonhosted.org/packages/85/40/1520d68bfa07ab5a6f065a186815fb6610c86fe957bc065754e47f7b0840/rfc3986-2.0.0.tar.gz"
+sha256 = "97aacf9dbd4bfd829baad6e6309fa6573aaf1be3f6fa735c8ab05e46cecb261c"
+version_line = "2.0.0"
+
+[oracle.lizard]
+kind = "python"
+tier = "push"
+package = "lizard"
+version = "1.24.0"
+url = "https://files.pythonhosted.org/packages/a5/c9/97837b967a1a6bb64acb0e1738e19a154393ae1a9a448b9958176be5b10a/lizard-1.24.0.tar.gz"
+sha256 = "2e88a7af9d23a98d3f4a30767134361bd4b7dde02c410209c6c72732a43bbb65"
+version_line = "1.24.0"
+
+[oracle.pylint]
+kind = "python"
+tier = "nightly"
+package = "pylint"
+version = "4.0.9"
+url = "https://files.pythonhosted.org/packages/e0/5e/d5ec2c861010cf8577a3e5baaf2405fdf1004f1657d9245c4efb006c1dfd/pylint-4.0.9.tar.gz"
+sha256 = "6f1305780229ae720e89b8aff2b3ff857cbb268fbab98c8b586960267667ad34"
+version_line = "4.0.9"
+
+[oracle.pydriller]
+kind = "python"
+tier = "nightly"
+package = "pydriller"
+version = "2.12"
+url = "https://files.pythonhosted.org/packages/84/39/467c0a5f0edfba63435ff6777fae993782d1ec561508a3dbc46ceff73331/pydriller-2.12-py3-none-any.whl"
+sha256 = "5d6a32627431db5ba71c8c29c8848250b82af77aafac618f38dbbb1735081455"
+version_line = "2.12"
+
+[oracle.pygit2]
+kind = "python"
+tier = "nightly"
+package = "pygit2"
+version = "1.20.1"
+url = "https://files.pythonhosted.org/packages/9c/11/592cc7854795830a7257ab6025a1fc803b58b0e7bf7d31f619bc7288ed4d/pygit2-1.20.1.tar.gz"
+sha256 = "36dff84d237f2b8f18b0b146d6e7c3f99a7bce2da98cc4103a14387f53319f95"
+version_line = "1.20.1"
+
+[oracle.networkx]
+kind = "python"
+tier = "nightly"
+package = "networkx"
+version = "3.6.1"
+url = "https://files.pythonhosted.org/packages/6a/51/63fe664f3908c97be9d2e4f1158eb633317598cfa6e1fc14af5383f17512/networkx-3.6.1.tar.gz"
+sha256 = "26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509"
+version_line = "3.6.1"
+
+[oracle.mlxtend]
+kind = "python"
+tier = "nightly"
+package = "mlxtend"
+version = "0.25.0"
+url = "https://files.pythonhosted.org/packages/a5/c2/a257a9b3f2f989729c6c88d127be0d832cc6defbab564c97c1e410de4697/mlxtend-0.25.0.tar.gz"
+sha256 = "7fd52f1c55ea80036945490ea54c497aa2251ac03cf8e728cde12275d2169bcc"
+version_line = "0.25.0"
+
+[oracle.slipcover]
+kind = "python"
+tier = "nightly"
+package = "slipcover"
+version = "1.1.0"
+url = "https://files.pythonhosted.org/packages/52/35/f958527ef887929049a7b80c0e7a9784b3e2c8e4bd50d792d5419cd0819c/slipcover-1.1.0.tar.gz"
+sha256 = "e6eac07f65abded47e0646e550b42b1d87fff48460730da0a11d0024e2dd5ec4"
+version_line = "1.1.0"
+
+[oracle.diff-cover]
+kind = "python"
+tier = "nightly"
+package = "diff-cover"
+version = "10.6.0"
+url = "https://files.pythonhosted.org/packages/63/ef/479d5b18c5cd61c4fbb769c60d4829ea9d70aef1267e302d6de60deed7f3/diff_cover-10.6.0.tar.gz"
+sha256 = "8d1194dfb537f70480ac97c9c45dd40721cf4c326c9903fbe997db67a4db6195"
+version_line = "10.6.0"
+
+[oracle.pytest-reportlog]
+kind = "python"
+tier = "nightly"
+package = "pytest-reportlog"
+version = "1.0.0"
+url = "https://files.pythonhosted.org/packages/93/d5/2f4a73822efaad1d6aea6660468d6290963e5f61d2f9d9ca707f7f0b1c13/pytest_reportlog-1.0.0.tar.gz"
+sha256 = "75aec3a92bb53456c3e028605a636579d26f31c6f1e035ad9f706c203cfcb74e"
+version_line = "1.0.0"
+
+[oracle.mutmut]
+kind = "python"
+tier = "nightly"
+package = "mutmut"
+version = "3.8.0"
+url = "https://files.pythonhosted.org/packages/78/30/b334a22184026d92a7549c8a76ad1d397ea65a6f8534ef486556ab861c70/mutmut-3.8.0.tar.gz"
+sha256 = "bc670276518f893ab356f1d28826c49b7e606e7cf89c300e3888c0b52fc1d2ed"
+version_line = "3.8.0"
+
+[oracle.tree-sitter]
+kind = "python"
+tier = "nightly"
+package = "tree-sitter"
+version = "0.26.0"
+url = "https://files.pythonhosted.org/packages/f7/03/5600b84aff2e6c4fe80cfebb4063fe2f50299521befe5f6092ab8c082f4a/tree_sitter-0.26.0.tar.gz"
+sha256 = "b40c219edccc4564530c96f8f1556f6202b37cda964d1cbd7bd2b7e68b40a245"
+version_line = "0.26.0"
+
+[oracle.tree-sitter-bash]
+kind = "python"
+tier = "nightly"
+package = "tree-sitter-bash"
+version = "0.25.1"
+url = "https://files.pythonhosted.org/packages/8e/0e/f0108be910f1eef6499eabce517e79fe3b12057280ed398da67ce2426cba/tree_sitter_bash-0.25.1.tar.gz"
+sha256 = "bfc0bdaa77bc1e86e3c6652e5a6e140c40c0a16b84185c2b63ad7cd809b88f14"
+version_line = "0.25.1"
+
+[oracle.tree-sitter-c]
+kind = "python"
+tier = "nightly"
+package = "tree-sitter-c"
+version = "0.24.2"
+url = "https://files.pythonhosted.org/packages/a6/c9/3834f3d9278251aea7312274971bc4c45b17aec2490fd4b884d93bd7019a/tree_sitter_c-0.24.2.tar.gz"
+sha256 = "1628584df0299b5a340aa63f8e67b6c97c91517f52fa7e7a4c557e40adb330a9"
+version_line = "0.24.2"
+
+[oracle.tree-sitter-cpp]
+kind = "python"
+tier = "nightly"
+package = "tree-sitter-cpp"
+version = "0.23.4"
+url = "https://files.pythonhosted.org/packages/20/2c/4dd63d705a8933543cad9b92ff31be849b164fec91a6eb63475ebc9ce668/tree_sitter_cpp-0.23.4.tar.gz"
+sha256 = "6a59c4cebb1ad1dc2e8d586cf8a72b39d21b8108b7b139d089719e81a339e41d"
+version_line = "0.23.4"
+
+[oracle.tree-sitter-go]
+kind = "python"
+tier = "nightly"
+package = "tree-sitter-go"
+version = "0.25.0"
+url = "https://files.pythonhosted.org/packages/01/05/727308adbbc79bcb1c92fc0ea10556a735f9d0f0a5435a18f59d40f7fd77/tree_sitter_go-0.25.0.tar.gz"
+sha256 = "a7466e9b8d94dda94cae8d91629f26edb2d26166fd454d4831c3bf6dfa2e8d68"
+version_line = "0.25.0"
+
+[oracle.tree-sitter-java]
+kind = "python"
+tier = "nightly"
+package = "tree-sitter-java"
+version = "0.23.5"
+url = "https://files.pythonhosted.org/packages/fa/dc/eb9c8f96304e5d8ae1663126d89967a622a80937ad2909903569ccb7ec8f/tree_sitter_java-0.23.5.tar.gz"
+sha256 = "f5cd57b8f1270a7f0438878750d02ccc79421d45cca65ff284f1527e9ef02e38"
+version_line = "0.23.5"
+
+[oracle.tree-sitter-objc]
+kind = "python"
+tier = "nightly"
+package = "tree-sitter-objc"
+version = "3.0.2"
+url = "https://files.pythonhosted.org/packages/d6/f2/f979251e2100753160fcee515bc36ee60997c2e79d166232c93bc6519e02/tree_sitter_objc-3.0.2.tar.gz"
+sha256 = "ac55aefe8a4f3ea6f1da2a2e05372a4f37100001934e36a81e0f96c4c6252809"
+version_line = "3.0.2"
+
+[oracle.tree-sitter-rust]
+kind = "python"
+tier = "nightly"
+package = "tree-sitter-rust"
+version = "0.24.2"
+url = "https://files.pythonhosted.org/packages/b7/87/75cbd22b927267d310f76cca1ab3c1d9d41035dfa3eb9cc95f96ee199440/tree_sitter_rust-0.24.2.tar.gz"
+sha256 = "54fb02a5911e345308b405174465112479f56dc39e3f1e7744d7568595f00db9"
+version_line = "0.24.2"
+
+[oracle.tree-sitter-swift]
+kind = "python"
+tier = "nightly"
+package = "tree-sitter-swift"
+version = "0.7.3"
+url = "https://files.pythonhosted.org/packages/fa/aa/8e7b789bb74ad7b9efb784bfb7d42bbcf064288d7716a72b68211ac6c3d4/tree_sitter_swift-0.7.3.tar.gz"
+sha256 = "a87f1dba3050a346ee3442aad8d727afd74555dea258e31c71c7934d8c04af9b"
+version_line = "0.7.3"
+
+[oracle.tree-sitter-zig]
+kind = "python"
+tier = "nightly"
+package = "tree-sitter-zig"
+version = "1.1.2"
+url = "https://files.pythonhosted.org/packages/5c/97/75967b81460e0ce999de4736b9ac189dcd5ad1c85aabcc398ba529f4838e/tree_sitter_zig-1.1.2.tar.gz"
+sha256 = "da24db16df92f7fcfa34448e06a14b637b1ff985f7ce2ee19183c489e187a92e"
+version_line = "1.1.2"
+
+[oracle."coverage-7.10.6"]
+kind = "producer"
+tier = "nightly"
+package = "coverage"
+version = "7.10.6"
+url = "https://files.pythonhosted.org/packages/14/70/025b179c993f019105b79575ac6edb5e084fb0f0e63f15cdebef4e454fb5/coverage-7.10.6.tar.gz"
+sha256 = "f644a3ae5933a552a29dbb9aa2f90c677a875f80ebea028e5a52a4f429044b90"
+version_line = "7.10.6"
+
+[oracle."coverage-7.13.0"]
+kind = "producer"
+tier = "nightly"
+package = "coverage"
+version = "7.13.0"
+url = "https://files.pythonhosted.org/packages/b6/45/2c665ca77ec32ad67e25c77daf1cee28ee4558f3bc571cdbaf88a00b9f23/coverage-7.13.0.tar.gz"
+sha256 = "a394aa27f2d7ff9bc04cf703817773a59ad6dfbd577032e690f961d2460ee936"
+version_line = "7.13.0"
+
+[oracle."pytest-cov-5.0.0"]
+kind = "producer"
+tier = "nightly"
+package = "pytest-cov"
+version = "5.0.0"
+url = "https://files.pythonhosted.org/packages/74/67/00efc8d11b630c56f15f4ad9c7f9223f1e5ec275aaae3fa9118c6a223ad2/pytest-cov-5.0.0.tar.gz"
+sha256 = "5837b58e9f6ebd335b0f8060eecce69b662415b16dc503883a02f45dfeb14857"
+version_line = "5.0.0"
+
+[oracle."pytest-cov-7.1.0"]
+kind = "producer"
+tier = "nightly"
+package = "pytest-cov"
+version = "7.1.0"
+url = "https://files.pythonhosted.org/packages/b1/51/a849f96e117386044471c8ec2bd6cfebacda285da9525c9106aeb28da671/pytest_cov-7.1.0.tar.gz"
+sha256 = "30674f2b5f6351aa09702a9c8c364f6a01c27aae0c1366ae8016160d1efc56b2"
+version_line = "7.1.0"
+
+[oracle."pytest-8.3.5"]
+kind = "producer"
+tier = "nightly"
+package = "pytest"
+version = "8.3.5"
+url = "https://files.pythonhosted.org/packages/ae/3c/c9d525a414d506893f0cd8a8d0de7706446213181570cdbd766691164e40/pytest-8.3.5.tar.gz"
+sha256 = "f4efe70cc14e511565ac476b57c279e12a855b11f48f212af1080ef2263d3845"
+version_line = "8.3.5"
+
+[oracle."pytest-9.0.3"]
+kind = "producer"
+tier = "nightly"
+package = "pytest"
+version = "9.0.3"
+url = "https://files.pythonhosted.org/packages/7d/0d/549bd94f1a0a402dc8cf64563a117c0f3765662e2e668477624baeec44d5/pytest-9.0.3.tar.gz"
+sha256 = "b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c"
+version_line = "9.0.3"
+
+[oracle."pytest-9.1.1"]
+kind = "producer"
+tier = "nightly"
+package = "pytest"
+version = "9.1.1"
+url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz"
+sha256 = "1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313"
+version_line = "9.1.1"
+
+[oracle."@typescript-eslint/parser"]
+kind = "node"
+tier = "push"
+package = "@typescript-eslint/parser"
+version = "8.70.1"
+url = "https://registry.npmjs.org/@typescript-eslint/parser/-/parser-8.70.1.tgz"
+sha256 = "60aabd58f439c6636af3b692cdfa66edd2c5a850ce8e234d9c3de5f05ef574ba"
+version_line = "8.70.1"
+
+[oracle.eslint]
+kind = "node"
+tier = "push"
+package = "eslint"
+version = "10.11.0"
+url = "https://registry.npmjs.org/eslint/-/eslint-10.11.0.tgz"
+sha256 = "2c1c9adad9ba0d7c8b885216a920a46eb4c1d400d04f8baafe2b281aaea945f0"
+version_line = "10.11.0"
+
+[oracle.eslint-plugin-sonarjs]
+kind = "node"
+tier = "push"
+package = "eslint-plugin-sonarjs"
+version = "4.2.1"
+url = "https://registry.npmjs.org/eslint-plugin-sonarjs/-/eslint-plugin-sonarjs-4.2.1.tgz"
+sha256 = "57a39e130fbeb7112af1276cb018cd2c800b13015eb8d82de363b8b829e8d787"
+version_line = "4.2.1"
+
+[oracle.jscpd]
+kind = "node"
+tier = "push"
+package = "jscpd"
+version = "5.3.2"
+url = "https://registry.npmjs.org/jscpd/-/jscpd-5.3.2.tgz"
+sha256 = "da09e3bf40db9d40aa2b7f1fb2e968691a16290c47ae8de5305553f36c38a43f"
+version_line = "5.3.2"
+
+[oracle.typescript]
+kind = "node"
+tier = "push"
+package = "typescript"
+version = "6.0.2"
+url = "https://registry.npmjs.org/typescript/-/typescript-6.0.2.tgz"
+sha256 = "0ae5c188a2f5db22df72fe5e74dcbc122afb52031a86dbac33e78a86db39c65e"
+version_line = "6.0.2"
+
+[oracle.vue-eslint-parser]
+kind = "node"
+tier = "push"
+package = "vue-eslint-parser"
+version = "10.4.1"
+url = "https://registry.npmjs.org/vue-eslint-parser/-/vue-eslint-parser-10.4.1.tgz"
+sha256 = "d81e63e9fc40c330049c7ce526277c6b8283d8c032af66e86647fc9c93a02fc8"
+version_line = "10.4.1"
+
+[oracle."@barney-media/crap-typescript-core"]
+kind = "node"
+tier = "nightly"
+package = "@barney-media/crap-typescript-core"
+version = "0.5.2"
+url = "https://registry.npmjs.org/@barney-media/crap-typescript-core/-/crap-typescript-core-0.5.2.tgz"
+sha256 = "32c3e21e00138a8c256524b531e37ecf39f08f27bcb751a343aaf10a29a56e31"
+version_line = "0.5.2"
+
+[oracle."@stryker-mutator/core"]
+kind = "node"
+tier = "nightly"
+package = "@stryker-mutator/core"
+version = "10.0.0"
+url = "https://registry.npmjs.org/@stryker-mutator/core/-/core-10.0.0.tgz"
+sha256 = "031f94397582903f24d7dd6119067a6ed6dbd209b2cd4d93c5d79d8438c1b294"
+version_line = "10.0.0"
+
+[oracle."@vitest/coverage-istanbul"]
+kind = "node"
+tier = "nightly"
+package = "@vitest/coverage-istanbul"
+version = "5.0.1"
+url = "https://registry.npmjs.org/@vitest/coverage-istanbul/-/coverage-istanbul-5.0.1.tgz"
+sha256 = "1ed5818db9d530df7f7d754aa3eda8d732d64bc8e47bb181870b8d5bd19e8d68"
+version_line = "5.0.1"
+
+[oracle."@vitest/coverage-v8"]
+kind = "node"
+tier = "nightly"
+package = "@vitest/coverage-v8"
+version = "5.0.1"
+url = "https://registry.npmjs.org/@vitest/coverage-v8/-/coverage-v8-5.0.1.tgz"
+sha256 = "17ff676a093aa8340573b4ef628def749e2176126961544a6403fcec13e4ff12"
+version_line = "5.0.1"
+
+[oracle.babel-jest]
+kind = "node"
+tier = "nightly"
+package = "babel-jest"
+version = "30.5.2"
+url = "https://registry.npmjs.org/babel-jest/-/babel-jest-30.5.2.tgz"
+sha256 = "f6f11cf68f953d00cb4fcaf67094848eeafc7c2c77ed68e979bafc49c5f63a93"
+version_line = "30.5.2"
+
+[oracle.c8]
+kind = "node"
+tier = "nightly"
+package = "c8"
+version = "12.0.0"
+url = "https://registry.npmjs.org/c8/-/c8-12.0.0.tgz"
+sha256 = "77e0dbd7761bef0e52569fc62e387c73f1db08d3edba1c440664ef9d6ccff534"
+version_line = "12.0.0"
+
+[oracle.istanbul-lib-coverage]
+kind = "node"
+tier = "nightly"
+package = "istanbul-lib-coverage"
+version = "3.2.2"
+url = "https://registry.npmjs.org/istanbul-lib-coverage/-/istanbul-lib-coverage-3.2.2.tgz"
+sha256 = "55807e4747867e8a34d54d0900fab3a5bba7d44230f796fcc7dc62be2efecc8e"
+version_line = "3.2.2"
+
+[oracle.jest]
+kind = "node"
+tier = "nightly"
+package = "jest"
+version = "30.5.2"
+url = "https://registry.npmjs.org/jest/-/jest-30.5.2.tgz"
+sha256 = "aa278879dd8634e13f3392d28a0e1310d87117bcb5a0c59beea7a530be24dd8c"
+version_line = "30.5.2"
+
+[oracle.jest-junit]
+kind = "node"
+tier = "nightly"
+package = "jest-junit"
+version = "17.0.0"
+url = "https://registry.npmjs.org/jest-junit/-/jest-junit-17.0.0.tgz"
+sha256 = "486b282e6b00cfa211f12edc90cc48b6764f2abaf9ef5f1be7d9278f44e6e930"
+version_line = "17.0.0"
+
+[oracle.nyc]
+kind = "node"
+tier = "nightly"
+package = "nyc"
+version = "18.0.0"
+url = "https://registry.npmjs.org/nyc/-/nyc-18.0.0.tgz"
+sha256 = "4a6907ef0956103a192bd29e1a784524f3ed8f1832eec438eee937c4828577be"
+version_line = "18.0.0"
+
+[oracle.vitest]
+kind = "node"
+tier = "nightly"
+package = "vitest"
+version = "5.0.1"
+url = "https://registry.npmjs.org/vitest/-/vitest-5.0.1.tgz"
+sha256 = "05e7dcce31266f2f193310f71d7f5f94146d1dab8793768e2276677eabe1f596"
+version_line = "5.0.1"
+
+[oracle.go]
+kind = "binary"
+tier = "nightly"
+version = "1.27.1"
+url = "https://go.dev/dl/go1.27.1.linux-amd64.tar.gz"
+sha256 = "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445"
+command = ["go", "version"]
+version_line = "go1.27.1"
+
+[oracle.node]
+kind = "binary"
+tier = "push"
+version = "22.23.3"
+url = "https://nodejs.org/dist/v22.23.3/node-v22.23.3-linux-x64.tar.xz"
+sha256 = "df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de"
+command = ["node", "--version"]
+version_line = "v22.23.3"
+
+[oracle.uv]
+kind = "binary"
+tier = "push"
+version = "0.12.17"
+url = "https://github.com/astral-sh/uv/releases/download/0.12.17/uv-x86_64-unknown-linux-gnu.tar.gz"
+sha256 = "fa82fd8dde8e8eefdecada6aa0889666556cfceb690d06e0c3bca49eb3070a63"
+command = ["uv", "--version"]
+version_line = "uv 0.12.17"
+
+[oracle.gocyclo]
+kind = "binary"
+tier = "nightly"
+version = "0.6.0"
+url = "https://proxy.golang.org/github.com/fzipp/gocyclo/@v/v0.6.0.zip"
+sha256 = "91d60eb91f3a309711e46d44478293a558feb9657c6a043f0b404491c8afa8c1"
+command = ["go", "version", "-m", "{bin}"]
+version_line = "v0.6.0"
+module = "github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0"
+
+[oracle.gocognit]
+kind = "binary"
+tier = "nightly"
+version = "1.2.1"
+url = "https://proxy.golang.org/github.com/uudashr/gocognit/@v/v1.2.1.zip"
+sha256 = "364ae0b529c0ec36741e8df1a7f7d6f5141593b32c07ff5659ce36de7befc0a5"
+command = ["go", "version", "-m", "{bin}"]
+version_line = "v1.2.1"
+module = "github.com/uudashr/gocognit/cmd/gocognit@v1.2.1"
+
+[oracle.revive]
+kind = "binary"
+tier = "nightly"
+version = "1.17.0"
+url = "https://github.com/revive-lint/revive/releases/download/v1.17.0/revive_linux_amd64.tar.gz"
+sha256 = "a423ac51cb3deb9b28409a7006c82e46ebcb579d0555eadbbe9893749c3c5853"
+command = ["revive", "-version"]
+version_line = "1.17.0"
+
+[oracle.rust-code-analysis-cli]
+kind = "binary"
+tier = "nightly"
+version = "0.0.25"
+url = "https://github.com/mozilla/rust-code-analysis/releases/download/v0.0.25/rust-code-analysis-linux-cli-x86_64.tar.gz"
+sha256 = "9ec2a217b8ff191e02dab5d5f2eee6158b63fd975c532b2c5d67c2e6c7249894"
+command = ["rust-code-analysis-cli", "--version"]
+version_line = "0.0.25"
+
+[oracle.cargo-crap]
+kind = "binary"
+tier = "nightly"
+version = "0.5.0"
+url = "https://github.com/minikin/cargo-crap/releases/download/v0.5.0/cargo-crap-x86_64-unknown-linux-gnu.tar.gz"
+sha256 = "0e883786931a8f52edef7cec02e283e5732452571fd6496e4d5ce5d9d4e0d240"
+command = ["cargo-crap", "--version"]
+version_line = "0.5.0"
+
+[oracle.temurin-jre]
+kind = "binary"
+tier = "nightly"
+version = "21.0.12.1+1"
+url = "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jre_x64_linux_hotspot_21.0.12.1_1.tar.gz"
+sha256 = "2413149700df0f7d440500a84a8f764c535f21e5a5e87d38328b64eec2c5b500"
+command = ["java", "-version"]
+version_line = "21.0.12.1"
+
+[oracle.checkstyle]
+kind = "binary"
+tier = "nightly"
+version = "14.1.0"
+url = "https://github.com/checkstyle/checkstyle/releases/download/checkstyle-14.1.0/checkstyle-14.1.0-all.jar"
+sha256 = "51e2bc7fed1bb56808aa39045f655a316194997acd24bac5195253dcf342b380"
+command = ["checkstyle", "--version"]
+version_line = "14.1.0"
+
+[oracle.pmd]
+kind = "binary"
+tier = "nightly"
+version = "7.27.0"
+url = "https://github.com/pmd/pmd/releases/download/pmd_releases/7.27.0/pmd-dist-7.27.0-bin.zip"
+sha256 = "4ae396ffaf2b0d3ef0b73a10b2925e77066f73d57a4ce9078c60e7302bcddec9"
+command = ["pmd", "--version"]
+version_line = "7.27.0"
+
+[oracle.jacoco]
+kind = "binary"
+tier = "nightly"
+version = "0.8.15"
+url = "https://github.com/jacoco/jacoco/releases/download/v0.8.15/jacoco-0.8.15.zip"
+sha256 = "5b3f6ddb724e761d25c937d68b0189a3a23f3e220e3282575ee0b53359e8110e"
+command = ["jacococli", "version"]
+version_line = "0.8.15"
+
+[oracle.code-maat]
+kind = "binary"
+tier = "nightly"
+version = "1.0.4"
+url = "https://github.com/adamtornhill/code-maat/releases/download/v1.0.4/code-maat-1.0.4-standalone.jar"
+sha256 = "4287ae2034901844450f769547bc4497a0da1a6d1c7fa6fadc858705e6743b5f"
+command = ["code-maat", "--help"]
+version_line = "code-maat"
+check = "sha256"
+path = "/opt/code-maat/code-maat-1.0.4-standalone.jar"
+
+[oracle.bugspots]
+kind = "binary"
+tier = "nightly"
+version = "0.2.2"
+url = "https://rubygems.org/downloads/bugspots-0.2.2.gem"
+sha256 = "0cf2fac3fc7bd62145b622a297f753d02956836d4af0fcafb1c8827c89ae1df6"
+command = ["gem", "list", "--exact", "bugspots"]
+version_line = "bugspots (0.2.2)"
+
+[oracle.pwsh]
+kind = "binary"
+tier = "nightly"
+version = "7.6.6"
+url = "https://github.com/PowerShell/PowerShell/releases/download/v7.6.6/powershell-7.6.6-linux-x64.tar.gz"
+sha256 = "ddbc4a2d113bbd46d283cfedcbcd117a70caefd7673f41f2b4e0000badf103bc"
+command = ["pwsh", "--version"]
+version_line = "PowerShell 7.6.6"
+
+[oracle.PSComplexity]
+kind = "binary"
+tier = "nightly"
+version = "0.5.1"
+url = "https://www.powershellgallery.com/api/v2/package/PSComplexity/0.5.1"
+sha256 = "28177884d2a92cab5ad2772dc7ca558a4cbe6a456b8d51301d42148176054c70"
+command = ["pwsh", "-NoProfile", "-Command", "(Get-Module -ListAvailable PSComplexity).Version.ToString()"]
+version_line = "0.5.1"
+
+[oracle.clang-tidy]
+kind = "binary"
+tier = "nightly"
+version = "23.1.2"
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.2/LLVM-23.1.2-Linux-X64.tar.zst"
+sha256 = "6382de1c1a210ce5a5cc49d18bc8444d137742e7cbf9b19f4ae602bb1ab52534"
+command = ["clang-tidy", "--version"]
+version_line = "LLVM version 23.1.2"
+
+[oracle.oclint]
+kind = "binary"
+tier = "nightly"
+version = "26.02"
+url = "https://github.com/oclint/oclint/archive/refs/tags/v26.02.tar.gz"
+sha256 = "abd1e020d94d9f38e6ce81e26b4d4ab8d144a6c7eea9f7b42b2254e621b256ed"
+command = ["oclint", "--version"]
+# The v26.02 source still prints 24.11 (oclint-core/lib/Constants.cpp:7 returns
+# "24.11" while oclint-core/cmake/OCLintConfig.cmake says 26.02); the source
+# tarball's sha256 above is what names the release.
+version_line = "OCLint version 24.11."
+
+[oracle.swiftlint]
+kind = "binary"
+tier = "nightly"
+version = "0.65.1"
+url = "https://github.com/realm/SwiftLint/releases/download/0.65.1/swiftlint_linux_amd64.zip"
+sha256 = "caeed6f4a679c35539ffaf124f6c4ab4a8416917f7d8796279dc52b74026059d"
+command = ["swiftlint", "version"]
+version_line = "0.65.1"
+
+[oracle.shellmetrics]
+kind = "binary"
+tier = "nightly"
+version = "b3bfff2"
+url = "https://raw.githubusercontent.com/shellspec/shellmetrics/b3bfff2af6880443112cdbf2ea449440b30ab9b0/shellmetrics"
+sha256 = "1aab5caf551811a506f11e569a1c4cf00ddd960d9212428531efb075f45d0a5d"
+command = ["shellmetrics", "--version"]
+version_line = "shellmetrics"
+check = "sha256"
+path = "/usr/local/bin/shellmetrics"

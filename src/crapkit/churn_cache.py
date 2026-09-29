@@ -3,15 +3,15 @@
 `git log --name-only` over a year of a large repo costs 6.5s, 5.8s of which is
 git diffing every commit's tree, and worklist, next-item and coupling each paid
 it in full on every invocation, at an unmoved HEAD. Every one of them reaches
-git through this module, so `.crapkit/churn-cache-v2.json` has one writer.
+git through this module, so `.crapkit/churn-cache-v3.json` has one writer.
 
 The key is (HEAD sha, window months, UTC date, path format, history depth).
-The sha pins which history; the depth (churn_log.history_depth, git's shallow
-boundary) pins how much of it the clone holds; the window pins the command;
-the date is there because the window cutoff is counted back from the clock, so
-yesterday's cache describes a window one day wider than today's; the format
-marker retires maps whose paths predate exact path decoding. Anything else is
-a miss, and a miss rebuilds.
+The sha pins the history, and with it the window, which ends at HEAD's commit
+date; the depth (churn_log.history_depth, git's shallow boundary) pins how much
+of that history the clone holds; the months pin the command; the format marker
+retires maps whose paths predate exact path decoding. The date never moves the
+window: the same HEAD rebuilds the same map. Anything else is a miss, and a
+miss rebuilds.
 
 A miss is not a full parse when it can be avoided: the map is computed from
 the window's commits, which `churn_commits` keeps, so a HEAD that grew from
@@ -43,7 +43,10 @@ from .gitpaths import PATH_FORMAT
 # it — so every run of both rebuilt the map. Different formats, different files:
 # neither invalidates the other and both stay warm. The key's own marker stays,
 # for a format change that keeps the name.
-CACHE_NAME = "churn-cache-v2.json"
+# v3 is the first map of a window that ends at HEAD's commit date. The v2 map
+# 0.4.5 to 0.8.0 write keys the same fields over a wall-clock window, so this
+# version never reads it, and never deletes it either: it is theirs to keep warm.
+CACHE_NAME = "churn-cache-v3.json"
 # Older maps can contain altered path names. Discard the retired name on a miss.
 LEGACY_NAME = "churn-cache.json"
 
@@ -66,8 +69,7 @@ def _window_lines(root: Path, months: int, head: str | None) -> Window:
 def load_churn(root: Path, months: int) -> dict[str, FileChurn]:
     """Per-file churn for the window — from disk when the key still matches, else rebuilt.
 
-    A miss discards old decoded maps. The raw log pair still keeps its original
-    path spelling, so `sweep_legacy` can adopt it for `_window_lines` to read.
+    A miss discards the map and log 0.4.4 left, as every release since 0.4.5 does.
     """
     path = root / ".crapkit" / CACHE_NAME
     key = _cache_key(root, months)

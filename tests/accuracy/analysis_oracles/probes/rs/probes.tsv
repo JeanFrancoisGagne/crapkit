@@ -1,0 +1,112 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	equivalence.rs	straight	start	1	The Rust Reference, Functions: a function starts on its defining line	
+eq-straight	equivalence.rs	straight	end	4	The Rust Reference, Functions: a function ends on the last line of its body	
+eq-straight	equivalence.rs	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	equivalence.rs	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	equivalence.rs	straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	equivalence.rs	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	equivalence.rs	straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	equivalence.rs	straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	equivalence.rs	straight	params	1	The Rust Reference, Functions: the parameters the function declares	
+eq-four-deep	equivalence.rs	four_deep	start	6	The Rust Reference, Functions: a function starts on its defining line	
+eq-four-deep	equivalence.rs	four_deep	end	17	The Rust Reference, Functions: a function ends on the last line of its body	
+eq-four-deep	equivalence.rs	four_deep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	equivalence.rs	four_deep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	equivalence.rs	four_deep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	equivalence.rs	four_deep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	equivalence.rs	four_deep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	equivalence.rs	four_deep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	equivalence.rs	four_deep	params	4	The Rust Reference, Functions: the parameters the function declares	
+eq-nested-loops	equivalence.rs	nested_loops	start	19	The Rust Reference, Functions: a function starts on its defining line	
+eq-nested-loops	equivalence.rs	nested_loops	end	29	The Rust Reference, Functions: a function ends on the last line of its body	
+eq-nested-loops	equivalence.rs	nested_loops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	equivalence.rs	nested_loops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	equivalence.rs	nested_loops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	equivalence.rs	nested_loops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	equivalence.rs	nested_loops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	
+eq-nested-loops	equivalence.rs	nested_loops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	equivalence.rs	nested_loops	params	1	The Rust Reference, Functions: the parameters the function declares	
+eq-flat-seven	equivalence.rs	flat_seven	start	31	The Rust Reference, Functions: a function starts on its defining line	
+eq-flat-seven	equivalence.rs	flat_seven	end	55	The Rust Reference, Functions: a function ends on the last line of its body	
+eq-flat-seven	equivalence.rs	flat_seven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	equivalence.rs	flat_seven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	equivalence.rs	flat_seven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	equivalence.rs	flat_seven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	equivalence.rs	flat_seven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	equivalence.rs	flat_seven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	equivalence.rs	flat_seven	params	1	The Rust Reference, Functions: the parameters the function declares	
+eq-seven-arms	equivalence.rs	seven_arms	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven arms, the `_` arm is the default	
+eq-seven-arms	equivalence.rs	seven_arms	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; a match is Rust's switch	AO-RS-MATCH-MOD
+eq-seven-arms	equivalence.rs	seven_arms	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a switch (match) +1	
+eq-seven-ifs	equivalence.rs	seven_ifs	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + if + six else ifs	
+eq-seven-ifs	equivalence.rs	seven_ifs	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+eq-seven-ifs	equivalence.rs	seven_ifs	cognitive	8	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, six else ifs +1 each, else +1	
+c-branches	constructs.rs	branches	start	1	The Rust Reference, Functions: a function starts on its defining line	
+c-branches	constructs.rs	branches	end	9	The Rust Reference, Functions: a function ends on the last line of its body	
+c-branches	constructs.rs	branches	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and else if; else adds no decision	
+c-branches	constructs.rs	branches	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-branches	constructs.rs	branches	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else if +1, else +1	
+c-branches	constructs.rs	branches	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each arm's body one level deep	
+c-branches	constructs.rs	branches	params	1	The Rust Reference, Functions: the parameters the function declares	
+c-pick	constructs.rs	pick	start	11	The Rust Reference, Functions: a function starts on its defining line	
+c-pick	constructs.rs	pick	end	18	The Rust Reference, Functions: a function ends on the last line of its body	
+c-pick	constructs.rs	pick	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; three case labels, default excluded	
+c-pick	constructs.rs	pick	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; the switch is one decision	AO-RS-MATCH-MOD-PICK
+c-pick	constructs.rs	pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; switch +1	
+c-pick	constructs.rs	pick	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the case bodies sit inside the switch	AO-N-MATCH
+c-pick	constructs.rs	pick	params	1	The Rust Reference, Functions: the parameters the function declares	
+c-logic	constructs.rs	logic	start	20	The Rust Reference, Functions: a function starts on its defining line	
+c-logic	constructs.rs	logic	end	25	The Rust Reference, Functions: a function ends on the last line of its body	
+c-logic	constructs.rs	logic	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and three short-circuit operators	
+c-logic	constructs.rs	logic	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-logic	constructs.rs	logic	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the && run +1, || +1	
+c-logic	constructs.rs	logic	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	AO-N-LOGICAL-NO-PARENS
+c-logic	constructs.rs	logic	params	4	The Rust Reference, Functions: the parameters the function declares	
+c-loops	constructs.rs	loops	start	27	The Rust Reference, Functions: a function starts on its defining line	
+c-loops	constructs.rs	loops	end	36	The Rust Reference, Functions: a function ends on the last line of its body	
+c-loops	constructs.rs	loops	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops	
+c-loops	constructs.rs	loops	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-loops	constructs.rs	loops	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two loops at nesting 0, +1 each	AO-COG-WHILE-AFTER-BRACE
+c-loops	constructs.rs	loops	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; two loops side by side	
+c-loops	constructs.rs	loops	params	1	The Rust Reference, Functions: the parameters the function declares	
+c-outer	constructs.rs	outer	start	38	The Rust Reference, Functions: a function starts on its defining line	
+c-outer	constructs.rs	outer	end	47	The Rust Reference, Functions: a function ends on the last line of its body	
+c-outer	constructs.rs	outer	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops and an if	
+c-outer	constructs.rs	outer	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-outer	constructs.rs	outer	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, loop +2, if +3, the jump to a label +1	
+c-outer	constructs.rs	outer	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; an if inside two loops	
+c-outer	constructs.rs	outer	params	1	The Rust Reference, Functions: the parameters the function declares	
+c-fact	constructs.rs	fact	start	49	The Rust Reference, Functions: a function starts on its defining line	
+c-fact	constructs.rs	fact	end	54	The Rust Reference, Functions: a function ends on the last line of its body	
+c-fact	constructs.rs	fact	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+c-fact	constructs.rs	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-fact	constructs.rs	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
+c-fact	constructs.rs	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
+c-fact	constructs.rs	fact	params	1	The Rust Reference, Functions: the parameters the function declares	
+r-try	shapes.rs	try_op	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; an early return is no increment	AO-RS-TRY-COG
+r-try	shapes.rs	try_op	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; none here	AO-RS-TRY-ND
+r-try	shapes.rs	try_op	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the ? operator returns early on an error, one binary decision	
+r-let-else	shapes.rs	let_else	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a let-else is a binary decision	AO-RS-LETELSE
+r-let-else	shapes.rs	let_else	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the else block sits one level deep	AO-RS-LETELSE-ND
+r-let-else	shapes.rs	let_else	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the let-else is one if let, +1	
+r-empty-closure	shapes.rs	empty_closure	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	AO-RS-EMPTY-CLOSURE
+r-empty-closure	shapes.rs	empty_closure	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a closure raises the nesting level and adds nothing	AO-RS-EMPTY-CLOSURE-COG
+r-maybe-sized	shapes.rs	maybe_sized	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a trait bound decides nothing	AO-RS-MAYBE-BOUND
+r-maybe-sized	shapes.rs	maybe_sized	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	AO-RS-MAYBE-BOUND-COG
+r-maybe-sized	shapes.rs	maybe_sized	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: no structure	AO-RS-MAYBE-BOUND-ND
+r-tuple-param	shapes.rs	tuple_param	params	3	The Rust Reference, Functions: the parameters the function declares, glob, r and c	AO-RS-TUPLE-PARAM
+r-tuple-param	shapes.rs	tuple_param	start	21	The Rust Reference, Functions: a function starts on its defining line	
+r-trait-sig	shapes.rs	after_trait	rows	1	The Rust Reference, Traits: a trait method with no body declares no function body, so after_trait is one function	AO-RS-TRAIT-SIG
+r-spin	shapes.rs	spin	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, the if inside it +2	AO-RS-LOOP-COG
+r-spin	shapes.rs	spin	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if body inside the loop is two levels deep	AO-RS-LOOP-ND
+r-spin	shapes.rs	spin	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the if; a loop with no condition decides nothing	
+r-where	shapes.rs	with_where	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a trait bound decides nothing	AO-RS-WHERE
+r-guard	shapes.rs	guarded_arm	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; the match +1; a case and its guard add nothing	AO-COG-GUARD
+r-guard	shapes.rs	guarded_arm	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one non-default arm and its guard	
+r-nested-let-else	shapes.rs	nested_let_else	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, the let-else as an if let +2	AO-RS-LETELSE-COG
+r-closure-depth	shapes.rs	closure_depth	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: a closure raises the nesting level	AO-N-CLOSURE
+r-arm-continue	shapes.rs	arm_continue	cognitive	5	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, match +2, if +2; an unlabeled continue adds nothing (Jumps to labels)	AO-RS-ARM-JUMP
+r-arm-continue	shapes.rs	arm_continue	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; for, the arm 0, if	
+r-closure-if	shapes.rs	closure_if	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the closure raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
+r-closure-if	shapes.rs	closure_if	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the closure	AO-N-CLOSURE-IF
+r-closure-if	shapes.rs	closure_if	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	

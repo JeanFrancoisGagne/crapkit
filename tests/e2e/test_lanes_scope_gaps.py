@@ -548,6 +548,95 @@ def test_under_sh_a_quoted_semicolon_is_an_argument(monkeypatch):
         [["python", "-m", "pytest", "-k", "a;", "--cov=pylib"]]
 
 
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+@pytest.mark.parametrize("operator", ["&&", "&", "||", "|"])
+def test_an_operator_touching_a_word_still_ends_the_command(monkeypatch, operator, shell_is_cmd):
+    """Both shells end the command at an unquoted `&&` whatever touches it
+    (POSIX 2.3; verified cmd.exe argv for `--cov-report=json:py.json&& python -m
+    coverage json`: pytest gets ["--cov-report=json:py.json"]). Splitting only
+    at an operator that stands as its own word handed pytest `python`, `-m`,
+    `coverage` and `json`, and the lane was refused naming python."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    assert _covpy_lane("python -m pytest --cov=pylib --cov-report=json:py.json"
+                       f"{operator} python -m coverage json").command
+    assert _covpy_lane(f"python -m pytest --cov=pylib{operator}python -m coverage json").command
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane(f"python -m pytest --cov=pylib{operator}python -m pytest pylib/unit")
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def test_under_sh_a_semicolon_touching_the_next_word_ends_the_command(monkeypatch):
+    """`;echo done` is `;` and then `echo done` to sh (POSIX 2.3): an operator
+    ends the word in front of it and starts the next one. Only a trailing `;`
+    was split off, so `;echo` reached pytest's argv and the lane was refused."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    assert _covpy_lane("python -m pytest --cov=pylib ;echo done").command
+    assert config.shell_segments("python -m pytest --cov=pylib;echo done") == \
+        [["python", "-m", "pytest", "--cov=pylib"], ["echo", "done"]]
+
+
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+@pytest.mark.parametrize("tail", ['>"lane.log"', '2>"lane err.log"', '>> "lane.log"'])
+def test_a_redirection_with_a_quoted_target_is_the_shells(monkeypatch, tail, shell_is_cmd):
+    """Quoting the target writes a file name with a space in it; the shell still
+    takes the redirection and its target (POSIX 2.7; verified cmd.exe argv for
+    `--cov=calc >"lane.log"`: ["--cov=calc"]). A quote touching the word marked
+    the whole word as an argument, and the lane was refused naming '>lane.log'."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    assert _covpy_lane(f"python -m pytest --cov=pylib {tail}").command
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane(f"python -m pytest --cov=pylib {tail} pylib/unit")
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def test_under_sh_a_single_quoted_redirection_target_is_the_shells(monkeypatch):
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    assert _covpy_lane("python -m pytest --cov=pylib >'lane.log'").command
+
+
+@pytest.mark.parametrize("shell_is_cmd", [True, False])
+def test_a_redirection_touching_the_word_before_it_leaves_that_word(monkeypatch, shell_is_cmd):
+    """`pylib/unit>lane.log` hands pytest `pylib/unit` (verified cmd.exe argv:
+    `tests>lane.log` -> ["tests"]), so the refusal names the path pytest gets."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", shell_is_cmd)
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane("python -m pytest --cov=pylib pylib/unit>lane.log")
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def _covpy_lane_basic(command: str):
+    """A TOML basic string, so the command can hold a line feed."""
+    escaped = command.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return load_config_text(COVPY.format(command=f'"{escaped}"')).lanes[0]
+
+
+def test_under_sh_a_line_feed_ends_the_command(monkeypatch):
+    """sh reads a line feed as it reads `;` (POSIX 2.9.3). Reading it as a blank
+    handed pytest the next line's words, and the lane was refused naming echo."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    assert _covpy_lane_basic("python -m pytest --cov=pylib\necho done").command
+    assert config.shell_segments("pytest --cov\necho done") == [["pytest", "--cov"], ["echo", "done"]]
+
+
+def test_under_sh_a_backslash_before_a_line_feed_joins_the_lines(monkeypatch):
+    """POSIX 2.2.1: `\\` and the line feed behind it are removed, so the two
+    lines are one command. Keeping the line feed wrote a word pytest never gets."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    assert _covpy_lane_basic("python -m pytest \\\n  --cov=pylib").command
+    assert config.shell_segments("pytest \\\n --cov") == [["pytest", "--cov"]]
+
+
+def test_under_sh_a_comment_is_no_argument(monkeypatch):
+    """A `#` that starts a word starts a comment to the end of the line (POSIX
+    2.3 rule 9); one inside a word is text."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    assert _covpy_lane("python -m pytest --cov=pylib # the whole suite").command
+    assert config.shell_segments("pytest -k a#b --cov #x\necho") == \
+        [["pytest", "-k", "a#b", "--cov"], ["echo"]]
+    assert config.shell_segments("pytest -k a\\;#b;#x") == [["pytest", "-k", "a;#b"]]
+    assert config.shell_segments("pytest -k a#\\\nb") == [["pytest", "-k", "a#b"]]
+
+
 def test_the_refusal_names_the_narrowing_path_not_a_word_from_the_next_command(monkeypatch):
     monkeypatch.setattr(config, "SHELL_IS_CMD", True)
     with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
@@ -563,6 +652,69 @@ def test_under_cmd_a_caret_escaped_quote_holds_the_flag_value_together(monkeypat
     monkeypatch.setattr(config, "SHELL_IS_CMD", True)
     command = 'python -m pytest --cov=pylib -k ^"not slow^"'
     assert _covpy_lane(command).command == command
+
+
+def test_under_cmd_a_caret_escaped_quote_opens_no_run_for_cmd_exe(monkeypatch):
+    """cmd.exe hands the program the quote in `^"` but opens no quoted run for
+    itself, so the `&` behind it starts a second pytest (verified cmd.exe argv:
+    ["-k", "x "], then ["pylib/unit"]). Reading one -k value let a lane whose
+    second run narrows load as full-suite coverage."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane('python -m pytest --cov=pylib -k ^"x & python -m pytest pylib/unit^"')
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def test_under_cmd_a_backslash_quote_stays_inside_the_runners_quoted_run(monkeypatch):
+    """The program reads its command line with the C runtime's rules, where `\\"`
+    is a quote inside the run: `-k "a\\" tests \\"b"` hands pytest the one value
+    `a" tests "b` (verified python argv). Ending the run there refused 'tests'."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    assert _covpy_lane('python -m pytest -k "a\\" tests \\"b" --cov=pylib').command
+    assert config.shell_words('pytest -k "a\\\\" tests', cmd=True) == ["pytest", "-k", "a\\", "tests"]
+
+
+def test_under_cmd_a_quote_that_never_closes_runs_to_the_end_of_the_line(monkeypatch):
+    """cmd.exe refuses no unclosed quote: the run takes the rest of the line, and
+    the program reads it the same way (verified argv for `"unclosed a b`:
+    ["unclosed a b"]). The whitespace fallback refused 'pylib/unit', which pytest
+    gets inside the -k value."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    assert _covpy_lane('python -m pytest --cov=pylib -k "unclosed pylib/unit').command
+
+
+def test_under_cmd_only_the_first_line_runs(monkeypatch):
+    """cmd.exe stops at a line feed (verified: `rec a<LF>rec b` starts one rec,
+    with ["a"]), so the second line's words reach no program."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    assert _covpy_lane_basic("python -m pytest --cov=pylib\npython -m pytest pylib/unit").command
+
+
+@pytest.mark.parametrize("tail", [">lane.log;2>&1", ">lane.log,2>err.log", ">lane.log , 2>&1",
+                                  ">lane.log=2>&1", '>"lane.log";2>&1'])
+def test_under_cmd_delimiters_between_two_redirections_reach_no_program(monkeypatch, tail):
+    """cmd.exe drops the `;`, `,`, `=` and blanks that stand between one
+    redirection and the next (verified argv for `--cov=calc >lane.log;2>&1`:
+    ["--cov=calc"]). Reading them as text handed pytest a `;` and refused a
+    lane that runs the whole suite."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    command = f"python -m pytest --cov=pylib --cov-report=json:.crapkit/cov/py.json {tail}"
+    assert _covpy_lane(command).command == command
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane(f"{command} pylib/unit")
+    assert "'pylib/unit'" in str(caught.value)
+
+
+def test_under_cmd_a_block_hands_on_the_commands_inside_it(monkeypatch):
+    """A `(` where a command starts opens a block, and the `)` that closes it
+    ends the command in front of it (verified argv for `(rec a && rec b)`:
+    ["a"], then ["b"]). Reading the parentheses as text refused `)` as a
+    positional, and named `pylib/unit)` where pytest gets `pylib/unit`."""
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    assert _covpy_lane("(python -m pytest --cov=pylib ) > lane.log 2>&1").command
+    with pytest.raises(ConfigError, match="narrows a full-suite") as caught:
+        _covpy_lane("(python -m pytest --cov=pylib & python -m pytest pylib/unit)")
+    assert "'pylib/unit'" in str(caught.value)
 
 
 def test_under_cmd_a_quoted_path_inside_a_flag_value_is_not_a_positional(monkeypatch):
@@ -601,8 +753,8 @@ def test_a_quoted_positional_path_still_narrows_a_full_suite_lane():
 
 
 def test_an_unbalanced_quote_falls_back_to_the_whitespace_read():
-    """shlex refuses a command sh would refuse too; the lint still runs on the
-    naive split rather than crashing config load on a ValueError."""
+    """sh refuses a quote that never closes; the lint still runs, reading the
+    quote as an ordinary character, rather than crashing config load."""
     with pytest.raises(ConfigError, match="narrows a full-suite"):
         _covpy_lane("python -m pytest pylib/unit --cov 'unclosed")
 

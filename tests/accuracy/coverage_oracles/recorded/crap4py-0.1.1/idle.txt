@@ -1,0 +1,22 @@
+CRAP Report
+===========
+Function           Module        CC  Cov%    CRAP
+-------------------------------------------------
+match_case         py/shapes.py  3   0.0%    12.0
+Box.method         py/shapes.py  2   0.0%    6.0 
+async_if           py/shapes.py  2   0.0%    6.0 
+for_loop           py/shapes.py  2   0.0%    6.0 
+if_else            py/shapes.py  2   0.0%    6.0 
+if_no_else         py/shapes.py  2   0.0%    6.0 
+inner              py/shapes.py  2   0.0%    6.0 
+outer              py/shapes.py  2   0.0%    6.0 
+while_loop         py/shapes.py  2   0.0%    6.0 
+and_or             py/shapes.py  3   100.0%  3.0 
+comprehension_if   py/shapes.py  3   100.0%  3.0 
+excluded           py/shapes.py  3   100.0%  3.0 
+exclude_also       py/shapes.py  2   100.0%  2.0 
+one_line           py/shapes.py  1   50.0%   1.1 
+body_on_signature  py/shapes.py  1   100.0%  1.0 
+branchless         py/shapes.py  1   100.0%  1.0 
+fail               py/shapes.py  1   100.0%  1.0 
+run_async          py/shapes.py  1   100.0%  1.0 

@@ -86,7 +86,7 @@ do next.
 | `file_functions`, `file_totals` | the siblings an extracted helper lands beside, and the file's rollup |
 | `regrowth` | `regrown: true` says an earlier decomposition of this function did not hold |
 | `attempts` | every claim already taken on it, oldest first. Not empty: read `regrowth.history` before repeating their split |
-| `coupling` | files that keep landing in the same commits: edit them in this session or not at all. `is_test: true` marks the ones outside the scored corpus |
+| `coupling` | files that keep landing in the same commits: edit them in this session or not at all. `is_test: true` marks a test file, by directory or by runner naming convention |
 | `duplication_twins` | near-duplicates. `contained: true` means one already fits inside the other, so one can call the other |
 | `uncovered_lines` | the exact lines to cover, same null-vs-`[]` contract as next-item |
 
@@ -229,14 +229,18 @@ and binds to the environment the repo pins:
 - crapkit routes each file you name to the scope whose `paths` entry matches deepest,
   substitutes `{files}` with that scope's files (each double-quoted, in the order you
   passed them), and runs one command per scope, scopes in name order.
-- A file only routes if it sits under a scope's `paths`. Keep test files inside a scope
-  path if you want to name them here; `[exclude] globs` still keeps them out of scoring.
+- A file only routes if it sits under a scope's `paths`, or in a test directory (next
+  section). Keep test files inside a scope path if you want to name them here;
+  `[exclude] globs` still keeps them out of scoring.
 
 ### Several scopes, tests in a top-level tests/
 
 A test file outside every scope routes to the single scope that declares a template. With
 two templated scopes there is no single owner and `crapkit test-scoped tests/test_stats.py`
-exits 3. Naming a source file routes fine, and then `{files}` hands pytest a source path to
+exits 3. A test file here is one under a `test`, `tests` or `__tests__` directory, in any
+case, the directories the scored corpus drops on its own. A test name is not enough:
+`tools/test_helper.py` outside every scope and every test directory is source no scope
+claims, and naming it exits 3. Naming a source file routes fine, and then `{files}` hands pytest a source path to
 collect tests from: no tests ran, runner exit 5, crapkit exit 1.
 
 Drop `{files}` for those scopes. A template without it runs exactly as written, so the
@@ -449,7 +453,7 @@ Act on these fields:
 |---|---|
 | `remedy` | `decompose` splits the function, `split-lines` moves it off a line it shares with another function or with its own `def`, `add-tests` covers it, `ok` needs nothing |
 | `est_splits` | pieces a decomposition needs: `0` when `ccn <= target`, else `ceil(ccn / target)` |
-| `est_uncovered_paths` | decision paths no test walks: `round((1 - cov) * ccn)` |
+| `est_uncovered_paths` | decision paths no test walks: `(1 - cov) * ccn` rounded half to even, so 2.5 reads 2 and 3.5 reads 4 |
 | `uncovered_lines` | the exact line numbers to cover |
 | `target` | the scope's ceiling; ccn above it cannot be saved by coverage |
 | `function` | pass verbatim to `brief` and `claims release` |
@@ -478,7 +482,9 @@ word:
   and the only remedy is `decompose`.
 
 `[]` means the artifact answered and nothing is dark. The note is prose and may be
-reworded; `flag` is the contract.
+reworded; `flag` is the contract. `flag: "excluded"` comes with `[]`: the lane's coverage
+tool was told to leave the function out (`# pragma: no cover`, `istanbul ignore next`), so
+`crap` is `ccn` and the only remedy is `decompose`.
 
 `--top N` replaces `item{}` with `items[]`. `--exclude FRAG` (repeatable) skips items whose
 path or function name contains FRAG. `--scope NAME` (repeatable) restricts to the named
@@ -699,7 +705,7 @@ run. The store fills missing per-run rollups when `trend` or `report` asks for t
 
 ## Setup
 
-    pip install -e ".[dev]"
+    pip install -e ".[dev,accuracy-push]"
     git config core.hooksPath git-hooks
 
 The dev extra ships `pytest`, `pytest-cov`, `pytest-xdist` and `coverage`. None of the
@@ -721,11 +727,13 @@ xdist is not a convenience either. `tests/fixtures/mini_repo` declares a lane th
 out to `pytest ... -n 0`, and `tests/fixtures/mini_repo_xdist` keeps `pytest ... -n 2` for the one
 test in `test_inventory_e2e.py` about xdist fragments combining. pytest rejects `-n`
 without xdist, `-n 0` included, so either lane dies on an unrecognized `-n` and fails the
-e2e tests that assert it exited 0. CI installs this extra and nothing else, so a pytest
+e2e tests that assert it exited 0. CI's test jobs install this extra and nothing else, so a pytest
 plugin a committed fixture lane needs belongs in it.
 
-The second line arms the complexity gate. Without it your commits pass locally and get
-rejected in review.
+The second line arms the complexity gate on commits and change control on pushes.
+Without it your commits pass locally and get rejected in review. The `accuracy-push`
+extra holds the pinned oracles change control and the calculation-accuracy suite read
+(docs/accuracy.md); without it the pre-push hook stops and prints the install line.
 
 ## Tests
 
@@ -768,6 +776,14 @@ map does not cover. A new `@cell` goes into the map with its packet, cadence, os
 and into a run that selects it; `tests/unit/test_deploy_map.py` and
 `tests/unit/test_deploy_workflows.py` name each cell missing from either.
 `tools/deploy/README.md` is the full guide.
+
+A change to anything crapkit computes, a score, a label, a ranking or a pass/fail,
+also runs the calculation-accuracy suite: `python tools/accuracy/run.py --tier push -n 4`
+(docs/accuracy.md has every tier). A fix to a calculation adds a row to
+`tests/accuracy/suite_strength/retro/bugs.tsv` whose check fails at the commit before the
+fix; a change that moves a golden declares itself with
+`python tools/accuracy/change_control.py declare`, and the pre-push hook refuses the push
+until it does, printing the command.
 
 `tests/unit` covers pure seams, and that now includes `cli/verifying.py` and
 `cli/scoring.py`, driven in process rather than through a subprocess. `tests/e2e` drives
@@ -857,12 +873,15 @@ Shared rules belong to these modules:
 | `ratchetfile.py` | which ratchet bytes a command admitted. Every writer publishes from that captured input under a short lock and refuses an intervening edit |
 | `gitpaths.py` | how Git path records become repository paths, preserving whitespace and Unicode separators. A name that is not UTF-8 comes back in its surrogateescape spelling and `readable` tells it apart; each reader decides what it means, and nothing here prints |
 | `repotext.py` | how bytes crapkit did not write become text. One named kind per source: a file the repository owns (`repo_text`, refused by the byte), JSON (`repo_json`, and `JsonStream` for a coverage artifact read a chunk at a time), the marks file, git's free text and a runner's output (`lenient`), bytes handed back to git (`escaped`), a plugin's JSON as Claude Code reads it, source files and OS text. `tests/unit/test_decode_guard.py` fails on a decode policy spelled anywhere else |
-| `lane_sources.py` | the content record: the git blob id each file under a lane's scopes held when its artifact measured it. `record` is the one rule: git's index gives the id of a file its worktree diff calls unchanged, and `gitio.worktree_blobs` hashes the rest through the repo's filters with one `git hash-object --stdin-paths`, each name prefixed with the root's path below the checkout's top (`git rev-parse --show-prefix`), because git reads a `--stdin-paths` name from the top and not from the cwd. The stamp keeps it as `blobs` and every staleness reader compares it, so commit history never decides. The index fast path trusts git's stat cache, so a same-size edit under a restored modification time keeps the old id, a named limit. It holds on Windows, where the change time is the creation time, and under `core.trustctime=false`; on Linux and macOS git sees the edit once the change time moves a second past the one it recorded |
+| `lane_sources.py` | the content record: the git blob id each file under a lane's scopes held when its artifact measured it. `record` is the one rule: git's index gives the id of a file git status calls unchanged, and `gitio.worktree_blobs` hashes the rest through the repo's filters with one `git hash-object --stdin-paths`, each name prefixed with the root's path below the checkout's top (`git rev-parse --show-prefix`), because git reads a `--stdin-paths` name from the top and not from the cwd. The stamp keeps it as `blobs` and every staleness reader compares it, so commit history never decides. The index fast path trusts git's stat cache, so a same-size edit under a restored modification time keeps the old id, a named limit. It holds on Windows, where the change time is the creation time, and under `core.trustctime=false`; on Linux and macOS git sees the edit once the change time moves a second past the one it recorded |
 | `lane_stamps.py` | what `.crapkit/artifacts.json` says, read once per command into explicit states (absent, unreadable, mangled, legacy, recorded). `read(root).refusal(artifact)` is the one refusal query: a reader that decides whether the artifact on disk may be scored asks it and nothing else, and quotes its `cause`. No other module parses the file. Writes replace the file in one step and copy each refusal into the snapshot store |
 | `lane_freshness.py` | whether a lane's measurement still describes the tree. `Freshness` reads the stamp file once per command and gives each lane one verdict: its line numbers, per file for a stamp with blob ids (`file_note`), and whether `--reuse-unchanged` may reuse it (`reuse`). The `--reuse-artifacts` warning, the dark-line note, the report banner and reuse render that verdict and decide nothing of their own. `proof_parts` is the one proof builder for both lane kinds |
 | `lane_outputs.py` | which declared files an attempt wrote. `owned` moves a lane's declared outputs under `.crapkit/aside/` before its attempts and puts a leftover back only where no attempt wrote one; its sha256 is what a refusal records. `put_back` returns what an attempt that never finished left there, and `lanes.measurement_owner` calls it once the lock is held |
 | `named.py` | how a message names a list of files or functions: `first_few` gives the first three in the caller's order and a count of the rest. The GitHub Action's comment builder (`tools/action/comment.py`) calls it too, for its verdict line and for the changed-files step's log line, and `tests/unit/test_named_lists.py` fails on a copy in src, tools or `action.yml` |
-| `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v1.json` beside the churn caches |
+| `sourcelines.py` | where a source's lines end: LF, CRLF and a lone CR, as the scores number them. Split source text with `source_lines`; `str.splitlines` also ends a line at a form feed and seven other characters. `line_starts` numbers a text by the reader's rule or by `LF_ONLY` and `ECMASCRIPT`, the rules git and the JavaScript coverage producers use |
+| `istanbul_lines.py` | which of the reader's lines an istanbul record's positions sit on. `on_reader_lines` runs on every record before attribution; a file with a lone CR, U+2028 or U+2029 is read and renumbered from the rule its producer used |
+| `diffparse.py` | which lines a diff changed, on the lines a function span or a coverage report numbers. git ends a line at LF only and the reader also ends one at a lone CR, so `worktree_ranges` (a diff against the working tree) and `reader_ranges` (any other new side, such as the staged blobs) place each range by the new side's bytes. `changed_ranges` alone answers in git's numbers, and `git_span` turns a function's span into git's numbers before it goes to git |
+| `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v2.json` beside the churn caches |
 
 `store.py` gained a `run_rollup` table: one row per run per scope, filled the first time
 something asks and pruned with its run. `trend` and `report` read it instead of
@@ -899,15 +918,21 @@ a per-edit hook has no reason to read or change snapshot state. The one thing it
 is its session memory under the git directory, so the working tree stays as the edit left
 it.
 
-Five reader modules sit beside the core, all registered in `analyze.py`'s
-`deferred_pygments()` block:
+Eleven reader modules sit beside the core. `analyze.py` imports each one, all but
+`lizardcognitive.py` inside its `deferred_pygments()` block:
 
 | Module | What it does |
 |---|---|
 | `lizardcognitive.py` | Sonar-spec cognitive complexity as a lizard token-stream extension, so every language pays the same rules with no second parse |
-| `lizardrust.py` | counts Rust `match` arms, which lizard does not (lizard #494) |
+| `lizardrust.py` | reads Rust where lizard's reader reads C: `match` arms (lizard #494), signatures, `\|\|` or `&&` with no operand, let-else, a `for` that is no loop, bodiless signatures, parameter commas and patterns, the nesting keyword set; it also ends a `//` comment at its line |
+| `lizardlinecomment.py` | ends a `//` comment at its line in lizard's Java, Swift and JavaScript-family readers, where lizard spliced the next line after a trailing backslash as only C does; Go, Zig and Rust take its `LINE_COMMENT` in their own tokenizers |
+| `lizardpython.py` | reads a Python def's signature to its body colon, where lizard ended some defs inside their signature (crapkit #72) |
+| `lizardgolike.py` | Go and Zig readers that end a signature where the language does, so a function type opens no function, a result type's braces are not the body, and a parameter's own type holds no parameters; `peek` sees each raw token before any counter (`analyze._ReaderLookahead`) |
+| `lizardclike.py` | C, C++ and Objective-C readers under lizard's own class names. They count every declared parameter, list the functions after a `<` comparison that lizard read as a template bracket, keep an attribute, a braced trailing return type or an instance-variable block from naming or inventing a function, list the members of a class defined inside a function, and respell the `&&` of a C++ reference so no counter reads it as a logical and |
+| `lizardjava.py` | a Java reader under lizard's own class name. It reads an annotation's arguments to their own `)`, keeps the token after a bare annotation, reads enum constant bodies, interface-field anonymous classes and annotation element defaults, counts every declared parameter, and names a method nested in a method once |
 | `lizardshell.py` | a shell reader, because lizard ships none and answers `.sh` with `CLikeReader` instead of an error |
 | `lizardpowershell.py` | a PowerShell reader, same reason, plus a cp1252 decode fallback |
+| `lizardswift.py` | reads a Swift name as a name: `super.init(...)`, `r.get()`, `Socket(protocol: p)`, `return type` and `#fileID` open no function and drop no brace, a failable `init?` is listed, a raw identifier (`` `a b` ``) is one name, and a closure after a comma keeps its brace |
 | `lizardtypescript.py` | separates JavaScript and TypeScript expression arrows at commas and preserves their source spans; refuses unresolved TypeScript angle syntax; blanks the template-literal characters lizard's tokenizer misreads, such as a nested template's backticks, before a JavaScript-family reader sees the file |
 
 Registration belongs at that module scope and nowhere else. A `ProcessPoolExecutor` child
@@ -986,8 +1011,11 @@ snapshot record, all three or nothing). Leave it alone.
 
 - Marks only fall. `ratchet seed` admits new debt, `prune` drops gone code, `merge` is
   the git driver. None of them raises a mark.
-- No wall clock in scoring paths. Churn weights and burn-down ages anchor on the newest
-  commit in the log, so a fixed tree reports byte-identically.
+- No wall clock in scoring paths. The churn window ends at HEAD's commit date, and churn
+  weights and burn-down ages anchor on the newest commit in the log, so a fixed tree
+  reports byte-identically. `git log --since=N.months.ago` reads today's date: cut a
+  window with `--since=@<seconds> +0000` at a cutoff computed from a commit's date
+  (git 2.43 for Windows wraps a `--max-age` past 2038).
 - JSON is sorted-keys and carries no timestamps in rows.
 - The same bytes on every OS and Python. `tests/goldens/machine_outputs/` holds the 17
   outputs a program reads (`tests/e2e/test_machine_outputs_match_on_every_os.py`), and

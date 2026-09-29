@@ -1,0 +1,457 @@
+"""A small repository whose functions, coverage and test results a test sets directly.
+
+A World holds two scopes, `app` (src/app.py) and `lib` (lib/util.py), each
+measured by its own lane (`a` and `b`). Every function is `def NAME(x):`
+followed by `decisions` two-line `if` statements and a `return`, so its
+cyclomatic complexity is decisions + 1 by McCabe's count (one per `if`, plus
+one), and `covered` of its 2 * decisions branch arms ran. A function with no
+decision has no branch arm, and `covered` (0 or 1) says whether its one
+statement ran.
+
+A lane runs tests/cov_gen.py, which writes a coverage.py JSON report and a
+JUnit file from the plan the World wrote under .plan/ (git-ignored, so changing
+coverage or a test result dirties nothing). The report carries each function's
+region as coverage.py 7.16 writes it: start_line, executed and missing lines,
+and a summary of branch and statement counts. write_artifacts() writes the same
+two files in this process, for a test that then reads them with
+`--reuse-artifacts` instead of paying for the lane processes.
+
+Expected values never come from crapkit: `cov` follows the README's
+definition (branch coverage in the span; with no branches, statement
+coverage) and `crap` is kit.exact's. The module imports no crapkit; tests
+drive the CLI through kit.drive.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field, replace
+from fractions import Fraction
+import json
+from pathlib import Path
+import shutil
+
+from accuracy.kit import drive, exact, repos
+
+TARGET = 6
+GEN = "tests/cov_gen.py"
+PLAN = ".plan/plan.json"
+FILES = {"app": "src/app.py", "lib": "lib/util.py"}
+LANES = {"a": "app", "b": "lib"}
+ALERT = "python -c \\\"import sys; sys.stdin.read()\\\""
+DAY = 86_400
+
+_WRITERS = '''\
+def region(fn):
+    summary = {"num_branches": fn["branches"], "covered_branches": fn["covered_branches"],
+               "num_statements": fn["statements"], "covered_lines": fn["covered_lines"],
+               "missing_lines": len(fn["missing"]), "excluded_lines": 0,
+               "num_partial_branches": 0,
+               "missing_branches": fn["branches"] - fn["covered_branches"]}
+    return {"executed_lines": fn["executed"], "missing_lines": fn["missing"],
+            "excluded_lines": [], "summary": summary, "start_line": fn["start"],
+            "executed_branches": [], "missing_branches": []}
+
+
+def report(files):
+    out = {}
+    for path, functions in files.items():
+        executed = sorted({n for fn in functions for n in fn["executed"]})
+        missing = sorted({n for fn in functions for n in fn["missing"]})
+        out[path] = {"executed_lines": executed, "missing_lines": missing,
+                     "excluded_lines": [], "summary": {},
+                     "functions": {fn["name"]: region(fn) for fn in functions},
+                     "classes": {}}
+    return {"meta": {"format": 3, "version": "7.16.1", "branch_coverage": True,
+                     "show_contexts": False}, "files": out}
+
+
+def junit(tests):
+    cases = []
+    for test in tests:
+        failure = '<failure message="assert False"/>' if test["failed"] else ""
+        cases.append('<testcase classname="%s" name="%s" time="0.001">%s</testcase>'
+                     % (test["classname"], test["name"], failure))
+    failed = sum(1 for test in tests if test["failed"])
+    return ('<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests">'
+            '<testsuite name="pytest" errors="0" failures="%d" skipped="0" tests="%d" '
+            'time="0.01">%s</testsuite></testsuites>' % (failed, len(tests), "".join(cases)))
+
+
+def write(plan, lane, root="."):
+    import json
+    import os
+    cov = os.path.join(root, ".crapkit", "cov")
+    os.makedirs(cov, exist_ok=True)
+    with open(os.path.join(cov, "%s.json" % lane), "w", encoding="utf-8") as handle:
+        json.dump(report(plan["files"]), handle, sort_keys=True)
+    if plan["junit"]:
+        text = plan["raw"] if plan.get("raw") is not None else junit(plan["tests"])
+        with open(os.path.join(cov, "%s-junit.xml" % lane), "w", encoding="utf-8") as handle:
+            handle.write(text)
+
+
+def retest(plan, lane, root="."):
+    import os
+    rerun = [dict(test, failed="%s::%s" % (test["classname"], test["name"]) not in plan["retest_pass"])
+             for test in plan["tests"] if test["failed"]]
+    with open(os.path.join(root, ".crapkit", "cov", "%s-junit.xml" % lane), "w",
+              encoding="utf-8") as handle:
+        handle.write(junit(rerun))
+'''
+
+GEN_SOURCE = f'''\
+"""Write one lane's coverage.py JSON report and JUnit file from the plan."""
+import json
+import sys
+
+
+{_WRITERS}
+
+def fail(plan, lane):
+    """Exit 1. With freeze_log, first set the lane log's mtime back to the value
+    the plan names, as a filesystem too coarse to tell the two writes apart would."""
+    import os
+    sys.stderr.write("lane %s failed on purpose\\n" % lane)
+    sys.stderr.flush()
+    if plan.get("freeze_log"):
+        os.utime(os.path.join(".crapkit", "lane-%s.log" % lane), ns=(plan["freeze_log"],) * 2)
+    os._exit(1)
+
+
+def main(plan_path, lane, mode="run"):
+    with open(plan_path, encoding="utf-8") as handle:
+        plan = json.load(handle)[lane]
+    if plan["fail"]:
+        fail(plan, lane)
+    (retest if mode == "retest" else write)(plan, lane)
+
+
+main(*sys.argv[1:])
+'''
+
+_GEN: dict = {}
+exec(compile(_WRITERS, GEN, "exec"), _GEN)
+
+
+def report(files: dict) -> dict:
+    """A coverage.py 7.16 JSON report holding `files`: {path key: [region, ...]}."""
+    return _GEN["report"](files)
+
+
+def rerun(plans: dict, lane: str, root: Path) -> None:
+    """Write `lane`'s rerun JUnit under root/.crapkit/cov, as its retest_command does."""
+    (root / ".crapkit" / "cov").mkdir(parents=True, exist_ok=True)
+    _GEN["retest"](plans[lane], lane, str(root))
+
+
+@dataclass(frozen=True)
+class Fn:
+    """One function: `decisions` ifs, `covered` branch arms ran (or, with no
+    decision, whether its one statement ran). A `tag` is a comment on the def
+    line: changing it touches the function and moves no number. A `one_line`
+    function is `def NAME(x): return ...` with its decisions as chained
+    conditional expressions, all on the def line."""
+    name: str
+    decisions: int = 0
+    covered: int = 0
+    tag: str = ""
+    one_line: bool = False
+
+    @property
+    def ccn(self) -> int:
+        return self.decisions + 1
+
+    @property
+    def cov(self) -> Fraction:
+        """README: branch coverage in the span; with no branches, statement
+        coverage. A Python def whose body starts on the line its signature ends
+        scores untested, cov 0 (README, Commands: rescore)."""
+        if self.one_line:
+            return Fraction(0)
+        if self.decisions:
+            return exact.ratio(self.covered, 2 * self.decisions)
+        return exact.ratio(self.covered, 1)
+
+    @property
+    def crap(self) -> Fraction:
+        return exact.crap(self.ccn, self.cov)
+
+    @property
+    def long_name(self) -> str:
+        return f"{self.name}( x )"
+
+
+@dataclass(frozen=True)
+class Test:
+    """One test a lane reports. Its JUnit classname is `module`, or by default
+    the dotted module of the lane's own test file, tests/test_<lane>.py."""
+    name: str
+    failed: bool = False
+    lane: str = "a"
+    module: str = ""
+
+    @property
+    def classname(self) -> str:
+        return self.module or f"tests.test_{self.lane}"
+
+    @property
+    def id(self) -> str:
+        return f"{self.classname}::{self.name}"
+
+
+@dataclass(frozen=True)
+class World:
+    """What a test sets: functions per scope, tests, lanes that fail, lanes
+    that write no JUnit, a lane's JUnit text written verbatim (raw_junit, as
+    (lane, text) pairs), the lanes that declare a retest_command and the test
+    ids that pass it, extra [crapkit] lines, extra lines per lane table (as
+    (lane, text) pairs), the .gitignore text, and (lane, mtime_ns) pairs a
+    failing lane sets its log's mtime back to."""
+    functions: dict = field(default_factory=lambda: {"app": (), "lib": ()})
+    tests: tuple = ()
+    failing_lanes: frozenset = frozenset()
+    no_junit: frozenset = frozenset()
+    raw_junit: tuple = ()
+    retest_lanes: frozenset = frozenset()
+    retest_pass: frozenset = frozenset()
+    config_extra: str = ""
+    lane_extra: tuple = ()
+    frozen_log: tuple = ()
+    gitignore: str = ".crapkit/\n.plan/\n__pycache__/\n"
+
+    def with_fn(self, scope: str, fn: Fn) -> "World":
+        """The world with `fn` replacing the function of its name, or appended."""
+        current = self.functions[scope]
+        names = [f.name for f in current]
+        kept = (tuple(fn if f.name == fn.name else f for f in current) if fn.name in names
+                else current + (fn,))
+        return replace(self, functions={**self.functions, scope: kept})
+
+    def without_fn(self, scope: str, name: str) -> "World":
+        kept = tuple(f for f in self.functions[scope] if f.name != name)
+        return replace(self, functions={**self.functions, scope: kept})
+
+    def fn(self, scope: str, name: str) -> Fn:
+        return next(f for f in self.functions[scope] if f.name == name)
+
+    def with_test(self, test: Test) -> "World":
+        kept = tuple(t for t in self.tests if t.id != test.id)
+        return replace(self, tests=kept + (test,))
+
+
+def fn_lines(fn: Fn) -> list[str]:
+    """One function's lines. Every line names its function and position, and the
+    return line its decision count, so no two lines of a file are equal and any
+    edit to a function rewrites a line inside it: whichever diff algorithm reads
+    two versions, the changed lines are the edited functions' own."""
+    if fn.one_line:
+        return [_one_line(fn)]
+    lines = [f"def {fn.name}(x):" + (f"  # {fn.tag}" if fn.tag else "")]
+    for number in range(fn.decisions):
+        lines += [f"    if x > {number}:  # {fn.name} {number}",
+                  f"        x += {number + 1}  # {fn.name} {number}"]
+    return lines + [f"    return x  # {fn.name} {fn.decisions}"]
+
+
+def _one_line(fn: Fn) -> str:
+    """def NAME(x): return 0 if x > 0 else 1 if x > 1 else ... D: one decision per `if`."""
+    arms = "".join(f"{number} if x > {number} else " for number in range(fn.decisions))
+    return f"def {fn.name}(x): return {arms}{fn.decisions}  # {fn.name} {fn.tag}".rstrip()
+
+
+def source(fns) -> tuple[str, list[tuple[Fn, int, int]]]:
+    """The file's text and each function's (fn, start, end) lines. A comment
+    line naming the function closes each one, in place of a blank line."""
+    lines, spans = [], []
+    for fn in fns:
+        start = len(lines) + 1
+        lines += fn_lines(fn)
+        spans.append((fn, start, len(lines)))
+        lines.append(f"# end {fn.name}")
+    return "\n".join(lines) + "\n", spans
+
+
+def spans(world: World, scope: str) -> dict[str, tuple[int, int]]:
+    """{name: (start, end)}; a twin name keeps the last one, so twins read source()."""
+    return {fn.name: (start, end) for fn, start, end in source(world.functions[scope])[1]}
+
+
+def _region(fn: Fn, start: int, end: int) -> dict:
+    """coverage.py's view of one function: the true arm of the first `covered`
+    ifs ran (their body lines executed), the rest did not. A one-line def's
+    only line runs when its module is imported, and coverage.py measures no
+    branch inside one line."""
+    if fn.one_line:
+        return {"name": fn.name, "start": start, "executed": [start], "missing": [],
+                "branches": 0, "covered_branches": 0, "statements": 1, "covered_lines": 1}
+    body = list(range(start + 1, end + 1))
+    missing = _missing(fn, start, body)
+    executed = [line for line in body if line not in missing]
+    return {"name": fn.name, "start": start, "executed": executed, "missing": missing,
+            "branches": 2 * fn.decisions,
+            "covered_branches": fn.covered if fn.decisions else 0,
+            "statements": 2 * fn.decisions + 1, "covered_lines": len(executed)}
+
+
+def _missing(fn: Fn, start: int, body: list[int]) -> list[int]:
+    if fn.covered == 0:
+        return body
+    bodies = [start + 2 + 2 * number for number in range(fn.decisions)]
+    return bodies[min(fn.decisions, fn.covered):]
+
+
+def _lane_tests(world: World, lane: str) -> list:
+    return [test for test in world.tests if test.lane == lane]
+
+
+def _junit_tests(tests: list) -> list[dict]:
+    return [{"classname": t.classname, "name": t.name, "failed": t.failed} for t in tests]
+
+
+def _lane_plan(world: World, lane: str, scope: str) -> dict:
+    regions = [_region(fn, start, end) for fn, start, end in source(world.functions[scope])[1]]
+    tests = _lane_tests(world, lane)
+    return {"files": {FILES[scope]: regions} if regions else {}, "tests": _junit_tests(tests),
+            "fail": lane in world.failing_lanes, "junit": lane not in world.no_junit,
+            "raw": dict(world.raw_junit).get(lane),
+            "retest_pass": sorted(t.id for t in tests if t.id in world.retest_pass),
+            "freeze_log": dict(world.frozen_log).get(lane)}
+
+
+def plan(world: World) -> dict:
+    return {lane: _lane_plan(world, lane, scope) for lane, scope in LANES.items()}
+
+
+def _retest(name: str, world: World) -> str:
+    if name not in world.retest_lanes:
+        return ""
+    return f'retest_command = "python {GEN} {PLAN} {name} retest"\n'
+
+
+def _lane(name: str, scope: str, world: World) -> str:
+    command = f"python {GEN} {PLAN} {name}"
+    results = ("" if name in world.no_junit
+               else f'results_artifact = ".crapkit/cov/{name}-junit.xml"\n')
+    return (f'[[lane]]\nname = "{name}"\ncommand = "{command}"\n'
+            f'artifact = ".crapkit/cov/{name}.json"\n{results}{_retest(name, world)}'
+            f'parser = "coveragepy"\nscopes = ["{scope}"]\ncontainer_ok = true\n'
+            f"env = {repos.LANE_ENV}\n{dict(world.lane_extra).get(name, '')}")
+
+
+def config(world: World) -> str:
+    scopes = "".join(f'[[scope]]\nname = "{scope}"\npaths = ["{Path(path).parent.as_posix()}"]\n'
+                     'languages = ["python"]\n\n' for scope, path in FILES.items())
+    lanes = "\n".join(_lane(name, scope, world) for name, scope in LANES.items())
+    return (f"[crapkit]\ntarget = {TARGET}\nalert_command = \"{ALERT}\"\n{world.config_extra}\n"
+            f'{scopes}[exclude]\nglobs = ["tests/**"]\n\n{lanes}')
+
+
+def files(world: World) -> dict:
+    """Every tracked file of the world, as a Commit's files."""
+    out = {".gitignore": world.gitignore, GEN: GEN_SOURCE,
+           "crapkit.toml": config(world)}
+    out.update({f"tests/test_{lane}.py": f"# the tests lane {lane} reports\n" for lane in LANES})
+    out.update({path: source(world.functions[scope])[0] for scope, path in FILES.items()})
+    return out
+
+
+def spec(world: World, date: int = repos.EPOCH, root: str = "") -> repos.Spec:
+    """The world committed once; under `root` (a crapkit root below the git top) when given."""
+    prefix = f"{root}/" if root else ""
+    tracked = {prefix + path: text for path, text in files(world).items()}
+    return repos.Spec(steps=(repos.Commit(files=tracked, message="seed", date=date),), root=root)
+
+
+class Scenario:
+    """One world's repository and the calls a test makes on it."""
+
+    def __init__(self, built: repos.Built, world: World, date: int = repos.EPOCH):
+        self.top, self.root, self.world, self.date = built.top, built.root, world, date
+        self.driver = drive.Driver(self.root, date_now=date + DAY)
+        self.write_plan()
+
+    @classmethod
+    def build(cls, make_repo, world: World, date: int = repos.EPOCH, root: str = "") -> "Scenario":
+        return cls(make_repo(spec(world, date, root)), world, date)
+
+    def copy(self, dest: Path) -> "Scenario":
+        """A private copy, store and working tree included."""
+        shutil.copytree(self.top, dest, symlinks=True)
+        return Scenario(repos.Built(dest, dest / self.root.relative_to(self.top)), self.world,
+                        self.date)
+
+    def write_plan(self) -> None:
+        target = self.root / PLAN
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(plan(self.world), indent=1), encoding="utf-8")
+
+    def set(self, world: World) -> "Scenario":
+        """The world's sources, config and plan into the working tree, uncommitted."""
+        self.world = world
+        for path, text in files(world).items():
+            (self.root / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / path).write_bytes(text.encode("utf-8"))
+        self.write_plan()
+        return self
+
+    def commit(self, message: str = "change") -> str:
+        self.date += 60
+        repos.git(self.top, "add", "-A")
+        repos.git(self.top, "commit", "-q", "--allow-empty", "-m", message, date=self.date)
+        return self.head()
+
+    def head(self) -> str:
+        return repos.git(self.top, "rev-parse", "HEAD").strip()
+
+    def write_artifacts(self) -> None:
+        """What the lanes would write, written here, for a --reuse-artifacts call."""
+        for lane, lane_plan in plan(self.world).items():
+            _GEN["write"](lane_plan, lane, str(self.root))
+
+    def run(self, *args: str, **kwargs) -> drive.Result:
+        return self.driver.run(*args, **kwargs)
+
+    def json(self, *args: str):
+        return self.driver.json(*args)
+
+    def marks_text(self) -> str | None:
+        path = self.root / "crapkit-ratchet.tsv"
+        return path.read_bytes().decode("utf-8") if path.exists() else None
+
+    def runs(self) -> list[dict]:
+        return self.driver.store("SELECT id, kind, verdict_ok, commit_sha, tool_versions "
+                                 "FROM runs ORDER BY id")
+
+
+# --- legacy-format marks beside same-line callbacks (docs/ratchet.md, Same-line function
+# identity) ---------------------------------------------------------------------------------
+
+LEGACY_CFG = ('[crapkit]\ntarget = 1\n\n[[scope]]\nname = "web"\npaths = ["web"]\n'
+              'languages = ["typescript"]\ncoverage_optional = true\n')
+LEGACY_FILES = {"crapkit.toml": LEGACY_CFG,
+                "web/a.ts": "function f(x: number) {\n  if (x > 1) { return 1; }\n  return 2;\n}\n",
+                "web/b.ts": ("export const h = (a: number) => [a].map(x => x > 1 ? 1 : 2)"
+                             ".filter(y => y > 2 || y < 0);\n")}
+LEGACY_DATE = repos.EPOCH + 60
+
+
+def legacy_keys(root) -> None:
+    """The marks file as one written before the key-format line: that line dropped."""
+    path = root / "crapkit-ratchet.tsv"
+    lines = path.read_bytes().decode("utf-8").split("\n")
+    assert "# crapkit-keys=1" in lines
+    path.write_bytes("\n".join(line for line in lines if line != "# crapkit-keys=1").encode("utf-8"))
+
+
+def legacy_group(make_repo, *change: str) -> tuple[repos.Built, drive.Driver]:
+    """Seeded from run 1, with the marks then put in the legacy key format;
+    `change` (a git command that edits the tree) is committed, and run 2
+    measures the result."""
+    built = make_repo(repos.Spec(steps=(repos.Commit(files=LEGACY_FILES, message="seed"),)))
+    driver = drive.Driver(built.root)
+    assert driver.run("coverage").code == 0 and driver.run("ratchet", "seed").code == 0
+    legacy_keys(built.root)
+    if change:
+        repos.git(built.top, *change)
+        repos.git(built.top, "commit", "-q", "-m", "change", date=LEGACY_DATE)
+    assert driver.run("coverage").code == 0
+    return built, driver

@@ -262,8 +262,8 @@ TOOLS: tuple[dict, ...] = (
         "description": ("Lists near-duplicate function pairs in the newest run, at most 50. Use it "
         "before a refactor so twins are folded together, and get_function_brief for "
         "one function's twins. It reads the run's stored index, whose first build "
-        "takes seconds on a large repo, skips functions under 8 lines and same-file "
-        "pairs, and an empty list means no pair reached similarity. similarity is "
+        "takes seconds on a large repo, skips functions with under 8 lines of their own "
+        "and nested pairs, and an empty list means no pair reached similarity. similarity is "
         "shared shingles over the smaller function: 1.0 admits only a function found "
         "whole inside another, 0.8 four lines in five, and repo may be any directory "
         "under the checkout."),

@@ -17,6 +17,8 @@ MAX_COMMIT_FILES = 30
 # recognize a `coupling` invocation that asked for something wider.
 DEFAULT_MIN_SUPPORT = 5
 DEFAULT_MIN_CONFIDENCE = 0.5
+# A confidence is printed, cached and ranked at this many decimal places.
+CONFIDENCE_PLACES = 4
 
 
 def _commit_file_sets(lines: Iterable[str]) -> Iterator[set[str]]:
@@ -76,13 +78,23 @@ def _rank_pairs(file_counts: dict, pair_counts: dict, min_support: int,
         confidence = max(support / file_counts[a], support / file_counts[b])
         if confidence < min_confidence:
             continue
-        out.append({"files": [a, b], "support": support, "confidence": round(confidence, 4)})
-    out.sort(key=lambda p: (-p["support"] * p["confidence"], p["files"]))
+        out.append({"files": [a, b], "support": support,
+                    "confidence": round(confidence, CONFIDENCE_PLACES)})
+    out.sort(key=rank_key)
     return out if top is None else out[:top]
 
 
+def rank_key(pair: dict) -> tuple:
+    """Support x confidence, highest first, then the two paths. coupling_cache
+    ranks what it reads with this key too.
 
-
+    The product is taken over the confidence as printed, counted in whole
+    ten-thousandths, so it is exact. In binary floating point 3 x 0.1111 is
+    0.33330000000000004, above 1 x 0.3333: two pairs that tie ranked by that
+    noise instead of by their paths, and `--top` kept one or the other by it.
+    """
+    confidence = round(pair["confidence"] * 10 ** CONFIDENCE_PLACES)
+    return -pair["support"] * confidence, pair["files"]
 
 
 def change_coupling(log_text: str, *, min_support: int = DEFAULT_MIN_SUPPORT,

@@ -11,8 +11,9 @@ reads it: `shell_words` and `shell_segments` give what that shell hands each
 program, and `command_steps` goes one level further, into the script a `bash
 -c` or `sh -c` step runs, read with sh's rules on every OS. The full-suite
 guard, doctor's pytest-cov probe and data-file check, and the lanes hint all
-read those steps, so none of them can see a runner the others miss. A payload
-sh cannot split is marked, and doctor WARNs from the mark.
+read those steps, so none of them can see a runner the others miss, and the
+probe and the hint print the install line through `install_python`. A
+payload sh cannot split is marked, and doctor WARNs from the mark.
 
 It also owns the launcher token (`{python}`, `{python:DIR}`) init writes into
 a lane's command: config expands it once, as it builds the Lane, so all six
@@ -24,10 +25,10 @@ import os
 import re
 import shlex
 import shutil
-from collections.abc import Iterator
 from pathlib import Path, PurePath
 from typing import NamedTuple
 
+from .invocation import interpreter_word
 from .repopath import declared
 
 _WINDOWS = os.name == "nt"
@@ -219,221 +220,311 @@ def _reads_as_cmd(cmd: bool | None) -> bool:
     return SHELL_IS_CMD
 
 
-class _Token(NamedTuple):
-    """One word as the shell hands it on. `built` is True when quoting or an
-    escape built it: such a word is an argument and never the shell's own
-    syntax, however it is spelled (`"&&"` and cmd.exe's `^&` both reach the
-    program as text). `raw` is the word as the line spells it, quotes kept:
-    cmd.exe hands a program the line itself, and bash.exe splits it again with
-    its own rules."""
-    text: str
-    built: bool
-    raw: str
-
-
-_EMPTY = _Token("", False, "")
-
-
 def shell_words(command: str, cmd: bool | None = None) -> list[str]:
-    """The words the shell hands the runner. `-m "not live and not perf"` is one
-    argument there and must be one token here: a whitespace split reads four
-    positionals into it. A command the shell would refuse (a quote that never
-    closes) gets the whitespace read instead: a rough lint beats a crash at
-    config load."""
-    return [token.text for token in _shell_tokens(command, _reads_as_cmd(cmd))]
-
-
-def _shell_tokens(command: str, cmd: bool) -> list[_Token]:
-    """The words, each with how it was built. The whitespace fallback knows no
-    quoting, so it builds nothing."""
-    try:
-        return _cmd_tokens(command) if cmd else _sh_tokens(command)
-    except ValueError:
-        return [_Token(word, False, word) for word in command.split()]
-
-
-def _sh_tokens(command: str) -> list[_Token]:
-    """sh's reading, from shlex, plus the flag. shlex outside posix mode leaves
-    the quotes and backslashes in the word, so a word whose two spellings differ
-    is one sh built. When the two readings disagree on where the words are
-    (`a\\ b` is one word to posix mode and two outside it), nothing is called
-    built: the operator split then reads exactly what 0.4.4 read. Raises
-    ValueError on a quote that never closes."""
-    words = shlex.split(command)
-    raw = shlex.split(command, posix=False)
-    if len(raw) != len(words):
-        raw = words
-    return [_Token(word, word != spelling, spelling) for word, spelling in zip(words, raw)]
-
-
-def _uncaret(command: str) -> list[tuple[str, bool]]:
-    """cmd.exe's escape. Outside a quoted run `^` is dropped and the character
-    behind it is handed on untouched, so `-k ^"not slow^"` reaches the runner as
-    `-k "not slow"`. Inside a quoted run cmd.exe leaves the caret alone: `-k
-    "a^b"` reaches the runner with its caret, so stripping unconditionally would
-    misread the two spellings cmd.exe passes through. Each character carries a
-    flag: True when a caret handed it on, which makes it text, not syntax."""
-    kept: list[tuple[str, bool]] = []
-    chars = iter(command)
-    in_quote = False
-    for char in chars:
-        if char == "^" and not in_quote:
-            kept += _escaped(chars)
-            continue
-        if char == '"':
-            in_quote = not in_quote
-        kept.append((char, False))
-    return kept
-
-
-def _escaped(chars: Iterator[str]) -> list[tuple[str, bool]]:
-    """The character a caret hands on, marked as text. A caret at the end of the
-    line escapes nothing: cmd.exe asks for another line, and a lane command is
-    one line."""
-    char = next(chars, "")
-    return [(char, True)] if char else []
-
-
-def _cmd_tokens(command: str) -> list[_Token]:
-    """cmd.exe's reading: a double quote opens or closes a quoted run wherever it
-    sits, so `--cov-report=json:"a b\\py.json"` is one word and the quotes
-    themselves are dropped; a single quote is an ordinary character, so
-    `'not live'` is two words; a backslash separates path components and escapes
-    nothing. A caret-escaped quote still opens the run: cmd.exe hands the quote
-    itself to the program, and the program's own reader honours it. A quote that
-    never closes raises ValueError."""
-    words: list[_Token] = []
-    word, in_quote = _EMPTY, False
-    for char, escaped in _uncaret(command):
-        if _ends_the_word(char, in_quote):
-            words, word = words + _kept(word), _EMPTY
-        else:
-            in_quote ^= char == '"'
-            word = _grown(word, char, escaped)
-    if in_quote:
-        raise ValueError(f"no closing quotation: {command}")
-    return words + _kept(word)
-
-
-def _grown(word: _Token, char: str, escaped: bool) -> _Token:
-    """The word with one more character. A double quote builds the word and
-    stays only in its raw spelling; any other character joins the text."""
-    if char == '"':
-        return _Token(word.text, True, word.raw + char)
-    return _Token(word.text + char, word.built or escaped, word.raw + char)
-
-
-# What breaks one word from the next, outside a quoted run: what cmd.exe splits
-# on and what 0.4.4's shlex had. str.isspace() is wider: U+00A0, U+000B, U+000C
-# and the unicode separators are all true, and a non-breaking space pasted out
-# of rendered docs stays inside the word cmd.exe hands the runner.
-_WORD_BREAKS = " \t\r\n"
-
-
-def _ends_the_word(char: str, in_quote: bool) -> bool:
-    """A word break separates words only outside a quoted run."""
-    return char in _WORD_BREAKS and not in_quote
-
-
-def _kept(word: _Token) -> list[_Token]:
-    """The word so far. A run of whitespace ends no word, but a pair of quotes
-    writes one: cmd.exe hands the program the empty argument in `-k "" tests`,
-    and dropping it moved every later token one place left, so the flag in
-    front swallowed a path that is really a positional."""
-    return [word] if word.text or word.built else []
-
-
-# The operators that end one command and start another. sh and cmd.exe share
-# all four, and a lane that chains a report or an upload step after the run is
-# an ordinary shape (`coverage run -m pytest && coverage json`).
-_SHELL_OPERATORS = frozenset({"&&", "||", "&", "|"})
-
-
-# A redirection and its target: `>`, `>>`, `2>`, `2>&1`, `>nul`. Both shells
-# keep them, so neither reaches the program's argv (verified cmd.exe argv:
-# `--cov=src 2>&1` -> ["--cov=src"]). Not an operator: a redirection belongs to
-# the command it sits in and starts no new one.
-_REDIRECTION = re.compile(r"\d*[<>]{1,2}")
+    """The words the shell hands the programs on the line, in order. `-m "not
+    live and not perf"` is one argument there and must be one token here: a
+    whitespace split reads four positionals into it."""
+    return [word for words in shell_segments(command, cmd) for word in words]
 
 
 def shell_segments(command: str, cmd: bool | None = None) -> list[list[str]]:
     """One argv per command on the line, read by the shell that will run it. A
-    `bash -c` step stays one argv here, its payload a single word: this is what
-    the shell starts, and `command_steps` is what finally runs."""
-    cmd = _reads_as_cmd(cmd)
-    return [[token.text for token in segment]
-            for segment in _segments(_shell_tokens(command, cmd), cmd)]
+    command that holds no word (a redirection alone) gives no argv. A `bash -c`
+    step stays one argv here, its payload a single word: this is what the shell
+    starts, and `command_steps` is what finally runs."""
+    return [command.argv for command in _commands(command, _reads_as_cmd(cmd))]
 
 
-def _segments(tokens: list[_Token], cmd: bool) -> list[list[_Token]]:
-    """The tokens with the shell's plumbing taken out, one list per command."""
-    tokens = _drop_redirections(tokens)
-    if not cmd:
-        tokens = _split_semicolons(tokens)
-    return _command_segments(tokens, _separators(cmd))
+class _Command(NamedTuple):
+    """One command on the line: the argv its program is handed, the command as
+    the line spells it, and under cmd.exe the text cmd.exe hands the program
+    behind its name, which bash.exe splits again with sh's quote rules."""
+    argv: list[str]
+    spelled: str
+    rest: str = ""
 
 
-def _separators(cmd: bool) -> frozenset[str]:
-    """What ends one command and starts the next. sh adds ';'; to cmd.exe it is
-    an ordinary character the program is handed (verified argv for
-    `--cov=src; echo done`: ["--cov=src;", "echo", "done"])."""
-    return _SHELL_OPERATORS if cmd else _SHELL_OPERATORS | {";"}
+def _commands(command: str, cmd: bool) -> list[_Command]:
+    """The commands on the line that hold a word."""
+    found = _cmd_commands(command) if cmd else _sh_commands(command)
+    return [one for one in found if one.argv]
 
 
-def _split_semicolons(tokens: list[_Token]) -> list[_Token]:
-    """sh's ';' as its own word. shlex leaves it stuck to the word in front
-    (`--cov=src;`), so the first command read clean while the next command's
-    words landed in its argv, and the lane was refused naming a program pytest
-    never sees. A quoted ';' is an argument and stays where it is."""
-    out: list[_Token] = []
-    for token in tokens:
-        if token.built or not token.text.endswith(";"):
-            out.append(token)
+# sh's reading, one piece of the line at a time (POSIX Shell Command Language
+# 2.2 quoting, 2.3 token recognition, 2.7 redirection, 2.9 lists). An operator
+# ends the word in front of it whether or not a blank stands between them, so
+# `--cov=x.json&& coverage json` is two commands. A quote that never closes
+# matches no quoted form and is read as an ordinary character: sh would refuse
+# the line, and a rough lint beats a crash at config load. Blanks are space and
+# tab only: a non-breaking space pasted out of rendered docs, U+000B and a
+# carriage return are text to sh, though str.isspace() calls them all blanks.
+_SH_PIECE = re.compile(r"""
+    (?P<blank>[ \t]+)
+  | (?P<comment>\#[^\n]*)
+  | (?P<operator>&&|\|\||;;|<<-?|>>|<&|>&|<>|>\||[&|;<>()\n])
+  | (?P<joined>\\\n)
+  | '(?P<single>[^']*)'
+  | "(?P<double>(?:[^"\\]|\\.)*)"
+  | \\(?P<escaped>.)
+  | (?P<bare>.)
+""", re.X | re.S)
+
+# Inside double quotes a backslash escapes $, `, ", itself and a line feed, and
+# is text before anything else. An escaped line feed is removed (group 1 unset).
+_SH_DOUBLE_ESCAPE = re.compile(r'\\(?:([$`"\\])|\n)')
+
+# A quote or an escape read as an ordinary character: one that never closes.
+_UNCLOSED = frozenset("'\"\\")
+
+
+class _ShLine:
+    """The commands on a sh line as its pieces arrive, each a list of words,
+    and where each command ends on the line."""
+
+    def __init__(self) -> None:
+        self.commands: list[list[str]] = [[]]
+        self.word: str | None = None  # None: no word is open; "" is the empty word '' writes
+        self.digits = False  # the open word is bare digits: `2` in `2>x` names a descriptor
+        self.target = False  # the next word is a redirection's target, never an argument
+        self.cuts: list[tuple[int, int]] = []  # where each operator that ends a command sits
+        self.unclosed = False  # a quote or an escape never closed
+
+    def bare(self, text: str) -> None:
+        self.unclosed = self.unclosed or text in _UNCLOSED
+        self.digits = (self.word is None or self.digits) and text.isdigit()
+        self.word = _grown(self.word, text)
+
+    def quoted(self, text: str) -> None:
+        self.digits = False
+        self.word = _grown(self.word, text)
+
+    def double(self, text: str) -> None:
+        self.quoted(_SH_DOUBLE_ESCAPE.sub(r"\1", text))
+
+    def skip(self, _text: str) -> None:
+        """A comment, or a backslash joining two lines: nothing reaches a word."""
+
+    def take(self, piece: re.Match) -> int:
+        """Read one piece; the index the next one starts at. A `#` that starts a
+        word starts a comment to the end of the line, and one inside a word
+        (`a#b`, `a\\;#b`) is text, with the line read on from behind it."""
+        kind = piece.lastgroup
+        if kind == "comment" and self.word is not None:
+            self.bare("#")
+            return piece.start() + 1
+        _SH_STEPS[kind](self, piece[kind])
+        if kind == "operator" and piece[kind][0] not in "<>":
+            self.cuts.append(piece.span())
+        return piece.end()
+
+    def blank(self, _text: str = "") -> None:
+        """The open word ends. The word a redirection opens is the shell's."""
+        if self.word is None:
+            return
+        if not self.target:
+            self.commands[-1].append(self.word)
+        self.word, self.digits, self.target = None, False, False
+
+    def operator(self, text: str) -> None:
+        """`&&`, `|`, `;`, a parenthesis or a line feed starts the next command;
+        a redirection takes the next word, and bare digits touching it."""
+        redirection = text[0] in "<>"
+        if redirection and self.digits:
+            self.word, self.digits = None, False
+        self.blank()
+        self.target = redirection
+        if not redirection:
+            self.commands.append([])
+
+
+_SH_STEPS = {"blank": _ShLine.blank, "comment": _ShLine.skip, "operator": _ShLine.operator,
+             "joined": _ShLine.skip, "single": _ShLine.quoted, "double": _ShLine.double,
+             "escaped": _ShLine.quoted, "bare": _ShLine.bare}
+
+
+def _sh_line(command: str) -> _ShLine:
+    """The line as sh splits it, with sh's redirections out."""
+    line, at = _ShLine(), 0
+    while at < len(command):
+        at = line.take(_SH_PIECE.match(command, at))
+    line.blank()
+    return line
+
+
+def _sh_commands(command: str) -> list[_Command]:
+    """Each command on the line as sh splits it, spelled as the line spells it."""
+    line = _sh_line(command)
+    starts = [0] + [end for _, end in line.cuts]
+    ends = [start for start, _ in line.cuts] + [len(command)]
+    return [_Command(argv, command[start:end].strip())
+            for argv, start, end in zip(line.commands, starts, ends)]
+
+
+def _sh_script(script: str) -> list[_Command]:
+    """A `-c` script's commands, read as sh reads it. Raises ValueError when a
+    quote or an escape in it never closes: sh refuses such a script, so nothing
+    inside it can be judged."""
+    if _sh_line(script).unclosed:
+        raise ValueError(f"a quote or an escape never closes: {script}")
+    return [one for one in _sh_commands(script) if one.argv]
+
+
+# cmd.exe's delimiters: space, tab, `;`, `,`, `=`, U+000B, U+000C and U+00A0.
+# The program splits its line on space and tab only, so the rest reach it as
+# text: `;` ends nothing (verified argv for `--cov=src; echo done`:
+# ["--cov=src;", "echo", "done"]).
+_CMD_DELIMITERS = " \t;,=\x0b\x0c\xa0"
+
+# cmd.exe's own pass over the line, before the program sees it. A double quote
+# opens or closes a quoted run and stays in the text, and a run left open takes
+# the rest of the line. Outside a run a caret is dropped and hands on the
+# character behind it, so a quote it hands on opens no run for cmd.exe. `&&`,
+# `||`, `&` and `|` end the command whatever touches them, and a `(` where a
+# command starts opens a block, inside which `)` ends it. A redirection leaves
+# with its target, which starts past any delimiters and ends at the next one
+# (inside a block at a `)` as well), and with a handle digit when a delimiter,
+# a quote, `&`, `|`, `(` or `)` stands before the digit, caret or not (`a2>x`
+# hands on `a2`, `a^|2>x` on `a|`). The delimiters between one redirection and
+# the next leave with them (`>lane.log;2>&1` hands on nothing); anywhere else
+# they stay. cmd.exe drops a carriage return and runs the first line only.
+def _cmd_piece(target_ends: str) -> re.Pattern:
+    """cmd.exe's pieces, with what else ends a redirection target."""
+    return re.compile(rf"""
+        (?P<run>"[^"\n]*"?)
+      | \^(?P<escaped>[^\n]?)
+      | (?P<end>&&|\|\||[&|])
+      | (?P<open>\()
+      | (?P<close>\))
+      | (?P<redirection>(?:(?<![^{_CMD_DELIMITERS}"&|()])[0-9])?(?:>>?|<)
+            (?:&[{_CMD_DELIMITERS}]*[0-9]
+              |[{_CMD_DELIMITERS}]*(?:"[^"\n]*"?|\^[^\n]?|[^{_CMD_DELIMITERS}<>&|"^\n{target_ends}])*)
+            (?:[{_CMD_DELIMITERS}]*(?=[0-9]?[<>]))?)
+      | (?P<stop>\n.*)
+      | (?P<char>.)
+    """, re.X | re.S)
+
+
+_CMD_PIECE, _CMD_BLOCK_PIECE = _cmd_piece(""), _cmd_piece(")")
+
+
+class _CmdLines:
+    """The line cmd.exe hands the program of each command, as the pieces arrive."""
+
+    def __init__(self) -> None:
+        self.lines = [""]
+        self.blocks = 0  # the parentheses cmd.exe has opened and not closed
+
+    def read(self, command: str, at: int) -> int:
+        """Read the piece at `at`; the index the next one starts at."""
+        piece = (_CMD_BLOCK_PIECE if self.blocks else _CMD_PIECE).match(command, at)
+        _CMD_STEPS[piece.lastgroup](self, piece[piece.lastgroup])
+        return piece.end()
+
+    def text(self, text: str) -> None:
+        self.lines[-1] += text
+
+    def end(self, _text: str = "") -> None:
+        self.lines.append("")
+
+    def skip(self, _text: str) -> None:
+        """A redirection, or the lines behind the first: no program sees them."""
+
+    def open(self, text: str) -> None:
+        """`(` opens a block where a command starts, and is text anywhere else."""
+        if self.lines[-1].strip(_CMD_DELIMITERS):
+            self.text(text)
         else:
-            out += _kept(_Token(token.text[:-1], False, token.raw[:-1])) + [_Token(";", False, ";")]
-    return out
+            self.blocks += 1
+
+    def close(self, text: str) -> None:
+        """`)` ends the command inside a block, and is text outside one."""
+        if not self.blocks:
+            return self.text(text)
+        self.blocks -= 1
+        self.end()
 
 
-def _drop_redirections(tokens: list[_Token]) -> list[_Token]:
-    """The words left once the shell has taken its own plumbing. Reading `>` as
-    a word refused a lane naming a positional the program is never handed."""
-    kept: list[_Token] = []
-    skip = False
-    for token in tokens:
-        if skip:
-            skip = False
-        elif _redirects(token):
-            skip = _takes_the_next_word(token.text)
+_CMD_STEPS = {"run": _CmdLines.text, "escaped": _CmdLines.text, "char": _CmdLines.text,
+              "end": _CmdLines.end, "open": _CmdLines.open, "close": _CmdLines.close,
+              "redirection": _CmdLines.skip, "stop": _CmdLines.skip}
+
+
+def _cmd_lines(command: str) -> list[str]:
+    """The command line cmd.exe hands the program of each command on the line.
+    cmd.exe reads the whole line before it runs any of it, and runs none of it
+    when a block is still open where the line ends."""
+    command, lines, at = command.replace("\r", ""), _CmdLines(), 0
+    while at < len(command):
+        at = lines.read(command, at)
+    return [] if lines.blocks else lines.lines
+
+
+# The program cmd.exe starts: past its delimiters, up to the next one outside a
+# quoted run, a caret in front of it or not. cmd.exe drops the blanks behind the
+# name, U+000B and U+000C among them, and hands the program the rest.
+_CMD_NAME = re.compile(rf'[{_CMD_DELIMITERS}]*((?:"[^"]*"?|[^{_CMD_DELIMITERS}"])*)[ \t\x0b\x0c]*')
+
+
+# How the program reads the line cmd.exe hands it: the C runtime's rules, which
+# python.exe and node.exe build their argv with. Blanks are space and tab. A
+# quote opens or closes a run anywhere, and inside a run a doubled quote writes
+# one. Backslashes are text except in front of a quote: 2n of them write n and
+# the quote opens or closes a run, 2n+1 write n and a literal quote.
+_RUNNER_PIECE = re.compile(r'(?P<slashes>\\*)(?P<quotes>"+)|(?P<blank>[ \t]+)|[^ \t"\\]+|\\+')
+
+
+def _runner_quotes(slashes: int, quotes: int, in_run: bool) -> tuple[str, bool]:
+    """What backslashes and the quotes behind them write, and whether a quoted
+    run is open after them."""
+    text = "\\" * (slashes // 2) + '"' * (slashes % 2)
+    quotes -= slashes % 2
+    while quotes:
+        if in_run and quotes > 1:
+            text, quotes = text + '"', quotes - 2
         else:
-            kept.append(token)
-    return kept
+            in_run, quotes = not in_run, quotes - 1
+    return text, in_run
 
 
-def _redirects(token: _Token) -> bool:
-    """Is this the shell's plumbing? A quoted `">"` is an argument: quoting is
-    how an operator is written when the program is meant to get it."""
-    return not token.built and _REDIRECTION.match(token.text) is not None
+def _grown(word: str | None, text: str) -> str:
+    """The open word with `text` behind it. None is no word yet: a pair of
+    quotes opens one even when it writes nothing, so `-k "" tests` is three."""
+    return (word or "") + text
 
 
-def _takes_the_next_word(word: str) -> bool:
-    """`> run.log` opens the word behind it; `2>run.log` and `2>&1` carry their
-    target, and the word behind them is the program's again."""
-    return _REDIRECTION.fullmatch(word) is not None
+def _closed(word: str | None) -> list[str]:
+    return [] if word is None else [word]
 
 
-def _command_segments(tokens: list[_Token], separators: frozenset[str]) -> list[list[_Token]]:
-    """One list per command on the line. Only the segment a runner sits in is
-    that runner's argv: reading `pytest --cov && coverage json` flat called
-    `coverage` a positional pytest is never handed. A word quoting or an escape
-    built is an argument whatever it spells, so `-k "a && b"`, `"&&"` and
-    cmd.exe's `^&` all stay inside their segment."""
-    segments: list[list[_Token]] = [[]]
-    for token in tokens:
-        if token.text in separators and not token.built:
-            segments.append([])
+def _runner_words(line: str) -> list[str]:
+    """The argv the program builds from the line cmd.exe hands it."""
+    words: list[str] = []
+    word, in_run = None, False
+    for piece in _RUNNER_PIECE.finditer(line):
+        if piece["blank"] and not in_run:
+            words, word = words + _closed(word), None
+        elif piece["quotes"]:
+            text, in_run = _runner_quotes(len(piece["slashes"]), len(piece["quotes"]), in_run)
+            word = _grown(word, text)
         else:
-            segments[-1].append(token)
-    return segments
+            word = _grown(word, piece[0])
+    return words + _closed(word)
+
+
+def _cmd_command(line: str) -> _Command:
+    """The program's name as cmd.exe ends it, then the argv the program builds
+    from the rest: `python;-m pytest` starts python with `;-m` and `pytest`."""
+    name = _CMD_NAME.match(line)
+    rest = line[name.end():]
+    return _Command(_runner_words(name[1]) + _runner_words(rest), line.strip(), rest)
+
+
+def _cmd_commands(command: str) -> list[_Command]:
+    """One command per command on the line: cmd.exe's pass, then the program's
+    own reader over the line cmd.exe hands it. The two differ, and the guard
+    has to read both: `^"` is text to cmd.exe and a quote to the program, and
+    `\\"` is a quote to cmd.exe and text inside the program's quoted run."""
+    return [_cmd_command(line) for line in _cmd_lines(command)]
 
 
 # --- what finally runs: into a `bash -c` or `sh -c` payload ----------------------
@@ -462,12 +553,15 @@ def command_steps(command: str, cmd: bool | None = None) -> CommandSteps:
     guard judged `bash -c "pytest tests/unit"` as three words with no pytest in
     them, and doctor's probe saw no python to ask."""
     cmd = _reads_as_cmd(cmd)
-    return _steps(_shell_tokens(command, cmd), cmd)
+    return _steps(_commands(command, cmd), cmd)
 
 
-def _steps(tokens: list[_Token], cmd: bool) -> CommandSteps:
-    """Each command on the line, a payload read as the steps it holds."""
-    return _joined([_descended(segment, cmd) for segment in _segments(tokens, cmd)])
+def _steps(commands: list[_Command], cmd: bool) -> CommandSteps:
+    """Each command, a payload read as the steps it holds. A line that holds
+    no word runs one step with no words."""
+    if not commands:
+        return CommandSteps((Step((), cmd),))
+    return _joined([_descended(command, cmd) for command in commands])
 
 
 def _joined(parts: list[CommandSteps]) -> CommandSteps:
@@ -475,16 +569,16 @@ def _joined(parts: list[CommandSteps]) -> CommandSteps:
                         sum((part.unreadable for part in parts), ()))
 
 
-def _descended(segment: list[_Token], cmd: bool) -> CommandSteps:
+def _descended(command: _Command, cmd: bool) -> CommandSteps:
     """One command: its payload's steps when it is a shell running a script,
     else the command as read. A payload sh cannot split leaves the command as
     read, marked."""
-    as_read = CommandSteps((Step(tuple(token.text for token in segment), cmd),))
+    as_read = CommandSteps((Step(tuple(command.argv), cmd),))
     try:
-        script = _payload(segment, cmd)
-        return as_read if script is None else _steps(_sh_tokens(script), False)
+        script = _payload(command, cmd)
+        return as_read if script is None else _steps(_sh_script(script), False)
     except ValueError:
-        return as_read._replace(unreadable=(" ".join(token.raw for token in segment),))
+        return as_read._replace(unreadable=(command.spelled,))
 
 
 # The shells whose `-c` script is sh text, matched against the last part of the
@@ -492,23 +586,23 @@ def _descended(segment: list[_Token], cmd: bool) -> CommandSteps:
 _SH_NAME = re.compile(r"(?:ba)?sh(?:\.exe)?", re.IGNORECASE)
 
 
-def _payload(segment: list[_Token], cmd: bool) -> str | None:
+def _payload(command: _Command, cmd: bool) -> str | None:
     """The script a `bash -c` or `sh -c` step hands its shell, or None when the
     step runs no such script."""
-    if not segment or not _SH_NAME.fullmatch(re.split(r"[\\/]", segment[0].text)[-1]):
+    if not _SH_NAME.fullmatch(re.split(r"[\\/]", command.argv[0])[-1]):
         return None
-    return _script_of(_shell_argv(segment[1:], cmd))
+    return _script_of(_shell_argv(command, cmd))
 
 
-def _shell_argv(rest: list[_Token], cmd: bool) -> list[str]:
+def _shell_argv(command: _Command, cmd: bool) -> list[str]:
     """The arguments the shell program is handed. Under sh they are the words sh
     read. cmd.exe hands bash.exe (Git for Windows, MSYS2, Cygwin) the line as
     written, and bash.exe splits it with sh's quote rules, ' included: that is
     how `bash -c 'pytest tests'` reaches bash as one script under cmd.exe.
     Raises ValueError when those rules find a quote that never closes."""
     if not cmd:
-        return [token.text for token in rest]
-    return shlex.split(" ".join(token.raw for token in rest))
+        return command.argv[1:]
+    return shlex.split(command.rest)
 
 
 # The shell options that read the next word as their value, so the value of
@@ -591,6 +685,21 @@ def pytest_python(command: str, cmd: bool | None = None) -> str | None:
     """
     step = pytest_step(command, cmd)
     return step[0] if step and is_python(step[0]) else None
+
+
+def install_python(word: str, spec: LaunchSpec) -> str:
+    r"""The lane's python as the first word of an install line a reader pastes.
+
+    A bare name stays as the lane spells it. A path is read from the lane's
+    directory, and the reader pastes from wherever they stand, into cmd.exe,
+    PowerShell or Git Bash: `.venv\Scripts\python.exe -m pip install pytest-cov`
+    found nothing outside the lane's directory, and Git Bash ran it as
+    `.venvScriptspython.exe`. So a path goes out as the file it names, spelled
+    the way a next step spells crapkit's own interpreter. The word as written
+    when it names no file.
+    """
+    resolved = spec.resolve(word) if os.sep in word or "/" in word else None
+    return interpreter_word(resolved) if resolved else word
 
 
 def pytest_head(command: str) -> str:

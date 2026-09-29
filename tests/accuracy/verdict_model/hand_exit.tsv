@@ -1,0 +1,17 @@
+gate	ratchet	failures	diff_uncovered	exit	source
+0	0	0	0	0	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	0	1	9	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	1	0	8	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	1	1	8	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	0	0	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	0	1	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	1	0	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	1	1	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+1	0	0	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+1	0	0	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+1	0	1	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+1	0	1	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+1	1	0	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+1	1	0	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+1	1	1	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+1	1	1	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order

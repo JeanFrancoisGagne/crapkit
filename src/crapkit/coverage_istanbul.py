@@ -1,9 +1,10 @@
 """Attribute one decoded Istanbul file's branches and statements to functions.
 
-Branch hits map into function spans by line containment. A function with no
-branches inside its span falls back to STATEMENT coverage in that span, and
-only with no statements either to invocation (hit or not) — a straight-line
-function half-executed must not read as fully covered. Written for the
+Branch hits map into function spans by position, line and column: a branch
+counts from the function's declaration on, a statement from its body on. A
+function with no branches inside its span falls back to STATEMENT coverage in
+that span, and only with no statements either to invocation (hit or not) — a
+straight-line function half-executed must not read as fully covered. Written for the
 AST-remapped output of @vitest/coverage-v8 >= 3.2, which is istanbul-schema-identical.
 
 This module is also the istanbul adapter (coverage_format looks it up from a
@@ -21,6 +22,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from . import covstream
 from .errors import ToolError
+from .istanbul_lines import on_reader_lines
 from .repopath import Reported
 from .repotext import json_kind
 
@@ -37,6 +39,11 @@ class FnCoverage(NamedTuple):
     branches_covered: int
     statements_total: int = 0
     statements_covered: int = 0
+    # The producer was told to leave the function out, so no test moves its number.
+    excluded: bool = False
+    # The reader lists every function the producer measured in this file, so a
+    # function missing from the list was left out on purpose.
+    full_listing: bool = False
 
     @property
     def coverage(self) -> float:
@@ -52,8 +59,12 @@ def _rel_path(abs_path: str, repo_root: str) -> str:
 
 
 # --- span attribution ------------------------------------------------------
-# mutable span layout while attributing: [name, start, end, invoked, b_total, b_cov, s_total, s_cov]
+# mutable span layout while attributing: [name, start, end, invoked, b_total, b_cov, s_total,
+# s_cov, signature, body, finish], the last three as (line, column) positions
 _B_TOTAL, _B_COV, _S_TOTAL, _S_COV = 4, 5, 6, 7
+_SIGNATURE, _BODY, _FINISH = 8, 9, 10
+_COUNTS = slice(0, 8)
+_LINE_END = sys.maxsize
 
 
 def coverage_count(value: object, field: str) -> int:
@@ -237,13 +248,34 @@ def _require_branch_paths(cov: dict) -> None:
             f"in this file); {_REGENERATE}")
 
 
+def _position(where: dict, line: int, missing_column: int) -> tuple[int, int]:
+    """(line, column) of one istanbul location. A column the producer leaves
+    out, or writes as null, means the whole line: its first column at a
+    start, its last at an end."""
+    column = where.get("column")
+    return line, column if type(column) is int else missing_column
+
+
+def _body_start(fn: dict, signature: tuple[int, int]) -> tuple[int, int]:
+    """Where the function's own code starts: `loc`, which istanbul puts on the
+    body and v8-to-istanbul on the signature."""
+    start = _at(fn, "loc", "start")
+    line = _field(start, "line")
+    return signature if type(line) is not int else _position(start, line, 0)
+
+
+def _fn_span(fid: str, fn: dict, invoked: bool) -> list:
+    """One function's mutable span, its declaration and end lines read (or
+    refused) the way every istanbul reporter writes them."""
+    signature = _position(fn["decl"]["start"], _decl_line(fid, fn), 0)
+    end = _fn_end(fid, fn)
+    return [_field(fn, "name") or "(anonymous)", signature[0], end, invoked, 0, 0, 0, 0,
+            signature, _body_start(fn, signature), _position(fn["loc"]["end"], end, _LINE_END)]
+
+
 def _fn_spans(cov: dict) -> list[list]:
-    spans = []
-    for fid, fn in cov.get("fnMap", {}).items():
-        start = _decl_line(fid, fn)
-        end = _fn_end(fid, fn)
-        invoked = cov.get("f", {}).get(fid, 0) > 0
-        spans.append([_field(fn, "name") or "(anonymous)", start, end, invoked, 0, 0, 0, 0])
+    invoked = cov.get("f", {})
+    spans = [_fn_span(fid, fn, invoked.get(fid, 0) > 0) for fid, fn in cov.get("fnMap", {}).items()]
     spans.sort(key=lambda s: s[1])
     return spans
 
@@ -261,6 +293,13 @@ def _branch_line(bid: str, branch: dict) -> int:
     return line
 
 
+def _branch_point(bid: str, branch: dict) -> tuple[int, int]:
+    """(line, column) where a branch sits, its line read as _branch_line reads it."""
+    line = _branch_line(bid, branch)
+    start = _at(branch, "loc", "start")
+    return _position(start if isinstance(start, dict) else {}, line, 0)
+
+
 def _stmt_line(sid: str, stmt: object) -> int | None:
     """Where a statement starts. A start with no line leaves the statement out,
     as it always has; a statement or a start that is no object is refused."""
@@ -272,82 +311,105 @@ def _stmt_line(sid: str, stmt: object) -> int | None:
     return line
 
 
-def _query_lines(cov: dict) -> set[int]:
-    """Every line the attribution will ask about, branches and statements both."""
-    lines = {_branch_line(bid, b) for bid, b in cov.get("branchMap", {}).items()}
-    lines |= {_stmt_line(sid, s) for sid, s in cov.get("statementMap", {}).items()}
-    lines.discard(None)
-    return lines
+def _stmt_point(sid: str, stmt: object) -> tuple[int, int] | None:
+    """(line, column) where a statement starts, or None for a start with no line."""
+    line = _stmt_line(sid, stmt)
+    return None if line is None else _position(stmt["start"], line, 0)
 
 
-def _push_started(heap: list, ordered: list[list], nxt: int, line: int) -> int:
-    while nxt < len(ordered) and ordered[nxt][1] <= line:
+def _points(entries: dict, point_of) -> set[tuple[int, int]]:
+    """Every position the attribution will ask about for one kind of counter."""
+    points = {point_of(key, entry) for key, entry in entries.items()}
+    points.discard(None)
+    return points
+
+
+def _push_started(heap: list, ordered: list[list], nxt: int, point: tuple, opens: int) -> int:
+    while nxt < len(ordered) and ordered[nxt][opens] <= point:
         span = ordered[nxt]
-        heapq.heappush(heap, (span[2] - span[1], -span[1], nxt, span))
+        line, column = span[opens]
+        heapq.heappush(heap, (span[2] - line, -line, -column, nxt, span))
         nxt += 1
     return nxt
 
 
-def _drop_ended(heap: list, line: int) -> None:
-    """Discard spans that closed before this line. Safe to do lazily and only at
-    the top: query lines only increase, so anything popped here can never
-    contain a later line either."""
-    while heap and heap[0][3][2] < line:
+def _drop_ended(heap: list, point: tuple) -> None:
+    """Discard spans that closed before this point. Safe to do lazily and only at
+    the top: query points only increase, so anything popped here can never
+    contain a later point either."""
+    while heap and heap[0][-1][_FINISH] < point:
         heapq.heappop(heap)
 
 
-def _span_owners(fn_spans: list[list], lines: set[int]) -> dict[int, list | None]:
-    """line -> innermost containing span. A hit inside a nested function belongs
-    to that function, never to its encloser — else the nested one reads through
-    its encloser and the encloser answers for lines it can't fix.
+def _span_owners(fn_spans: list[list], points: set[tuple[int, int]],
+                 opens: int) -> dict[tuple[int, int], list | None]:
+    """position -> innermost containing span, each span opening at its `opens`
+    position. A hit inside a nested function belongs to that function, never
+    to its encloser — else the nested one reads through its encloser and the
+    encloser answers for lines it can't fix. A counter that starts on a
+    function's line but ahead of where that function opens is the encloser's.
 
-    Sweeping spans by start into a heap keyed (length, -start, index) settles
+    Sweeping spans by start into a heap keyed (lines, -start, index) settles
     that in O((F + Q) log F) instead of a scan per query. The index term is
-    load-bearing: it is the sorted position, so an exact tie on (length, -start)
+    load-bearing: it is the sorted position, so an exact tie on (lines, -start)
     resolves to the span the old linear scan met first."""
-    ordered = sorted(fn_spans, key=lambda s: s[1])
+    ordered = sorted(fn_spans, key=lambda s: s[opens])
     heap: list[tuple] = []
-    owners: dict[int, list | None] = {}
+    owners: dict[tuple[int, int], list | None] = {}
     nxt = 0
-    for line in sorted(lines):
-        nxt = _push_started(heap, ordered, nxt, line)
-        _drop_ended(heap, line)
-        owners[line] = heap[0][3] if heap else None
+    for point in sorted(points):
+        nxt = _push_started(heap, ordered, nxt, point, opens)
+        _drop_ended(heap, point)
+        owners[point] = heap[0][-1] if heap else None
     return owners
 
 
-def _attach_branches(owners: dict[int, list | None], cov: dict) -> None:
+def _attach_branches(fn_spans: list[list], cov: dict) -> None:
+    """A function holds branches from its signature on: a default argument's
+    arm sits between its name and its body. A ternary that opens ahead of a
+    function on the same line (`flag ? (x) => x : y`) is the code around it."""
+    branches = cov.get("branchMap", {})
+    owners = _span_owners(fn_spans, _points(branches, _branch_point), _SIGNATURE)
     hits_by_id = cov.get("b", {})
-    for bid, branch in cov.get("branchMap", {}).items():
-        best = owners.get(_branch_line(bid, branch))
+    for bid, branch in branches.items():
+        best = owners.get(_branch_point(bid, branch))
         if best is not None:
             hits = hits_by_id.get(bid, [])
             best[_B_TOTAL] += len(hits)
             best[_B_COV] += sum(1 for h in hits if h > 0)
 
 
-def _attach_statements(owners: dict[int, list | None], cov: dict) -> None:
+def _attach_statements(fn_spans: list[list], cov: dict) -> None:
+    """A function holds statements from its body on. `const f = (x) => ...`
+    carries a statement for the declaration that starts at the arrow and runs
+    when the declaration does, at import for a module-level arrow: the code
+    around the arrow owns it, or an arrow no test calls reads half covered."""
+    statements = cov.get("statementMap", {})
+    owners = _span_owners(fn_spans, _points(statements, _stmt_point), _BODY)
     hits_by_id = cov.get("s", {})
-    for sid, stmt in cov.get("statementMap", {}).items():
-        best = owners.get(_stmt_line(sid, stmt))
+    for sid, stmt in statements.items():
+        best = owners.get(_stmt_point(sid, stmt))
         if best is not None:
             best[_S_TOTAL] += 1
             best[_S_COV] += 1 if hits_by_id.get(sid, 0) > 0 else 0
 
 
+def _instrumented(cov: dict) -> bool:
+    """Whether this file entry is an instrumenter's own output, whose fnMap
+    lists every function it did not skip. istanbul writes a statement for
+    each one it counts, so an entry with statements is; a hand-built entry
+    that carries fnMap alone cannot say what it left out."""
+    return bool(cov.get("statementMap"))
+
+
 def _file_coverage(cov: dict) -> list[FnCoverage]:
     clamped = _admit_hits(cov)
     fn_spans = _fn_spans(cov)
-    owners = _span_owners(fn_spans, _query_lines(cov))
-    _attach_branches(owners, cov)
-    _attach_statements(owners, cov)
-    rows = [FnCoverage(*s) for s in fn_spans]
+    _attach_branches(fn_spans, cov)
+    _attach_statements(fn_spans, cov)
+    full = _instrumented(cov)
+    rows = [FnCoverage(*s[_COUNTS], full_listing=full) for s in fn_spans]
     return ClampedBranchCounts(rows, clamped) if clamped else rows
-
-
-def _read_file(rel: str, cov: object) -> list[FnCoverage]:
-    """One file's function coverage, once its counters are all there."""
-    return _named_file(rel, lambda: _file_coverage(_require_counters(cov)))
 
 
 def _named_file(rel: str, read):
@@ -374,21 +436,25 @@ def _dead_lines(cov: dict) -> set[int]:
 _BAD_ISTANBUL = "unparseable istanbul artifact"
 
 
-def _istanbul_map(w, repo_root: str, per_file) -> dict:
+def _records(w, repo_root: str):
+    """(repo-relative path, record) per measured file, once every counter of the
+    record is there, with its positions on the lines the reader numbers that file
+    by (istanbul_lines). A refusal names the file."""
     keys = Reported(repo_root)
-    out = {}
     for abs_path, cov in covstream.split_window(w):
         rel = keys(abs_path)
-        out[rel] = _named_file(rel, lambda: per_file(_require_counters(cov)))
-    return out
+        yield rel, _named_file(rel, lambda: on_reader_lines(_require_counters(cov),
+                                                            Path(repo_root, rel)))
+
+
+def _istanbul_map(w, repo_root: str, per_file) -> dict:
+    return {rel: _named_file(rel, lambda: per_file(cov)) for rel, cov in _records(w, repo_root)}
 
 
 def _istanbul_both(w, repo_root: str) -> tuple[dict, dict]:
     per_file, dead = {}, {}
-    keys = Reported(repo_root)
-    for abs_path, cov in covstream.split_window(w):
-        rel = keys(abs_path)
-        per_file[rel] = _read_file(rel, cov)
+    for rel, cov in _records(w, repo_root):
+        per_file[rel] = _named_file(rel, lambda: _file_coverage(cov))
         dead[rel] = _dead_lines(cov)
     return per_file, dead
 

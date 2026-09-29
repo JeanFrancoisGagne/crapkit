@@ -1,0 +1,99 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	equivalence.go	Straight	start	3	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+eq-straight	equivalence.go	Straight	end	6	The Go Programming Language Specification, Function declarations: a function ends on the last line of its body	
+eq-straight	equivalence.go	Straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	equivalence.go	Straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	equivalence.go	Straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	equivalence.go	Straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	equivalence.go	Straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	equivalence.go	Straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	equivalence.go	Straight	params	1	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+eq-four-deep	equivalence.go	FourDeep	start	8	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+eq-four-deep	equivalence.go	FourDeep	end	19	The Go Programming Language Specification, Function declarations: a function ends on the last line of its body	
+eq-four-deep	equivalence.go	FourDeep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	equivalence.go	FourDeep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	equivalence.go	FourDeep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	equivalence.go	FourDeep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	equivalence.go	FourDeep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	equivalence.go	FourDeep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	equivalence.go	FourDeep	params	4	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+eq-nested-loops	equivalence.go	NestedLoops	start	21	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+eq-nested-loops	equivalence.go	NestedLoops	end	31	The Go Programming Language Specification, Function declarations: a function ends on the last line of its body	
+eq-nested-loops	equivalence.go	NestedLoops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	equivalence.go	NestedLoops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	equivalence.go	NestedLoops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	equivalence.go	NestedLoops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	equivalence.go	NestedLoops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	AO-ND-LOOPS
+eq-nested-loops	equivalence.go	NestedLoops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	equivalence.go	NestedLoops	params	1	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+eq-flat-seven	equivalence.go	FlatSeven	start	33	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+eq-flat-seven	equivalence.go	FlatSeven	end	57	The Go Programming Language Specification, Function declarations: a function ends on the last line of its body	
+eq-flat-seven	equivalence.go	FlatSeven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	equivalence.go	FlatSeven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	equivalence.go	FlatSeven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	equivalence.go	FlatSeven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	equivalence.go	FlatSeven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	equivalence.go	FlatSeven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	equivalence.go	FlatSeven	params	1	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+c-branches	constructs.go	Branches	start	3	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+c-branches	constructs.go	Branches	end	11	The Go Programming Language Specification, Function declarations: a function ends on the last line of its body	
+c-branches	constructs.go	Branches	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and else if; else adds no decision	
+c-branches	constructs.go	Branches	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-branches	constructs.go	Branches	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else if +1, else +1	
+c-branches	constructs.go	Branches	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each arm's body one level deep	
+c-branches	constructs.go	Branches	params	1	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+c-pick	constructs.go	Pick	start	13	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+c-pick	constructs.go	Pick	end	24	The Go Programming Language Specification, Function declarations: a function ends on the last line of its body	
+c-pick	constructs.go	Pick	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; three case labels, default excluded	
+c-pick	constructs.go	Pick	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; the switch is one decision	
+c-pick	constructs.go	Pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; switch +1	
+c-pick	constructs.go	Pick	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the case bodies sit inside the switch	AO-N-CASES-STACK
+c-pick	constructs.go	Pick	params	1	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+c-logic	constructs.go	Logic	start	26	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+c-logic	constructs.go	Logic	end	31	The Go Programming Language Specification, Function declarations: a function ends on the last line of its body	
+c-logic	constructs.go	Logic	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and three short-circuit operators	
+c-logic	constructs.go	Logic	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-logic	constructs.go	Logic	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the && run +1, || +1	
+c-logic	constructs.go	Logic	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	AO-N-LOGICAL-NO-PARENS
+c-logic	constructs.go	Logic	params	4	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+c-loops	constructs.go	Loops	start	33	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+c-loops	constructs.go	Loops	end	42	The Go Programming Language Specification, Function declarations: a function ends on the last line of its body	
+c-loops	constructs.go	Loops	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops	
+c-loops	constructs.go	Loops	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-loops	constructs.go	Loops	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two loops at nesting 0, +1 each	
+c-loops	constructs.go	Loops	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; two loops side by side	
+c-loops	constructs.go	Loops	params	1	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+c-outer	constructs.go	Outer	start	44	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+c-outer	constructs.go	Outer	end	54	The Go Programming Language Specification, Function declarations: a function ends on the last line of its body	
+c-outer	constructs.go	Outer	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops and an if	
+c-outer	constructs.go	Outer	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-outer	constructs.go	Outer	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, loop +2, if +3, the jump to a label +1	
+c-outer	constructs.go	Outer	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; an if inside two loops	AO-ND-LOOPS-IF
+c-outer	constructs.go	Outer	params	1	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+c-fact	constructs.go	Fact	start	56	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+c-fact	constructs.go	Fact	end	61	The Go Programming Language Specification, Function declarations: a function ends on the last line of its body	
+c-fact	constructs.go	Fact	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+c-fact	constructs.go	Fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-fact	constructs.go	Fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
+c-fact	constructs.go	Fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
+c-fact	constructs.go	Fact	params	1	The Go Programming Language Specification, Function declarations: the parameters the function declares	
+g-func-type	shapes.go	AfterFuncType	rows	1	The Go Programming Language Specification, Function types: a var of function type declares a variable, so AfterFuncType is one function	AO-GO-FUNC-TYPE
+g-interface-param	shapes.go	Show	start	9	The Go Programming Language Specification, Function declarations: a function starts on its defining line	
+g-interface-param	shapes.go	Show	params	2	The Go Programming Language Specification, Function types: the parameter list declares v and w	AO-GO-INTERFACE-PARAM
+g-func-param	shapes.go	Each	params	1	The Go Programming Language Specification, Function types: the parameter list declares f; the types inside its type are not its parameters	AO-GO-FUNC-PARAM
+g-wrap	shapes.go	Wrap	nloc	5	lizard 1.24.0 README: NLOC counts lines of code without comments; the lines holding Wrap's own tokens: func, run(, }), return, }	AO-NLOC-CLOSE-LINE
+g-wrap	shapes.go	Wrap	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a function literal raises the nesting level and adds nothing	
+g-def	shapes.go	Default	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; none here	AO-ND-DEF
+g-nested-else	shapes.go	NestedInElse	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the else body is one level deep and the if inside it opens the second	AO-N-ELSE
+g-nested-else	shapes.go	NestedInElse	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else +1, the if in the else +2	
+g-init-after-if	shapes.go	InitAfterIf	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the for inside the second if is two levels deep	AO-GO-ND-INIT
+g-init-after-if	shapes.go	InitAfterIf	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, if +1, for +2	
+g-case-run	shapes.go	CaseRun	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, switch +2, one && sequence +1, if +3	AO-COG-RUNS-GO
+g-case-run	shapes.go	CaseRun	ccn_std	7	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; for, the case, three &&, if	
+g-do-call	shapes.go	DoCall	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a call to a function named do is no loop	AO-COG-KEYWORD-NAMES-BRACE
+g-long-run	shapes.go	LongRun	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, one && sequence over two lines +1	AO-COG-RUNS-LINES
+g-spin	shapes.go	Spin	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the if; a for with no condition decides nothing	AO-LOOP-NO-CONDITION
+g-spin	shapes.go	Spin	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, the if inside it +2	
+g-select	shapes.go	Pick	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a select adds one per case-labeled clause, default excluded	
+g-select	shapes.go	Pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a select is the Go spec's switch over channel operations (Select statements), and a switch adds +1	AO-GO-COG-SELECT
+g-select	shapes.go	Pick	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; a select is the Go spec's switch over channel operations	AO-GO-SELECT-MOD

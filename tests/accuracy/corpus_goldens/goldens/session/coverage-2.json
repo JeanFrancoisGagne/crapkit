@@ -1,0 +1,90 @@
+{
+ "by_scope": {
+  "legacy": {
+   "crap_load": 6.0,
+   "functions": 2,
+   "grade": "A+",
+   "over_target": 0
+  },
+  "native": {
+   "crap_load": 78.0,
+   "functions": 24,
+   "grade": "B",
+   "over_target": 1
+  },
+  "py": {
+   "crap_load": 284.72,
+   "functions": 48,
+   "grade": "F",
+   "over_target": 12
+  },
+  "scripts": {
+   "crap_load": 31.0,
+   "functions": 8,
+   "grade": "A+",
+   "over_target": 0
+  },
+  "vendor": {
+   "crap_load": 1134.0,
+   "functions": 304,
+   "grade": "B",
+   "over_target": 12
+  },
+  "web": {
+   "crap_load": 142.48,
+   "functions": 29,
+   "grade": "F",
+   "over_target": 7
+  }
+ },
+ "cache_hits": 64,
+ "cc_only": 338,
+ "ceilings": {
+  "default": 6,
+  "scripts": 8,
+  "vendor": 15
+ },
+ "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+ "crap_load": 1676.21,
+ "db": "<root>/repo/.crapkit/crap.sqlite",
+ "excluded": 1,
+ "files": 64,
+ "functions": 415,
+ "grade": "C",
+ "kind": "coverage",
+ "lane_failures": {},
+ "lanes": {
+  "js": {
+   "artifact_sha256": "5ed1fd5c5ce5cadb3d9895f9ea0f316e94b5a88fb8e07d17cd29a18e5a01eb46",
+   "exit_code": null,
+   "failures": [],
+   "parser": "istanbul",
+   "results_artifact_sha256": "6eaaba393a8bb1e97273dc725495d62dea8d5b9e7eef33c6b6d48660422ff04f",
+   "scopes": [
+    "web"
+   ],
+   "tests_skipped": 0,
+   "tests_total": 9
+  },
+  "py": {
+   "artifact_sha256": "0846e3a3751f54562e7c0a4204aeb37631b3d3237a95010ba4eec58613e27775",
+   "exit_code": null,
+   "failures": [],
+   "parser": "coveragepy",
+   "results_artifact_sha256": "d8f8fe7ed25e68f14ff16b900582ab8296c321b35c2c0f4387d4ccbc5cab0f42",
+   "scopes": [
+    "py"
+   ],
+   "tests_skipped": 0,
+   "tests_total": 10
+  }
+ },
+ "measured": 67,
+ "no_lane": 0,
+ "over_target": 32,
+ "run_id": 3,
+ "schema": 1,
+ "skipped_max_bytes": 0,
+ "unmeasured_scopes": [],
+ "untested": 9
+}

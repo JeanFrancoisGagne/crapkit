@@ -35,3 +35,17 @@ def test_a_symlink_or_a_submodule_entry_is_not_a_missing_bit():
 
 def test_no_hooks_path_means_nothing_to_report():
     assert non_executable_hooks({}) == ()
+
+
+def test_the_fix_command_keeps_a_spaced_hook_path_one_argument(tmp_path, monkeypatch):
+    """`git update-index --chmod=+x git hooks/pre-commit` hands git two paths,
+    `git` and `hooks/pre-commit`. The printed path goes in as one word of the
+    shell the reader pastes into."""
+    from crapkit.cli import admin
+    from crapkit.invocation import shell_arg
+
+    monkeypatch.setattr(admin, "_hook_modes", lambda root: {"git hooks/pre-commit": "100644"})
+
+    [finding] = admin._doctor_hook_modes(tmp_path)
+
+    assert f"`git update-index --chmod=+x {shell_arg('git hooks/pre-commit')}`" in finding.text

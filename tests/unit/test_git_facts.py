@@ -122,7 +122,19 @@ def test_line_display_withholds_unproved_artifact_locations(tmp_path, counted, m
         monkeypatch.setattr(gitio, "diff_names_since", unavailable)
     cfg = SimpleNamespace(lanes=[lane], scope_paths={"src": ("src",)})
 
-    assert lane_states(tmp_path, cfg, GitFacts(tmp_path))[0][1]
+    note = lane_states(tmp_path, cfg, GitFacts(tmp_path))[0][1]
+
+    assert WITHHELD[reason] in note, note
+    assert "changed since" not in note and "commit or revert" not in note, note
+
+
+# What the note names for each cause. None of them is a changed file, so none
+# asks for a commit or a revert.
+WITHHELD = {"missing-stamp": "no stamp records the commit a.json was built at",
+            "refused-write": "its last attempt wrote no artifact",
+            "lost-history": "a.json was built at beefbeefbee, which is not behind HEAD",
+            "git-error": "git could not tell which files in its scopes changed after a.json "
+                         "was written (git unavailable)"}
 
 
 @pytest.mark.parametrize("changed, stale", [("src/a.py", True), ("src/b.py", False)])

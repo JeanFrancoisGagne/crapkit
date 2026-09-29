@@ -1,0 +1,14 @@
+{
+ "pairs": [
+  {
+   "confidence": 0.9231,
+   "files": [
+    "src/web/arrows.js",
+    "src/web/templates.ts"
+   ],
+   "support": 12
+  }
+ ],
+ "schema": 1,
+ "window_months": 12
+}

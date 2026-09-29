@@ -1,0 +1,44 @@
+{
+ "analysis_version": 13,
+ "lanes": [
+  {
+   "artifact": ".crapkit/cov/py.json",
+   "artifact_present": true,
+   "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
+   "name": "py",
+   "seconds": "<seconds>"
+  },
+  {
+   "artifact": ".crapkit/cov/ts.json",
+   "artifact_present": true,
+   "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
+   "name": "ts",
+   "seconds": "<seconds>"
+  }
+ ],
+ "newest_run": {
+  "id": 2,
+  "kind": "coverage",
+  "verdict_ok": null
+ },
+ "problems": [
+  "1 tracked file(s) match a scope language but no scope path: src/__init__.py — add a [[scope]] claiming them, or an [exclude] glob (docs/configuration.md)"
+ ],
+ "resources": "<resources>",
+ "schema": 1,
+ "store": {
+  "path": ".crapkit/crap.sqlite",
+  "present": true,
+  "size_bytes": 86016
+ },
+ "versions": {
+  "crapkit": "<crapkit>",
+  "lizard": "1.24.0",
+  "python": "<python>"
+ },
+ "warnings": [
+  "lane 'ts' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add a junit reporter (vitest: --reporter=default --reporter=junit --outputFile=.crapkit/cov/ts/junit.xml; jest: jest-junit) and a results_artifact naming its file",
+  "scope 'py' has a lane but no [crapkit.scoped_tests] template — `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add py = \"<test command>\" under [crapkit.scoped_tests]",
+  "scope 'ts' has a lane but no [crapkit.scoped_tests] template — `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add ts = \"<test command>\" under [crapkit.scoped_tests]"
+ ]
+}

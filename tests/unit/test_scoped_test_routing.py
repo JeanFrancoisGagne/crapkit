@@ -25,3 +25,11 @@ def test_the_multi_scope_routing_error_names_a_recipe_that_works():
     assert "calc" in message and "util" in message
     assert "{files}" in message, "the escape is a template with no {files} placeholder"
     assert "paths" in message, "the other route is test files under a scope path"
+
+
+def test_a_test_file_with_no_template_anywhere_says_that_no_scope_declares_one():
+    with pytest.raises(ConfigError) as err:
+        _group_files_by_scope(["tests/test_curve.py"], {"calc": ("calc",)}, {})
+
+    assert str(err.value) == ("tests/test_curve.py is a test file outside every scope, and no "
+                              "scope declares a [crapkit.scoped_tests] template")

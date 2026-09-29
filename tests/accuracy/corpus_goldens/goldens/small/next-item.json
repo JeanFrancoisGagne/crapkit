@@ -1,0 +1,33 @@
+{
+ "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+ "empty": false,
+ "item": {
+  "authors": 1,
+  "ccn": 38,
+  "ccn_std": 38,
+  "cognitive": 82,
+  "commits": 1,
+  "cov": 0.0,
+  "crap": 38.0,
+  "end": 326,
+  "est_splits": 3,
+  "est_uncovered_paths": 38,
+  "flag": "cc-only",
+  "function": "deepMergeInternal ( isRoot , sources Array )",
+  "handle": "deepMergeInternal",
+  "nesting": 6,
+  "nloc": 84,
+  "occurrence": 1,
+  "path": "vendor/ky/merge.ts",
+  "remedy": "decompose",
+  "scope": "vendor",
+  "start": 207,
+  "target": 15,
+  "uncovered_lines": null,
+  "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/ky/merge.ts"
+ },
+ "run_id": 2,
+ "schema": 1,
+ "skipped_no_lane": 1,
+ "stale": false
+}

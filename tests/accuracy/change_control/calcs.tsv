@@ -1,0 +1,2 @@
+calc	independent_test	modules	functions
+Change-control verdict	tests/accuracy/change_control/test_change_control_rules.py::test_each_rule_fails_its_seeded_repo	tools/accuracy/change_control.py	tools/accuracy/change_control.py:verdict,tools/accuracy/change_control.py:check,tools/accuracy/change_control.py:plan_declare,tools/accuracy/change_control.py:pre_push

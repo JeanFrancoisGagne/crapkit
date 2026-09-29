@@ -1,0 +1,9 @@
+{"$report_type": "CollectReport", "nodeid": "", "outcome": "passed"}
+{"$report_type": "CollectReport", "nodeid": "tests/test_td.py", "outcome": "passed"}
+{"$report_type": "CollectReport", "nodeid": "tests", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_td.py::test_plain", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_td.py::test_plain", "when": "call", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_td.py::test_plain", "when": "teardown", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_td.py::test_then_teardown_error", "when": "setup", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_td.py::test_then_teardown_error", "when": "call", "outcome": "passed"}
+{"$report_type": "TestReport", "nodeid": "tests/test_td.py::test_then_teardown_error", "when": "teardown", "outcome": "failed"}

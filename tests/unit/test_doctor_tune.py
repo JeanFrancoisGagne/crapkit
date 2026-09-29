@@ -209,6 +209,20 @@ def test_doctor_tune_with_no_lane_measured_says_so(tmp_path, monkeypatch, capsys
     assert _tune(tmp_path, monkeypatch, capsys) == _NONE
 
 
+def test_a_junit_report_that_is_not_utf8_costs_nothing_and_crashes_nothing(tmp_path):
+    """doctor --tune caught a report that was not XML and let one that was not
+    UTF-8 end the command with a traceback."""
+    from crapkit.cli.admin import _lane_durations
+    from crapkit.config import load_config_text
+
+    (tmp_path / "b-results.xml").write_bytes('<testsuite name="é" time="7.5"/>'.encode("latin-1"))
+    cfg = load_config_text(
+        '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n\n'
+        '[[lane]]\nname = "b"\ncommand = "y"\nartifact = "cov/b.json"\n'
+        'parser = "istanbul"\nscopes = ["src"]\nresults_artifact = "b-results.xml"\n')
+    assert _lane_durations(tmp_path, cfg) == ()
+
+
 def test_junit_reports_its_own_wall_seconds():
     xml = ('<testsuites><testsuite name="a" time="2.5"/>'
            '<testsuite name="b" time="3.0"/></testsuites>')

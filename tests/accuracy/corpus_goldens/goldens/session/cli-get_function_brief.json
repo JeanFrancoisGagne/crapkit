@@ -1,0 +1,170 @@
+{
+ "attempts": [],
+ "churn": {
+  "authors": 1,
+  "commits": 1,
+  "weight": 1.0
+ },
+ "commands": {
+  "gate": "crapkit rescore src/py/grades.py --gate",
+  "refresh": "crapkit coverage --reuse-unchanged",
+  "refresh_writes_run": true,
+  "scoped_tests": "crapkit test-scoped src/py/grades.py",
+  "verify": "crapkit verify"
+ },
+ "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+ "coupling": [],
+ "duplication_twins": [],
+ "est_splits": 2,
+ "est_uncovered_paths": 3,
+ "file_functions": [
+  {
+   "ccn": 4,
+   "crap": 6.0,
+   "end": 15,
+   "function": "letter( score )",
+   "occurrence": 1,
+   "remedy": "ok",
+   "start": 8
+  },
+  {
+   "ccn": 8,
+   "crap": 10.37037037037037,
+   "end": 32,
+   "function": "curve( scores , mode , floor , ceiling , skip_none )",
+   "occurrence": 1,
+   "remedy": "decompose",
+   "start": 18
+  },
+  {
+   "ccn": 4,
+   "crap": 4.0,
+   "end": 43,
+   "function": "weighted( values , weights , cap )",
+   "occurrence": 1,
+   "remedy": "ok",
+   "start": 35
+  },
+  {
+   "ccn": 3,
+   "crap": 12.0,
+   "end": 46,
+   "function": "pick( a , b )",
+   "occurrence": 1,
+   "remedy": "split-lines",
+   "start": 46
+  },
+  {
+   "ccn": 2,
+   "crap": 2.5,
+   "end": 52,
+   "function": "spread( values )",
+   "occurrence": 1,
+   "remedy": "ok",
+   "start": 49
+  }
+ ],
+ "file_totals": {
+  "crap_load": 34.87,
+  "functions": 5,
+  "over_target": 2
+ },
+ "function": "curve( scores , mode , floor , ceiling , skip_none )",
+ "gate_rule": {
+  "binds": "changed functions only; a ratchet mark pardons standing debt at or under it",
+  "ceiling": 6,
+  "diff_uncovered_max": null,
+  "mark_age_days": null,
+  "ratchet_mark": null
+ },
+ "handle": "curve",
+ "lane": {
+  "artifact": ".crapkit/cov/py.json",
+  "command": "python -c \"import os,shutil,sys,time;a=sys.argv[1:];p=list(zip(a[::2],a[1::2]));[os.makedirs(os.path.dirname(d) or '.',exist_ok=True) for s,d in p];[shutil.copyfile(s,d) for s,d in p];t=time.time_ns();[os.utime(d,ns=(t,t)) for s,d in p]\" recorded/py.json .crapkit/cov/py.json recorded/py-junit.xml .crapkit/cov/py-junit.xml",
+  "cwd": "",
+  "env": {
+   "COVERAGE_PROCESS_CONFIG": "",
+   "COV_CORE_DATAFILE": ""
+  },
+  "name": "py",
+  "parser": "coveragepy",
+  "timeout_seconds": "<timeout_seconds>"
+ },
+ "notes": {
+  "repo": null,
+  "scope": null
+ },
+ "params": [
+  {
+   "name": "scores",
+   "type": null
+  },
+  {
+   "name": "mode",
+   "type": null
+  },
+  {
+   "name": "floor",
+   "type": null
+  },
+  {
+   "name": "ceiling",
+   "type": null
+  },
+  {
+   "name": "skip_none",
+   "type": null
+  }
+ ],
+ "path": "src/py/grades.py",
+ "ratchet_mark": null,
+ "regrowth": {
+  "history": [
+   [
+    1,
+    8
+   ],
+   [
+    2,
+    8
+   ]
+  ],
+  "regrown": false
+ },
+ "remedy": "decompose",
+ "run_id": 2,
+ "schema": 1,
+ "scored": {
+  "ccn": 8,
+  "ccn_mod": 8,
+  "ccn_std": 8,
+  "cognitive": 11,
+  "cov": 0.6666666666666666,
+  "crap": 10.37037037037037,
+  "end": 32,
+  "flag": "measured",
+  "long_name": "curve( scores , mode , floor , ceiling , skip_none )",
+  "nesting": 2,
+  "nloc": 15,
+  "occurrence": 1,
+  "params": 5,
+  "path": "src/py/grades.py",
+  "remedy": "decompose",
+  "scope": "py",
+  "start": 18
+ },
+ "source": "def curve(scores, mode, floor, ceiling, skip_none):\n    result = []\n    for score in scores:\n        if score is None and skip_none:\n            continue\n        if score is None:\n            score = floor\n        if mode == \"sqrt\":\n            score = int((score / 100) ** 0.5 * 100)\n        elif mode == \"flat\":\n            score = score + 5\n        if score > ceiling:\n            score = ceiling\n        result.append(score)\n    return result",
+ "stale": false,
+ "target": 6,
+ "uncovered_lines": [
+  22,
+  26,
+  30
+ ],
+ "versions": {
+  "analysis_version": 13,
+  "crapkit": "<crapkit>",
+  "lizard": "1.24.0",
+  "python": "<python>"
+ }
+}

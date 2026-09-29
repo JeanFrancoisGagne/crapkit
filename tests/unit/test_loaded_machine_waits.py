@@ -23,6 +23,7 @@ import mutation_fixtures
 import state_concurrency_worker
 import test_ci_driver_lifetime
 import test_r2_execution_lifetime
+from test_one_hang_bound import code_tree
 from hang_guard import HANG_SECONDS
 
 TESTS = Path(__file__).resolve().parents[1]
@@ -139,7 +140,7 @@ def _spelled_timeout(keyword):
 
 
 def _lane_timeouts(path):
-    lanes = filter(_is_lane, ast.walk(ast.parse(path.read_text(encoding="utf-8"))))
+    lanes = filter(_is_lane, ast.walk(code_tree(path)))
     return [(_relative(path), keyword.value.value) for lane in lanes
             for keyword in filter(_spelled_timeout, lane.keywords)]
 

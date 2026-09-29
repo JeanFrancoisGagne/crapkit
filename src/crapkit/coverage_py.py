@@ -72,6 +72,8 @@ def _admit_summary(name: str, summary: object) -> dict:
         raise ValueError(f"{name}: summary holds neither statement nor branch counts; "
                          f"coverage.py writes one kind or both, so {_REGENERATE}")
     _require_deciding_statements(name, counts)
+    counts["excluded_lines"] = coverage_count(summary.get("excluded_lines", 0),
+                                              f"{name}: excluded_lines")
     return counts
 
 
@@ -126,10 +128,25 @@ def _region_start(name: str, fn: dict) -> int:
     return start
 
 
+def _excluded(summary: dict) -> bool:
+    """Whether coverage.py was told to leave the whole function out: a
+    `# pragma: no cover` def, or exclude patterns that took every statement,
+    leave a region with excluded lines and no statement to measure."""
+    return summary.get("num_statements", 0) == 0 and summary["excluded_lines"] > 0
+
+
+def _region_lines(name: str, fn: dict) -> list[int]:
+    """The lines a region holds, its excluded ones included: an excluded
+    function keeps no other, and a function whose last lines are excluded
+    ends where its source does."""
+    return [line for key in ("executed_lines", "missing_lines", "excluded_lines")
+            for line in _line_list(name, fn, key)]
+
+
 def _fn_coverage(name: str, fn: object) -> FnCoverage:
     summary = _admit_summary(name, fn.get("summary") if isinstance(fn, dict) else None)
     start = _region_start(name, fn)
-    lines = _line_list(name, fn, "executed_lines") + _line_list(name, fn, "missing_lines")
+    lines = _region_lines(name, fn)
     end = max(lines) if lines else start
     # A kind the summary lacks reads 0 of 0 below only where it cannot decide:
     # _admit_summary refused every summary whose missing kind would.
@@ -138,7 +155,8 @@ def _fn_coverage(name: str, fn: object) -> FnCoverage:
                       branches_total=summary.get("num_branches", 0),
                       branches_covered=summary.get("covered_branches", 0),
                       statements_total=summary.get("num_statements", 0),
-                      statements_covered=summary.get("covered_lines", 0))
+                      statements_covered=summary.get("covered_lines", 0),
+                      excluded=_excluded(summary))
 
 
 def _line_list(name: str, fn: dict, key: str) -> list[int]:

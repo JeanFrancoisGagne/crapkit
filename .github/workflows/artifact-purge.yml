@@ -6,9 +6,10 @@ name: Artifact Purge
 #
 # Measured 2026-09-24: 24 expired artifacts holding 558 MB, plus 140 live
 # holding 335 MB, against a 500 MB account quota shared by every repo this
-# account owns. openclaw's CI was red for 14 hours with "Artifact storage quota
-# has been hit" on every upload-artifact, having uploaded 9 MB of its own. The
-# consumer was this repo; openclaw's purge only ever swept openclaw.
+# account owns. Another repository of the account had CI red for 14 hours with
+# "Artifact storage quota has been hit" on every upload-artifact, having uploaded
+# 9 MB of its own. The consumer was this repo, and that repository's purge only
+# ever swept itself.
 #
 # The three uploads in ci.yml now set retention-days, which bounds how long a
 # new artifact stays live. This job is the other half: it is what actually
@@ -18,6 +19,12 @@ on:
   schedule:
     # Before the weekly coverage lanes upload anything.
     - cron: "10 2 * * *"
+  # accuracy.yml hands receipts between jobs as one-day artifacts and keeps
+  # the weekly mutation meta files for seven; sweeping after each of its runs
+  # deletes whatever expired since, instead of leaving it billed until 02:10.
+  workflow_run:
+    workflows: [accuracy]
+    types: [completed]
   workflow_dispatch:
     inputs:
       dry_run:

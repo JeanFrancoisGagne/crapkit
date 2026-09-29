@@ -120,9 +120,10 @@ CPP_BRANCH = ("int pick(int a, int b) {\n"
 
 
 def test_the_c_family_mutates_off_the_table_it_falls_through_to():
-    """C, C++, Objective-C, Java and Zig were admitted with no table of their
-    own, which is a decision rather than an omission: they spell `==`, `!=`,
-    `<`, `>`, `&&`, `||` exactly as the C-family table does."""
+    """C, C++, Objective-C and Java were admitted with no table of their own,
+    which is a decision rather than an omission: they spell `==`, `!=`, `<`,
+    `>`, `&&`, `||` exactly as the C-family table does. Zig does not, so it has
+    a table of its own."""
     mutated = {m.mutated.strip()
                for m in file_mutants(CPP_BRANCH, changed_lines={2},
                                      language=mutate.mutation_language("src/pick.cpp"))}
@@ -131,6 +132,24 @@ def test_the_c_family_mutates_off_the_table_it_falls_through_to():
                        "if (a >= b && a != 0) { return a; }",
                        "if (a <= b && a != 0) { return a; }",
                        "if (a > b || a != 0) { return a; }"}
+
+
+def test_a_zig_error_set_merge_is_not_a_connective():
+    """Zig's `||` merges two error sets, and Zig has no `&&` at all. `A && B`
+    does not compile, so the mutant counted as a kill no test made."""
+    assert file_mutants("const E = A || B;\n", None, "zig") == []
+
+
+@pytest.mark.parametrize("line, mutated", [
+    ("const ok = a and b or !c;\n", ["const ok = a or b or !c;", "const ok = a and b and !c;"]),
+    ("if (a > b and a != 0) return a;\n",
+     ["if (a > b and a == 0) return a;", "if (a >= b and a != 0) return a;",
+      "if (a <= b and a != 0) return a;", "if (a > b or a != 0) return a;"]),
+])
+def test_zig_flips_its_connectives_and_and_or(line, mutated):
+    """Zig spells its boolean connectives `and` and `or`, and they grew no
+    mutant, so a test that never checked the second operand read as enough."""
+    assert [m.mutated for m in file_mutants(line, None, "zig")] == mutated
 
 
 def test_a_member_arrow_is_not_a_comparison():
@@ -144,6 +163,237 @@ def test_a_member_arrow_is_not_a_comparison():
                                      language=mutate.mutation_language("src/deref.c"))}
 
     assert mutated == {"if (n->size > 2) { return 1; }", "if (n->size < 2) { return 1; }"}
+
+
+# --- one token in its own language, never a comparison -------------------------
+
+@pytest.mark.parametrize("source", [
+    "ch <- v\n",
+    "ch<-v\n",
+    "v := <-ch\n",
+    "func pump(in <-chan int, out chan<- int) {}\n",
+])
+def test_the_go_channel_arrow_is_not_a_comparison(source):
+    """Go spec, Send statements and Receive operator: `<-` is one token. Read as
+    `<` it grew `ch <=- v` and `v := >=-ch`, which do not compile, so every one
+    died on the compiler and counted as a kill no test made."""
+    assert file_mutants(source, None, "go") == []
+
+
+def test_a_go_comparison_beside_the_arrow_still_mutates():
+    """The arrow takes only its own two characters: a `<` of its own on the
+    same line keeps its mutants."""
+    mutated = [m.mutated for m in file_mutants("ok := <-ch < n\n", None, "go")]
+
+    assert mutated == ["ok := <-ch <= n", "ok := <-ch >= n"]
+
+
+def test_less_than_minus_is_a_comparison_where_go_is_not_the_language():
+    """Only Go lexes `<-` as one token. In C++, TypeScript and Java `a<-1` is
+    `a < -1`, and its mutants are real ones."""
+    languages = ("cpp", "typescript", "java")
+    mutated = {language: [m.mutated for m in file_mutants("x = a<-1;\n", None, language)]
+               for language in languages}
+
+    assert mutated == {language: ["x = a<=-1;", "x = a>=-1;"] for language in languages}
+
+
+def _script(language: str, line: str) -> str:
+    return f"<script>\n{line}</script>\n" if language == "vue" else line
+
+
+@pytest.mark.parametrize("language", ["javascript", "typescript", "tsx", "vue", "java"])
+@pytest.mark.parametrize("line", ["x = a >>> b;\n", "a >>>= b;\n"])
+def test_the_unsigned_shift_is_not_a_comparison(language, line):
+    """ECMAScript and the JLS lex `>>>` and `>>>=` as one token. Split into
+    `>>` and a `>` it grew `a >><= b`, which does not compile, and `a >>>= b`,
+    an assignment where a shift stood."""
+    assert file_mutants(_script(language, line), None, language) == []
+
+
+def test_a_comparison_after_an_unsigned_shift_still_mutates():
+    mutated = [m.mutated for m in file_mutants("ok = (a >>> 1) > b;\n", None, "java")]
+
+    assert mutated == ["ok = (a >>> 1) >= b;", "ok = (a >>> 1) <= b;"]
+
+
+@pytest.mark.parametrize("language", ["cpp", "objectivec"])
+@pytest.mark.parametrize("line", ["auto r = a <=> b;\n", "void f() <% g(); %>\n"])
+def test_the_three_way_comparison_and_brace_digraphs_are_one_token(language, line):
+    """C++ lexes `<=>` whole, and C and C++ read `<%` and `%>` as `{` and `}`.
+    Split, `a <=> b` grew `a <> b` and `a >> b`, and `<% g(); %>` grew
+    `<=% g(); %>`: none of them compiles."""
+    assert file_mutants(line, None, language) == []
+
+
+def test_a_comparison_of_a_three_way_result_still_mutates():
+    mutated = [m.mutated for m in file_mutants("bool lt = (a <=> b) < 0;\n", None, "cpp")]
+
+    assert mutated == ["bool lt = (a <=> b) <= 0;", "bool lt = (a <=> b) >= 0;"]
+
+
+@pytest.mark.parametrize("language", ["cpp", "objectivec", "java", "javascript", "typescript",
+                                      "tsx", "vue"])
+@pytest.mark.parametrize("line, mutated", [
+    ("while (n-->0) f();\n", ["while (n-->=0) f();", "while (n--<=0) f();"]),
+    ("while (n --> 0) f();\n", ["while (n -->= 0) f();", "while (n --<= 0) f();"]),
+    ("while (n-->=0) f();\n", ["while (n-->0) f();", "while (n--<0) f();"]),
+])
+def test_a_comparison_after_a_decrement_mutates(language, line, mutated):
+    """These languages lex `--` whole, so `n-->0` is `n-- > 0`. The table read
+    `->` out of `-->` instead, and `->` is no comparison, so the loop bound grew
+    no mutant and a test that never reached zero read as enough."""
+    found = [m.mutated for m in file_mutants(_script(language, line), None, language)]
+
+    assert found == mutated
+
+
+def test_a_member_access_after_a_decrement_is_still_no_comparison():
+    """`p--->y` is `(p--)->y` in C and C++: the `>` belongs to `->`."""
+    assert file_mutants("x = p--->y;\n", None, "cpp") == []
+
+
+@pytest.mark.parametrize("line", ["let y = x |> f\n", "let m = a <> b\n",
+                                  "let r = f <^> xs\n", "let v = a >>> b\n"])
+def test_a_swift_custom_operator_is_one_token(line):
+    """The Swift reference, Lexical Structure, Operators: a run of operator
+    characters is one operator. `x |> f` grew `x |>= f` and `x |<= f`, operators
+    nobody declared, so the compiler killed them."""
+    assert file_mutants(line, None, "swift") == []
+
+
+def test_a_swift_comparison_that_is_its_whole_run_still_mutates():
+    mutated = [m.mutated for m in file_mutants("let ok = xs |> count >= n\n", None, "swift")]
+
+    assert mutated == ["let ok = xs |> count > n", "let ok = xs |> count < n"]
+
+
+@pytest.mark.parametrize("line, mutated", [
+    ("if a == b { f() }\n", ["if a != b { f() }"]),
+    ("if a === b { f() }\n", ["if a !== b { f() }"]),
+    ("let t = a == b ? 1 : 2\n", ["let t = a != b ? 1 : 2"]),
+    ("func f<T>(x: T) -> Bool { x == y }\n", ["func f<T>(x: T) -> Bool { x != y }"]),
+])
+def test_a_swift_equality_mutates(line, mutated):
+    """Pygments' Swift lexer calls `=` punctuation, so `a == b`, the commonest
+    comparison in Swift, grew no mutant, and a test that never checked it read
+    as enough. A generic's angles on the same line stay out of it."""
+    assert [m.mutated for m in file_mutants(line, None, "swift")] == mutated
+
+
+@pytest.mark.parametrize("line", ["var y = 1\n", "let e = a==-1\n", "for i in 0..<b { f() }\n"])
+def test_a_swift_assignment_or_undeclared_run_makes_no_equality_mutant(line):
+    """One `=` assigns. `a==-1` is one undeclared operator `==-` to the Swift
+    lexer and does not compile."""
+    assert file_mutants(line, None, "swift") == []
+
+
+# --- a connective that opens an operand, and an operator's own name ------------
+
+@pytest.mark.parametrize("line", [
+    "fn f() { let v = o.unwrap_or_else(|| 0); }\n",
+    "fn f() { spawn(move || { g(); }); }\n",
+    "fn f() { let y = &&x; }\n",
+    "fn f(x: &&str) {}\n",
+    "fn f() { let n = xs.iter().filter(|&&x| x.ok).count(); }\n",
+])
+def test_a_rust_closure_or_double_borrow_is_not_a_connective(line):
+    """With nothing on its left, Rust's `||` is a closure with no parameters and
+    its `&&` borrows twice. Flipped, `spawn(move && { g(); })` and `let y = ||x;`
+    do not compile, so the compiler killed them and the run counted the kills."""
+    assert file_mutants(line, None, "rust") == []
+
+
+@pytest.mark.parametrize("text, mutated", [
+    ("fn f() { let ok = a\n    && b; }\n", ["    || b; }"]),
+    ("fn f() { let ok = x as bool && y; }\n", ["fn f() { let ok = x as bool || y; }"]),
+    ("fn f() { let ok = xs.any(|x| x.ok) || fut.await && v?; }\n",
+     ["fn f() { let ok = xs.any(|x| x.ok) || fut.await || v?; }",
+      "fn f() { let ok = xs.any(|x| x.ok) && fut.await && v?; }"]),
+])
+def test_a_rust_connective_after_an_operand_still_mutates(text, mutated):
+    """rustfmt starts a continuation line with the operator, so the operand it
+    joins sits on the line above."""
+    assert [m.mutated for m in file_mutants(text, None, "rust")] == mutated
+
+
+@pytest.mark.parametrize("line", [
+    "void f() { for (auto&& x : xs) { g(x); } }\n",
+    "void f(int&& y) { g(y); }\n",
+    "auto f() -> int&&;\n",
+    "void *p = &&done;\n",
+])
+def test_a_cpp_reference_or_label_address_is_not_a_connective(line):
+    """`auto&& x` and `int&& y` declare rvalue references, and GNU C's `&&done`
+    takes a label's address. `auto|| x` does not compile."""
+    assert file_mutants(line, None, "cpp") == []
+
+
+@pytest.mark.parametrize("language, text, changed", [
+    ("cpp", "void f(Foo&& other) { g(); }\n", None),
+    ("cpp", "void f(const Foo &&other) { g(); }\n", None),
+    ("cpp", "void f(std::vector<int>&& v) { g(); }\n", None),
+    ("cpp", "Foo(Foo&&) = default;\n", None),
+    ("cpp", "Foo& operator=(Foo&&) noexcept;\n", None),
+    ("cpp", "void f(Foo&&, int n);\n", None),
+    ("cpp", "template <typename... Args>\nvoid f(Args&&... args) { g(); }\n", {2}),
+    ("objectivec", "void f(Foo&& other) { g(); }\n", None),
+])
+def test_a_cpp_reference_after_a_type_name_is_not_a_connective(language, text, changed):
+    """A type is a name, so the token before `&&` cannot tell `Foo&& other` from
+    `a && b`. clang-format hugs a reference to its type or its name and spaces a
+    connective on both sides, and nothing after `Foo&&)` can be a right operand.
+    `void f(Foo|| other)` does not compile, so the run counted a kill no test made."""
+    assert file_mutants(text, changed, language) == []
+
+
+def test_a_cast_to_a_reference_is_a_type_argument_not_two_comparisons():
+    """`static_cast<` always opens a type. Its `<T&&>` read as two comparisons and
+    a connective, and none of the five mutants compiled."""
+    assert file_mutants("auto y = static_cast<T&&>(x);\n", None, "cpp") == []
+
+
+@pytest.mark.parametrize("text, changed, mutated", [
+    ("bool f() { return a&&b; }\n", None, ["bool f() { return a||b; }"]),
+    ("bool f() { return f(a)&& b; }\n", None, ["bool f() { return f(a)|| b; }"]),
+    ("bool f() { return a &&\n    b; }\n", None, ["bool f() { return a ||"]),
+    ("template <typename... Ts>\nbool all(Ts... ts) { return (ts && ...); }\n", {2},
+     ["bool all(Ts... ts) { return (ts || ...); }"]),
+    ("bool f(int n) { return static_cast<int>(n) > 0 && ok; }\n", None,
+     ["bool f(int n) { return static_cast<int>(n) >= 0 && ok; }",
+      "bool f(int n) { return static_cast<int>(n) <= 0 && ok; }",
+      "bool f(int n) { return static_cast<int>(n) > 0 || ok; }"]),
+])
+def test_a_cpp_connective_spaced_like_one_still_mutates(text, changed, mutated):
+    """Unspaced, spaced on both sides, broken after the operator, or a fold over
+    a pack: each joins two operands."""
+    assert [m.mutated for m in file_mutants(text, changed, "cpp")] == mutated
+
+
+@pytest.mark.parametrize("line, mutated", [
+    ("bool f() { return this && n-- && ok; }\n",
+     ["bool f() { return this || n-- && ok; }", "bool f() { return this && n-- || ok; }"]),
+    ("if constexpr (std::is_same_v<T, int> && N > 0) {}\n",
+     ["if constexpr (std::is_same_v<T, int> && N >= 0) {}",
+      "if constexpr (std::is_same_v<T, int> && N <= 0) {}",
+      "if constexpr (std::is_same_v<T, int> || N > 0) {}"]),
+])
+def test_a_cpp_connective_after_an_operand_still_mutates(line, mutated):
+    """`this`, a postfix `n--` and a template's closing `>` each end an operand."""
+    assert [m.mutated for m in file_mutants(line, None, "cpp")] == mutated
+
+
+@pytest.mark.parametrize("language, line", [
+    ("cpp", "struct A { bool operator<(const A& o) const; };\n"),
+    ("cpp", "struct A { bool operator==(const A& o) const; };\n"),
+    ("objectivec", "struct A { bool operator&&(const A& o) const; };\n"),
+    ("swift", "struct A { static func < (l: A, r: A) -> Bool { f() } }\n"),
+    ("swift", "struct A { static func == (l: A, r: A) -> Bool { f() } }\n"),
+])
+def test_a_declared_operator_is_a_name_not_an_operation(language, line):
+    """`bool operator<=(...)` declares a different operator, so every caller of
+    `<` and the definition out of line stop compiling."""
+    assert file_mutants(line, None, language) == []
 
 
 # --- the language set a user actually reads -----------------------------------

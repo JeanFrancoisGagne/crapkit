@@ -35,7 +35,7 @@ TS_PACKAGE = npm_package({"scripts": {"test": "vitest run"},
 _SUMMARY = re.compile(
     r"(\d+) functions scored(?:: ([^,]+))?, (\d+) over (?:ceiling \d+|their ceilings \([^)]*\)),"
     r" CRAP load [\d.]+, grade (\S+)")
-_BUCKET = re.compile(r"(\d+) (measured|untested|no-lane|cc-only)")
+_BUCKET = re.compile(r"(\d+) (measured|untested|excluded|no-lane|cc-only)")
 
 
 @lru_cache(maxsize=None)

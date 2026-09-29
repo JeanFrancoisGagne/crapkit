@@ -46,7 +46,7 @@ def test_lane_log_streams_the_command_header_even_on_failure(tmp_path):
     assert log.startswith("$ "), "the log opens with the command that ran"
 
 
-def test_a_lane_that_left_coverage_shards_is_told_they_are_there(tmp_path):
+def test_a_lane_that_left_coverage_shards_is_told_they_are_there(tmp_path, on_a_host):
     """coverage.py in parallel mode writes one `.coverage.<host>.<pid>.<rand>`
     per process and merges them only at the end, so a run that was killed leaves
     every measurement on disk and no JSON. One reporter combined them by hand
@@ -66,7 +66,7 @@ def test_a_lane_that_left_coverage_shards_is_told_they_are_there(tmp_path):
     assert "--reuse-artifacts" in message
 
 
-def test_the_shard_hint_looks_in_the_directory_the_lane_ran_in(tmp_path):
+def test_the_shard_hint_looks_in_the_directory_the_lane_ran_in(tmp_path, on_a_host):
     """A lane with a `cwd` writes its shards there, not at the repo root.
 
     `artifact` is repo-relative and the hint is run from the shard directory, so
@@ -145,3 +145,22 @@ def test_config_parses_the_progress_deadline():
         '[[lane]]\nname = "py"\ncommand = "pytest --cov"\nartifact = "c.json"\n'
         'parser = "coveragepy"\nscopes = ["src"]\nno_progress_seconds = 300\n')
     assert cfg.lanes[0].no_progress_seconds == 300
+
+
+def test_the_shard_recipe_runs_in_windows_powershell(tmp_path, on_a_host):
+    """Windows PowerShell 5.1 has no `&&`, so `coverage combine && coverage json
+    -o ...` stopped at a parse error before either command ran. The recipe names
+    the two commands one after the other, and the `-o` target goes in as one
+    word of the reader's shell."""
+    from crapkit.invocation import shell_arg
+
+    (tmp_path / ".coverage.box.pid5.aaaa").write_text("x", encoding="utf-8")
+    lane = Lane(name="py", command=f'"{PY}" -c "import sys; sys.exit(1)"',
+                artifact="cov out/coverage.json", parser="coveragepy", scopes=())
+
+    with pytest.raises(ToolError) as exc:
+        run_lane(tmp_path, lane)
+
+    message = str(exc.value)
+    assert "&&" not in message
+    assert f"`coverage json -o {shell_arg('cov out/coverage.json')}` there" in message

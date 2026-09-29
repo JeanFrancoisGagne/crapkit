@@ -15,7 +15,7 @@ The highest CRAP a function may carry before it is over; one per repository, ove
 _Avoid_: target (that is the configuration key that sets a ceiling, not the concept), threshold, limit
 
 **Coverage**:
-The share of a function's branches the suite ran, read from the artifact; never measured by crapkit itself.
+The share of a function's branches the suite ran, read from the artifact; never measured by crapkit itself. A function with no branches falls back to the share of its statements that ran, and one with no statements to invoked-or-not: 1 if the suite called it, 0 if not. Python's `and` and `or` add to complexity, but coverage.py records no branch arc for them, so a short-circuit the suite never took leaves the share unchanged.
 
 **Unmeasured**:
 A row no measurement stands behind: its scope has no lane (`no-lane`) or asks for none (`cc-only`), or rescore finds no row in the run for a function added or renamed since. It scores at coverage 0.0 all the same; payloads carry `unmeasured: true` beside that stand-in, and text says `not measured`.
@@ -167,7 +167,7 @@ Admission under the floor because the file changes often.
 Active rows are ranked by risk; dormant rows have no recent churn.
 
 **Churn window**:
-The months of history churn reads (`churn_window_months`). A commit counts while its commit date is at or after the window's cutoff; its recency weight reads the author date. The cutoff is that many months before now on the UTC calendar, the same instant in every time zone.
+The months of history churn reads (`churn_window_months`), counted back from HEAD's commit date, never from today's. A commit counts while its commit date is at or after the window's cutoff; its recency weight reads the author date. The cutoff is that many months before HEAD's commit date on the UTC calendar, the same instant in every time zone.
 _Avoid_: floor for the window's start (Floor is worklist admission); call it the cutoff
 
 **Shallow clone**:

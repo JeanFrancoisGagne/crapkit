@@ -1,0 +1,86 @@
+# The small corpus: every language crapkit reads, every declared suffix, and one
+# file per past-bug shape, scored from recorded artifacts so a coverage run needs
+# no test runner and no network. The lanes copy recorded/ into place with
+# kit.repos.copy_command, which stamps the copies' mtime. They run no suite, so
+# container_ok lets them run in the accuracy image.
+#
+# Recorded by `python tools/accuracy/regenerate.py record` from tests/ (excluded
+# below; see that tool for the producer versions and commands):
+#   py: coverage 7.16.1 on CPython 3.14, `coverage run --branch --source=src -m
+#       pytest tests/py --junitxml=... -o junit_family=xunit2`, then `coverage json`;
+#       file keys written with forward slashes.
+#   js: vitest 5.0.1 with @vitest/coverage-istanbul 5.0.1 and @vitejs/plugin-vue,
+#       `vitest run --config tests/vitest.config.mjs --coverage`; the recording's
+#       absolute root is cut from each key and path.
+#
+# Scopes: py and web carry a lane; legacy declares none, so it reads no-lane
+# and doctor names it;
+# native, scripts and vendor are cc-only. scripts and vendor set their own
+# ceilings. vendor holds slices of the full corpus's members with their licenses.
+[crapkit]
+target = 6
+
+# The templates print what they were handed instead of running a suite, so a
+# printed test-scoped command runs the same on every shell and needs no runner.
+[crapkit.scoped_tests]
+py = "python -c \"import sys; print(sys.argv[1:])\" {files}"
+web = "python -c \"import sys; print(sys.argv[1:])\" {files}"
+
+[[scope]]
+name = "py"
+paths = ["src/py"]
+languages = ["python"]
+
+[[scope]]
+name = "legacy"
+paths = ["src/legacy"]
+languages = ["python"]
+
+[[scope]]
+name = "web"
+paths = ["src/web"]
+languages = ["typescript", "tsx", "javascript", "vue"]
+
+[[scope]]
+name = "native"
+paths = ["src/native"]
+languages = ["cpp", "objectivec", "swift", "go", "rust", "java", "zig"]
+coverage_optional = true
+
+[[scope]]
+name = "scripts"
+paths = ["src/scripts"]
+languages = ["shell", "powershell"]
+coverage_optional = true
+target = 8
+
+[[scope]]
+name = "vendor"
+paths = ["vendor"]
+languages = ["python", "typescript", "tsx", "javascript", "vue", "go", "rust", "java", "cpp",
+             "objectivec", "swift", "zig", "shell", "powershell"]
+coverage_optional = true
+target = 15
+
+[exclude]
+globs = ["tests/**", "recorded/**"]
+
+[[lane]]
+name = "py"
+command = "python -c \"import os,shutil,sys,time;a=sys.argv[1:];p=list(zip(a[::2],a[1::2]));[os.makedirs(os.path.dirname(d) or '.',exist_ok=True) for s,d in p];[shutil.copyfile(s,d) for s,d in p];t=time.time_ns();[os.utime(d,ns=(t,t)) for s,d in p]\" recorded/py.json .crapkit/cov/py.json recorded/py-junit.xml .crapkit/cov/py-junit.xml"
+artifact = ".crapkit/cov/py.json"
+parser = "coveragepy"
+scopes = ["py"]
+env = { COVERAGE_PROCESS_CONFIG = "", COV_CORE_DATAFILE = "" }
+container_ok = true
+results_artifact = ".crapkit/cov/py-junit.xml"
+
+[[lane]]
+name = "js"
+command = "python -c \"import os,shutil,sys,time;a=sys.argv[1:];p=list(zip(a[::2],a[1::2]));[os.makedirs(os.path.dirname(d) or '.',exist_ok=True) for s,d in p];[shutil.copyfile(s,d) for s,d in p];t=time.time_ns();[os.utime(d,ns=(t,t)) for s,d in p]\" recorded/js.json .crapkit/cov/js.json recorded/js-junit.xml .crapkit/cov/js-junit.xml"
+artifact = ".crapkit/cov/js.json"
+parser = "istanbul"
+scopes = ["web"]
+env = { COVERAGE_PROCESS_CONFIG = "", COV_CORE_DATAFILE = "" }
+container_ok = true
+results_artifact = ".crapkit/cov/js-junit.xml"

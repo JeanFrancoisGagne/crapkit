@@ -1,0 +1,217 @@
+golden	path	handle	column	old	new	oracle	oracle_value	ruling
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/list.zig	grade score : u8	ccn	5	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/list.zig	grade score : u8	ccn_mod	6	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/list.zig	grade score : u8	ccn_std	5	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/list.zig	grade score : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/router.go	Describe v interface { }	end	27	28			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/router.go	Describe v interface { }	nloc	12	13			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/router.go	Describe v interface { }	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	allocLowerString allocator : std . mem . Allocator , ascii_string : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	allocUpperString allocator : std . mem . Allocator , ascii_string : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	format se : HexEscape , w : * std . io . Writer	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	cognitive	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	cognitive	8	7			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	nesting	4	5			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePosLinear haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isHex c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isLower c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	ccn	5	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	ccn_mod	6	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/list.zig	grade score : u8	ccn	5	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/list.zig	grade score : u8	ccn_mod	6	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/list.zig	grade score : u8	ccn_std	5	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/list.zig	grade score : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/list.zig	grade score : u8	crap	5.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/router.go	Describe v interface { }	end	27	28			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/router.go	Describe v interface { }	nloc	12	13			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/router.go	Describe v interface { }	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/py/pragmas.py	debug_dump	crap	6.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/py/pragmas.py	debug_dump	flag	measured	excluded			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	allocLowerString allocator : std . mem . Allocator , ascii_string : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	allocUpperString allocator : std . mem . Allocator , ascii_string : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	format se : HexEscape , w : * std . io . Writer	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	cognitive	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	cognitive	8	7			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	nesting	4	5			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePosLinear haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	ccn	5	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	ccn_mod	6	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	crap	5.0	3.0	kit.exact	3.0	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/list.zig	grade score : u8	ccn	5	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/list.zig	grade score : u8	ccn_mod	6	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/list.zig	grade score : u8	ccn_std	5	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/list.zig	grade score : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/router.go	Describe v interface { }	end	27	28			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/router.go	Describe v interface { }	nloc	12	13			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/router.go	Describe v interface { }	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	allocLowerString allocator : std . mem . Allocator , ascii_string : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	allocUpperString allocator : std . mem . Allocator , ascii_string : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	format se : HexEscape , w : * std . io . Writer	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	cognitive	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	cognitive	8	7			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	nesting	4	5			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePosLinear haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isHex c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isLower c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	ccn	5	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	ccn_mod	6	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/list.zig	grade score : u8	ccn	5	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/list.zig	grade score : u8	ccn_mod	6	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/list.zig	grade score : u8	ccn_std	5	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/list.zig	grade score : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/list.zig	grade score : u8	crap	5.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/router.go	Describe v interface { }	end	27	28			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/router.go	Describe v interface { }	nloc	12	13			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/router.go	Describe v interface { }	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/py/pragmas.py	debug_dump	crap	6.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/py/pragmas.py	debug_dump	flag	measured	excluded			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	allocLowerString allocator : std . mem . Allocator , ascii_string : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	allocUpperString allocator : std . mem . Allocator , ascii_string : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	format se : HexEscape , w : * std . io . Writer	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	cognitive	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	cognitive	8	7			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	nesting	4	5			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePosLinear haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn_mod	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	ccn_std	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	crap	3.0	2.0	kit.exact	2.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	ccn	5	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	ccn_mod	6	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	crap	5.0	3.0	kit.exact	3.0	

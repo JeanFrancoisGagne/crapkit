@@ -87,8 +87,8 @@ def test_a_stored_index_finds_the_twins_a_fresh_build_finds(tmp_path):
     stored = SnapshotStore(tmp_path / "crap.sqlite").twin_index(run_id, refuse_build)
 
     for target in ROWS:
-        assert twins_in(stored, target, SOURCES[target.path]) == find_twins(target, ROWS, SOURCES)
-    assert [t["long_name"] for t in twins_in(stored, ROWS[0], SOURCES["src/a.py"])] == \
+        assert twins_in(stored, target, SOURCES[target.path], ROWS) == find_twins(target, ROWS, SOURCES)
+    assert [t["long_name"] for t in twins_in(stored, ROWS[0], SOURCES["src/a.py"], ROWS)] == \
         ["beta", "outer", "inner"]
 
 
@@ -97,7 +97,7 @@ def test_the_first_ask_builds_and_hands_back_the_same_twins(tmp_path):
 
     built = store.twin_index(run_id, build)
 
-    assert twins_in(built, ROWS[3], SOURCES["src/d.py"]) == find_twins(ROWS[3], ROWS, SOURCES)
+    assert twins_in(built, ROWS[3], SOURCES["src/d.py"], ROWS) == find_twins(ROWS[3], ROWS, SOURCES)
     assert held_by(tmp_path / "crap.sqlite", run_id)
 
 
@@ -110,7 +110,7 @@ def test_a_target_edited_since_the_run_is_shingled_from_its_text_now(tmp_path):
     stored = SnapshotStore(tmp_path / "crap.sqlite").twin_index(run_id, refuse_build)
     edited = "def gamma():\n" + BODY + "\n"
 
-    assert twins_in(stored, ROWS[2], edited) == \
+    assert twins_in(stored, ROWS[2], edited, ROWS) == \
         find_twins(ROWS[2], ROWS, {**SOURCES, "src/c.py": edited}, indexed=build())
 
 
@@ -120,13 +120,13 @@ def test_a_target_rewritten_past_every_stored_shingle_has_no_twins(tmp_path):
     stored = SnapshotStore(tmp_path / "crap.sqlite").twin_index(run_id, refuse_build)
     rewritten = "def alpha():\n" + "\n".join(f"    fresh_{i} = new({i})" for i in range(10)) + "\n"
 
-    assert twins_in(stored, ROWS[0], rewritten) == []
+    assert twins_in(stored, ROWS[0], rewritten, ROWS) == []
 
 
 def test_a_target_whose_file_is_gone_has_no_twins(tmp_path):
     store, (run_id,) = seeded(tmp_path)
 
-    assert twins_in(store.twin_index(run_id, build), ROWS[0], None) == []
+    assert twins_in(store.twin_index(run_id, build), ROWS[0], None, ROWS) == []
 
 
 def test_duplication_reads_its_pairs_from_the_stored_index_and_no_file(tmp_path):
@@ -169,7 +169,7 @@ def test_another_process_reads_the_same_twins_back(tmp_path):
             "index = SnapshotStore(sys.argv[1]).twin_index(int(sys.argv[2]), refuse)\n"
             "target = InventoryRow('src', 'src/a.py', 'alpha', 1, 11, 3, 3, 3, 11, 1, 1)\n"
             "text = open(sys.argv[3], encoding='utf-8').read()\n"
-            "print(json.dumps(twins_in(index, target, text)))\n")
+            "print(json.dumps(twins_in(index, target, text, [target])))\n")
     expected = find_twins(ROWS[0], ROWS, SOURCES)
     assert expected, "the fixture has twins to lose"
     for seed in ("1", "2", "3"):
@@ -224,7 +224,7 @@ def test_an_index_for_a_run_pruned_meanwhile_is_never_written(tmp_path):
 
     answer = store.twin_index(first, pruned_while_building)
 
-    assert twins_in(answer, ROWS[0], SOURCES["src/a.py"]) == find_twins(ROWS[0], ROWS, SOURCES)
+    assert twins_in(answer, ROWS[0], SOURCES["src/a.py"], ROWS) == find_twins(ROWS[0], ROWS, SOURCES)
     assert index_rows(tmp_path / "crap.sqlite") == {
         "twin_runs": [], "twin_functions": [], "twin_postings": []}
 
@@ -238,9 +238,9 @@ def test_an_index_another_process_stored_first_is_not_written_twice(tmp_path):
 
     answer = store.twin_index(run_id, raced)
 
-    assert twins_in(answer, ROWS[0], SOURCES["src/a.py"]) == find_twins(ROWS[0], ROWS, SOURCES)
+    assert twins_in(answer, ROWS[0], SOURCES["src/a.py"], ROWS) == find_twins(ROWS[0], ROWS, SOURCES)
     stored = SnapshotStore(tmp_path / "crap.sqlite").twin_index(run_id, refuse_build)
-    assert twins_in(stored, ROWS[0], SOURCES["src/a.py"]) == find_twins(ROWS[0], ROWS, SOURCES)
+    assert twins_in(stored, ROWS[0], SOURCES["src/a.py"], ROWS) == find_twins(ROWS[0], ROWS, SOURCES)
 
 
 def test_a_store_that_cannot_take_the_write_still_answers(tmp_path):
@@ -256,7 +256,7 @@ def test_a_store_that_cannot_take_the_write_still_answers(tmp_path):
         holder.rollback()
         holder.close()
 
-    assert twins_in(answer, ROWS[0], SOURCES["src/a.py"]) == find_twins(ROWS[0], ROWS, SOURCES)
+    assert twins_in(answer, ROWS[0], SOURCES["src/a.py"], ROWS) == find_twins(ROWS[0], ROWS, SOURCES)
     assert not held_by(tmp_path / "crap.sqlite", run_id)
 
 
@@ -309,4 +309,4 @@ def test_a_lookup_of_any_size_answers_every_digest(tmp_path, body_lines):
 
     expected = find_twins(rows[0], rows, sources)
     assert [t["path"] for t in expected] == ["src/y.py"]
-    assert twins_in(stored, rows[0], text) == expected
+    assert twins_in(stored, rows[0], text, rows) == expected

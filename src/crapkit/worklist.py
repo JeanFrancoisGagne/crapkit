@@ -23,11 +23,14 @@ from types import MappingProxyType
 from typing import NamedTuple
 
 from .churn import FileChurn
+from .invariants import check_worklist
 from .snapshot import InventoryRow
 from .keys import claim_in_run, claim_key, key_names, key_of, lookup, position
+from .score import over_ceiling
 
 
 HOT_MIN_CCN = 3  # hot promotion reaches no lower than this, whatever the floor
+RISK_PLACES = 4  # a risk is ccn x weight rounded to this many decimal places
 
 
 def over_target_floor(min_ceiling: int) -> int:
@@ -179,7 +182,7 @@ class Worklist(NamedTuple):
 def _entry(r: InventoryRow, churn: FileChurn, marks: Marks, ratchet: RatchetMarks) -> WorklistEntry:
     return WorklistEntry(r.scope, r.path, r.long_name, r.start, r.end,
                          r.ccn, r.ccn_std, r.nloc, churn.commits, churn.authors,
-                         churn.weight, round(r.ccn * churn.weight, 4),
+                         churn.weight, round(r.ccn * churn.weight, RISK_PLACES),
                          *marks.verdict(r), *marks.score(r), ratchet.of(r), position(r)[1])
 
 
@@ -210,8 +213,13 @@ def _at_ceiling(scored, target: int, scope_targets: dict[str, int] | None) -> se
     names = key_names(scored)
     present = {key_of(names, r) for r in scored}
     unfinished = {key_of(names, r) for r in scored
-                  if r.crap is None or r.crap > ceilings.get(r.scope, target)}
+                  if _unfinished(r, ceilings.get(r.scope, target))}
     return present - unfinished
+
+
+def _unfinished(row, ceiling: int) -> bool:
+    """Unscored, or still over the ceiling."""
+    return row.crap is None or over_ceiling(row.crap, ceiling)
 
 
 def _finished_legacy(scored, done: set) -> set:
@@ -272,18 +280,25 @@ def build_worklist(
     as well: this list ranks rows the burn-down queue declines, and a row that
     says nothing about which it is sends an agent to work a wiring gap.
     `ratchet` is the committed marks file, so a row can say it is accepted debt.
+
+    Before the cap, `invariants.check_worklist` counts the rows over their
+    ceiling against the ones admitted, and reads each entry's churn and the
+    risk order against their documented bounds.
     """
     if top < 1:
         raise ValueError(f"worklist top must be >= 1, got {top}")
     adm = admission(churn, floor)
-    active, dormant = [], []
+    active, dormant, over = [], [], 0
     for r in rows:
         c, remedy = adm.of(r.path), marks.verdict(r)[1]
-        if not adm.admits(r.path, r.ccn, over_target=remedy not in (None, "ok")):
+        judged_over = remedy not in (None, "ok")
+        over += judged_over
+        if not adm.admits(r.path, r.ccn, over_target=judged_over):
             continue
         (active if c.commits > 0 else dormant).append(_entry(r, c, marks, ratchet))
     active.sort(key=_rank_key)
     dormant.sort(key=_rank_key)
+    check_worklist(active, dormant, over, churn)
     return Worklist(active=active[:top], dormant=dormant, active_total=len(active))
 
 
@@ -326,19 +341,28 @@ def _coupling_groups(pairs: list[dict]) -> dict[str, str]:
 
 def _unit_key(item) -> tuple:
     key, entries = item
-    return (-max(e.risk for e in entries), key)
+    return (-_risk(entries), key)
 
 
 def _units(active: list[WorklistEntry], rep: dict[str, str]) -> list[list[WorklistEntry]]:
-    """Entries grouped by coupling group, heaviest first: what a batch takes whole."""
+    """Entries grouped by coupling group, largest summed risk first: what a batch takes whole.
+
+    A unit weighs the risk of all its rows, which is the work a batch takes on
+    with it. Ranked by its riskiest row, a file of many middling rows went out
+    late, onto a batch that was already full.
+    """
     groups: dict[str, list] = {}
     for e in active:
         groups.setdefault(_find(rep, e.path), []).append(e)
     return [entries for _, entries in sorted(groups.items(), key=_unit_key)]
 
 
-def _risk(entries: list[WorklistEntry]) -> float:
-    return sum(e.risk for e in entries)
+def _risk(entries: list[WorklistEntry]) -> int:
+    """The entries' summed risk in whole ten-thousandths, the places a risk is
+    rounded to, so equal sums tie. Summed as floats, 0.7 + 0.1 is
+    0.7999999999999999: of two batches holding 0.8 that one read as lighter,
+    took the next unit from the emptier batch and broke the tie on files."""
+    return sum(round(e.risk * 10 ** RISK_PLACES) for e in entries)
 
 
 def _bin_key(entries: list[WorklistEntry]) -> tuple:
@@ -367,9 +391,12 @@ def split_batches(active: list[WorklistEntry], pairs: list[dict], *,
     Two agents editing one file collide in the worktree whatever the ranking
     says, so a file is indivisible and so is a coupled group of files: the batch
     holds every entry from every file in the group. Units go to the lightest
-    batch in risk order, which is LPT scheduling, and the whole thing is a pure
-    function of the worklist and the coupling pairs — same store, same history,
-    same batches. Empty batches are dropped rather than handed to an agent.
+    batch in order of their summed risk, largest first. That is LPT scheduling
+    (longest processing time first), so the heaviest batch carries at most
+    4/3 - 1/(3 * batches) times the heaviest batch of the best split (Graham
+    1969). The split is a pure function of the worklist and the coupling pairs:
+    same store, same history, same batches. Empty batches are dropped rather
+    than handed to an agent.
     """
     if batches < 1:
         raise ValueError(f"batches must be >= 1, got {batches}")

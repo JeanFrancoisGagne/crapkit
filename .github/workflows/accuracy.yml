@@ -1,0 +1,543 @@
+name: accuracy
+run-name: accuracy ${{ inputs.mode || (github.event_name == 'pull_request' && 'label') || (github.event.schedule == '0 6 * * 6' && 'weekly') || 'nightly' }} ${{ inputs.release_key }}
+
+# The calculation-accuracy tiers that do not fit a push: every outside oracle on
+# the full corpus (nightly), full mutation testing (weekly), and the remote half
+# of the release gate. docs/accuracy.md says what each tier checks; the push
+# tier runs in ci.yml. tools/accuracy/run.py runs every tier and writes the
+# receipts this workflow compares and keeps.
+#
+# The Linux cells run in the accuracy image, built from
+# tools/accuracy/image/Dockerfile and tagged by a hash of everything it is
+# built from. The mutation cells run under `docker run --network none`. The
+# oracle cells keep the network for the checks that fetch from PyPI: the wheel
+# diff, the store upgrade and the Action's last-release comment read released
+# crapkit wheels, each checked against the sha256 PyPI publishes, and the
+# coverage producer reruns install the pinned coverage and pytest-cov versions
+# they recorded with; every other oracle reads recorded inputs. The ghcr
+# package must be public (a private one counts against the account's 500 MB
+# package quota): push one bootstrap tag by hand, set the package's visibility
+# to public once, and every later push stays public.
+#
+# Every cell that reads the full corpus fetches it first with
+# `tools/accuracy/corpus.py fetch`: one prerelease asset per corpus.toml
+# digest, cached per OS. A digest nobody has published yet fails that step
+# without stopping the cell, and each check that reads the corpus then ends as
+# an infra miss naming the publish steps.
+
+on:
+  schedule:
+    - cron: "17 3 * * 0-5"   # nightly; Saturday is the weekly run instead
+    - cron: "0 6 * * 6"      # weekly
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: nightly, weekly or release
+        required: true
+        default: nightly
+        type: choice
+        options: [nightly, weekly, release]
+      ref:
+        description: the commit or branch to check (default the dispatching ref)
+        required: false
+        default: ""
+      release_key:
+        description: the version a release run is for; the release gate finds the run by it
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: accuracy-${{ github.event.pull_request.number || inputs.ref || github.ref }}-${{ inputs.mode || github.event.schedule || 'label' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE_NAME: crapkit-accuracy
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  plan:
+    # A pull request runs only while it carries the `accuracy` label.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'accuracy')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      tier: ${{ steps.plan.outputs.tier }}
+      ref: ${{ steps.plan.outputs.ref }}
+    steps:
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_REF: ${{ inputs.ref }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eu
+          case "$EVENT" in
+            schedule) mode=$([ "$SCHEDULE" = "0 6 * * 6" ] && echo weekly || echo nightly); ref=$GITHUB_SHA ;;
+            pull_request) mode=label; ref=$PR_SHA ;;
+            *) mode=$INPUT_MODE; ref=${INPUT_REF:-$GITHUB_SHA} ;;
+          esac
+          case "$mode" in
+            weekly) tier=weekly ;;
+            release) tier=release ;;
+            *) tier=nightly ;;
+          esac
+          echo "mode=$mode tier=$tier ref=$ref"
+          { echo "mode=$mode"; echo "tier=$tier"; echo "ref=$ref"; } >> "$GITHUB_OUTPUT"
+
+  image:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ref: ${{ steps.tag.outputs.ref }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+      - id: tag
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          tag=$(python3 tools/accuracy/run.py image-tag)
+          owner=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
+          echo "ref=ghcr.io/$owner/$IMAGE_NAME:$tag" >> "$GITHUB_OUTPUT"
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+      - name: The image package is public
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ steps.tag.outputs.owner }}
+        run: |
+          command="gh api /users/$OWNER/packages/container/$IMAGE_NAME --jq .visibility"
+          visibility=$($command 2>/dev/null || echo missing)
+          if [ "$visibility" != "public" ]; then
+            echo "::error::\`$command\` says '$visibility'. Push one bootstrap tag by hand and set the package public once: a private package counts against the account's 500 MB package quota."
+            exit 1
+          fi
+      - id: push
+        env:
+          REF: ${{ steps.tag.outputs.ref }}
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          MODE: ${{ needs.plan.outputs.mode }}
+          # Main and same-repository pull requests may push; a fork's may not.
+          CAN_PUSH: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          set -eu
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          if docker manifest inspect "$REF" > /dev/null 2>&1; then
+            echo "$REF exists"
+          elif [ "$CAN_PUSH" = "true" ]; then
+            docker build -f tools/accuracy/image/Dockerfile -t "$REF" tools/accuracy
+            docker push "$REF"
+          else
+            echo "::error::$REF is not built yet and a fork cannot push it: a maintainer must dispatch this run"
+            exit 1
+          fi
+          docker pull --quiet "$REF"
+          echo "digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$REF")" >> "$GITHUB_OUTPUT"
+      # The weekly run rebuilds without the layer cache, so a pinned download
+      # that moved or a tool that no longer starts fails here, named.
+      - name: No-cache rebuild and pin check
+        if: needs.plan.outputs.mode == 'weekly'
+        env:
+          REF: ${{ steps.tag.outputs.ref }}
+        run: |
+          docker build --no-cache -f tools/accuracy/image/Dockerfile -t "$REF-rebuild" tools/accuracy
+          docker run --rm --network none -v "$PWD:/src" -w /src "$REF-rebuild" \
+            python tools/accuracy/run.py oracle-versions --tier nightly
+
+  oracles:
+    needs: [plan, image]
+    if: needs.plan.outputs.mode != 'weekly'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {shard: analysis, python: "3.12"}
+          - {shard: coverage, python: "3.12"}
+          - {shard: history, python: "3.12"}
+          - {shard: verdict-score, python: "3.12"}
+          - {shard: corpus, python: "3.12"}
+          - {shard: analysis, python: "3.11"}
+          - {shard: corpus, python: "3.11"}
+          - {shard: analysis, python: "3.13"}
+          - {shard: corpus, python: "3.13"}
+          - {shard: analysis, python: "3.14"}
+          - {shard: corpus, python: "3.14"}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: .hypothesis
+          key: hypothesis-${{ matrix.shard }}-${{ matrix.python }}-${{ github.run_id }}
+          restore-keys: hypothesis-${{ matrix.shard }}-${{ matrix.python }}-
+      - uses: actions/cache@v4
+        with:
+          path: .crapkit/corpus
+          key: corpus-${{ runner.os }}-${{ hashFiles('tests/accuracy/corpus_goldens/corpus.toml') }}
+      - name: The full corpus
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          folder=$(python3 tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
+          echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
+      # The fetched corpus goes where the image looks for it, /corpus.
+      - name: run.py in the image
+        env:
+          REF: ${{ needs.image.outputs.ref }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+          TIER: ${{ needs.plan.outputs.tier }}
+        run: |
+          docker pull --quiet "$REF"
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src \
+            ${CRAPKIT_ACCURACY_CORPUS:+-v "$CRAPKIT_ACCURACY_CORPUS:/corpus:ro"} \
+            -e CRAPKIT_ACCURACY_PY=${{ matrix.python }} -e CRAPKIT_ACCURACY_IMAGE="$REF" \
+            -e CRAPKIT_ACCURACY_IMAGE_DIGEST="$DIGEST" -e CRAPKIT_HYPOTHESIS_DB=/src/.hypothesis/examples \
+            "$REF" python tools/accuracy/run.py --tier "$TIER" --shard ${{ matrix.shard }} -n 4 \
+            --receipt .crapkit/accuracy/receipts/linux-${{ matrix.python }}-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: receipt-linux-${{ matrix.python }}-${{ matrix.shard }}
+          path: .crapkit/accuracy/receipts/
+          retention-days: 1
+
+  lizard-edge:
+    # lizard is capped below 1.25: its readers decide every ccn crapkit
+    # stores. This cell scores the corpus under the newest lizard and under the
+    # 1.24.0 floor, so a move is known before anyone lifts the cap.
+    needs: plan
+    if: needs.plan.outputs.mode == 'nightly'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt && pip install --no-deps -e .
+      - uses: actions/cache@v4
+        with:
+          path: .crapkit/corpus
+          key: corpus-${{ runner.os }}-${{ hashFiles('tests/accuracy/corpus_goldens/corpus.toml') }}
+      - name: The full corpus
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          folder=$(python tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
+          echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
+      - run: python tools/accuracy/run.py --tier nightly --shard corpus --receipt edge/floor.json
+      - run: pip install --no-deps --upgrade lizard && python -m lizard --version
+      - run: python tools/accuracy/run.py --tier nightly --shard corpus --receipt edge/newest.json
+      - run: python tools/accuracy/run.py xplat edge/floor.json edge/newest.json
+
+  windows:
+    needs: plan
+    if: needs.plan.outputs.mode != 'weekly'
+    runs-on: windows-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/cache@v4
+        with:
+          path: tools/accuracy/node/push/node_modules
+          key: node-push-${{ runner.os }}-${{ hashFiles('tools/accuracy/node/push/package-lock.json') }}
+      - run: pip install --require-hashes --no-deps -r tools/accuracy/requirements-nightly.txt
+      - run: pip install --no-deps -e .
+      - run: npm ci --prefix tools/accuracy/node/push --ignore-scripts --no-audit --no-fund
+      # The nightly tier's Node checks (istanbul-lib, crap-typescript, the producer
+      # reruns, Stryker) read tools/accuracy/node/nightly, which the image carries
+      # and a native cell installs, as docs/accuracy.md's nightly recipe does.
+      - uses: actions/cache@v4
+        if: needs.plan.outputs.tier == 'nightly'
+        with:
+          path: tools/accuracy/node/nightly/node_modules
+          key: node-nightly-${{ runner.os }}-${{ hashFiles('tools/accuracy/node/nightly/package-lock.json') }}
+      - if: needs.plan.outputs.tier == 'nightly'
+        run: npm ci --prefix tools/accuracy/node/nightly --ignore-scripts --no-audit --no-fund
+      - uses: actions/cache@v4
+        with:
+          path: .crapkit/corpus
+          key: corpus-${{ runner.os }}-${{ hashFiles('tests/accuracy/corpus_goldens/corpus.toml') }}
+      - name: The full corpus
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          folder=$(python tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
+          echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
+      # The checks whose os list names win32, plus every check with no os list.
+      - run: python tools/accuracy/run.py --tier ${{ needs.plan.outputs.tier }} -n 4 --receipt .crapkit/accuracy/receipts/windows-${{ matrix.python }}.json
+      # The past bugs that replay on Windows only (bugs.tsv platform windows), a
+      # seventh a night; the retro job replays the others in the image.
+      - uses: astral-sh/setup-uv@v6
+        if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
+        with:
+          version: "0.12.17"  # tools/accuracy/pins.toml, [oracle.uv]
+      - if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
+        run: python tools/accuracy/retro.py nightly --slice-of 7 --platform-only
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: receipt-windows-${{ matrix.python }}
+          path: .crapkit/accuracy/receipts/
+          retention-days: 1
+
+  macos:
+    needs: plan
+    if: needs.plan.outputs.mode != 'weekly'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt && pip install --no-deps -e .
+      - uses: actions/cache@v4
+        with:
+          path: .crapkit/corpus
+          key: corpus-${{ runner.os }}-${{ hashFiles('tests/accuracy/corpus_goldens/corpus.toml') }}
+      - name: The full corpus
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          folder=$(python tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
+          echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
+      - run: python tools/accuracy/run.py --tier ${{ needs.plan.outputs.tier }} --shard corpus -n 3 --receipt .crapkit/accuracy/receipts/macos-3.12-corpus.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: receipt-macos-3.12-corpus
+          path: .crapkit/accuracy/receipts/
+          retention-days: 1
+
+  xplat:
+    # Ints and labels exact, four-decimal floats by their text, full-precision
+    # floats within 2 ulp: every cell's exports must agree with the first
+    # cell's, or the first differing export, row and column is named.
+    needs: [plan, oracles, windows, macos]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.mode != 'weekly'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: receipt-*-corpus
+          path: receipts
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: receipt-windows-*
+          path: receipts
+          merge-multiple: true
+      - run: python tools/accuracy/wheel_diff.py xplat receipts/*.json
+
+  mutation-diff:
+    # Nightly: only the functions changed since the last weekly run, capped at
+    # 30 minutes; a capped run reports incomplete, never pass. On the label:
+    # `crapkit mutate` over the pull request's own diff.
+    needs: [plan, image]
+    if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'label'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
+      - env:
+          REF: ${{ needs.image.outputs.ref }}
+          MODE: ${{ needs.plan.outputs.mode }}
+        run: |
+          if [ "$MODE" = "label" ]; then
+            command="crapkit mutate --base origin/main --max-mutants 30"
+          else
+            command="python tools/accuracy/mutation.py diff --since-weekly --cap-minutes 30"
+          fi
+          docker run --rm --network none --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" sh -c "$command"
+
+  retro:
+    # Changed ledger rows plus a rotating slice of ceil(rows/7): every past
+    # bug replays at least once a week.
+    needs: [plan, image]
+    if: needs.plan.outputs.mode == 'nightly'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: .crapkit/accuracy/wheelhouse
+          key: retro-wheelhouse-${{ hashFiles('tests/accuracy/suite_strength/retro/bugs.tsv') }}
+          restore-keys: retro-wheelhouse-
+      - env:
+          REF: ${{ needs.image.outputs.ref }}
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" \
+            python tools/accuracy/retro.py nightly --slice-of 7
+
+  mutation-full:
+    needs: [plan, image]
+    if: needs.plan.outputs.mode == 'weekly'
+    runs-on: ubuntu-latest
+    timeout-minutes: 320
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: mutants
+          key: mutants-${{ matrix.shard }}-${{ github.run_id }}
+          restore-keys: mutants-${{ matrix.shard }}-
+      - timeout-minutes: 300
+        env:
+          REF: ${{ needs.image.outputs.ref }}
+        run: |
+          docker run --rm --network none --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" \
+            python tools/accuracy/mutation.py weekly --shard ${{ matrix.shard }} --of 8
+      # A cancelled shard resumes from its mutants/ meta files.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants-meta-${{ matrix.shard }}
+          path: mutants/**/*.meta
+          retention-days: 7
+
+  summary:
+    needs: [plan, image, oracles, lizard-edge, windows, macos, xplat, mutation-diff, retro, mutation-full]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: receipt-*
+          path: receipts
+          merge-multiple: true
+      - name: One receipt for the Linux 3.12 shards
+        if: needs.plan.outputs.mode != 'weekly'
+        run: python tools/accuracy/run.py merge receipts/linux-3.12-*.json --out receipts/linux-3.12.json
+      - name: Every required strategy shape occurred at least 50 times
+        if: needs.plan.outputs.mode == 'nightly'
+        run: python tools/accuracy/run.py events --min 50 receipts/linux-3.12.json
+      - name: The push job's 7-run median stays under 6 minutes
+        if: needs.plan.outputs.mode == 'nightly'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&status=success&per_page=7" --jq '.workflow_runs[].id')
+          seconds=""
+          for run in $runs; do
+            seconds="$seconds $(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs" --jq '[.jobs[] | select(.name | startswith("accuracy-push")) | select(.name | test("ubuntu")) | ((.completed_at | fromdate) - (.started_at | fromdate))] | max // empty')"
+          done
+          median=$(printf '%s' "$seconds" | tr ' ' '\n' | grep . | sort -n | awk '{a[NR]=$1} END {if (NR) print a[int((NR+1)/2)]}' || true)
+          echo "accuracy-push ubuntu, last runs: $seconds; median ${median:-none} s" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$median" ] && [ "$median" -gt 360 ]; then
+            echo "::error::the accuracy-push median is $median s, over 6 minutes; the time table in that job's summary names the slowest checks"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: accuracy-receipt-${{ needs.plan.outputs.mode }}
+          path: receipts/
+          retention-days: 7
+      # A red run on main opens or updates one issue per kind: exit 1 is a
+      # check that failed (accuracy-red), exit 3 an oracle or fetch that was
+      # missing twice (accuracy-infra). A pull request's run files nothing.
+      - name: File the result
+        if: always() && needs.plan.outputs.mode != 'label'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULTS: ${{ toJSON(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          failed=$(printf '%s' "$RESULTS" | jq -r 'to_entries[] | select(.value.result == "failure") | .key' | tr '\n' ' ')
+          if [ -z "$failed" ]; then echo "every job passed"; exit 0; fi
+          # accuracy-infra only when no receipt says fail and one says infra;
+          # a job that failed before writing a receipt is red.
+          outcomes=" $(cat receipts/*.json 2>/dev/null | jq -r '.outcome' | sort -u | tr '\n' ' ')"
+          case "$outcomes" in
+            *" fail "*|" ") label=accuracy-red ;;
+            *" infra "*) label=accuracy-infra ;;
+            *) label=accuracy-red ;;
+          esac
+          title="$label: accuracy run failed"
+          body="Failed jobs: $failed. Run: $RUN_URL"
+          number=$(gh issue list --label "$label" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --label "$label" --body "$body"
+          fi
+          echo "filed under $label: $failed"

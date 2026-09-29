@@ -9,13 +9,14 @@ The deflated churn log removed git's walk; it did not remove this one, because
 the pairing reads that log's per-commit structure line by line either way.
 
 The key is the churn map's key (HEAD sha, window months, UTC date, path format,
-history depth) plus a digest of the tracked set. The depth is git's shallow
-boundary: deepening a clone adds co-changes under an unmoved HEAD. The tracked set is there because ranking
-drops any pair naming a file `git ls-files` no longer lists, and ls-files reads
-the INDEX, which moves without HEAD: `git rm --cached src/util.py` leaves the
-sha alone and must still retire every pair naming util.py. The digest costs
-6 ms over that consumer's 31,684 tracked paths, and every reader already holds
-the list, so keying on it buys no spawn.
+history depth) plus a digest of the tracked set. The window ends at HEAD's
+commit date, so the date never moves it. The depth is git's shallow boundary:
+deepening a clone adds co-changes under an unmoved HEAD. The tracked set is
+there because ranking drops any pair naming a file `git ls-files` no longer
+lists, and ls-files reads the INDEX, which moves without HEAD: `git rm --cached
+src/util.py` leaves the sha alone and must still retire every pair naming
+util.py. The digest costs 6 ms over that consumer's 31,684 tracked paths, and
+every reader already holds the list, so keying on it buys no spawn.
 
 What is stored is the ranking at the DEFAULT thresholds, ordered, with no cut.
 `--top` truncates that total order, so it reads from here. `--min-support` or
@@ -36,7 +37,7 @@ from hashlib import blake2b
 from pathlib import Path
 
 from .churn_log import history_depth, log_lines
-from .coupling import change_coupling_lines
+from .coupling import change_coupling_lines, rank_key
 from .errors import GitError
 from .gitio import head_commit
 from .gitpaths import PATH_FORMAT
@@ -44,7 +45,10 @@ from .gitpaths import PATH_FORMAT
 # The format lives in the file name, as it does for the churn map and log: a
 # version keying another shape writes another file, so two installs on one tree
 # both stay warm instead of rewriting each other's key on every run.
-CACHE_NAME = "coupling-cache-v1.json"
+# v2 is the first ranking of a window that ends at HEAD's commit date; the v1
+# file 0.4.5 to 0.8.0 write ranks a wall-clock window under the same key, so
+# this version never reads it, and leaves it for them.
+CACHE_NAME = "coupling-cache-v2.json"
 
 
 def load_coupling(root: Path, months: int, tracked: Iterable[str]) -> list[dict]:
@@ -116,15 +120,19 @@ def _decode(pairs) -> list[dict] | None:
     """Rebuild the ranking from whatever JSON held under "pairs", hence the wide
     except.
 
-    List order is the ranking, kept as written. Confidences are round(_, 4)
-    floats, which JSON round-trips exactly, so a warm read is byte-identical to
-    the cold one it replaces.
+    The pairs are ranked again with the walk's own key. An older crapkit
+    ranked exact ties by float noise and wrote that order under the key this
+    version builds, so read as written it stood until HEAD or the UTC date
+    moved. A list already in order does not move, and confidences are
+    round(_, 4) floats, which JSON round-trips exactly, so a warm read is
+    byte-identical to the cold one it replaces. A count or confidence JSON
+    spelled Infinity or NaN neither counts nor ranks, and reads as cold.
     """
     try:
-        return [{"files": _files(a, b), "support": int(support),
-                 "confidence": float(confidence)}
-                for a, b, support, confidence in pairs]
-    except (TypeError, ValueError):
+        return sorted(({"files": _files(a, b), "support": int(support),
+                        "confidence": float(confidence)}
+                       for a, b, support, confidence in pairs), key=rank_key)
+    except (ArithmeticError, TypeError, ValueError):
         return None
 
 

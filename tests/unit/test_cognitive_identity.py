@@ -117,7 +117,7 @@ def test_the_map_still_separates_two_functions_that_are_both_alive():
         reader.context.current_function = b
         yield "return"
         reader.context.current_function = a
-        yield "if"
+        yield from ("if", "(")  # a keyword is charged at the token after it
 
     _run(reader, tokens())
 

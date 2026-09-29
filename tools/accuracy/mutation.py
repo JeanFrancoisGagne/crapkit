@@ -1,0 +1,1216 @@
+"""Mutation testing of the calculation modules, gated on a keyed survivor set.
+
+    python tools/accuracy/mutation.py weekly --shard N --of M [--max-children K]
+    python tools/accuracy/mutation.py diff --since-weekly [--base SHA] [--cap-minutes 30]
+    python tools/accuracy/mutation.py gate RESULTS.json... [--update]
+    python tools/accuracy/mutation.py floors RESULTS.json...
+    python tools/accuracy/mutation.py covered [--receipts DIR]
+    python tools/accuracy/mutation.py tools [--max-children K]
+    python tools/accuracy/mutation.py key < MUTANT.diff
+    python tools/accuracy/mutation.py killer [PYTEST ARGS...]
+
+mutmut 3.8.0 runs in the accuracy image (it forks, so Linux only). `weekly`
+mutates one shard of the modules every tests/accuracy/*/calcs.tsv row names
+(a cli module and the release tool only at the functions a row names, and
+never a module `tools` mutates);
+`diff` mutates only the functions changed since the last weekly run and stops
+at its cap, reporting `incomplete`, never `pass`. Both run in a detached
+worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose [tool.mutmut]
+names the modules and the suite, tests/unit and tests/accuracy at the push tier
+with the dependent methods deselected, less each test an open defect row of
+rulings.tsv names as failing on a clean tree and each COPY_BOUND test, which
+fails inside mutmut's copy whatever the mutant (mutmut judges no mutant when its
+stats run fails), then write a receipt under .crapkit/accuracy/mutation/ and run
+the gate. The checks that read crapkit's own source as data read the stage's
+src/crapkit, named in CRAPKIT_ACCURACY_SOURCE, since mutmut's copy of it holds
+trampolines.
+
+The gate is a survivor set, not a rate. A survivor is keyed by (module,
+function, sha256 of its mutant diff with line numbers and mutmut's numbering
+removed), so a mutant keeps its key when lines above it move or mutmut numbers
+it differently. tests/accuracy/suite_strength/mutation/survivors.tsv lists the
+survivors someone looked at and gave a reason; equivalent.tsv lists the mutants
+proven to behave like the original, each with the evidence line
+`equivalence_evidence` writes after 10,000 examples. A survivor on neither list
+fails the run. A listed survivor that now dies is reported for removal (and
+removed with --update); an equivalent row that matches no mutant of a module
+the run mutated fails, because its evidence then names nothing.
+
+Every weekly shard also mutates score.crap, the canary: every one of its
+mutants must die, or the shard's results are void. So is a run holding a mutant
+mutmut never judged (`not checked` when its stats run failed, `suspicious`).
+A mutant no test reaches (`no tests`) counts as a survivor. floors.tsv gives
+each module group its kill-rate floor after equivalents, computed on the
+independent-only suite (golden, change_control and cross_surface tests
+deselected); a group below its floor fails the run as a new survivor does.
+Timeouts, and mutants whose test process a signal ended (mutmut's `segfault`),
+get one serial rerun and never count as kills.
+
+`tools` is the second config: tests/accuracy/kit/exact.py (floor 100 percent)
+and the tools under tools/accuracy (floor 90 percent), each run against the
+tests that exercise it, in a detached worktree of HEAD under
+.crapkit/accuracy/mutation/tools-stage whose [tool.mutmut] table names them.
+mutmut runs there through a launcher that names each module the way its tests
+import it (see LAUNCHER).
+
+`killer` is the suite crapkit.toml's mutation_command runs per mutant. It runs
+pytest with the working directory's src/ and tests/ first on PYTHONPATH, so a
+mutation worktree's code is the code under test even where an editable install
+points at another checkout.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+from dataclasses import asdict, dataclass
+import datetime
+import fnmatch
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+import tomllib
+
+REPO = Path(__file__).resolve().parents[2]
+# calc_modules reads the calcs.tsv tables through the kit (accuracy.kit.calcs).
+sys.path.insert(0, str(REPO / "tests"))
+TABLES = REPO / "tests" / "accuracy" / "suite_strength" / "mutation"
+RECEIPTS = Path(".crapkit") / "accuracy" / "mutation"
+SURVIVOR_COLUMNS = ("module", "function", "diff_sha256", "reason", "added")
+EQUIVALENT_COLUMNS = ("module", "function", "diff_sha256", "evidence", "strategy", "checked")
+FLOOR_COLUMNS = ("group", "paths", "floor", "source")
+CANARY = ("src/crapkit/score.py", "crap")
+KILLED = frozenset({"killed", "caught by type check"})
+SURVIVED = "survived"
+NO_TESTS = "no tests"
+TIMEOUT = "timeout"
+# A test process that died by SIGSEGV or SIGKILL: a mutant that never finishes
+# (endless recursion, a loop that fills memory until the kernel stops it).
+SEGFAULT = "segfault"
+# A mutant no test reaches lives as surely as one the tests run and miss.
+ALIVE = frozenset({SURVIVED, NO_TESTS})
+# The verdicts that neither kill nor keep a mutant: each gets one serial rerun.
+UNFINISHED = frozenset({TIMEOUT, SEGFAULT})
+# Every status that is a verdict on the mutant. Anything else ("not checked",
+# "suspicious") means mutmut never judged it, and the run proves nothing.
+JUDGED = KILLED | ALIVE | UNFINISHED | {"skipped"}
+STATUS_BY_EXIT = {1: "killed", 3: "killed", 0: SURVIVED, 5: "no tests", 33: "no tests",
+                  34: "skipped", 36: TIMEOUT, 37: "caught by type check", -24: TIMEOUT,
+                  24: TIMEOUT, 152: TIMEOUT, 255: TIMEOUT, -11: SEGFAULT, -9: SEGFAULT,
+                  None: "not checked"}
+# The floors' suite: every test but those comparing crapkit with a copy of itself.
+FLOOR_SUITE = "not golden and not change_control and not cross_surface"
+# The killer suite also leaves out every test that spawns git, node, pwsh or the CLI.
+INDEPENDENT_ONLY = f"not process and {FLOOR_SUITE}"
+SEPARATOR = "ǁ"  # mutmut's class separator in a mangled method name
+WEEKLY_DAY, WEEKLY_HOUR = 5, 6  # Saturday 06:00 UTC, accuracy.yml's weekly schedule
+
+
+class MutationError(ValueError):
+    """A table, receipt or argument this tool cannot use."""
+
+
+class MissingReceipts(MutationError):
+    """The receipts a release row reads are not on this machine: an infra miss, exit 3."""
+
+
+def _read(path: Path) -> str:
+    """A file's text; every file this tool reads is UTF-8."""
+    return path.read_bytes().decode()
+
+
+def _write(path: Path, text: str) -> None:
+    """Write UTF-8 text with the newlines as given, on every OS."""
+    path.write_bytes(text.encode())
+
+
+def _text(raw: bytes) -> str:
+    """A child's output; a byte that is not UTF-8 reads as U+FFFD, never an error."""
+    return raw.decode(errors="replace")
+
+
+# accuracy.yml uploads each weekly shard's and each nightly diff run's receipt
+# under this artifact name pattern; the release row reads them from RECEIPTS.
+RECEIPT_ARTIFACTS = "mutation-receipt-*"
+
+
+# --- keys ----------------------------------------------------------------------------------
+
+_NUMBERING = re.compile(r"__mutmut_(?:\d+|orig)\b")
+
+
+def normalized_diff(text: str) -> list[str]:
+    """The changed lines of a unified diff, with the line numbers (the @@ headers),
+    the file headers and mutmut's per-mutant numbering removed."""
+    lines = []
+    for line in text.split("\n"):
+        if line.startswith(("+++", "---")) or not line.startswith(("+", "-")):
+            continue
+        lines.append(_NUMBERING.sub("__mutmut", line.rstrip()))
+    return lines
+
+
+def mutant_key(diff_text: str) -> str:
+    """sha256 over the normalized diff: the survivor's identity within its function."""
+    return hashlib.sha256("\n".join(normalized_diff(diff_text)).encode()).hexdigest()
+
+
+def split_name(mutant_name: str) -> tuple[str, str]:
+    """(dotted module, qualified function) of a mutmut mutant name such as
+    crapkit.score.x_crap__mutmut_3 or crapkit.store.xǁStoreǁwrite__mutmut_2."""
+    prefix, _, number = mutant_name.partition("__mutmut_")
+    module, _, mangled = prefix.rpartition(".")
+    if not (prefix and module and number.isdigit()):
+        raise MutationError(f"{mutant_name!r} is not a mutmut mutant name")
+    return module, _unmangled(mangled, mutant_name)
+
+
+def _unmangled(mangled: str, name: str) -> str:
+    if mangled.startswith("x_"):
+        return mangled[2:]
+    parts = mangled.split(SEPARATOR)
+    if len(parts) != 3 or parts[0] != "x":
+        raise MutationError(f"{name!r} names no function mutmut mangles")
+    return f"{parts[1]}.{parts[2]}"
+
+
+def module_path(dotted: str, repo: Path = REPO) -> str:
+    """The repo path of a dotted module: src/ first, then the tree itself."""
+    relative = dotted.replace(".", "/") + ".py"
+    for candidate in (f"src/{relative}", relative, f"tests/{relative}"):
+        if (repo / candidate).is_file():
+            return candidate
+    raise MutationError(f"no file for module {dotted} under {repo}")
+
+
+def _dotted(path: str) -> str:
+    """The name mutmut gives a module: its path, with src/ (and here tests/) left off."""
+    for prefix in ("src/", "tests/"):
+        path = path.removeprefix(prefix)
+    return path.removesuffix(".py").replace("/", ".")
+
+
+def mutmut_glob(path: str, qualname: str) -> str:
+    """The mutmut mutant-name glob for one function: the nightly diff run's filter."""
+    dotted = _dotted(path)
+    owner, _, name = qualname.rpartition(".")
+    mangled = f"x{SEPARATOR}{owner}{SEPARATOR}{name}" if owner else f"x_{name}"
+    return f"{dotted}.{mangled}__mutmut_*"
+
+
+# --- results ---------------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Result:
+    name: str
+    module: str
+    function: str
+    status: str
+    key: str = ""
+
+    @property
+    def ident(self) -> tuple[str, str, str]:
+        return self.module, self.function, self.key
+
+
+def result(name: str, status: str, diff_text: str | None, repo: Path = REPO) -> Result:
+    dotted, function = split_name(name)
+    key = mutant_key(diff_text) if diff_text else ""
+    return Result(name, module_path(dotted, repo), function, status, key)
+
+
+def load_results(paths: list[Path]) -> list[Result]:
+    rows = []
+    for path in paths:
+        rows += [Result(**row) for row in json.loads(_read(Path(path)))["results"]]
+    return rows
+
+
+# --- tables ------------------------------------------------------------------------------------
+
+def read_table(path: Path, columns: tuple[str, ...]) -> list[dict]:
+    """A tab-separated table with `columns` as its header; a missing file has no rows."""
+    if not path.is_file():
+        return []
+    lines = _lines(path)
+    _check_header(path, lines, columns)
+    return [_cells(path, number, line, columns) for number, line in enumerate(lines[1:], 2)]
+
+
+def _lines(path: Path) -> list[str]:
+    return [line for line in _read(path).splitlines() if line.strip()]
+
+
+def _check_header(path: Path, lines: list[str], columns: tuple[str, ...]) -> None:
+    if not lines or tuple(lines[0].split("\t")) != columns:
+        raise MutationError(f"{path}: the header must be {' '.join(columns)} (tab-separated)")
+
+
+def _cells(path: Path, number: int, line: str, columns: tuple) -> dict:
+    cells = line.split("\t")
+    if len(cells) != len(columns):
+        raise MutationError(f"{path}:{number}: {len(cells)} cells, the header has {len(columns)}")
+    return dict(zip(columns, cells))
+
+
+def write_table(path: Path, columns: tuple[str, ...], rows: list[dict]) -> None:
+    """A cell holding a tab or line break would read back as a different row, so it
+    is refused before anything is written."""
+    for row in rows:
+        _check_cells(path, row, columns)
+    body = ["\t".join(columns)] + ["\t".join(row[column] for column in columns) for row in rows]
+    _write(path, "\n".join(body) + "\n")
+
+
+def _check_cells(path: Path, row: dict, columns: tuple[str, ...]) -> None:
+    for column in columns:
+        if set(row[column]) & {"\t", "\n", "\r"}:
+            raise MutationError(f"{path}: the {column} cell of {' '.join(_ident(row))} "
+                                "holds a tab or line break")
+
+
+def _ident(row: dict) -> tuple[str, str, str]:
+    return row["module"], row["function"], row["diff_sha256"]
+
+
+# --- the gate ---------------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Verdict:
+    new: tuple = ()             # survivors on neither list: the run fails
+    gone: tuple = ()            # listed survivors that now die: remove them
+    killed_equivalents: tuple = ()  # equivalent rows whose mutant died: drop them
+    orphan_equivalents: tuple = ()  # equivalent rows no mutant of a mutated module matches
+    void: str = ""              # why the shard's results cannot be used
+
+    @property
+    def passed(self) -> bool:
+        return not (self.new or self.orphan_equivalents or self.void)
+
+
+def _canary_rows(results: list[Result]) -> list[Result]:
+    return [row for row in results if (row.module, row.function) == CANARY]
+
+
+def _alive_names(rows: list[Result]) -> list[str]:
+    return [row.name for row in rows if row.status not in KILLED]
+
+
+def canary_problem(results: list[Result]) -> str:
+    """Why the canary voids the run, or "" when every score.crap mutant died."""
+    mine = _canary_rows(results)
+    if not mine:
+        return "the canary score.crap was not mutated in this run"
+    alive = _alive_names(mine)
+    return f"canary mutants of score.crap survived: {', '.join(alive)}" if alive else ""
+
+
+def _mutated_modules(results: list[Result]) -> set[str]:
+    return {row.module for row in results}
+
+
+def _in_run(rows: list[dict], modules: set[str]) -> list[dict]:
+    return [row for row in rows if row["module"] in modules]
+
+
+def _survived(results: list[Result]) -> set[tuple]:
+    return {row.ident for row in results if row.status in ALIVE}
+
+
+def _named(rows: list[Result], shown: int = 5) -> str:
+    more = ", ..." if len(rows) > shown else ""
+    return ", ".join(row.name for row in rows[:shown]) + more
+
+
+def _counted(number: int) -> str:
+    return "1 mutant was" if number == 1 else f"{number} mutants were"
+
+
+def unjudged_problem(results: list[Result]) -> str:
+    """Why the run proves nothing, or "": mutants mutmut never judged, as when
+    its stats run failed and every mutant stayed `not checked`."""
+    rows = [row for row in results if row.status not in JUDGED]
+    if not rows:
+        return ""
+    said = ", ".join(sorted({row.status for row in rows}))
+    return f"{_counted(len(rows))} never judged (mutmut says {said}): {_named(rows)}"
+
+
+def _idents(rows: list[dict]) -> set[tuple]:
+    return {_ident(row) for row in rows}
+
+
+def _gone(listed: set, alive: set) -> tuple:
+    return tuple(sorted(key for key in listed if key not in alive))
+
+
+def _killed(proven: set, every: set, alive: set) -> tuple:
+    return tuple(sorted(key for key in proven if key in every and key not in alive))
+
+
+def gate(results: list[Result], survivors: list[dict], equivalents: list[dict],
+         canary: bool = True) -> Verdict:
+    """The survivor-set rule over one run's results."""
+    alive, every = _survived(results), {row.ident for row in results}
+    modules = _mutated_modules(results)
+    mine = _idents(_in_run(equivalents, modules))
+    return Verdict(new=tuple(sorted(alive - _idents(survivors) - _idents(equivalents))),
+                   gone=_gone(_idents(_in_run(survivors, modules)), alive),
+                   killed_equivalents=_killed(mine, every, alive),
+                   orphan_equivalents=tuple(sorted(mine - every)),
+                   void=unjudged_problem(results) or (canary_problem(results) if canary else ""))
+
+
+def updated_survivors(survivors: list[dict], verdict: Verdict) -> list[dict]:
+    """The survivors table with the rows whose mutants now die removed."""
+    gone = set(verdict.gone)
+    return [row for row in survivors if _ident(row) not in gone]
+
+
+def updated_equivalents(equivalents: list[dict], verdict: Verdict) -> list[dict]:
+    dropped = set(verdict.killed_equivalents)
+    return [row for row in equivalents if _ident(row) not in dropped]
+
+
+_LINES = (
+    ("new", "new survivor {} {} {}: kill it with a test, or add a survivors.tsv row with its "
+            "reason"),
+    ("orphan_equivalents", "equivalent row {} {} {} matches no mutant this run made: remove it"),
+    ("gone", "listed survivor {} {} {} now dies: remove its row (gate --update)"),
+    ("killed_equivalents",
+     "equivalent {} {} {} now dies: it was not equivalent (gate --update drops it)"),
+)
+
+
+def verdict_lines(verdict: Verdict) -> list[str]:
+    lines = [f"void: {verdict.void}"] if verdict.void else []
+    for field, template in _LINES:
+        lines += [template.format(*ident) for ident in getattr(verdict, field)]
+    return lines
+
+
+# --- floors ----------------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Floor:
+    group: str
+    rate: float | None
+    floor: float
+    killed: int
+    counted: int
+
+    @property
+    def ok(self) -> bool:
+        return self.rate is None or self.rate >= self.floor
+
+
+def _member(module: str, patterns: list[str]) -> bool:
+    return any(fnmatch.fnmatchcase(module, pattern) for pattern in patterns)
+
+
+def _group_rate(rows: list[Result], proven: set) -> tuple[int, int]:
+    counted = [row for row in rows if row.ident not in proven]
+    return sum(row.status in KILLED for row in counted), len(counted)
+
+
+def _patterns(group: dict) -> list[str]:
+    return [pattern.strip() for pattern in group["paths"].split(",")]
+
+
+def _floor(group: dict, results: list[Result], proven: set) -> Floor:
+    patterns = _patterns(group)
+    killed, counted = _group_rate([row for row in results if _member(row.module, patterns)],
+                                  proven)
+    rate = round(100 * killed / counted, 2) if counted else None
+    return Floor(group["group"], rate, float(group["floor"]), killed, counted)
+
+
+def floors(results: list[Result], equivalents: list[dict], groups: list[dict]) -> list[Floor]:
+    """Each group's kill rate after equivalents; a group this run did not mutate has
+    rate None. A timeout counts against the rate: it is not a kill."""
+    proven = _idents(equivalents)
+    return [_floor(group, results, proven) for group in groups]
+
+
+# --- what changed since the last weekly run --------------------------------------------------
+
+def last_weekly(now: datetime.datetime) -> datetime.datetime:
+    """The most recent Saturday 06:00 UTC at or before `now`: when accuracy.yml's
+    weekly run last started."""
+    now = now.astimezone(datetime.timezone.utc)
+    back = (now.weekday() - WEEKLY_DAY) % 7
+    start = (now - datetime.timedelta(days=back)).replace(hour=WEEKLY_HOUR, minute=0, second=0,
+                                                         microsecond=0)
+    return start if start <= now else start - datetime.timedelta(days=7)
+
+
+def captured(argv: list, cwd: Path, stdin: str | None = None) -> subprocess.CompletedProcess:
+    """argv's output as text; a byte that is not UTF-8 reads as U+FFFD, never an error."""
+    fed = stdin.encode() if stdin is not None else None
+    done = subprocess.run(argv, cwd=cwd, input=fed, capture_output=True)
+    done.stdout, done.stderr = _text(done.stdout), _text(done.stderr)
+    return done
+
+
+def _git(repo: Path, *args: str) -> str:
+    done = captured(["git", *args], repo)
+    if done.returncode != 0:
+        raise MutationError(f"git {' '.join(args)}: {done.stderr.strip()}")
+    return done.stdout
+
+
+def weekly_base(repo: Path, now: datetime.datetime) -> str:
+    """The first-parent commit the last weekly run measured: the newest one
+    committed before it started."""
+    stamp = last_weekly(now).strftime("%Y-%m-%dT%H:%M:%SZ")
+    found = _git(repo, "rev-list", "-1", "--first-parent", f"--before={stamp}", "HEAD").strip()
+    if not found:
+        raise MutationError(f"no commit before the weekly run of {stamp}")
+    return found
+
+
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.M)
+
+
+def changed_lines(diff_text: str) -> set[int]:
+    """The new-side line numbers a -U0 diff touches; a pure deletion touches the
+    line it sits after."""
+    lines: set[int] = set()
+    for match in _HUNK.finditer(diff_text):
+        start, count = int(match.group(1)), int(match.group(2) or 1)
+        lines.update(range(start, start + count) if count else (start,))
+    return lines
+
+
+def _functions(tree: ast.AST):
+    """(qualified name, first line, last line) of every top-level function and
+    method: the units mutmut mutates."""
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield node.name, node.lineno, node.end_lineno
+        elif isinstance(node, ast.ClassDef):
+            yield from ((f"{node.name}.{name}", start, end) for name, start, end in _functions(node))
+
+
+def touched_functions(source: str, lines: set[int]) -> list[str]:
+    spans = _functions(ast.parse(source))
+    return [name for name, start, end in spans if lines.intersection(range(start, end + 1))]
+
+
+def changed_functions(repo: Path, base: str, modules: list[str]) -> list[tuple[str, str]]:
+    """(module, function) for every function of `modules` a diff from `base` touches."""
+    out = []
+    for module in modules:
+        if not (repo / module).is_file():
+            continue
+        lines = changed_lines(_git(repo, "diff", "-U0", base, "--", module))
+        source = _read(repo / module)
+        out += [(module, name) for name in touched_functions(source, lines)]
+    return out
+
+
+# --- shards and release coverage ------------------------------------------------------------------
+
+def shard(modules: list[str], number: int, of: int) -> list[str]:
+    """Shard `number` of `of` (1-based): round-robin over the sorted modules."""
+    if not 1 <= number <= of:
+        raise MutationError(f"shard {number} of {of} does not exist")
+    return sorted(modules)[number - 1::of]
+
+
+def _covered_pairs(diffs: list[dict]) -> set[tuple]:
+    complete = [receipt for receipt in diffs if receipt["complete"]]
+    return {tuple(pair) for receipt in complete for pair in receipt["functions"]}
+
+
+def _of_kind(receipts: list[dict], kind: str) -> list[dict]:
+    return [receipt for receipt in receipts if receipt.get("kind") == kind]
+
+
+def receipts_in(directory: Path) -> tuple[list[dict], list[dict]]:
+    """(weekly shard receipts, nightly diff receipts) saved under `directory`."""
+    loaded = [json.loads(_read(path))
+              for path in sorted(Path(directory).glob("*.json"))]
+    return _of_kind(loaded, "weekly"), _of_kind(loaded, "diff")
+
+
+def _missing_shards(weeklies: list[dict]) -> list[int]:
+    of = max(receipt["of"] for receipt in weeklies)
+    return sorted(set(range(1, of + 1)) - {receipt["shard"] for receipt in weeklies})
+
+
+def weekly_head(weeklies: list[dict]) -> str:
+    """The commit the last weekly run mutated: one head across every shard 1..of."""
+    if not weeklies:
+        raise MissingReceipts(f"no weekly mutation receipt here; download them with `gh run "
+                              f"download RUN_ID --pattern '{RECEIPT_ARTIFACTS}' -D {RECEIPTS}`")
+    heads = sorted({str(receipt.get("head")) for receipt in weeklies})
+    if len(heads) != 1:
+        raise MutationError(f"the weekly receipts measured {len(heads)} heads: {', '.join(heads)}")
+    missing = _missing_shards(weeklies)
+    if missing:
+        raise MutationError(f"weekly shards {missing} have no receipt")
+    return heads[0]
+
+
+def uncovered(changed: list[tuple[str, str]], diffs: list[dict]) -> list[str]:
+    """The calc functions changed since the weekly run that no complete nightly
+    diff receipt mutated. The weekly run mutated the tree at its head, before
+    any of these changes, so it covers none of them."""
+    covered = _covered_pairs(diffs)
+    return [f"{module}:{name}" for module, name in changed if (module, name) not in covered]
+
+
+# --- equivalence evidence -------------------------------------------------------------------------
+
+EXAMPLES = 10_000  # the plan: an equivalent carries 10,000-example evidence
+
+
+def equivalence_evidence(original, mutant, strategy, examples: int = EXAMPLES) -> str:
+    """Run both on `examples` argument tuples from `strategy`; the evidence line,
+    or MutationError naming the first input on which they differ."""
+    from hypothesis import given, settings
+
+    seen = {"count": 0}
+
+    @settings(max_examples=examples, derandomize=True, database=None, deadline=None)
+    @given(strategy)
+    def same(args):
+        seen["count"] += 1
+        if _outcome(original, args) != _outcome(mutant, args):
+            raise MutationError(f"the mutant differs on {args!r}")
+
+    same()
+    return f"{seen['count']} examples, derandomized, no difference"
+
+
+def _outcome(function, args):
+    try:
+        return ("value", function(*args))
+    except Exception as error:  # an exception type is part of what a caller sees
+        return ("raises", type(error).__name__)
+
+
+# --- running mutmut ---------------------------------------------------------------------------------
+
+def calc_modules(repo: Path = REPO) -> list[str]:
+    """Every module a calcs.tsv row names, the paths mutmut mutates."""
+    from accuracy.kit import calcs
+    return calcs.modules(calcs.load(repo / "tests" / "accuracy"))
+
+
+# Every mutmut call goes through the stage's launcher (see LAUNCHER below).
+LAUNCHER_FILE = "mutmut_launch.py"
+LAUNCH = (LAUNCHER_FILE,)
+
+
+def _run_mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple = LAUNCH,
+            env: dict | None = None) -> int:
+    argv = [sys.executable, *mutmut, *args]
+    try:
+        return subprocess.run(argv, cwd=repo, timeout=budget, env=env).returncode
+    except subprocess.TimeoutExpired:
+        return -1
+
+
+def _meta_statuses(repo: Path) -> dict[str, str]:
+    statuses: dict[str, str] = {}
+    for meta in sorted((repo / "mutants").rglob("*.meta")):
+        codes = json.loads(_read(meta))["exit_code_by_key"]
+        statuses.update({name: STATUS_BY_EXIT.get(code, "suspicious")
+                         for name, code in codes.items()})
+    return statuses
+
+
+def parse_diffs(printed: str) -> dict[str, str]:
+    """The launcher's `diffs` output, one JSON [name, diff] pair per line, as a map;
+    anything else mutmut prints on the way is not a pair and is left out."""
+    pairs = [json.loads(line) for line in printed.splitlines() if line.startswith('["')]
+    return {name: diff for name, diff in pairs}
+
+
+def _diffs(repo: Path, names: list[str], mutmut: tuple) -> dict[str, str]:
+    """Every named mutant's diff from one process: a `mutmut show` per mutant starts
+    Python once each, about a second apiece, and a run can leave thousands alive."""
+    if not names:
+        return {}
+    done = captured([sys.executable, *mutmut, "diffs"], repo, "\n".join(names))
+    found = parse_diffs(done.stdout)
+    missing = [name for name in names if not found.get(name)]
+    if missing:
+        raise MutationError(f"no diff for {len(missing)} mutant(s) ({', '.join(missing[:3])}): "
+                            f"{done.stderr.strip()[-500:]}")
+    return found
+
+
+def _wanted(name: str, globs: list[str] | None) -> bool:
+    return globs is None or any(fnmatch.fnmatchcase(name, glob) for glob in globs)
+
+
+def keyed_names(statuses: dict[str, str]) -> list[str]:
+    """Survivors, unreached mutants and unfinished ones carry their key; a kill needs none."""
+    return [name for name, status in statuses.items() if status in ALIVE | UNFINISHED]
+
+
+def collect(repo: Path, wanted: list[str] | None = None, mutmut: tuple = LAUNCH) -> list[Result]:
+    """Results from mutmut's meta files, for the mutant names `wanted` globs match."""
+    statuses = {name: status for name, status in sorted(_meta_statuses(repo).items())
+                if _wanted(name, wanted)}
+    diffs = _diffs(repo, keyed_names(statuses), mutmut)
+    return [result(name, status, diffs.get(name), repo) for name, status in statuses.items()]
+
+
+def _rerun_timeouts(repo: Path, rows: list[Result], mutmut: tuple = LAUNCH,
+                    env: dict | None = None) -> list[Result]:
+    """One serial rerun per unfinished mutant; what still does not finish keeps its status."""
+    names = [row.name for row in rows if row.status in UNFINISHED]
+    if not names:
+        return rows
+    _run_mutmut(repo, ["run", "--max-children", "1", *names], None, mutmut, env)
+    return collect(repo, [row.name for row in rows], mutmut)
+
+
+def _receipt(kind: str, **fields) -> dict:
+    return {"schema": 1, "kind": kind, "head": _git(REPO, "rev-parse", "HEAD").strip(),
+            "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **fields}
+
+
+def _write_receipt(receipt: dict, name: str) -> Path:
+    path = REPO / RECEIPTS / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write(path, json.dumps(receipt, indent=1, sort_keys=True) + "\n")
+    return path
+
+
+def _globs_for(modules: list[str]) -> list[str]:
+    return [f"{_dotted(module)}.*" for module in modules]
+
+
+def _canary_globs() -> list[str]:
+    return [mutmut_glob(*CANARY)]
+
+
+# --- the calc runs' scope ---------------------------------------------------------------------
+# The plan's mutation section: a cli module is mutated only at the functions a
+# calcs.tsv row names, and the modules the second config (`tools`) mutates
+# against their own tests stay out of the weekly and nightly runs. The release
+# tool is scoped like a cli module: only its accuracy gate is a calculation, and
+# the rest of it publishes.
+FUNCTION_SCOPED = ("src/crapkit/cli/", "tools/release/release.py")
+
+
+def calc_functions() -> dict[str, set[str]]:
+    """The functions the calcs.tsv rows name, by module path."""
+    from accuracy.kit import calcs
+    named: dict[str, set[str]] = {}
+    for row in calcs.load(REPO / "tests" / "accuracy"):
+        for entry in row.functions:
+            path, _, name = entry.partition(":")
+            named.setdefault(path, set()).add(name)
+    return named
+
+
+def weekly_modules() -> list[str]:
+    """The calc modules the weekly shards split, less the ones `tools` mutates."""
+    return [module for module in calc_modules() if module not in TOOL_TARGETS]
+
+
+def calc_globs(modules: list[str], named: dict[str, set[str]]) -> list[str]:
+    """mutmut's filter for a calc run over `modules`: each whole module, a cli
+    module and the release tool only at their named functions."""
+    return [glob for module in modules for glob in _module_globs(module, named)]
+
+
+def _module_globs(module: str, named: dict[str, set[str]]) -> list[str]:
+    if module.startswith(FUNCTION_SCOPED):
+        return [mutmut_glob(module, name) for name in sorted(named.get(module, ()))]
+    return [f"{_dotted(module)}.*"]
+
+
+def in_calc_scope(pairs: list[tuple[str, str]], named: dict[str, set[str]]) -> list[tuple[str, str]]:
+    """The changed (module, function) pairs a calc run mutates."""
+    return [(module, name) for module, name in pairs if module not in TOOL_TARGETS
+            and (not module.startswith(FUNCTION_SCOPED) or name in named.get(module, ()))]
+
+
+# --- the second config: the accuracy tools and kit.exact -----------------------------------------
+
+TOOLS_STAGE = RECEIPTS / "tools-stage"
+# Each module the second config mutates, with the tests that exercise it. A
+# target another packet brings is staged once its source is in the tree.
+TOOL_TARGETS = {
+    "tests/accuracy/kit/exact.py": ("tests/accuracy/kit/test_exact.py",),
+    "tools/accuracy/retro.py": ("tests/accuracy/suite_strength/test_retro_tool.py",),
+    "tools/accuracy/mutation.py": ("tests/accuracy/suite_strength/test_mutation_tool.py",
+                                   "tests/accuracy/suite_strength/test_mutation_floors.py"),
+    "tools/accuracy/run.py": ("tests/accuracy/kit/test_run_tool.py",
+                              "tests/accuracy/kit/test_run_tool_commands.py",
+                              "tests/accuracy/suite_strength/test_runner_targets.py"),
+    "tools/accuracy/change_control.py": ("tests/accuracy/change_control",),
+    "tools/accuracy/wheel_diff.py": ("tests/accuracy/corpus_goldens/test_wheel_diff_tool.py",),
+}
+LAUNCHER = '''"""mutmut 3.8.0 for the accuracy tools, started in the stage by tools/accuracy/mutation.py.
+
+mutmut names a module by its path with `src.` left off, and a trampoline runs a
+mutant only inside the module of that name. The kit imports as `accuracy.*`
+from tests/, and tests load a tool by path under a name of their own, so here
+`tests.` is left off too, and a mutated file loaded by path takes the name
+mutmut gave it.
+"""
+import importlib.util
+import os
+from pathlib import Path
+import tomllib
+
+
+def canonical(relative: str) -> str:
+    dotted = relative.removesuffix(".py").replace("/", ".")
+    for prefix in ("src.", "tests."):
+        dotted = dotted.removeprefix(prefix)
+    return dotted
+
+
+# --- mutmut ---
+# The rest runs only as the stage's main script. multiprocessing's spawn method
+# runs the parent's __main__ again in each child as __mp_main__, from the cwd
+# mutmut gives the tests (mutants/); unguarded, a unit test's spawned worker
+# started a second mutmut there.
+
+def strip_prefix(text, *, prefix, strict=False):
+    text = _strip(text, prefix=prefix, strict=strict)
+    return _strip(text, prefix="tests.") if prefix == "src." else text
+
+
+def _mutated(location):
+    try:
+        relative = Path(location).resolve().relative_to(MUTANTS).as_posix()
+    except (TypeError, ValueError):
+        return None
+    return relative if relative in SOURCES else None
+
+
+def spec_from_file_location(name, location=None, *args, **kwargs):
+    relative = _mutated(location)
+    return _spec(canonical(relative) if relative else name, location, *args, **kwargs)
+
+
+def set_mutant_under_test(name):
+    """mutmut's setter, except that stats mode stays in this process. mutmut mirrors
+    the mode into MUTANT_UNDER_TEST, and a child a test starts (comment.py, the
+    test runner, the CLI) inherits it: in stats mode a trampoline there looks for
+    mutmut's settings in the child's working directory and stops the child, and
+    the stats run fails. A child's hits were never recorded, so it runs the
+    original code. A mutant's name still reaches children."""
+    if name == "stats":
+        _trampolines._mutant_under_test = name
+        os.environ.pop("MUTANT_UNDER_TEST", None)
+    else:
+        _set_mutant(name)
+
+
+def diffs():
+    """`diffs`: the diff of every mutant named on stdin, one JSON [name, diff] line each."""
+    import json
+    import sys
+    from mutmut.mutation.diff_apply import get_diff_for_mutant
+    for name in sys.stdin.read().split():
+        try:
+            print(json.dumps([name, get_diff_for_mutant(name)]), flush=True)
+        except Exception as missed:  # the caller names every mutant left without a diff
+            print(f"{name}: {missed!r}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    import sys
+    import mutmut.mutation.trampoline as _trampolines
+    import mutmut.utils.format_utils as names
+
+    CONFIG = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["mutmut"]
+    SOURCES = set(CONFIG["source_paths"])
+    MUTANTS = Path("mutants").resolve()
+    _strip, _spec = names.strip_prefix, importlib.util.spec_from_file_location
+    _set_mutant = _trampolines.set_mutant_under_test
+    names.strip_prefix = strip_prefix
+    importlib.util.spec_from_file_location = spec_from_file_location
+    _trampolines.set_mutant_under_test = set_mutant_under_test
+    if sys.argv[1:2] == ["diffs"]:
+        diffs()
+    else:
+        from mutmut.__main__ import cli
+        cli()
+'''
+
+
+def present(targets: dict, repo: Path = REPO) -> dict:
+    """The targets whose source this tree holds."""
+    return {path: tests for path, tests in targets.items() if (repo / path).is_file()}
+
+
+def _stage_keys(targets: dict, copies: list[str]) -> dict:
+    """The [tool.mutmut] keys the stage sets: what mutmut mutates, runs and copies."""
+    tests = sorted({test for listed in targets.values() for test in listed})
+    return {"source_paths": sorted(targets), "pytest_add_cli_args_test_selection": tests,
+            "pytest_add_cli_args": ["-p", "no:cacheprovider", "-m", FLOOR_SUITE],
+            "also_copy": copies}
+
+
+def _stage_rows(ours: dict, kept: dict) -> dict:
+    """The repo table's other keys first, as its tests read them (mutmut takes
+    source_paths over paths_to_mutate), then the stage's own."""
+    return {key: value for key, value in kept.items() if key not in ours} | ours
+
+
+def _stage_table(targets: dict, copies: list[str], kept: dict | None = None,
+                 written: str = "") -> str:
+    """The table: `written` (the repo table's generated blocks) as it stands, then
+    one line per key."""
+    rows = _stage_rows(_stage_keys(targets, copies), kept or {})
+    lines = [f"{key} = {json.dumps(value)}\n" for key, value in rows.items()]
+    return "".join(["[tool.mutmut]\n", written, *lines])
+
+
+_GENERATED = re.compile(r"^# generated:([\w-]+)\n.*?^# /generated:\1\n", re.M | re.S)
+
+
+def generated_blocks(table: str) -> str:
+    """Every block tools/docs/generate.py writes in `table`, as written: its check
+    (tests/unit/test_generated_guidance.py) runs in mutmut's copy too."""
+    return "".join(match.group(0) for match in _GENERATED.finditer(table))
+
+
+def stage_config(text: str, targets: dict, copies: list[str]) -> str:
+    """The repo's pyproject.toml with a [tool.mutmut] table for `targets` in place of
+    its own, copying `copies` beside the mutants. The generated blocks of the repo's
+    table stay as written, and the keys they hold are not written twice."""
+    head, _, rest = text.partition("[tool.mutmut]")
+    body, bracket, after = rest.partition("\n[")
+    written = generated_blocks(body)
+    kept = {key: value for key, value in tomllib.loads(text).get("tool", {}).get("mutmut", {}).items()
+            if key not in tomllib.loads(written)}
+    table = _stage_table(targets, copies, kept, written)
+    return f"{head.rstrip()}\n\n{(bracket + after).strip()}\n\n{table}"
+
+
+def stage_copies(stage: Path) -> list[str]:
+    """Every top-level entry HEAD tracks: the tools' tests read README.md, docs/
+    and the kit's data as well as tests/ and tools/."""
+    tracked = _git(stage, "ls-tree", "--name-only", "HEAD").splitlines()
+    return sorted(set(tracked) - {"mutants"})
+
+
+def _stage(repo: Path, stage: Path) -> Path:
+    """A detached worktree of `repo`'s HEAD; mutants/ stays, so mutmut keeps its cache."""
+    head = _git(repo, "rev-parse", "HEAD").strip()
+    if not (stage / ".git").exists():
+        stage.parent.mkdir(parents=True, exist_ok=True)
+        _git(repo, "worktree", "add", "-f", "--detach", str(stage), head)
+    _git(stage, "checkout", "-q", "-f", "--detach", head)
+    return stage
+
+
+def tools_env(environ: dict) -> dict:
+    """Every tier's tests with push-sized Hypothesis settings: the floors count what
+    a nightly test kills too, at the cost of a push run."""
+    return {**environ, "CRAPKIT_ACCURACY_TIER": "push", "CRAPKIT_ACCURACY_COLLECT_ALL": "1",
+            "PYTHONDONTWRITEBYTECODE": "1"}
+
+
+# The weekly and nightly runs: the calc modules against tests/unit and the
+# accuracy tests, in a stage of their own, so the repo's [tool.mutmut] (which
+# names no tests and no marker) never decides the suite the floors count.
+CALC_STAGE = RECEIPTS / "calc-stage"
+CALC_TESTS = ("tests/unit", "tests/accuracy")
+# mutmut's copy of src/ under the stage's mutants/ is rewritten with trampolines,
+# so the checks that read crapkit's own source as data (the analysis src corpus)
+# read the stage checkout's src/crapkit, the same commit as written.
+SOURCE_ENV = "CRAPKIT_ACCURACY_SOURCE"
+
+
+def calc_targets(modules: list[str]) -> dict:
+    """The modules a calc run mutates, score.py (the canary's home) always among them."""
+    return {module: CALC_TESTS for module in sorted({*modules, CANARY[0]})}
+
+
+def calc_env(environ: dict, deselect: list[str] | tuple = ()) -> dict:
+    """The push tier on this platform, less the `deselect` tests: every tier would
+    bring in tests marked for another platform, and each of those, like a test an
+    open ruling names, fails mutmut's stats run, which then judges no mutant. The
+    src corpus reads the stage's own source (SOURCE_ENV)."""
+    env = {key: value for key, value in environ.items() if key != "CRAPKIT_ACCURACY_COLLECT_ALL"}
+    addopts = [env.get("PYTEST_ADDOPTS", ""), *(f"--deselect {node}" for node in deselect)]
+    return {**env, "CRAPKIT_ACCURACY_TIER": "push", "PYTHONDONTWRITEBYTECODE": "1",
+            SOURCE_ENV: str(REPO / CALC_STAGE / "src" / "crapkit"),
+            "PYTEST_ADDOPTS": " ".join(filter(None, addopts))}
+
+
+RULING_COLUMNS = ("id", "calc", "oracle", "construct", "crapkit_value", "oracle_value", "ruling",
+                  "outside_support", "docs_anchor", "test", "issue")
+
+
+def _failing_tests(row: dict) -> list[str]:
+    """The node ids an open defect row names as failing on a clean tree."""
+    if row["ruling"] != "defect":
+        return []
+    return [value for value in row["crapkit_value"].split(",") if "::" in value]
+
+
+def open_failures(rulings: Path | None = None) -> list[str]:
+    """The tests this packet's open defect rulings (rulings.tsv beside the mutation
+    tables) name, such as SS4: each fails on a clean tree in the image, so the calc
+    stage deselects it until its row is fixed."""
+    rows = read_table(rulings or TABLES.parent / "rulings.tsv", RULING_COLUMNS)
+    return sorted({node for row in rows for node in _failing_tests(row)})
+
+
+# Tests that fail inside mutmut's copy whatever mutant is active, each for a
+# reason the copy itself brings, so in the calc stage they could only stop the
+# stats run (and no mutant is judged) or fail every mutant alike. The calc stage
+# leaves them out with the open defects' tests; CI runs them on the tree.
+COPY_BOUND = {
+    "tests/unit/test_invariants.py::test_no_variable_or_flag_turns_the_checks_off":
+        "reads invariants.py as text, and the copy's text holds mutmut's trampolines",
+    "tests/unit/test_invariants.py::test_every_run_crapkit_stores_passes_the_row_check_first":
+        "reads each module as text, and the copy holds every mutant's body beside the original",
+    "tests/unit/test_cli_lazy_families.py::test_running_a_command_loads_its_family_and_no_other":
+        "starts an interpreter on the copy, whose trampolines look for mutmut's settings in the "
+        "child's working directory during the stats run and stop the child",
+    "tests/accuracy/runtime_guards/test_guard_cost.py::test_the_row_check_over_a_large_repo_s_run":
+        "times the row check against a ceiling, and in the copy every call it makes runs "
+        "through a trampoline first",
+    "tests/unit/test_config_shape.py::test_reading_the_config_module_costs_no_dataclasses_import":
+        "lists the modules a child imports with crapkit.config, and on the copy every mutated "
+        "module imports mutmut's trampoline, which imports dataclasses",
+    "tests/unit/test_config_shape.py::"
+    "test_the_probe_child_stays_untraced_under_coverages_subprocess_patch":
+        "lists the modules a child imports with crapkit.config, and on the copy every mutated "
+        "module imports mutmut's trampoline, which imports dataclasses",
+    "tests/unit/test_version_metadata_cost.py::"
+    "test_an_agreeing_distribution_answers_without_importing_metadata":
+        "asks whether a child imported importlib.metadata, and on the copy every mutated module "
+        "imports mutmut, which does",
+    "tests/unit/test_version_metadata_cost.py::"
+    "test_a_source_tree_with_nothing_installed_falls_back_to_the_package":
+        "starts a child with -S on a copy of the package, and every mutated module there "
+        "imports mutmut, which -S leaves off sys.path",
+    "tests/unit/test_version_metadata_cost.py::"
+    "test_a_dist_info_with_no_version_header_defers_to_metadata":
+        "starts a child with -S on the copy, and every mutated module there imports mutmut, "
+        "which -S leaves off sys.path",
+}
+
+
+def stage_deselected() -> list[str]:
+    """What the calc stage leaves out: the tests open defect rulings name, and
+    COPY_BOUND."""
+    return sorted({*open_failures(), *COPY_BOUND})
+
+
+def _prepare_stage(targets: dict, where: Path = TOOLS_STAGE) -> Path:
+    stage = _stage(REPO, REPO / where)
+    pyproject = stage / "pyproject.toml"
+    _write(pyproject, stage_config(_read(pyproject), targets, stage_copies(stage)))
+    _write(stage / LAUNCHER_FILE, LAUNCHER)
+    return stage
+
+
+def staged_run(where: Path, targets: dict, globs: list[str], env: dict, children: int,
+               budget: float | None = None) -> tuple[list[Result], bool]:
+    """mutmut over `globs` in a stage whose [tool.mutmut] names `targets`: the results,
+    and whether the run finished inside `budget` seconds (a capped run reruns nothing)."""
+    stage = _prepare_stage(targets, where)
+    code = _run_mutmut(stage, ["run", "--max-children", str(children), *globs], budget, env=env)
+    rows = collect(stage, globs)
+    if code == -1:
+        return rows, False
+    return _rerun_timeouts(stage, rows, env=env), True
+
+
+def _tools(args) -> int:
+    targets = present(TOOL_TARGETS)
+    rows, _ = staged_run(TOOLS_STAGE, targets, _globs_for(list(targets)),
+                         tools_env(dict(os.environ)), args.max_children)
+    receipt = _receipt("tools", modules=sorted(targets), results=[asdict(row) for row in rows])
+    _write_receipt(receipt, "tools.json")
+    return _judge(rows, update=False, canary=False)
+
+
+# --- commands ----------------------------------------------------------------------------------------
+
+def _tables() -> tuple[list, list, list]:
+    return (read_table(TABLES / "survivors.tsv", SURVIVOR_COLUMNS),
+            read_table(TABLES / "equivalent.tsv", EQUIVALENT_COLUMNS),
+            read_table(TABLES / "floors.tsv", FLOOR_COLUMNS))
+
+
+def _floors_hold(results: list[Result], equivalents: list[dict], groups: list[dict]) -> bool:
+    checked = floors(results, equivalents, groups)
+    for floor in checked:
+        _print_floor(floor)
+    return all(floor.ok for floor in checked)
+
+
+def _update(survivors: list[dict], equivalents: list[dict], verdict: Verdict) -> None:
+    write_table(TABLES / "survivors.tsv", SURVIVOR_COLUMNS, updated_survivors(survivors, verdict))
+    write_table(TABLES / "equivalent.tsv", EQUIVALENT_COLUMNS,
+                updated_equivalents(equivalents, verdict))
+
+
+def _judge(results: list[Result], update: bool, canary: bool = True) -> int:
+    survivors, equivalents, groups = _tables()
+    verdict = gate(results, survivors, equivalents, canary=canary)
+    for line in verdict_lines(verdict):
+        print(f"mutation: {line}")
+    held = _floors_hold(results, equivalents, groups)
+    if update:
+        _update(survivors, equivalents, verdict)
+    return 0 if verdict.passed and held else 1
+
+
+def _print_floor(floor: Floor) -> None:
+    rate = "not mutated" if floor.rate is None else f"{floor.rate}% ({floor.killed}/{floor.counted})"
+    mark = "ok" if floor.ok else "BELOW"
+    print(f"mutation: floor {floor.group}: {rate}, floor {floor.floor}% {mark}")
+
+
+def _weekly(args) -> int:
+    modules = shard(weekly_modules(), args.shard, args.of)
+    globs = calc_globs(modules, calc_functions()) + _canary_globs()
+    deselected = stage_deselected()
+    rows, _ = staged_run(CALC_STAGE, calc_targets(modules), globs,
+                         calc_env(dict(os.environ), deselected), args.max_children)
+    receipt = _receipt("weekly", shard=args.shard, of=args.of, modules=modules,
+                       deselected=deselected, results=[asdict(row) for row in rows])
+    _write_receipt(receipt, f"weekly-{args.shard}.json")
+    return _judge(rows, update=False)
+
+
+def _run_changed(changed: list, budget: float) -> tuple[list[Result], bool]:
+    """The results for the changed functions, and whether the run finished inside
+    `budget` seconds."""
+    if not changed:
+        return [], True
+    targets = calc_targets([path for path, _ in changed])
+    return staged_run(CALC_STAGE, targets, [mutmut_glob(*pair) for pair in changed],
+                      calc_env(dict(os.environ), stage_deselected()), os.cpu_count() or 2, budget)
+
+
+def _diff_receipt(base: str, changed: list, rows: list[Result], complete: bool) -> dict:
+    return _receipt("diff", base=base, functions=[list(pair) for pair in changed],
+                    complete=complete, results=[asdict(row) for row in rows])
+
+
+def _diff_run(args) -> int:
+    base = args.base or weekly_base(REPO, datetime.datetime.now(datetime.timezone.utc))
+    changed = in_calc_scope(changed_functions(REPO, base, calc_modules()), calc_functions())
+    rows, complete = _run_changed(changed, args.cap_minutes * 60)
+    receipt = _diff_receipt(base, changed, rows, complete)
+    _write_receipt(receipt, f"diff-{receipt['head'][:12]}.json")
+    if not complete:
+        print(f"mutation: incomplete: the {args.cap_minutes:g}-minute cap stopped the run")
+        return 1
+    return _judge(rows, update=False, canary=False)
+
+
+def _gate(args) -> int:
+    return _judge(load_results(args.results), update=args.update, canary=not args.no_canary)
+
+
+def _floors_cmd(args) -> int:
+    _, equivalents, groups = _tables()
+    results = load_results(args.results)
+    checked = floors(results, equivalents, groups)
+    for floor in checked:
+        _print_floor(floor)
+    return 0 if all(floor.ok for floor in checked) else 1
+
+
+def _covered(args) -> int:
+    weeklies, diffs = receipts_in(args.receipts)
+    head = weekly_head(weeklies)
+    changed = changed_functions(REPO, head, calc_modules())
+    missing = uncovered(in_calc_scope(changed, calc_functions()), diffs)
+    for line in missing:
+        print(f"mutation: {line} changed since the weekly run at {head[:12]} and no "
+              "complete diff run mutated it")
+    return 1 if missing else 0
+
+
+def _key(args) -> int:
+    print(mutant_key(sys.stdin.read()))
+    return 0
+
+
+def killer_env(cwd: Path, environ: dict) -> dict:
+    """The environment the killer suite runs under: this tree's src/ and tests/ first,
+    and the push tier whatever tier the caller runs."""
+    paths = [str(cwd / "src"), str(cwd / "tests"), environ.get("PYTHONPATH")]
+    return {**environ, "PYTHONPATH": os.pathsep.join(filter(None, paths)),
+            "PYTHONDONTWRITEBYTECODE": "1", "CRAPKIT_ACCURACY_TIER": "push"}
+
+
+def killer_argv(extra: list[str]) -> list[str]:
+    return [sys.executable, "-m", "pytest", "tests/unit", "tests/accuracy", "-m", INDEPENDENT_ONLY,
+            "-n", "4", "--dist", "worksteal", "-x", "-q", "-p", "no:randomly",
+            "-p", "no:cacheprovider", *extra]
+
+
+def _killer(args) -> int:
+    cwd = Path.cwd()
+    return subprocess.run(killer_argv(args.pytest), cwd=cwd,
+                          env=killer_env(cwd, dict(os.environ))).returncode
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="mutation.py", description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    weekly = sub.add_parser("weekly")
+    weekly.add_argument("--shard", type=int, required=True)
+    weekly.add_argument("--of", type=int, required=True)
+    weekly.add_argument("--max-children", type=int, default=os.cpu_count() or 2)
+    diff = sub.add_parser("diff")
+    diff.add_argument("--since-weekly", action="store_true")
+    diff.add_argument("--base")
+    diff.add_argument("--cap-minutes", type=float, default=30)
+    gate_p = sub.add_parser("gate")
+    gate_p.add_argument("results", nargs="+", type=Path)
+    gate_p.add_argument("--update", action="store_true")
+    gate_p.add_argument("--no-canary", action="store_true")
+    floors_p = sub.add_parser("floors")
+    floors_p.add_argument("results", nargs="+", type=Path)
+    covered = sub.add_parser("covered")
+    covered.add_argument("--receipts", type=Path, default=REPO / RECEIPTS)
+    tools = sub.add_parser("tools")
+    tools.add_argument("--max-children", type=int, default=os.cpu_count() or 2)
+    sub.add_parser("key")
+    killer = sub.add_parser("killer")
+    killer.add_argument("pytest", nargs=argparse.REMAINDER)
+    return parser
+
+
+COMMANDS = {"weekly": _weekly, "diff": _diff_run, "gate": _gate, "floors": _floors_cmd,
+            "covered": _covered, "tools": _tools, "key": _key, "killer": _killer}
+
+
+def _args(argv: list[str]) -> argparse.Namespace:
+    """The parsed command. Every word after `killer` is pytest's, dashes included:
+    argparse's REMAINDER refuses one that starts with a dash."""
+    if argv[:1] == ["killer"]:
+        return argparse.Namespace(command="killer", pytest=argv[1:])
+    return _parser().parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _args(sys.argv[1:] if argv is None else argv)
+    try:
+        return COMMANDS[args.command](args)
+    except MutationError as refused:
+        print(f"mutation.py: {refused}", file=sys.stderr)
+        return 3 if isinstance(refused, MissingReceipts) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

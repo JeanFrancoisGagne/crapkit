@@ -1,0 +1,174 @@
+id	file	function	metric	expected	source	ruling
+sum-of-primes	sonar.ts	sumOfPrimes	start	4	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+sum-of-primes	sonar.ts	sumOfPrimes	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; paper Figure: sumOfPrimes has Cyclomatic Complexity 4	
+sum-of-primes	sonar.ts	sumOfPrimes	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest	
+sum-of-primes	sonar.ts	sumOfPrimes	ccn	4	README.md#crap-change-risk-anti-patterns: ccn is the smaller of standard and modified	
+sum-of-primes	sonar.ts	sumOfPrimes	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper sumOfPrimes scores 7: for +1, for +2, if +3, continue OUT +1	
+sum-of-primes	sonar.ts	sumOfPrimes	nesting	3	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	AO-N-TS-LABELED
+sum-of-primes	sonar.ts	sumOfPrimes	params	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+get-words	sonar.ts	getWords	start	17	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+get-words	sonar.ts	getWords	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; paper Figure: getWords has Cyclomatic Complexity 4, default not counted	
+get-words	sonar.ts	getWords	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest	
+get-words	sonar.ts	getWords	ccn	2	README.md#crap-change-risk-anti-patterns: ccn is the smaller of standard and modified	
+get-words	sonar.ts	getWords	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper getWords: a switch and all its cases is one increment	
+get-words	sonar.ts	getWords	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body; a switch increments the nesting level	AO-N-TS-SWITCH
+get-words	sonar.ts	getWords	params	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+my-method	sonar.ts	myMethod	start	30	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+my-method	sonar.ts	myMethod	ccn_std	6	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if, for, while, catch, if	
+my-method	sonar.ts	myMethod	cognitive	9	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper myMethod scores 9, try adds nothing	
+my-method	sonar.ts	myMethod	nesting	3	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+my-method	sonar.ts	myMethod	params	2	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+logical-mix	sonar.ts	logicalMix	start	46	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+logical-mix	sonar.ts	logicalMix	ccn_std	7	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1, the if and five short-circuit operators	
+logical-mix	sonar.ts	logicalMix	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper Sequences of logical operators: if +1, and-and +1, or-or +1, and +1	
+logical-mix	sonar.ts	logicalMix	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	AO-N-TS-CONDITION
+logical-mix	sonar.ts	logicalMix	params	6	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+logical-not	sonar.ts	logicalNot	start	53	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+logical-not	sonar.ts	logicalNot	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1, the if and two short-circuit operators	
+logical-not	sonar.ts	logicalNot	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper: if (a && !(b && c)) scores 3	AO-TS-COG-RUNS-NOT
+logical-not	sonar.ts	logicalNot	params	3	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+factorial	sonar.ts	factorial	start	60	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+factorial	sonar.ts	factorial	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+factorial	sonar.ts	factorial	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1 and one method in a recursion cycle +1 (B1)	
+factorial	sonar.ts	factorial	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+factorial	sonar.ts	factorial	params	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+nullish-pick	sonar.ts	nullishPick	start	67	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+nullish-pick	sonar.ts	nullishPick	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; ?? is a short-circuit operator (ECMA-262 sec. 13.13 CoalesceExpression evaluates its right side only for null or undefined): +1	D2a
+nullish-pick	sonar.ts	nullishPick	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper Ignore shorthand: null-coalescing operators are ignored	D2b
+nullish-assign	sonar.ts	nullishAssign	start	71	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+nullish-assign	sonar.ts	nullishAssign	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; ??= assigns only when the left side is null or undefined (ECMA-262 sec. 13.15 AssignmentExpression): one short-circuit decision	D2c
+nullish-assign	sonar.ts	nullishAssign	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper Ignore shorthand: null-coalescing operators are ignored	D2d
+optional-read	sonar.ts	optionalRead	start	76	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+optional-read	sonar.ts	optionalRead	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; paper Ignore shorthand: its example a?.myObj is a null-coalescing operator and adds nothing	
+straight	flow.ts	straight	start	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+straight	flow.ts	straight	end	5	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function ends on the last line of its body	AO-TS-END
+straight	flow.ts	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+straight	flow.ts	straight	ccn	1	README.md#crap-change-risk-anti-patterns: ccn is the smaller of standard and modified	
+straight	flow.ts	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3	
+straight	flow.ts	straight	nesting	0	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+straight	flow.ts	straight	nloc	5	lizard 1.24.0 README: nloc counts lines of code without comments	AO-TS-NLOC-END
+straight	flow.ts	straight	params	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+grade	flow.ts	grade	start	7	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+grade	flow.ts	grade	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and else if, else adds no decision	
+grade	flow.ts	grade	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else if +1, else +1 (hybrid increments)	
+grade	flow.ts	grade	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+nested-in-else	flow.ts	nestedInElse	start	17	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+nested-in-else	flow.ts	nestedInElse	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+nested-in-else	flow.ts	nestedInElse	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else +1, the if inside else +1 and +1 nesting	
+nested-in-else	flow.ts	nestedInElse	nesting	2	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	AO-N-TS-ELSE
+nested-in-else	flow.ts	nestedInElse	params	2	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+four-deep	flow.ts	fourDeep	start	28	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+four-deep	flow.ts	fourDeep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+four-deep	flow.ts	fourDeep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, for +2, while +3, if +4	
+four-deep	flow.ts	fourDeep	nesting	4	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+four-deep	flow.ts	fourDeep	params	4	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+flat-seven	flow.ts	flatSeven	start	41	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+flat-seven	flow.ts	flatSeven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+flat-seven	flow.ts	flatSeven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0	
+flat-seven	flow.ts	flatSeven	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+three-loops	flow.ts	threeLoops	start	52	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+three-loops	flow.ts	threeLoops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+three-loops	flow.ts	threeLoops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, for +2, for +3	
+three-loops	flow.ts	threeLoops	nesting	3	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+find-pair	flow.ts	findPair	start	64	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+find-pair	flow.ts	findPair	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+find-pair	flow.ts	findPair	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, for +2, if +3, break outer +1 (Jumps to labels)	
+find-pair	flow.ts	findPair	nesting	3	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+find-pair	flow.ts	findPair	params	2	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+pick	flow.ts	pick	start	75	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+pick	flow.ts	pick	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+pick	flow.ts	pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary operator +1	
+pick	flow.ts	pick	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body; a ternary increments the nesting level	
+pick	flow.ts	pick	params	3	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+count-down	flow.ts	countDown	start	79	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+count-down	flow.ts	countDown	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+count-down	flow.ts	countDown	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; do while +1	
+count-down	flow.ts	countDown	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+keys-of	flow.ts	keysOf	start	86	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+keys-of	flow.ts	keysOf	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+keys-of	flow.ts	keysOf	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; foreach +1	
+keys-of	flow.ts	keysOf	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+kind	flow.ts	kind	start	94	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+kind	flow.ts	kind	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two case-labeled statements: labels 1 and 2 share one statement and add one edge	AO-TS-CASE-LABELS
+kind	flow.ts	kind	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest	
+kind	flow.ts	kind	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a switch and all its cases is one increment	
+kind	flow.ts	kind	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	AO-N-TS-CASE
+guarded	flow.ts	guarded	start	106	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+guarded	flow.ts	guarded	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the catch clause is one branch, finally always runs	
+guarded	flow.ts	guarded	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; catch +1, try and finally are ignored	
+guarded	flow.ts	guarded	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+with-defaults	shapes.ts	withDefaults	start	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+with-defaults	shapes.ts	withDefaults	params	3	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares; ECMA-262 sec. 15.1 FormalParameters: a, b and the rest parameter	
+destructured	shapes.ts	destructured	start	5	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+destructured	shapes.ts	destructured	params	2	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares; ECMA-262 sec. 15.1: each binding pattern is one formal parameter	AO-TS-PARAMS-DESTRUCTURE
+no-params	shapes.ts	noParams	start	9	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+no-params	shapes.ts	noParams	params	0	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+increment	shapes.ts	increment	start	16	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+increment	shapes.ts	increment	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+increment	shapes.ts	increment	params	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+increment	shapes.ts	increment	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function	
+reset	shapes.ts	reset	start	23	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+reset	shapes.ts	reset	params	0	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares	
+reset	shapes.ts	reset	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function	
+identity	generic.ts	identity	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function; a generic function declaration is a function (TypeScript handbook, Generics)	D1a
+after-generic	generic.ts	afterGeneric	start	5	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+after-generic	generic.ts	afterGeneric	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function	
+apply	fntype.ts	apply	start	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+apply	fntype.ts	apply	end	3	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function ends on the last line of its body	D1b-END
+apply	fntype.ts	apply	params	2	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters a function declares; a function-typed parameter is one parameter	D1b
+apply	fntype.ts	apply	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function	
+after-apply	fntype.ts	afterApply	start	5	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+after-apply	fntype.ts	afterApply	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function	
+has-tick	regex.ts	hasTick	start	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+has-tick	regex.ts	hasTick	end	3	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function ends on the last line of its body	D1c-END
+has-tick	regex.ts	hasTick	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function	
+after-regex	regex.ts	afterRegex	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function; a backtick inside a regular expression literal (ECMA-262 sec. 12.9.5) opens no template	D1c
+templated	templates.ts	templated	start	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+templated	templates.ts	templated	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function	
+after-template	templates.ts	afterTemplate	start	5	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+after-template	templates.ts	afterTemplate	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function; a template nested in a substitution ends at its own closing backtick (ECMA-262 sec. 12.9.6)	
+optional-read	sonar.ts	optionalRead	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; `a?.b` evaluates `.b` only when a is not null or undefined (ECMA-262 sec. 13.3.9 OptionalChain)	AO-TS-OPTIONAL-CHAIN
+eq-straight	equivalence.ts	straight	start	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+eq-straight	equivalence.ts	straight	end	4	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function ends on the last line of its body	
+eq-straight	equivalence.ts	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	equivalence.ts	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	equivalence.ts	straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	equivalence.ts	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	equivalence.ts	straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	equivalence.ts	straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	equivalence.ts	straight	params	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters the function declares	
+eq-four-deep	equivalence.ts	fourDeep	start	6	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+eq-four-deep	equivalence.ts	fourDeep	end	17	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function ends on the last line of its body	
+eq-four-deep	equivalence.ts	fourDeep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	equivalence.ts	fourDeep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	equivalence.ts	fourDeep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	equivalence.ts	fourDeep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	equivalence.ts	fourDeep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	equivalence.ts	fourDeep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	equivalence.ts	fourDeep	params	4	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters the function declares	
+eq-nested-loops	equivalence.ts	nestedLoops	start	19	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+eq-nested-loops	equivalence.ts	nestedLoops	end	29	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function ends on the last line of its body	
+eq-nested-loops	equivalence.ts	nestedLoops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	equivalence.ts	nestedLoops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	equivalence.ts	nestedLoops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	equivalence.ts	nestedLoops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	equivalence.ts	nestedLoops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	AO-ND-LOOPS
+eq-nested-loops	equivalence.ts	nestedLoops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	equivalence.ts	nestedLoops	params	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters the function declares	
+eq-flat-seven	equivalence.ts	flatSeven	start	31	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function starts on its defining line	
+eq-flat-seven	equivalence.ts	flatSeven	end	55	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: a function ends on the last line of its body	
+eq-flat-seven	equivalence.ts	flatSeven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	equivalence.ts	flatSeven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	equivalence.ts	flatSeven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	equivalence.ts	flatSeven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	equivalence.ts	flatSeven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	equivalence.ts	flatSeven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	equivalence.ts	flatSeven	params	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: the parameters the function declares	
+corpus-regex-code	corpus_regex_code.ts	group	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a regular expression literal (ECMA-262 sec. 12.9.5) is one token, its (?: group no decision	AO-JS-REGEX-AS-CODE
+corpus-optional-call	corpus_optional_call.ts	callIfSet	end	3	ECMA-262 (2025) sec. 15 Functions: a function ends on the last line of its body; a?.() is an optional call expression (sec. 13.3.9)	AO-JS-OPTIONAL-CALL-END
+corpus-type-question	corpus_type_question.ts	narrow	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a conditional type (TypeScript handbook, Conditional Types) is a type, no decision	AO-TS-TYPE-QUESTION
+corpus-type-question	corpus_type_question.ts	narrow	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1: a type is no structure	AO-TS-TYPE-QUESTION-COG
+corpus-function-type	corpus_function_type.ts	wrap	end	9	ECMA-262 (2025) sec. 15.3 ArrowFunction: the block body ends on its closing brace; a function type (TypeScript handbook, Function Type Expressions) is a type	AO-TS-FUNCTION-TYPE-ROW
+corpus-ternary-call	corpus_ternary_call.ts	darken	rows	0	ECMA-262 (2025) sec. 13.14 Conditional Operator: darken(c, 1) is a call in the true branch, no function definition	AO-JS-TERNARY-CALL-ROW
+corpus-arrow-below	corpus_arrow_below.ts	outer	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; the arrow passed to map is a function of its own (ECMA-262 sec. 15.3 ArrowFunction), so its conditional is not outer's	AO-JS-ARROW-BODY-BELOW
+corpus-paren-type	corpus_paren_type.ts	norm	rows	1	ECMA-262 (2025) sec. 15 Functions and TypeScript handbook: each function definition is one function; (string & {}) is a parenthesized type	AO-TS-PAREN-TYPE-PARAM

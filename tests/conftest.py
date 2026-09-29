@@ -9,6 +9,13 @@ import venv
 
 import pytest
 
+import git_env
+
+# Run from a hook or `git bisect run`, the suite inherits the variables that
+# point git at the repo running it; each test's git works in its own repo.
+for _name in git_env.repo_env_names():
+    os.environ.pop(_name, None)
+
 DEPLOY = Path(__file__).resolve().parent / "deploy"
 
 
@@ -100,3 +107,13 @@ def without_home_variables(monkeypatch) -> Path:
     for name in HOME_VARIABLES:
         monkeypatch.delenv(name, raising=False)
     return expected
+
+
+@pytest.fixture
+def on_a_host(monkeypatch):
+    """crapkit refuses a coveragepy lane inside a container unless the lane sets
+    container_ok (docs/configuration.md#lane). A test about what such a lane does
+    on a host stubs the container check, so it passes in the accuracy image and
+    under CRAPKIT_INSIDE_CONTAINER=1 too."""
+    from crapkit import lanes
+    monkeypatch.setattr(lanes, "_in_container", lambda: False)

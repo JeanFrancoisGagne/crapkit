@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from crapkit import gitio
 from crapkit.cli.scoring import _DIRTY_TREE_NOTE, _dirty_note
 from crapkit.config import Lane
 from crapkit.errors import GitError
@@ -87,6 +88,51 @@ def test_the_measured_stamp_keeps_digests_never_environment_values(tmp_path, mon
     assert "hunter2-value" not in json.dumps(stamp)
     assert "OLDPWD" not in stamp["proof_parts"]["env"]
     assert lane_reuse_verdict(repo, _lane()).reason == ""
+
+
+def _fail_status_once(monkeypatch) -> None:
+    """The first read of the uncommitted set fails, as a full disk or a git
+    process that cannot start makes it fail; every later read answers."""
+    real, failed = gitio.status_names, []
+
+    def status_names(root):
+        if failed:
+            return real(root)
+        failed.append(root)
+        raise GitError("git exited 128: forced")
+
+    monkeypatch.setattr(gitio, "status_names", status_names)
+
+
+def test_a_git_failure_while_measuring_is_named_not_read_as_uncommitted_changes(tmp_path, monkeypatch):
+    """git's read of the clean tree fails as the lane starts. Nothing proved the
+    lane, so it reruns, and the rerun names the failed read: the stamp used to
+    say the lane was measured with uncommitted changes the tree never had."""
+    _fail_status_once(monkeypatch)
+    repo = _measured(tmp_path)
+    monkeypatch.undo()
+
+    reason = lane_reuse_verdict(repo, _lane()).reason
+
+    assert reason.startswith("its stamp holds no proof: "), reason
+    assert "git exited 128: forced" in reason and "uncommitted change" not in reason, reason
+
+
+def test_a_stamp_that_records_no_cause_keeps_the_old_sentence(tmp_path):
+    """A stamp an older crapkit wrote holds no `unproved`: the rerun can only
+    name both causes it may have had."""
+    repo = _measured(tmp_path)
+    _edit_stamp(repo, lambda stamp: stamp.update(proof=""))
+
+    assert lane_reuse_verdict(repo, _lane()).reason == (
+        "its stamp holds no proof: it was measured with uncommitted changes, or by a crapkit "
+        "that recorded none")
+
+
+def test_a_clean_measurement_records_no_cause(tmp_path):
+    stamp = read_stamps(_measured(tmp_path))[_lane().artifact]
+
+    assert stamp["proof"] and "unproved" not in stamp
 
 
 def test_outside_git_the_dirty_tree_question_raises_rather_than_answering_clean(tmp_path):

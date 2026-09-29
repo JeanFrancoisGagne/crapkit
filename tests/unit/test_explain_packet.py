@@ -359,6 +359,95 @@ def test_a_blank_body_line_prints_blank_instead_of_bare_indentation(repo, capsys
             "      Co-Authored-By: t <t@t>\n") in out
 
 
+# --- a message comes back as git stored it, whatever bytes it holds -----------
+# explain framed each record with a \x01 line and a \x02 line, read git's output in
+# text mode and split it with str.splitlines: a body could end its own record, open a
+# phantom one, crash the parse, or come back with \r, \x0c, \x1c and \x85 as newlines.
+
+def _commit_verbatim(repo: Path, message: bytes, edit: bytes = b"if a and b and a != b:") -> None:
+    """A commit in guarded's span whose message git stores byte for byte."""
+    path = repo / "pylib" / "mod.py"
+    path.write_bytes(path.read_bytes().replace(b"if a and b:", edit))
+    _run_git(repo, "add", "-A")
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q",
+                    "--cleanup=verbatim", "-F", "-"], cwd=repo, input=message, check=True,
+                   capture_output=True)
+
+
+def _messages(repo: Path, capsys) -> list[tuple[str, str]]:
+    commits = _named(_payload(repo, capsys, history=True), "guarded( ")["commits"]
+    return [(c["subject"], c["body"]) for c in commits]
+
+
+@pytest.mark.parametrize("body", ["line one\n\x02\nafter the stx line",
+                                  "first\n\x01zz 2025-01-01 fake subject\nlast",
+                                  "\x01only\nlast"],
+                         ids=["stx-line", "soh-line", "soh-word"])
+def test_a_body_line_holding_a_record_mark_stays_in_its_commit(repo, capsys, body):
+    _commit_verbatim(repo, f"odd body\n\n{body}\n".encode())
+
+    assert _messages(repo, capsys) == [("odd body", body), ("seed the module", "")]
+
+
+def test_line_separators_in_a_body_come_back_as_committed(repo, capsys):
+    body = "half\rway, before\x0cafter\nsep\x1crecord, split\x85here"
+    _commit_verbatim(repo, f"separators\n\n{body}\n".encode())
+
+    assert _messages(repo, capsys) == [("separators", body), ("seed the module", "")]
+
+
+def test_a_carriage_return_in_a_subject_stays_in_the_subject(repo, capsys):
+    _commit_verbatim(repo, b"half\rsubject\n\nbody\n")
+
+    assert _messages(repo, capsys)[0] == ("half\rsubject", "body")
+
+
+def test_a_carriage_return_in_a_subject_prints_the_rest_on_an_indented_line(repo, capsys):
+    """A raw \\r on the sha line would move the cursor back over the sha."""
+    _commit_verbatim(repo, b"half\rsubject\n\nbody\n")
+    sha, date = _head(repo)
+
+    out = _explain(repo, capsys, history=True, name="guarded")
+
+    assert out.startswith(GOLDEN_A + f"    {sha} {date} half\n      subject\n      body\n")
+
+
+def test_a_body_without_a_final_newline_keeps_its_text(repo, capsys):
+    _commit_verbatim(repo, b"subject\n\nbody without a final newline")
+
+    assert _messages(repo, capsys)[0] == ("subject", "body without a final newline")
+
+
+def test_a_span_holding_bytes_that_are_not_utf8_still_lists_its_commits(repo, capsys):
+    """git prints the span's hunks in the file's own bytes; none of them is a message."""
+    _commit_verbatim(repo, b"latin-1 comment\n", edit=b"if a and b:  # caf\xe9")
+
+    assert _messages(repo, capsys) == [("latin-1 comment", ""), ("seed the module", "")]
+
+
+def test_a_repo_logging_in_latin1_still_reads_its_messages_as_committed(repo, capsys):
+    """i18n.logOutputEncoding makes git re-encode every message it prints."""
+    _run_git(repo, "config", "i18n.logOutputEncoding", "ISO-8859-1")
+    _commit_verbatim(repo, "café subject\n\ncafé body\n".encode())
+
+    assert _messages(repo, capsys)[0] == ("café subject", "café body")
+
+
+def test_a_record_mark_in_a_body_prints_under_its_own_commit(repo, capsys):
+    _commit_verbatim(repo, b"soh body\n\nfirst\n\x01zz 2025-01-01 fake subject\nlast\n")
+    sha, date = _head(repo)
+    seed_sha, seed_date = _seed_commit(repo)
+
+    out = _explain(repo, capsys, history=True, name="guarded")
+
+    assert out == (GOLDEN_A
+                   + f"    {sha} {date} soh body\n"
+                   + "      first\n"
+                   + "      \x01zz 2025-01-01 fake subject\n"
+                   + "      last\n"
+                   + f"    {seed_sha} {seed_date} seed the module\n")
+
+
 UNBORN = "pylib/mod.py:1-4 holds only uncommitted lines, so no commit has touched it yet"
 
 

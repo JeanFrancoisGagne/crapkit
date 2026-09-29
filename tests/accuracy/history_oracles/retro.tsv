@@ -1,0 +1,12 @@
+id	fix_commits	test
+R03	4572a4cd366e	tests/accuracy/history_oracles/test_changed_ranges.py::test_content_lines_starting_with_plus_plus
+R32	c24e6a427ff3	tests/accuracy/history_oracles/test_burn_down.py::test_value_changes_move_mark_age
+R57	5a1c97d9e461	tests/accuracy/history_oracles/test_churn_oracle.py::test_weight_independent_of_commit_order
+R58	0fca841902a2	tests/accuracy/history_oracles/test_churn_concurrency.py::test_commit_during_walk_counts_once
+R59	eb4f540c17b8	tests/accuracy/history_oracles/test_churn_clock.py::test_month_end_floor_matches_cold_walk
+R73	2656879f513b	tests/accuracy/history_oracles/test_churn_oracle.py::test_root_below_git_top_joins
+R76	86f7171e52cc	tests/accuracy/history_oracles/test_coupling_oracle.py::test_non_ascii_paths_with_quotepath
+R77	650d6c3db9e9	tests/accuracy/history_oracles/test_coupling_oracle.py::test_renamed_path_never_ranks
+R94	596172d4866c	tests/accuracy/history_oracles/test_churn_oracle.py::test_single_timestamp_weighs_one
+R101	feb5056da572	tests/accuracy/history_oracles/test_coupling_oracle.py::test_non_string_paths_pair
+R103	e3f42138fa82	tests/accuracy/history_oracles/test_churn_oracle.py::test_authors_match_window_after_carry

@@ -1,0 +1,28 @@
+{
+ "runs": [
+  {
+   "baseline": false,
+   "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
+   "created_at": "<created_at>",
+   "findings": 0,
+   "id": 1,
+   "kind": "inventory",
+   "lanes": [],
+   "verdict_ok": null
+  },
+  {
+   "baseline": true,
+   "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
+   "created_at": "<created_at>",
+   "findings": 0,
+   "id": 2,
+   "kind": "coverage",
+   "lanes": [
+    "py",
+    "ts"
+   ],
+   "verdict_ok": null
+  }
+ ],
+ "schema": 1
+}

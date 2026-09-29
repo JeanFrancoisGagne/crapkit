@@ -1,0 +1,127 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	equivalence.cpp	straight	start	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+eq-straight	equivalence.cpp	straight	end	4	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+eq-straight	equivalence.cpp	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	equivalence.cpp	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	equivalence.cpp	straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	equivalence.cpp	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	equivalence.cpp	straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	equivalence.cpp	straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	equivalence.cpp	straight	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+eq-four-deep	equivalence.cpp	four_deep	start	6	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+eq-four-deep	equivalence.cpp	four_deep	end	17	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+eq-four-deep	equivalence.cpp	four_deep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	equivalence.cpp	four_deep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	equivalence.cpp	four_deep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	equivalence.cpp	four_deep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	equivalence.cpp	four_deep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	equivalence.cpp	four_deep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	equivalence.cpp	four_deep	params	4	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+eq-nested-loops	equivalence.cpp	nested_loops	start	19	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+eq-nested-loops	equivalence.cpp	nested_loops	end	29	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+eq-nested-loops	equivalence.cpp	nested_loops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	equivalence.cpp	nested_loops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	equivalence.cpp	nested_loops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	equivalence.cpp	nested_loops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	equivalence.cpp	nested_loops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	AO-ND-LOOPS
+eq-nested-loops	equivalence.cpp	nested_loops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	equivalence.cpp	nested_loops	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+eq-flat-seven	equivalence.cpp	flat_seven	start	31	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+eq-flat-seven	equivalence.cpp	flat_seven	end	55	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+eq-flat-seven	equivalence.cpp	flat_seven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	equivalence.cpp	flat_seven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	equivalence.cpp	flat_seven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	equivalence.cpp	flat_seven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	equivalence.cpp	flat_seven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	equivalence.cpp	flat_seven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	equivalence.cpp	flat_seven	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+c-branches	constructs.cpp	branches	start	3	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+c-branches	constructs.cpp	branches	end	11	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+c-branches	constructs.cpp	branches	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and else if; else adds no decision	
+c-branches	constructs.cpp	branches	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-branches	constructs.cpp	branches	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else if +1, else +1	
+c-branches	constructs.cpp	branches	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each arm's body one level deep	
+c-branches	constructs.cpp	branches	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+c-pick	constructs.cpp	pick	start	13	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+c-pick	constructs.cpp	pick	end	24	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+c-pick	constructs.cpp	pick	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; three case labels, default excluded	
+c-pick	constructs.cpp	pick	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; the switch is one decision	
+c-pick	constructs.cpp	pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; switch +1	
+c-pick	constructs.cpp	pick	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the case bodies sit inside the switch	AO-N-CASE-C
+c-pick	constructs.cpp	pick	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+c-logic	constructs.cpp	logic	start	26	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+c-logic	constructs.cpp	logic	end	31	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+c-logic	constructs.cpp	logic	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and three short-circuit operators	
+c-logic	constructs.cpp	logic	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-logic	constructs.cpp	logic	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the && run +1, || +1	
+c-logic	constructs.cpp	logic	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	AO-N-CONDITION-C
+c-logic	constructs.cpp	logic	params	4	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+c-choose	constructs.cpp	choose	start	33	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+c-choose	constructs.cpp	choose	end	35	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+c-choose	constructs.cpp	choose	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one conditional operator	
+c-choose	constructs.cpp	choose	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-choose	constructs.cpp	choose	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1	
+c-choose	constructs.cpp	choose	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the ternary's operands	
+c-choose	constructs.cpp	choose	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+c-loops	constructs.cpp	loops	start	37	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+c-loops	constructs.cpp	loops	end	46	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+c-loops	constructs.cpp	loops	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops	
+c-loops	constructs.cpp	loops	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-loops	constructs.cpp	loops	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two loops at nesting 0, +1 each	
+c-loops	constructs.cpp	loops	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; two loops side by side	
+c-loops	constructs.cpp	loops	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+c-outer	constructs.cpp	outer	start	48	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+c-outer	constructs.cpp	outer	end	58	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+c-outer	constructs.cpp	outer	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops and an if	
+c-outer	constructs.cpp	outer	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-outer	constructs.cpp	outer	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, loop +2, if +3, the jump to a label +1	
+c-outer	constructs.cpp	outer	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; an if inside two loops	AO-ND-LOOPS-IF
+c-outer	constructs.cpp	outer	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+c-fact	constructs.cpp	fact	start	60	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+c-fact	constructs.cpp	fact	end	65	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+c-fact	constructs.cpp	fact	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+c-fact	constructs.cpp	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-fact	constructs.cpp	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	
+c-fact	constructs.cpp	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
+c-fact	constructs.cpp	fact	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	
+c-guarded	constructs.cpp	guarded	start	67	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function starts on its defining line	
+c-guarded	constructs.cpp	guarded	end	76	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function ends on the last line of its body	
+c-guarded	constructs.cpp	guarded	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two catch clauses	
+c-guarded	constructs.cpp	guarded	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-guarded	constructs.cpp	guarded	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two catch clauses at nesting 0, +1 each	
+c-guarded	constructs.cpp	guarded	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each catch body; try opens none	
+c-guarded	constructs.cpp	guarded	params	1	ISO/IEC 14882:2020 [dcl.fct.def.general]: the parameters the function declares	AO-C-VOID-FNPTR-PARAM
+c-closure-if	shapes.cpp	closure_if	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the closure raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
+c-closure-if	shapes.cpp	closure_if	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the closure	AO-N-CLOSURE-IF
+c-closure-if	shapes.cpp	closure_if	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+cpp-template-less	shapes.cpp	after_limit	start	16	ISO/IEC 14882:2020 [temp.param] and [dcl.fct.def.general]: a default template argument is an expression, so (N < 19) is a parenthesized comparison and after_limit is a function definition that starts on its defining line	AO-CPP-TEMPLATE-DEFAULT-LESS
+rv-take	rvalue.cpp	take	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; no decision	
+rv-take	rvalue.cpp	take	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; no structure	
+rv-take	rvalue.cpp	take	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; no structure	AO-CPP-RVALUE-ND
+rv-pass	rvalue.cpp	pass	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; a forwarding reference; no decision	
+rv-pass	rvalue.cpp	pass	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; no structure	
+rv-apply	rvalue.cpp	apply	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+rv-bind	rvalue.cpp	bind_local	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; no decision	
+rv-bind	rvalue.cpp	bind_local	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; auto&& in a declaration; no structure	AO-CPP-RVALUE-BODY-COG
+rv-each	rvalue.cpp	each_ref	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; one range-for loop	AO-CPP-RVALUE-FOR
+rv-each	rvalue.cpp	each_ref	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; the loop +1	AO-CPP-RVALUE-FOR-COG
+rv-each	rvalue.cpp	each_ref	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; the loop body	AO-CPP-RVALUE-FOR-ND
+rv-cast	rvalue.cpp	cast_ref	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; a cast to Widget&&; no decision	AO-CPP-RVALUE-BODY
+rv-cast	rvalue.cpp	cast_ref	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; no structure	AO-CPP-RVALUE-BODY-COG
+rv-lambda	rvalue.cpp	lambda_ref	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; a lambda taking auto&&; no decision	AO-CPP-RVALUE-BODY
+rv-lambda	rvalue.cpp	lambda_ref	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ISO/IEC 14882:2020 [dcl.ref]: the && of a declarator declares a reference, no operator; no structure	AO-CPP-RVALUE-BODY-COG
+sc-pow10	scoped.cpp	pow10	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one conditional operator	
+sc-pow10	scoped.cpp	pow10	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1, the call to itself +1 (recursion)	AO-CPP-QUALIFIED-RECURSION
+sc-fact	scoped.cpp	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the call to itself +1 (recursion)	AO-CPP-QUALIFIED-RECURSION
+sc-open	scoped.cpp	open	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1; File(fd) constructs the class and calls no open	AO-CPP-CLASS-NAME-RECURSION
+sc-defaulted	scoped.cpp	Calc	rows	2	ISO/IEC 14882:2020 [dcl.fct.def.general]: a function-body may be = default ; or = delete ;, so Calc() and Calc(const Calc&) are two function definitions	AO-CPP-DEFAULTED
+sc-check	scoped.cpp	check	rows	0	ISO/IEC 14882:2020 [dcl.fct.def.general]: check has no function-body, so it is a declaration and no function definition	AO-CPP-DECLTYPE-BRACE
+sc-outer	scoped.cpp	outer	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; the if belongs to Local::twice, a function of its own (ISO/IEC 14882:2020 [class.local])	AO-CPP-LOCAL-CLASS
+sc-twice	scoped.cpp	twice	rows	1	ISO/IEC 14882:2020 [class.local] and [dcl.fct.def.general]: a local class's member function defined in its class is one function definition	AO-CPP-LOCAL-CLASS-ROW
+sc-pick	scoped.cpp	pick	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the ternary in its braceless body +1 and +1 nesting	AO-COG-BRACELESS-BODY
+sc-pick	scoped.cpp	pick	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; an if and a conditional operator	
+sc-first	scoped.cpp	first	params	2	ISO/IEC 14882:2020 [dcl.fct]: a parameter-declaration may omit its declarator-id; two parameters	AO-C-PARAMS-UNNAMED
+sc-head	scoped.cpp	head	params	1	ISO/IEC 14882:2020 [dcl.fct]: one parameter, a reference to an array	AO-C-PARAMS-ARRAY
+ov-forward	overloads.cpp	starts_with@12	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3 and ISO/IEC 14882:2020 [over.match]: starts_with(View{prefix}) calls the View overload, so no recursion	
+ov-longer	overloads.cpp	depth@18	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3 and ISO/IEC 14882:2020 [over.match]: depth(n, 0) calls the two-parameter overload, so no recursion	
+ov-self	overloads.cpp	depth@23	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, depth(n - 1, acc + 1) calls itself +1 (recursion)	

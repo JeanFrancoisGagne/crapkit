@@ -1,0 +1,87 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	equivalence.zig	straight	start	1	Zig Language Reference 0.15, Functions: a function starts on its defining line	
+eq-straight	equivalence.zig	straight	end	4	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	
+eq-straight	equivalence.zig	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	equivalence.zig	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	equivalence.zig	straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	equivalence.zig	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	equivalence.zig	straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	equivalence.zig	straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	equivalence.zig	straight	params	1	Zig Language Reference 0.15, Functions: the parameters the function declares	
+eq-four-deep	equivalence.zig	fourDeep	start	6	Zig Language Reference 0.15, Functions: a function starts on its defining line	
+eq-four-deep	equivalence.zig	fourDeep	end	17	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	
+eq-four-deep	equivalence.zig	fourDeep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	equivalence.zig	fourDeep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	equivalence.zig	fourDeep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	equivalence.zig	fourDeep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	equivalence.zig	fourDeep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	equivalence.zig	fourDeep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	equivalence.zig	fourDeep	params	4	Zig Language Reference 0.15, Functions: the parameters the function declares	
+eq-nested-loops	equivalence.zig	nestedLoops	start	19	Zig Language Reference 0.15, Functions: a function starts on its defining line	
+eq-nested-loops	equivalence.zig	nestedLoops	end	32	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	
+eq-nested-loops	equivalence.zig	nestedLoops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	equivalence.zig	nestedLoops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	equivalence.zig	nestedLoops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	equivalence.zig	nestedLoops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	equivalence.zig	nestedLoops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	AO-ND-LOOPS
+eq-nested-loops	equivalence.zig	nestedLoops	nloc	14	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	equivalence.zig	nestedLoops	params	1	Zig Language Reference 0.15, Functions: the parameters the function declares	
+eq-flat-seven	equivalence.zig	flatSeven	start	34	Zig Language Reference 0.15, Functions: a function starts on its defining line	
+eq-flat-seven	equivalence.zig	flatSeven	end	58	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	
+eq-flat-seven	equivalence.zig	flatSeven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	equivalence.zig	flatSeven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	equivalence.zig	flatSeven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	equivalence.zig	flatSeven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	equivalence.zig	flatSeven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	equivalence.zig	flatSeven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	equivalence.zig	flatSeven	params	1	Zig Language Reference 0.15, Functions: the parameters the function declares	
+c-branches	constructs.zig	branches	start	1	Zig Language Reference 0.15, Functions: a function starts on its defining line	
+c-branches	constructs.zig	branches	end	9	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	
+c-branches	constructs.zig	branches	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and else if; else adds no decision	
+c-branches	constructs.zig	branches	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-branches	constructs.zig	branches	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else if +1, else +1	
+c-branches	constructs.zig	branches	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each arm's body one level deep	
+c-branches	constructs.zig	branches	params	1	Zig Language Reference 0.15, Functions: the parameters the function declares	
+c-pick	constructs.zig	pick	start	11	Zig Language Reference 0.15, Functions: a function starts on its defining line	
+c-pick	constructs.zig	pick	end	18	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	
+c-pick	constructs.zig	pick	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; three case labels, default excluded	AO-ZIG-ELSE-PRONG
+c-pick	constructs.zig	pick	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; the switch is one decision	AO-ZIG-SWITCH-MOD
+c-pick	constructs.zig	pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; switch +1	AO-ZIG-COG-ELSE-PRONG
+c-pick	constructs.zig	pick	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the case bodies sit inside the switch	AO-N-MATCH
+c-pick	constructs.zig	pick	params	1	Zig Language Reference 0.15, Functions: the parameters the function declares	
+c-logic	constructs.zig	logic	start	20	Zig Language Reference 0.15, Functions: a function starts on its defining line	
+c-logic	constructs.zig	logic	end	25	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	
+c-logic	constructs.zig	logic	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and three short-circuit operators	
+c-logic	constructs.zig	logic	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-logic	constructs.zig	logic	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the && run +1, || +1	
+c-logic	constructs.zig	logic	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
+c-logic	constructs.zig	logic	params	4	Zig Language Reference 0.15, Functions: the parameters the function declares	
+c-loops	constructs.zig	loops	start	27	Zig Language Reference 0.15, Functions: a function starts on its defining line	
+c-loops	constructs.zig	loops	end	36	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	
+c-loops	constructs.zig	loops	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops	
+c-loops	constructs.zig	loops	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-loops	constructs.zig	loops	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two loops at nesting 0, +1 each	AO-COG-WHILE-AFTER-BRACE
+c-loops	constructs.zig	loops	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; two loops side by side	
+c-loops	constructs.zig	loops	params	1	Zig Language Reference 0.15, Functions: the parameters the function declares	
+c-outer	constructs.zig	outer	start	38	Zig Language Reference 0.15, Functions: a function starts on its defining line	
+c-outer	constructs.zig	outer	end	47	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	
+c-outer	constructs.zig	outer	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops and an if	
+c-outer	constructs.zig	outer	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-outer	constructs.zig	outer	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, loop +2, if +3, the jump to a label +1	
+c-outer	constructs.zig	outer	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; an if inside two loops	
+c-outer	constructs.zig	outer	params	1	Zig Language Reference 0.15, Functions: the parameters the function declares	
+c-fact	constructs.zig	fact	start	49	Zig Language Reference 0.15, Functions: a function starts on its defining line	
+c-fact	constructs.zig	fact	end	54	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	
+c-fact	constructs.zig	fact	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+c-fact	constructs.zig	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-fact	constructs.zig	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
+c-fact	constructs.zig	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
+c-fact	constructs.zig	fact	params	1	Zig Language Reference 0.15, Functions: the parameters the function declares	
+z-pair	shapes.zig	pair	end	7	Zig Language Reference 0.15, Functions: a function ends on the last line of its body	AO-ZIG-STRUCT-RETURN
+z-fn-param	shapes.zig	sortWith	params	3	Zig Language Reference 0.15, Functions: the parameters the function declares, T, items and lessThan	AO-ZIG-FN-PARAM
+z-tries	shapes.zig	tries	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: try is no structure	AO-ZIG-TRY-ND
+z-tries	shapes.zig	tries	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; each try returns early on an error, one binary decision each	
+z-optional	shapes.zig	indexOf	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a type decides nothing	AO-ZIG-OPTIONAL
+z-optional	shapes.zig	indexOf	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: no structure	AO-ZIG-OPTIONAL-ND
+z-payload-else	shapes.zig	payloadElse	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the else if +1 (the payload sits between the else and its if)	AO-ZIG-PAYLOAD-ELSE
+z-prong-continue	shapes.zig	prongContinue	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; for +1, switch +2; an unlabeled continue adds nothing	AO-ZIG-ARM-JUMP

@@ -63,8 +63,16 @@ def exclude_matcher(globs: tuple[str, ...]) -> Callable[[str], re.Match[str] | N
     return re.compile("|".join(_glob_regex(g.lower()) for g in globs)).match
 
 
+def in_test_dir(path: str) -> bool:
+    """Does a test, tests or __tests__ component, in any case, put this path in a
+    test directory? The scored corpus drops such a path whatever the exclude globs
+    say, and `test-scoped` routes one outside every scope; a test NAME elsewhere
+    (test_x.py, x.spec.ts) is source until an exclude glob says otherwise."""
+    return _TEST_DIR.search(path) is not None
+
+
 def excluded(path: str, match_glob: Callable[[str], re.Match[str] | None]) -> bool:
-    return bool(_TEST_DIR.search(path) or _DOT_DIR.search(path) or match_glob(path.lower()))
+    return bool(in_test_dir(path) or _DOT_DIR.search(path) or match_glob(path.lower()))
 
 
 def _source_extensions(languages: tuple[str, ...]) -> tuple[str, ...]:

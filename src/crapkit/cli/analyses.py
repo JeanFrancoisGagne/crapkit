@@ -74,12 +74,13 @@ def _mutation_targets(root: Path, files: list | None, cwd: Path | None = None) -
     """path -> changed line set (None = whole file). Default is diff-scoped:
     only the working tree's changes vs HEAD grow mutants; `--files` are said
     from `cwd`, where the user stands."""
-    from ..diffparse import changed_ranges
+    from ..diffparse import worktree_ranges
     from ..gitio import diff_since
 
     if files:
         return {_repo_relative(f, root, cwd): None for f in files}
-    targets = {p: _range_lines(rs) for p, rs in changed_ranges(diff_since(root, "HEAD")).items()}
+    ranges = worktree_ranges(diff_since(root, "HEAD"), root)
+    targets = {p: _range_lines(rs) for p, rs in ranges.items()}
     if not targets:
         raise CrapkitError("no changes vs HEAD to mutate - name files with --files")
     return targets

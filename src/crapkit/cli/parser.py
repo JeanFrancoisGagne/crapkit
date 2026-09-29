@@ -9,7 +9,7 @@ import sys
 
 from .. import __version__
 from ..errors import ConfigError, CrapkitError, GitError
-from ..invocation import _self, quoted_path
+from ..invocation import _self, quoted_path, shell_arg
 
 # The claude-* namespace, named here rather than read off the parser, because the
 # guard has to answer before argparse sees the argv at all. A plugin's hooks.json
@@ -546,7 +546,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="restrict to this configured scope (repeatable); exact, not substring")
     wl.add_argument("--batches", type=int, default=None, metavar="N",
                     help="split the active list into at most N batches with no shared "
-                         "files, co-changing files kept together: one per agent session")
+                         "files, co-changing files kept together and summed risk balanced "
+                         "across batches: one per agent session")
     wl.add_argument("--json", action="store_true",
                     help="print as JSON: the map alone, without the next-step lines the text ends with")
     wl.set_defaults(func=_Handler("queue", "cmd_worklist"))
@@ -646,7 +647,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     dup = sub.add_parser("duplication", help="near-duplicate functions by normalized line shingles")
     dup.add_argument("--repo", **_REPO_FLAG)
-    dup.add_argument("--min-lines", type=int, default=8, help="smallest function considered (default 8)")
+    dup.add_argument("--min-lines", type=int, default=8,
+                     help="fewest code lines of its own a function needs, blank and comment "
+                          "lines left out (default 8)")
     dup.add_argument("--similarity", type=float, default=0.8,
                      help="containment threshold, shared/smaller (default 0.8)")
     dup.add_argument("--top", type=int, default=50, help="cap the pair list (default 50)")
@@ -730,9 +733,10 @@ def _path_first_arg(argv: list[str] | None) -> str | None:
 def _refuse_path_argument(arg: str) -> int:
     """Same exit code argparse already gave this argv, with the route the dump
     left out. Nothing that used to work changes: every argv reaching here was a
-    usage error before."""
+    usage error before. The path goes back into the command as one shell word:
+    printed as it came, a space split it and Git Bash ate its backslashes."""
     print(f"crapkit: {quoted_path(arg)} is not a subcommand; the repo is a flag on one, "
-          f"e.g. `{_self()} inventory --repo {arg}` "
+          f"e.g. `{_self()} inventory --repo {shell_arg(arg)}` "
           f"(`{_self()} --help` lists the subcommands)", file=sys.stderr)
     return 2
 

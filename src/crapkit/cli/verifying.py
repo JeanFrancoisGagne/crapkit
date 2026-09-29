@@ -12,11 +12,12 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from .. import config, lane_results
 from ..errors import ConfigError, CrapkitError, ToolError
+from ..invariants import STORED, UNSETTLED, check_rows, check_verdict
 from ..invocation import _self
 from ..named import first_few
 from ..repopath import typed_path
 from ..store import SnapshotStore
-from ..universe import owning_scope, path_matchers
+from ..universe import in_test_dir, owning_scope, path_matchers
 from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
                       _ratchet_key_version, _refuse_unwritable_outputs, _repo_out_path,
@@ -232,7 +233,9 @@ def _verify_basis(root: Path, store: SnapshotStore, args, git) -> tuple[dict, st
 
 def _emit_baseline(root: Path, store: SnapshotStore, baseline: dict, rel: str | None) -> None:
     """Write the baseline this run used as a portable file, before the verdict:
-    a run that ends in a failure still owes the operator its basis.
+    a run that ends in a failure still owes the operator its basis. The file
+    names the tests that run failed, so a verify against it forgives the same
+    failures a verify against the stored run does.
 
     Through `_repo_out_path`, so `--emit-baseline out/new/b.tsv` creates the
     directory the way `--export`, `--sarif` and `report --out` do."""
@@ -546,12 +549,17 @@ def _settle_verify(store: SnapshotStore, run_id: int, verdict,
     """Stamp the verdict; a clean pass (not an override) tightens the ratchet.
     Returns the tighten's counts, or None when the tighten wrote nothing.
 
+    The verdict an override settled is checked against the README's exit
+    table again first, so neither the stamp nor the tighten reads a verdict
+    whose `ok` and exit disagree.
+
     `--no-tighten` is the blunt escape: the verdict still stands, the marks file
     is simply not rewritten.
     """
     from ..ratchet import update_ratchet
     from ..verify import dirty_counts
 
+    check_verdict(verdict, _verify_exit_code(verdict), kept=UNSETTLED)
     changes = None
     if verdict.ok and not verdict.overridden and not args.no_tighten:
         hold = _held_marks(store, cfg, commit, run_id, ratchet, scored)
@@ -974,7 +982,7 @@ def _refuse_lane_less_verify(cfg) -> None:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    from ..diffparse import changed_ranges
+    from ..diffparse import worktree_ranges
     from ..gitio import GitFacts, diff_since
     from ..uncovered import missing_by_path
     from ..verify import (diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage,
@@ -1010,7 +1018,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
         raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
     _refuse_unreadable_junits(cfg.lanes, provenance)
 
-    ranges = changed_ranges(diff_since(root, basis))
+    ranges = worktree_ranges(diff_since(root, basis), root)
     _warn_untracked_in_scope(untracked)
     ratchet = judged.marks.entries
     key_version = _check_ratchet_identity(judged.marks.text or "", root, cfg.ratchet_file,
@@ -1037,6 +1045,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
     verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
     verdict = with_unread(verdict, run.corpus.unread, set(ranges) | dirty, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
+    # Every row and the verdict meet their documented bounds, or nothing is written.
+    check_rows(scored, cfg.ceiling_of)
+    check_verdict(verdict, _verify_exit_code(verdict), kept=STORED)
     run_id = store.write_run(commit=commit, tool_versions=tool_versions, rows=scored,
                              lanes=_stored_lanes(provenance, verdict.retried_passes), kind="verify",
                              sources=run.sources)
@@ -1169,11 +1180,6 @@ def _owning_scope(path: str, scope_paths: dict[str, tuple[str, ...]]) -> str | N
     return owning_scope(path, path_matchers(scope_paths))
 
 
-def _is_test_path(path: str) -> bool:
-    parts = path.lower().split("/")
-    return any(p in ("test", "tests", "__tests__") for p in parts[:-1])         or parts[-1].startswith("test_") or ".test." in parts[-1] or ".spec." in parts[-1]
-
-
 _AMBIGUOUS_TEST = (
     "{path} is a test file outside every scope and {n} scopes declare templates "
     "({names}). Two routes work: name a SOURCE file from the scope you mean and "
@@ -1184,14 +1190,24 @@ _AMBIGUOUS_TEST = (
 
 
 def _route_unowned(path: str, templates: dict) -> str:
-    """Test directories sit outside every scope by design, so a test file routes
-    to the templated scope — unambiguously when there is exactly one."""
-    if _is_test_path(path) and len(templates) == 1:
-        return next(iter(templates))
-    if _is_test_path(path) and templates:
-        raise ConfigError(_AMBIGUOUS_TEST.format(path=path, n=len(templates),
-                                                 names=", ".join(sorted(templates))))
-    raise ConfigError(f"{path} belongs to no declared scope")
+    """Test directories sit outside every scope by design, so a file in one routes
+    to the templated scope, unambiguously when there is exactly one. A test name
+    elsewhere is source to the scored corpus and routes nowhere: calling
+    tools/test_helper.py a test once ran the only template on a file no scope owns."""
+    if not in_test_dir(path):
+        raise ConfigError(f"{path} belongs to no declared scope, and only a file under a "
+                          "test, tests or __tests__ directory runs without one")
+    if len(templates) != 1:
+        raise ConfigError(_no_single_owner(path, templates))
+    return next(iter(templates))
+
+
+def _no_single_owner(path: str, templates: dict) -> str:
+    """Why a file in a test directory outside every scope has no template to run it."""
+    if not templates:
+        return (f"{path} is a test file outside every scope, and no scope declares a "
+                "[crapkit.scoped_tests] template")
+    return _AMBIGUOUS_TEST.format(path=path, n=len(templates), names=", ".join(sorted(templates)))
 
 
 def _group_files_by_scope(files, scope_paths: dict, templates: dict,

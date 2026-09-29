@@ -1,0 +1,141 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	Equivalence.swift	straight	start	1	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+eq-straight	Equivalence.swift	straight	end	4	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+eq-straight	Equivalence.swift	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	Equivalence.swift	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	Equivalence.swift	straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	Equivalence.swift	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	Equivalence.swift	straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	Equivalence.swift	straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	Equivalence.swift	straight	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+eq-four-deep	Equivalence.swift	fourDeep	start	6	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+eq-four-deep	Equivalence.swift	fourDeep	end	17	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+eq-four-deep	Equivalence.swift	fourDeep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	Equivalence.swift	fourDeep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	Equivalence.swift	fourDeep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	Equivalence.swift	fourDeep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	Equivalence.swift	fourDeep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	Equivalence.swift	fourDeep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	Equivalence.swift	fourDeep	params	4	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+eq-nested-loops	Equivalence.swift	nestedLoops	start	19	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+eq-nested-loops	Equivalence.swift	nestedLoops	end	29	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+eq-nested-loops	Equivalence.swift	nestedLoops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	Equivalence.swift	nestedLoops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	Equivalence.swift	nestedLoops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	Equivalence.swift	nestedLoops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	Equivalence.swift	nestedLoops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	
+eq-nested-loops	Equivalence.swift	nestedLoops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	Equivalence.swift	nestedLoops	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+eq-flat-seven	Equivalence.swift	flatSeven	start	31	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+eq-flat-seven	Equivalence.swift	flatSeven	end	55	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+eq-flat-seven	Equivalence.swift	flatSeven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	Equivalence.swift	flatSeven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	Equivalence.swift	flatSeven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	Equivalence.swift	flatSeven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	Equivalence.swift	flatSeven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	Equivalence.swift	flatSeven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	Equivalence.swift	flatSeven	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+c-branches	Constructs.swift	branches	start	1	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+c-branches	Constructs.swift	branches	end	9	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+c-branches	Constructs.swift	branches	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and else if; else adds no decision	
+c-branches	Constructs.swift	branches	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-branches	Constructs.swift	branches	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else if +1, else +1	
+c-branches	Constructs.swift	branches	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each arm's body one level deep	
+c-branches	Constructs.swift	branches	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+c-pick	Constructs.swift	pick	start	11	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+c-pick	Constructs.swift	pick	end	22	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+c-pick	Constructs.swift	pick	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; three case labels, default excluded	
+c-pick	Constructs.swift	pick	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; the switch is one decision	
+c-pick	Constructs.swift	pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; switch +1	
+c-pick	Constructs.swift	pick	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the case bodies sit inside the switch	AO-N-CASES-STACK
+c-pick	Constructs.swift	pick	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+c-logic	Constructs.swift	logic	start	24	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+c-logic	Constructs.swift	logic	end	29	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+c-logic	Constructs.swift	logic	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and three short-circuit operators	
+c-logic	Constructs.swift	logic	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-logic	Constructs.swift	logic	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the && run +1, || +1	
+c-logic	Constructs.swift	logic	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	AO-N-LOGICAL-NO-PARENS
+c-logic	Constructs.swift	logic	params	4	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+c-choose	Constructs.swift	choose	start	31	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+c-choose	Constructs.swift	choose	end	33	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+c-choose	Constructs.swift	choose	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one conditional operator	
+c-choose	Constructs.swift	choose	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-choose	Constructs.swift	choose	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1	
+c-choose	Constructs.swift	choose	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the ternary's operands	
+c-choose	Constructs.swift	choose	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+c-loops	Constructs.swift	loops	start	35	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+c-loops	Constructs.swift	loops	end	44	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+c-loops	Constructs.swift	loops	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops	
+c-loops	Constructs.swift	loops	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-loops	Constructs.swift	loops	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two loops at nesting 0, +1 each	AO-SWIFT-COG-REPEAT
+c-loops	Constructs.swift	loops	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; two loops side by side	
+c-loops	Constructs.swift	loops	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+c-guarded	Constructs.swift	guarded	start	46	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+c-guarded	Constructs.swift	guarded	end	55	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+c-guarded	Constructs.swift	guarded	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two catch clauses	
+c-guarded	Constructs.swift	guarded	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-guarded	Constructs.swift	guarded	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two catch clauses at nesting 0, +1 each	AO-SWIFT-COG-DO
+c-guarded	Constructs.swift	guarded	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each catch body; try opens none	
+c-guarded	Constructs.swift	guarded	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+c-outer	Constructs.swift	outer	start	57	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+c-outer	Constructs.swift	outer	end	66	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+c-outer	Constructs.swift	outer	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops and an if	
+c-outer	Constructs.swift	outer	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-outer	Constructs.swift	outer	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, loop +2, if +3, the jump to a label +1	
+c-outer	Constructs.swift	outer	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; an if inside two loops	
+c-outer	Constructs.swift	outer	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+c-fact	Constructs.swift	fact	start	68	The Swift Programming Language (5.10), Functions: a function starts on its defining line	
+c-fact	Constructs.swift	fact	end	73	The Swift Programming Language (5.10), Functions: a function ends on the last line of its body	
+c-fact	Constructs.swift	fact	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+c-fact	Constructs.swift	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-fact	Constructs.swift	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
+c-fact	Constructs.swift	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
+c-fact	Constructs.swift	fact	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares	
+s-closure-if	Shapes.swift	closureIf	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the closure raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
+s-closure-if	Shapes.swift	closureIf	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the closure	AO-N-CLOSURE-IF
+s-closure-if	Shapes.swift	closureIf	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+s-if-case	Shapes.swift	ifCase	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; The Swift Programming Language (5.10), Statements (If Statement, Case pattern): `if case let` is one condition, so one if	AO-SWIFT-IF-CASE
+s-if-case	Shapes.swift	ifCase	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: one if, so its body sits one level deep	AO-SWIFT-IF-CASE-ND
+s-if-case	Shapes.swift	ifCase	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1: one if +1 at nesting 0	
+s-coalesce	Shapes.swift	coalesce	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; The Swift Programming Language (5.10), Basic Operators (Nil-Coalescing Operator): a ?? b picks one of two values, one binary decision	AO-SWIFT-COALESCE
+s-coalesce	Shapes.swift	coalesce	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) sec. Ignore shorthand: a null-coalescing operator adds nothing	AO-SWIFT-COALESCE-COG
+s-super-init	SuperInit.swift	init	rows	1	The Swift Programming Language (5.10), Initialization (Initializer Delegation for Class Types): super.init(...) is a call, so the file declares one init	AO-SWIFT-SUPER-INIT
+s-super-init	SuperInit.swift	reset	start	8	The Swift Programming Language (5.10), Declarations (Function Declaration): reset starts on its defining line	AO-SWIFT-SUPER-INIT-NEXT
+s-keyword-label	Counts.swift	keywordLabel	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; The Swift Programming Language (5.10), Functions (Specifying Argument Labels): `for name` is a label and a parameter name, no decision	AO-SWIFT-KEYWORD-LABEL
+s-keyword-label	Counts.swift	keywordLabel	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	AO-SWIFT-KEYWORD-LABEL-COG
+s-keyword-label	Counts.swift	keywordLabel	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	AO-SWIFT-KEYWORD-LABEL-ND
+s-optional-mark	Counts.swift	optionalMark	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; The Swift Programming Language (5.10), Types (Optional Type): `(() -> Void)?` is a type, no decision	AO-SWIFT-OPTIONAL-MARK
+s-optional-mark	Counts.swift	optionalMark	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	AO-SWIFT-OPTIONAL-MARK-COG
+s-optional-mark	Counts.swift	optionalMark	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	AO-SWIFT-OPTIONAL-MARK-ND
+s-optional-chain	Counts.swift	optionalChain	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; The Swift Programming Language (5.10), Optional Chaining: `a?.count` reads count only when a is not nil and gives nil otherwise, one binary decision	AO-SWIFT-OPTIONAL-CHAIN
+s-optional-chain	Counts.swift	optionalChain	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) sec. Ignore shorthand: its example a?.myObj is a null-coalescing operator and adds nothing	
+s-optional-chain	Counts.swift	optionalChain	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+s-call-chain	Counts.swift	callChain	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; The Swift Programming Language (5.10), Optional Chaining: `load()?.count` reads count only when the call's value is not nil and gives nil otherwise, one binary decision	
+s-call-chain	Counts.swift	callChain	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) sec. Ignore shorthand: its example a?.myObj is a null-coalescing operator and adds nothing	
+s-call-chain	Counts.swift	callChain	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	AO-SWIFT-OPTIONAL-CHAIN-ND
+s-optional-member	Counts.swift	optionalMember	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; The Swift Programming Language (5.10), Types (Optional Type): `Empty?` is Optional<Empty>, so `Empty?.none` names its case none and `Int?.some(1)` builds a value of Optional<Int>; no value is read, no decision	
+s-optional-member	Counts.swift	optionalMember	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+s-optional-member	Counts.swift	optionalMember	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+s-raw-identifier	RawIdentifier.swift	`keeps onboarding if the gateway is down`	rows	1	The Swift Programming Language (6.2), Lexical Structure (Identifiers): a raw identifier is any text between backticks, spaces included (SE-0451), so the struct declares one function by that name	AO-SWIFT-RAW-IDENTIFIER
+s-raw-identifier-call	RawIdentifier.swift	runAll	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; the `if` inside a raw identifier is part of a name, no decision	AO-SWIFT-RAW-IDENTIFIER-CCN
+s-raw-identifier-call	RawIdentifier.swift	runAll	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; a call, no structure	AO-SWIFT-RAW-IDENTIFIER-COG
+s-raw-identifier-call	RawIdentifier.swift	runAll	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; a call, no structure	AO-SWIFT-RAW-IDENTIFIER-ND
+s-tuple-param	Counts.swift	tupleParam	params	1	The Swift Programming Language (5.10), Functions: the parameters the function declares; one parameter of tuple type (Int, Int)	AO-SWIFT-TYPE-COMMA
+s-try-twice	Counts.swift	tryTwice	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; The Swift Programming Language (5.10), Error Handling: try marks an expression and opens no block	AO-SWIFT-TRY-ND
+s-guard-alone	Counts.swift	guardAlone	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: an if's else body sits one level deep; The Swift Programming Language (5.10), Control Flow (Early Exit): a guard, like an if, runs its else body when the condition is false	AO-SWIFT-GUARD-ND
+s-guard-in-if	Counts.swift	guardInIf	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the guard inside it (an if) +1 and +1 nesting	AO-SWIFT-GUARD-COG
+s-directive-and	Counts.swift	directiveAnd	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; The Swift Programming Language (5.10), Statements (Conditional Compilation Block): #if picks the code that compiles, no decision at run time	
+s-directive-and	Counts.swift	directiveAnd	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure runs	
+s-else-comment	Counts.swift	elseComment	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else +1; a comment adds nothing	
+s-accessor-get	Accessors.swift	get	rows	0	The Swift Programming Language (5.10), Declarations (Variable Declaration, Computed Variables): a getter is part of a variable declaration, not a function declaration	AO-SWIFT-ACCESSOR-ROWS
+s-subscript	Accessors.swift	subscript	rows	0	The Swift Programming Language (5.10), Declarations (Subscript Declaration): a subscript is its own kind of declaration, not a function declaration	AO-SWIFT-ACCESSOR-ROWS
+s-accessor-word	AccessorWord.swift	load	end	5	The Swift Programming Language (5.10), Declarations (Function Declaration): load ends on the last line of its body; r.get() is a method call	AO-SWIFT-ACCESSOR-WORD
+s-accessor-word-next	AccessorWord.swift	reset	start	7	The Swift Programming Language (5.10), Declarations (Function Declaration): reset starts on its defining line	AO-SWIFT-ACCESSOR-WORD-NEXT
+s-protocol-word	ProtocolWord.swift	close	start	7	The Swift Programming Language (5.10), Declarations (Function Declaration): close starts on its defining line; `protocol:` in open's call is an argument label	AO-SWIFT-PROTOCOL-WORD
+s-failable-init	FailableInit.swift	init	rows	1	The Swift Programming Language (5.10), Initialization (Failable Initializers): init? declares one initializer	AO-SWIFT-FAILABLE-INIT
+s-hash-default	HashDefault.swift	logged	rows	1	The Swift Programming Language (5.10), Expressions (Literal Expression): #fileID is a literal default value; logged is one function declaration	AO-SWIFT-HASH-LINE
+s-hash-available	HashAvailable.swift	availableIf	end	7	The Swift Programming Language (5.10), Statements (Availability Condition): the if's brace follows #available(...); availableIf ends on the last line of its body	AO-SWIFT-HASH-LINE-END
+s-type-word	TypeWord.swift	value	end	7	The Swift Programming Language (5.10), Declarations (Function Declaration): value ends on the last line of its body; `type` is a stored property	AO-SWIFT-TYPE-WORD
+s-comma-brace	CommaBrace.swift	each	end	6	The Swift Programming Language (5.10), Declarations (Function Declaration): each ends on the last line of its body; the closure is an argument after a comma	AO-SWIFT-COMMA-BRACE
+s-deinit	Declarations.swift	deinit	start	7	The Swift Programming Language (5.10), Declarations (Deinitializer Declaration): deinit starts on its defining line	
+s-after-protocol	Declarations.swift	read	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if; the protocol requirement before it, `func load(type: Int)`, is a declaration with no body	

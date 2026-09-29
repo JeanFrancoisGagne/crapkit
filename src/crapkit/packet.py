@@ -15,14 +15,17 @@ field types.
 from __future__ import annotations
 
 import base64
+from fractions import Fraction
 import os
 import re
 import shlex
 
+from .invariants import check_budget, check_rejudged
 from .invocation import console_script
 from .ratchet_report import DAY, mark_age_days
 from .keys import position
-from .score import remedy, shares_its_def_line, unjoined
+from .score import crap_load, over_ceiling, remedy, shares_its_def_line, unjoined
+from .sourcelines import source_lines
 
 # What the gate actually enforces, said once. A session that reads a ceiling of
 # 6 beside a standing mark of 72 otherwise reads a contradiction and either
@@ -59,7 +62,7 @@ def function_source(text: str | None, start: int, end: int) -> str | None:
     """
     if text is None:
         return None
-    return "\n".join(text.splitlines()[start - 1:end])
+    return "\n".join(source_lines(text)[start - 1:end])
 
 
 def file_functions(rows) -> list[dict]:
@@ -78,9 +81,9 @@ def file_totals(rows, scope_targets: dict, target: int) -> dict:
     A file can hold rows from two scopes; scoring the whole file against one
     ceiling would report debt a per-scope target deliberately allows.
     """
-    over = sum(1 for r in rows if r.crap > scope_targets.get(r.scope, target))
+    over = sum(1 for r in rows if over_ceiling(r.crap, scope_targets.get(r.scope, target)))
     return {"functions": len(rows), "over_target": over,
-            "crap_load": round(sum(r.crap for r in rows), 2)}
+            "crap_load": round(crap_load(r.crap for r in rows), 2)}
 
 
 def gate_rule(*, ceiling: int, mark: float | None, mark_age_days: int | None,
@@ -245,10 +248,25 @@ def budget(row, ceiling: int) -> dict:
     One definition for both readers. `next-item` published these and `brief` did
     not, so a session that opened on a packet re-derived numbers the queue had
     already computed — and two derivations of one formula drift with nothing to
-    catch it.
+    catch it. `invariants.check_budget` reads both against their definitions.
     """
-    return {"est_splits": 0 if row.ccn <= ceiling else -(-row.ccn // ceiling),
-            "est_uncovered_paths": max(0, round((1 - row.cov) * row.ccn))}
+    estimate = {"est_splits": 0 if row.ccn <= ceiling else -(-row.ccn // ceiling),
+                "est_uncovered_paths": _uncovered_paths(row.ccn, row.cov)}
+    check_budget(row, ceiling, estimate)
+    return estimate
+
+
+# cov arrives as the double of covered / total. Two fractions whose denominators
+# are at most 10**7 differ by at least 1e-14, and the double sits within 6e-17 of
+# its fraction, so limit_denominator hands the fraction back for any such total.
+_COVERAGE_DENOMINATOR = 10 ** 7
+
+
+def _uncovered_paths(ccn: int, cov: float) -> int:
+    """round((1 - cov) * ccn), half to even, on the exact product. The doubles
+    put (1 - 5/12) * 6, exactly 3.5, at 3.4999999999999996, and round() of that
+    said 3."""
+    return max(0, round((1 - Fraction(cov).limit_denominator(_COVERAGE_DENOMINATOR)) * ccn))
 
 
 def measurement(row) -> dict:
@@ -272,12 +290,15 @@ def rejudged(row, ceiling: int, rows_of):
     uncommitted edit from 6 to 4, a ccn-5 function read `remedy: ok` beside
     `est_splits: 2`. `rows_of(path)` returns the file's scored rows and is
     called only for a row whose stored verdict cannot say whether another
-    function declares its lines.
+    function declares its lines. The row it returns is checked against the
+    README's remedy table at `ceiling` (`invariants.check_rejudged`).
     """
     verdict = remedy(row.ccn, row.crap, ceiling)
     if verdict == "add-tests" and _shares_span(row, rows_of):
         verdict = "split-lines"
-    return row if verdict == row.remedy else row._replace(remedy=verdict)
+    judged = row if verdict == row.remedy else row._replace(remedy=verdict)
+    check_rejudged(judged, ceiling)
+    return judged
 
 
 def _shares_span(row, rows_of) -> bool:

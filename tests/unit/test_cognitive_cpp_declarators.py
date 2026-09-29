@@ -13,13 +13,17 @@ statement can only live after it. So the rule is: under lizard's two C-family
 readers only (`CLikeReader` for C/C++, `ObjCReader` for `.m`/`.mm`), a `&&` seen
 while the function's brace depth is still 0 declares something.
 
-Three things this deliberately does not do, each pinned below as residue:
-`auto &&x = ...` inside a body still costs 1, because that binding is past the
-opening brace; the name of an `operator||` overload still costs 1, because only
-`&&` doubles as a declarator; and a logical `&&` in a default argument now costs
-nothing, which is what lizard's cyclomatic column already did with the whole
-parameter list. Both directions are pinned, because the failure mode of an
-over-broad fix is a logical `&&` that silently stops counting.
+Past the opening brace the position rule cannot see a declarator, so
+`auto &&x = ...` in a body cost 1 until crapkit.lizardclike's token pass
+respelled every `&&` that can only declare (tests/unit/test_lizardclike.py
+holds its cases); the cognitive pass never sees one of those as `&&`.
+
+Two things this deliberately does not do, each pinned below as residue: the
+name of an `operator||` overload still costs 1, because only `&&` doubles as a
+declarator; and a logical `&&` in a default argument now costs nothing, which is
+what lizard's cyclomatic column already did with the whole parameter list. Both
+directions are pinned, because the failure mode of an over-broad fix is a
+logical `&&` that silently stops counting.
 """
 from crapkit.analyze import analyze_source
 
@@ -56,7 +60,7 @@ BODY_AND = """int guarded(int a, int b) {
 """
 
 # `auto &&` binds a forwarding reference inside the body. The token sits past the
-# opening brace, so the position rule cannot reach it.
+# opening brace, where the reader's token pass, not the position rule, frees it.
 AUTO_RVALUE = """void first_of(const std::vector<int> &v) {
     auto &&first = v.front();
     (void)first;
@@ -157,12 +161,11 @@ def test_a_c_file_pays_the_same_rules_as_a_cpp_one():
     assert _cognitive("src/guard.c", BODY_AND) == {"guarded": 2}
 
 
-def test_an_auto_rvalue_binding_in_the_body_is_the_documented_residue():
-    """`auto &&first` is a declarator too, but it is past the opening brace and
-    the position rule cannot see that. It scores 1. Pinned so the gap reads as a
-    decision rather than as an oversight — widening the rule to reach it means
-    reading types, which is a parser, not an extension."""
-    assert _cognitive("src/first.cpp", AUTO_RVALUE) == {"first_of": 1}
+def test_an_auto_rvalue_binding_in_the_body_costs_nothing():
+    """`auto &&first` is a declarator too, past the opening brace where the
+    position rule cannot see it. It scored 1 until the C family's reader
+    respelled the `&&` that follows `auto`, which no logical and can."""
+    assert _cognitive("src/first.cpp", AUTO_RVALUE) == {"first_of": 0}
 
 
 def test_the_name_of_an_operator_or_overload_is_the_second_residue():

@@ -77,7 +77,7 @@ class FakeGit:
         self.ancestry_calls = 0
         self.inflates = 0
         self.after_read = None  # a commit that lands right after the next HEAD read
-        self.cutoff_after_walk: int | None = None  # the clock crosses a month end mid-read
+        self.cutoff_after_walk: int | None = None  # a second reading would name another
 
     def read_head(self, root):
         head = self.head
@@ -86,21 +86,25 @@ class FakeGit:
             land()
         return head
 
-    def window(self, root, months, head=None, *rest):
+    def window(self, root, head=None, cutoff=None):
         """The window at `head` (the current HEAD's when no head is named),
-        cut at the floor as git's --since would cut it."""
+        cut at `cutoff` as the walk's --since cuts it."""
         self.window_calls += 1
-        walked = since(self.logs.get(head, self.log), self.floor)
+        walked = since(self.logs.get(head, self.log), cutoff)
         if self.cutoff_after_walk is not None:
             self.floor, self.cutoff_after_walk = self.cutoff_after_walk, None
+            churn_log._commit_date.cache_clear()
         return iter(walked)
 
     def range(self, root, base, head):
         self.range_calls.append((base, head))
         return iter(self.ranges.get((base, head), []))
 
-    def cutoff(self, root, months):
+    def commit_date(self, root, commit):
+        """HEAD's date, named as the cutoff itself: see the fixture."""
         self.cutoff_calls += 1
+        if self.floor is None:
+            raise GitError(f"no commit date for {commit}")
         return self.floor
 
     def is_ancestor(self, root, commit, other):
@@ -113,7 +117,10 @@ def git(monkeypatch) -> FakeGit:
     fake = FakeGit()
     monkeypatch.setattr(churn_log, "_window_log", fake.window)
     monkeypatch.setattr(churn_log, "_range_log", fake.range)
-    monkeypatch.setattr(churn_log, "_window_cutoff", fake.cutoff)
+    monkeypatch.setattr(churn_log, "commit_time", fake.commit_date)
+    # The fake names each HEAD's cutoff as its date; months_before has tests of its own.
+    monkeypatch.setattr(churn_log, "months_before", lambda stamp, months: stamp)
+    churn_log._commit_date.cache_clear()
     monkeypatch.setattr(churn_log, "is_ancestor", fake.is_ancestor)
     monkeypatch.setattr(churn_log, "head_commit", fake.read_head)
     monkeypatch.setattr(churn_commits, "is_shallow", lambda root: fake.shallow)
@@ -143,9 +150,17 @@ def move_head(git: FakeGit) -> None:
 
 
 def new_day(monkeypatch, day: str) -> None:
-    """A new UTC day for the map and the laid-down log alike."""
+    """A new UTC day for the map and the laid-down log alike: a miss at an
+    unmoved HEAD, whose window stays where it was."""
     monkeypatch.setattr(churn_cache, "_utc_date", lambda: day)
     monkeypatch.setattr(churn_log, "_utc_date", lambda: day)
+
+
+def later_head(git: FakeGit, floor: int | None) -> None:
+    """HEAD moves to a commit that touched no path (a merge, say), whose date
+    names the cutoff `floor`."""
+    git.head = HEAD_C
+    git.floor = floor
 
 
 def test_a_moved_head_folds_in_only_the_new_commits(tmp_path, git):
@@ -271,21 +286,19 @@ def test_a_moved_head_leaves_the_stored_log_unread(tmp_path, git):
     assert log.read_bytes() == laid
 
 
-def test_a_new_day_expires_on_the_commit_date_not_the_author_date(tmp_path, git, monkeypatch):
-    """dave's commit was rebased: authored long ago, committed recently, so git's
-    --since keeps it. erin's is the other way round, and git drops it."""
+def test_a_later_cutoff_expires_on_the_commit_date_not_the_author_date(tmp_path, git):
+    """dave's commit was rebased: authored long ago, committed recently, so the
+    window keeps it. erin's is the other way round, and the window drops it."""
     git.log = (block("dave", 1000000000, 1000009000, "src/d.py")
                + block("erin", 1000008000, 1000000100, "src/e.py"))
-    new_day(monkeypatch, "2026-08-21")
     churn_cache.load_churn(tmp_path, 12)
-    new_day(monkeypatch, "2026-08-22")
-    git.floor = 1000005000
+    later_head(git, 1000005000)
 
     carried = churn_cache.load_churn(tmp_path, 12)
 
     # One author date left is no range: dave's commit counts once.
     assert carried == {"src/d.py": FileChurn(1, 1, 1.0)}
-    assert (git.window_calls, git.range_calls) == (1, []), "same HEAD: nothing to walk"
+    assert git.window_calls == 1, "a HEAD that added nothing: nothing to walk"
 
 
 def test_a_head_the_table_is_not_behind_rebuilds_in_full(tmp_path, git):
@@ -302,38 +315,37 @@ def test_a_head_the_table_is_not_behind_rebuilds_in_full(tmp_path, git):
     assert git.range_calls == []
 
 
-def test_a_cutoff_behind_the_stored_one_rebuilds_in_full(tmp_path, git, monkeypatch):
-    """git's month arithmetic moves the cutoff back at a month end: 6 months
-    before Aug 31 reads Mar 3, before Sep 1 reads Mar 1. The window widens past
-    commits the table dropped, so only a walk has them."""
+def test_a_cutoff_behind_the_stored_one_rebuilds_in_full(tmp_path, git):
+    """Month arithmetic moves the cutoff back when HEAD moves across a month
+    end: 6 months before a commit on Aug 31 reads Mar 3, before one on Sep 1
+    reads Mar 1. The window widens past commits the table dropped, so only a
+    walk has them."""
     git.floor = 1000000100
     churn_cache.load_churn(tmp_path, 12)
-    new_day(monkeypatch, "2099-01-01")
-    git.floor = 1000000000
+    later_head(git, 1000000000)
 
     assert churn_cache.load_churn(tmp_path, 12) == AT_A
     assert git.window_calls == 2
 
 
-def test_a_cutoff_behind_the_stored_one_walks_past_a_laid_log(tmp_path, git, monkeypatch):
+def test_a_cutoff_behind_the_stored_one_walks_past_a_laid_log(tmp_path, git):
     """The same month end with a log on disk. The log was cut at the higher
     cutoff too, so re-dating it at the earlier one still lacks alice's commit:
     the rebuild has to walk the window, not refresh the log."""
     git.floor = 1000000100
     list(churn_log.log_lines(tmp_path, 12))
     churn_cache.load_churn(tmp_path, 12)
-    new_day(monkeypatch, "2099-01-01")
-    git.floor = 1000000000
+    later_head(git, 1000000000)
 
     assert churn_cache.load_churn(tmp_path, 12) == AT_A
     assert git.window_calls == 2
 
 
 def test_the_table_records_the_cutoff_its_walk_was_cut_at(tmp_path, git, monkeypatch):
-    """The cutoff is read again after the walk and has moved back meanwhile, a
-    month end crossed mid-read. A table stamped with that later, earlier cutoff
-    claims alice's commit is in it when the walk cut it out, and the next
-    carry would never bring it back."""
+    """A second reading of the cutoff after the walk would name an earlier one
+    (the fake forgets the cached commit date and moves it back). A table
+    stamped with that reading claims alice's commit is in it when the walk cut
+    it out, and the next carry would never bring it back."""
     git.floor = 1000000100
     git.cutoff_after_walk = 1000000000
     churn_cache.load_churn(tmp_path, 12)
@@ -343,7 +355,7 @@ def test_the_table_records_the_cutoff_its_walk_was_cut_at(tmp_path, git, monkeyp
     assert git.window_calls == 2
 
 
-def test_a_cutoff_git_will_not_name_rebuilds_in_full(tmp_path, git):
+def test_a_head_git_names_no_date_for_rebuilds_in_full(tmp_path, git):
     churn_cache.load_churn(tmp_path, 12)
     move_head(git)
     git.floor = None
@@ -365,7 +377,7 @@ def test_a_different_window_rebuilds_in_full(tmp_path, git):
     churn_cache.load_churn(tmp_path, 12)
     churn_cache.load_churn(tmp_path, 3)
 
-    assert git.window_calls == 2, "--since=3 months is a different question"
+    assert git.window_calls == 2, "a 3-month window is a different question"
     assert git.range_calls == []
 
 
@@ -495,11 +507,9 @@ def test_a_clone_git_cannot_vouch_for_keeps_no_table(tmp_path, git, monkeypatch)
     assert not table_file(tmp_path).exists()
 
 
-def test_a_path_keeps_the_commits_that_did_not_age_out(tmp_path, git, monkeypatch):
-    new_day(monkeypatch, "2026-08-21")
+def test_a_path_keeps_the_commits_that_did_not_age_out(tmp_path, git):
     churn_cache.load_churn(tmp_path, 12)
-    new_day(monkeypatch, "2026-08-22")
-    git.floor = 1000000200  # alice's commit aged out; bob's did not
+    later_head(git, 1000000200)  # alice's commit aged out; bob's did not
 
     # a.py keeps bob's commit, alone in the window now; b.py had only alice's.
     assert churn_cache.load_churn(tmp_path, 12) == {"src/a.py": FileChurn(1, 1, 1.0)}
@@ -514,14 +524,13 @@ def stored_table(root) -> dict:
     return json.loads(table_file(root).read_bytes().partition(b"\n")[2])
 
 
-def test_a_carry_and_an_expiry_in_one_miss_answer_a_cold_rebuild(tmp_path, git, monkeypatch):
-    """The first read on a new day after commits landed does both at once:
-    carol's and alice's new commits fold in on top while alice's first one
-    ages out. src/a.py then holds carol's fresh number above bob's, with the
-    aged one below both, the case expiry's shortcut has to get right."""
-    new_day(monkeypatch, "2026-08-21")
+def test_a_carry_and_an_expiry_in_one_miss_answer_a_cold_rebuild(tmp_path, git):
+    """The first read after commits landed does both at once: carol's and
+    alice's new commits fold in on top while alice's first one ages out of the
+    window the new HEAD's date names. src/a.py then holds carol's fresh number
+    above bob's, with the aged one below both, the case expiry's shortcut has
+    to get right."""
     churn_cache.load_churn(tmp_path, 12)
-    new_day(monkeypatch, "2026-08-22")
     move_head(git)
     git.floor = 1000000100  # alice's first commit ages out as carol's lands
 
@@ -546,14 +555,12 @@ def test_a_carry_and_an_expiry_in_one_miss_answer_a_cold_rebuild(tmp_path, git, 
     assert git.window_calls == 2
 
 
-def test_an_author_whose_last_commit_aged_out_leaves_the_table(tmp_path, git, monkeypatch):
+def test_an_author_whose_last_commit_aged_out_leaves_the_table(tmp_path, git):
     """alice's only commit ages out. Her name must go with it: a table that is
     only ever carried would otherwise keep every name seen since its last full
     rebuild. What is left is the table a cold fold of bob's commit writes."""
-    new_day(monkeypatch, "2026-08-21")
     churn_cache.load_churn(tmp_path, 12)
-    new_day(monkeypatch, "2026-08-22")
-    git.floor = 1000000100
+    later_head(git, 1000000100)
 
     assert churn_cache.load_churn(tmp_path, 12) == {"src/a.py": FileChurn(1, 1, 1.0)}
     carried = stored_table(tmp_path)

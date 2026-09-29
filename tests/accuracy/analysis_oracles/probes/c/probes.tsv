@@ -1,0 +1,104 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	equivalence.c	straight	start	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+eq-straight	equivalence.c	straight	end	4	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+eq-straight	equivalence.c	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	equivalence.c	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	equivalence.c	straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	equivalence.c	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	equivalence.c	straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	equivalence.c	straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	equivalence.c	straight	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+eq-four-deep	equivalence.c	four_deep	start	6	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+eq-four-deep	equivalence.c	four_deep	end	17	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+eq-four-deep	equivalence.c	four_deep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	equivalence.c	four_deep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	equivalence.c	four_deep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	equivalence.c	four_deep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	equivalence.c	four_deep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	equivalence.c	four_deep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	equivalence.c	four_deep	params	4	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+eq-nested-loops	equivalence.c	nested_loops	start	19	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+eq-nested-loops	equivalence.c	nested_loops	end	29	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+eq-nested-loops	equivalence.c	nested_loops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	equivalence.c	nested_loops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	equivalence.c	nested_loops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	equivalence.c	nested_loops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	equivalence.c	nested_loops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	AO-ND-LOOPS
+eq-nested-loops	equivalence.c	nested_loops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	equivalence.c	nested_loops	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+eq-flat-seven	equivalence.c	flat_seven	start	31	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+eq-flat-seven	equivalence.c	flat_seven	end	55	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+eq-flat-seven	equivalence.c	flat_seven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	equivalence.c	flat_seven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	equivalence.c	flat_seven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	equivalence.c	flat_seven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	equivalence.c	flat_seven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	equivalence.c	flat_seven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	equivalence.c	flat_seven	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+c-branches	constructs.c	branches	start	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+c-branches	constructs.c	branches	end	9	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+c-branches	constructs.c	branches	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and else if; else adds no decision	
+c-branches	constructs.c	branches	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-branches	constructs.c	branches	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else if +1, else +1	
+c-branches	constructs.c	branches	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each arm's body one level deep	
+c-branches	constructs.c	branches	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+c-pick	constructs.c	pick	start	11	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+c-pick	constructs.c	pick	end	22	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+c-pick	constructs.c	pick	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; three case labels, default excluded	
+c-pick	constructs.c	pick	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; the switch is one decision	
+c-pick	constructs.c	pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; switch +1	
+c-pick	constructs.c	pick	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the case bodies sit inside the switch	AO-N-CASE-C
+c-pick	constructs.c	pick	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+c-logic	constructs.c	logic	start	24	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+c-logic	constructs.c	logic	end	29	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+c-logic	constructs.c	logic	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and three short-circuit operators	
+c-logic	constructs.c	logic	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-logic	constructs.c	logic	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the && run +1, || +1	
+c-logic	constructs.c	logic	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	AO-N-CONDITION-C
+c-logic	constructs.c	logic	params	4	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+c-choose	constructs.c	choose	start	31	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+c-choose	constructs.c	choose	end	33	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+c-choose	constructs.c	choose	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one conditional operator	
+c-choose	constructs.c	choose	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-choose	constructs.c	choose	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1	
+c-choose	constructs.c	choose	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the ternary's operands	
+c-choose	constructs.c	choose	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+c-loops	constructs.c	loops	start	35	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+c-loops	constructs.c	loops	end	44	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+c-loops	constructs.c	loops	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops	
+c-loops	constructs.c	loops	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-loops	constructs.c	loops	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two loops at nesting 0, +1 each	
+c-loops	constructs.c	loops	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; two loops side by side	
+c-loops	constructs.c	loops	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+c-outer	constructs.c	outer	start	46	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+c-outer	constructs.c	outer	end	56	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+c-outer	constructs.c	outer	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops and an if	
+c-outer	constructs.c	outer	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-outer	constructs.c	outer	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, loop +2, if +3, the jump to a label +1	
+c-outer	constructs.c	outer	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; an if inside two loops	AO-ND-LOOPS-IF
+c-outer	constructs.c	outer	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+c-fact	constructs.c	fact	start	58	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+c-fact	constructs.c	fact	end	63	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function ends on the last line of its body	
+c-fact	constructs.c	fact	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+c-fact	constructs.c	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-fact	constructs.c	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	
+c-fact	constructs.c	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
+c-fact	constructs.c	fact	params	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: the parameters the function declares	
+c-sibling	shapes.c	sibling_ifs	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the inner if body is two levels deep	AO-ND-SIBLING
+c-sibling	shapes.c	sibling_ifs	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, if +1, the inner if +2	
+c-sibling	shapes.c	sibling_ifs	start	1	ISO/IEC 9899:2018 sec. 6.9.1 Function definitions: a function starts on its defining line	
+c-decimal-point	shapes.c	decimal_point	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a preprocessor branch is no run-time decision	AO-C-PREPROC
+c-decimal-point	shapes.c	decimal_point	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no run-time structure	AO-C-PREPROC-COG
+c-decimal-point	shapes.c	decimal_point	nloc	9	lizard 1.24.0 README: NLOC counts lines of code without comments; every line of the function holds code or a directive	AO-C-PREPROC-NLOC
+c-for-then-ifs	shapes.c	for_then_ifs	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: for, if, if	
+c-braceless	shapes.c	braceless_then_loop	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if inside the for is two levels deep	AO-ND-BRACELESS
+c-braceless	shapes.c	braceless_then_loop	cognitive	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, for +1, the if inside +2	
+c-name-variable	shapes.c	count	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; Recursion: the local variable count is no call	AO-COG-RECURSION-NAME-C
+c-name-variable	shapes.c	count	params	1	C11 sec. 6.9.1: count declares one parameter, n	
+c-two-ternaries	shapes.c	two_ternaries	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: two conditional operators side by side, neither inside the other	AO-ND-TERNARY-PAIR
+c-two-ternaries	shapes.c	two_ternaries	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two conditional operators at level 0, +1 each	
+c-two-ternaries	shapes.c	two_ternaries	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two conditional operators	
+c-head-array	params.c	head_c	params	1	ISO/IEC 9899:2018 6.7.6.3: one parameter, an array adjusted to a pointer	AO-C-PARAMS-ARRAY
+c-pick-braceless	params.c	pick_c	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the ternary in its braceless body +1 and +1 nesting	AO-COG-BRACELESS-BODY
+c-walk-braceless	params.c	walk_c	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, the if in its braceless body +1 and +1 nesting	AO-COG-BRACELESS-BODY
+c-walk-braceless	params.c	walk_c	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; a loop and an if	

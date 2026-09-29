@@ -308,11 +308,6 @@ _NO_SPAN = "function not in the latest run"
 _NO_CONTEXT = ("no context data - run the py lane with dynamic_context = "
                "test_function and a --show-contexts JSON report")
 
-# %x01 opens a commit record and %x02 closes it, so a body of any shape stays
-# separable from the diff hunks `git log -L` prints between records.
-_LOG_FORMAT = "%x01%h %ad %s%n%b%x02"
-
-
 class _ExplainCtx(NamedTuple):
     """What explain looks up ONCE for the whole command and reuses per match.
 
@@ -612,40 +607,21 @@ def _contexts_for_span(contexts: dict, span) -> list[str]:
 
 def _function_commits(root: Path, rel_path: str, start: int, end: int,
                       limit: int = 10) -> list[dict]:
-    """Commits that touched HEAD's lines START to END, subject AND body, from
-    `git log -L`. Raises GitError.
+    """Commits that touched HEAD's lines START to END, subject AND body, as git
+    stored them. Raises GitError.
 
     The body is what says why a span keeps changing; a subject line rarely does.
-    Both, and the span's own patch lines, come out as the commit stored them.
+    The span is the reader's, and git numbers it in HEAD's copy of the file at LF
+    only, so HEAD's bytes place it first.
     """
-    from ..gitio import _git_text
+    from ..diffparse import git_span
+    from ..gitio import commit_messages, line_commits, start_read
 
-    out = _git_text(root, "log", f"-L{start},{end}:{rel_path}", f"--format={_LOG_FORMAT}",
-                    "--date=short", f"--max-count={limit}")
-    return _parse_log_records(out)
-
-
-def _parse_log_records(out: str) -> list[dict]:
-    """Records out of `git log -L`, dropping the diff hunks printed between them.
-
-    A line is body text only while a record is open, so a hunk that happens to
-    look like prose can never land in one.
-    """
-    records: list[dict] = []
-    body: list[str] | None = None
-    for line in out.splitlines():
-        if line.startswith("\x01"):
-            sha, date, subject = line[1:].split(" ", 2)
-            records.append({"sha": sha, "date": date, "subject": subject, "body": ""})
-            body = []
-        elif body is None:
-            continue
-        elif line == "\x02":
-            records[-1]["body"] = "\n".join(body).strip("\n")
-            body = None
-        else:
-            body.append(line)
-    return records
+    start, end = git_span(start_read(root, "cat-file", "blob", f"HEAD:./{rel_path}").result(),
+                          start, end)
+    messages = commit_messages(root, line_commits(root, rel_path, start, end, limit))
+    return [{"sha": sha, "date": date, "subject": subject, "body": body.strip("\n")}
+            for sha, date, subject, body in messages]
 
 
 def _explain_extras(p: dict) -> None:
@@ -662,9 +638,16 @@ def _explain_commits(p: dict) -> None:
         print(f"  commits: {p['commits_note']}")
         return
     for c in p["commits"]:
-        print(f"    {c['sha']} {c['date']} {c['subject']}")
-        for line in c["body"].splitlines():
-            print(f"      {line}" if line else "")
+        print("\n".join(_commit_text(c)))
+
+
+def _commit_text(c: dict) -> list[str]:
+    """A commit's printed lines. Every break str.splitlines knows ends one, so a
+    \\r or a form feed in a message starts an indented line instead of moving the
+    cursor back over the sha or the indent. --json keeps them as committed."""
+    head, *rest = c["subject"].splitlines() or [""]
+    return [f"    {c['sha']} {c['date']} {head}"] + [
+        f"      {line}" if line else "" for line in rest + c["body"].splitlines()]
 
 
 def _explain_tests(p: dict) -> None:

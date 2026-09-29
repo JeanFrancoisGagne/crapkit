@@ -14,7 +14,10 @@ from __future__ import annotations
 
 from .repotext import backslashed, escaped
 
-PATH_FORMAT = "root-relative-exact"
+# The history caches key on this. "-lf": records split at LF alone, so a map,
+# commit table or ranking built while a \r in an author name split its
+# header in two reads as cold.
+PATH_FORMAT = "root-relative-exact-lf"
 _SIMPLE_ESCAPES = {"n": 10, "t": 9, "r": 13, '"': 34, "\\": 92,
                    "a": 7, "b": 8, "f": 12, "v": 11}
 

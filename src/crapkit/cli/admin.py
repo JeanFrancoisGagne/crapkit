@@ -20,8 +20,8 @@ from ..config import load_config_text
 from ..doctor import Finding
 from ..errors import ConfigError, CrapkitError, GitError, ToolError
 from ..gitio import _common_dir, _git, _git_dir, ls_files
-from ..invocation import _self, quoted_path
-from ..lane_command import (LaunchSpec, expand_launchers, first_word, launch_spec,
+from ..invocation import _self, quoted_path, shell_arg
+from ..lane_command import (LaunchSpec, expand_launchers, first_word, install_python, launch_spec,
                             pytest_head, pytest_python, python_token, shell_segments)
 from ..named import first_few
 from ..repopath import typed_path
@@ -426,16 +426,18 @@ def _missing_pytest_cov_note(name: str, word: str, spec: LaunchSpec) -> str:
     own `.venv` carries pytest-cov still gets this note when the lane names the
     `python` a stock PATH answers with, and then installing a package is the
     wrong move: the reader has to be able to tell which of the two was asked.
-    The install command carries the same word, so it lands in that interpreter's
-    environment rather than whichever one the reader's shell has active; in a
-    venv uv made, which holds no pip, it is `uv pip install --python WORD`. Where
-    the word lands is read the way the lane's shell reads it, so a relative
-    launcher names the same file from any directory doctor runs in."""
+    The install command names the same interpreter, so it lands in that
+    interpreter's environment rather than whichever one the reader's shell has
+    active; in a venv uv made, which holds no pip, it is `uv pip install
+    --python WORD`. Where the word lands is read the way the lane's shell reads
+    it, so a relative launcher names the same file from any directory doctor
+    runs in, and the install command names that file (`install_python`)."""
     from ..launchers import pip_install
 
     resolved = spec.resolve(word) or word
     return (f"note: lane {name!r} names `{word}`, which resolves here to {resolved} and "
-            f"cannot import pytest_cov - run `{pip_install(resolved, 'pytest-cov', word)}` in the "
+            f"cannot import pytest_cov - run "
+            f"`{pip_install(resolved, 'pytest-cov', install_python(word, spec))}` in the "
             "environment the suite runs in "
             # Double quotes, not single: cmd.exe passes ' through as an
             # ordinary character and pip rejects the requirement. Double
@@ -1218,12 +1220,13 @@ def _doctor_hook_modes(root: Path) -> list[Finding]:
     """WARN, never FAIL: on Windows the bit is unreadable from the filesystem and
     the hook still runs, so a Windows author must not be blocked by it. On Linux
     and macOS git skips a 100644 hook without a word, which is how crapkit's own
-    contributor gate armed nothing."""
+    contributor gate armed nothing. The fix command quotes the path the way the
+    reader's shell needs it, so a hooks directory with a space stays one path."""
     from ..doctor import non_executable_hooks
 
     return [Finding("WARN", f"{path} is not executable in the index - core.hooksPath "
                             "is set, so Unix clones silently skip it; fix with "
-                            f"`git update-index --chmod=+x {path}` and commit")
+                            f"`git update-index --chmod=+x {shell_arg(path)}` and commit")
             for path in non_executable_hooks(_hook_modes(root))]
 
 
@@ -1724,39 +1727,16 @@ def _emit_doctor(root: Path, cfg, findings: list[Finding], as_json: bool) -> Non
     _print_findings(findings)
 
 
-def _junit_seconds(path: Path) -> float | None:
-    from ..junitparse import suite_seconds
-
-    if not path.is_file():
-        return None
-    try:
-        return suite_seconds(path.read_bytes())
-    except ToolError:
-        return None
-
-
-def _lane_seconds(root: Path, lane, stamps: dict) -> float | None:
-    """What this lane costs, best signal first: the duration its own run
-    recorded, found the way the start order finds it, else the wall time its
-    junit report claims. None means this lane has never left a cost signal on
-    disk — which is not the same as costing 0."""
-    from ..lanes import recorded_seconds
-
-    recorded = recorded_seconds(stamps, lane)
-    if recorded is not None:
-        return recorded
-    return _junit_seconds(root / lane.results_artifact) if lane.results_artifact else None
-
-
 def _lane_durations(root: Path, cfg) -> tuple[tuple[float, ...], tuple[str, ...]]:
     """The durations on disk, and the names of the lanes that left none. A lane
-    with no cost signal is named, never summed as 0 and never dropped unsaid."""
-    from ..lanes import read_stamps
+    with no cost signal is named, never summed as 0 and never dropped unsaid. Each lane's
+    cost is read the way the start order reads it (lanes.lane_seconds)."""
+    from ..lanes import lane_seconds, read_stamps
 
     stamps = read_stamps(root)
     known, unknown = [], []
     for lane in cfg.lanes:
-        seconds = _lane_seconds(root, lane, stamps)
+        seconds = lane_seconds(root, stamps, lane)
         if seconds is None:
             unknown.append(lane.name)
         else:

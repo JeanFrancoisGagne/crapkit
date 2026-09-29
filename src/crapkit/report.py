@@ -96,8 +96,8 @@ def _header(payload: dict) -> str:
 
 def _footer(payload: dict) -> str:
     wl = payload["worklist"]
-    return (f'<footer>Ranked by risk (ccn times recency-weighted churn) over a '
-            f'{_esc(wl["churn_window_months"])}-month window, admitted at '
+    return (f'<footer>Ranked by risk (ccn times recency-weighted churn) over the '
+            f'{_esc(wl["churn_window_months"])} months before HEAD\'s commit date, admitted at '
             f'ccn &gt;= {_esc(wl["floor"])}. Run the drill-down command on a row for its '
             f'dark lines, history and mark.</footer>')
 

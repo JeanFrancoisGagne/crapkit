@@ -1,0 +1,2 @@
+calc	independent_test	modules	functions
+Runtime invariant verdict	tests/accuracy/runtime_guards/test_invariant_verdict.py::test_crapkit_stops_exactly_where_the_documented_bounds_do	src/crapkit/invariants.py	src/crapkit/invariants.py:check_record,src/crapkit/invariants.py:check_rows,src/crapkit/invariants.py:check_summary,src/crapkit/invariants.py:check_totals,src/crapkit/invariants.py:check_rollup,src/crapkit/invariants.py:check_worklist,src/crapkit/invariants.py:check_rejudged

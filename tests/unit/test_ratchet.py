@@ -1,4 +1,8 @@
 """Ratchet seam: committed TSV text <-> entries; updates only ever tighten. Pure."""
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 import pytest
 
 from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet, metric_version, update_ratchet
@@ -6,7 +10,7 @@ from crapkit.score import ScoredRow
 
 
 def scored(path, name, ccn, cov, scope="src"):
-    c = ccn * ccn * (1 - cov) ** 3 + ccn
+    c = float(exact.crap(ccn, Fraction(cov)))
     return ScoredRow(scope, path, name, 1, 9, ccn, ccn, ccn, 5, 1, 1, cov, "measured", c, "x")
 
 
@@ -66,9 +70,9 @@ def test_write_then_verify_is_a_fixed_point_for_nonterminating_coverage():
     # must verify clean against the mark it just wrote, or one passing verify
     # permanently wedges every later one at exit 7 (override refused).
     from crapkit.ratchet import dump_ratchet, load_ratchet, update_ratchet
-    from crapkit.score import ScoredRow, crap
+    from crapkit.score import ScoredRow
     from crapkit.verify import evaluate
-    c = crap(10, 2 / 3)
+    c = float(exact.crap(10, Fraction(2, 3)))
     row = ScoredRow("src", "a.py", "f( )", 1, 9, 10, 10, 10, 8, 1, 1, 2 / 3, "measured", c, "decompose")
     marks = load_ratchet(dump_ratchet(update_ratchet(
         [__import__("crapkit.ratchet", fromlist=["RatchetEntry"]).RatchetEntry("a.py", "f( )", 20.0)],

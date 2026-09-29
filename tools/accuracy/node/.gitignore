@@ -1,0 +1,2 @@
+# npm ci fills these from the lock files; CI caches them by lockfile hash.
+*/node_modules/

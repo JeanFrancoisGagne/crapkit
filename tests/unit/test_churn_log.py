@@ -51,7 +51,7 @@ class FakeGit:
         self.range_calls: list[tuple[str, str]] = []
         self.cutoff_calls = 0
 
-    def window(self, root, months, *walked_from):
+    def window(self, root, *walked_from):
         self.window_calls += 1
         return iter(self.log)
 
@@ -59,7 +59,8 @@ class FakeGit:
         self.range_calls.append((base, head))
         return iter(self.ranges.get((base, head), []))
 
-    def cutoff(self, root, months):
+    def commit_date(self, root, commit):
+        """HEAD's date, named as the cutoff itself: see the fixture."""
         self.cutoff_calls += 1
         return self.floor
 
@@ -72,7 +73,10 @@ def git(monkeypatch) -> FakeGit:
     fake = FakeGit()
     monkeypatch.setattr(churn_log, "_window_log", fake.window)
     monkeypatch.setattr(churn_log, "_range_log", fake.range)
-    monkeypatch.setattr(churn_log, "_window_cutoff", fake.cutoff)
+    monkeypatch.setattr(churn_log, "commit_time", fake.commit_date)
+    # The fake names each HEAD's cutoff as its date; months_before has tests of its own.
+    monkeypatch.setattr(churn_log, "months_before", lambda stamp, months: stamp)
+    churn_log._commit_date.cache_clear()
     monkeypatch.setattr(churn_log, "is_ancestor", fake.is_ancestor)
     monkeypatch.setattr(churn_log, "head_commit", lambda root: fake.head)
     return fake
@@ -127,7 +131,7 @@ def test_a_different_window_rebuilds(tmp_path, git):
     list(churn_log.log_lines(tmp_path, 12))
     list(churn_log.log_lines(tmp_path, 3))
 
-    assert git.window_calls == 2, "--since=3 months is a different question"
+    assert git.window_calls == 2, "a 3-month window is a different question"
     assert git.range_calls == []
 
 
@@ -176,8 +180,8 @@ def test_the_refreshed_cache_is_served_at_the_new_head(tmp_path, git):
 
 
 def test_a_new_utc_day_costs_no_walk_at_all(tmp_path, git, monkeypatch):
-    """`--since=N months ago` is wall-clock relative, so a day-old log describes a
-    day-wide window. Re-dating it is arithmetic on stored commit dates, not a walk."""
+    """The window ends at HEAD's commit date, so a new day leaves it where it
+    was: the day-old log is carried onto the same window, not walked."""
     monkeypatch.setattr(churn_log, "_utc_date", lambda: "2026-08-21")
     list(churn_log.log_lines(tmp_path, 12))
     monkeypatch.setattr(churn_log, "_utc_date", lambda: "2026-08-22")
@@ -186,11 +190,12 @@ def test_a_new_utc_day_costs_no_walk_at_all(tmp_path, git, monkeypatch):
     assert (git.window_calls, git.range_calls) == (1, []), "same HEAD: no range to walk"
 
 
-def test_commits_below_the_window_floor_drop_out_on_a_refresh(tmp_path, git, monkeypatch):
-    monkeypatch.setattr(churn_log, "_utc_date", lambda: "2026-08-21")
+def test_commits_below_the_window_floor_drop_out_on_a_refresh(tmp_path, git):
+    """A later HEAD names a later cutoff. Here it adds no path of its own (a
+    merge, say) and alice's commit ages out of the window its date names."""
     list(churn_log.log_lines(tmp_path, 12))
-    monkeypatch.setattr(churn_log, "_utc_date", lambda: "2026-08-22")
-    git.floor = 1000000100  # alice's commit has aged out of the window
+    git.head = HEAD_B
+    git.floor = 1000000100
 
     assert list(churn_log.log_lines(tmp_path, 12)) == MID
     assert git.window_calls == 1
@@ -224,38 +229,58 @@ def test_a_log_without_the_paths_marker_is_never_served_or_refreshed(tmp_path, g
     assert git.range_calls == []
 
 
-def _old_log(tmp_path):
-    """0.4.4's pair, under the unversioned names, keyed exactly like this one."""
-    old = tmp_path / ".crapkit" / churn_log.LEGACY_NAME
+def _old_log(tmp_path, name: str):
+    """An older version's pair, keyed exactly like this version's log."""
+    old = tmp_path / ".crapkit" / name
     old.parent.mkdir(parents=True, exist_ok=True)
     blob = zlib.compress("".join(NEW).encode("utf-8"), 1)
     old.write_bytes(blob)
     churn_log._key_path(old).write_text(
         json.dumps({"head": HEAD_A, "months": 12, "date": churn_log._utc_date(),
-                    "paths": churn_log.RELATIVE_PATHS, "size": len(blob),
+                    "paths": churn_log.RELATIVE_PATHS, "cutoff": FLOOR, "size": len(blob),
                     "crc": zlib.crc32(blob)}), encoding="utf-8")
     return old
 
 
-def test_a_warm_log_under_the_old_name_is_adopted_not_rewalked(tmp_path, git):
-    """The key shape did not change with the name, so the rename alone made
-    every upgrade re-walk the window it already had on disk."""
-    old = _old_log(tmp_path)
+# 0.4.4's unversioned log, and the v2 log 0.4.5 to 0.8.0 write. Both cut the
+# window at the wall clock under a key this version would answer: served, a
+# tree a year past its last commit reads no churn.
+V044, V080 = "churn-log.z", "churn-log-v2.z"
 
-    assert list(churn_log.log_lines(tmp_path, 12)) == NEW
-    assert git.window_calls == 0, "the log was on disk; the walk buys nothing"
-    assert not old.exists() and not churn_log._key_path(old).exists()
+
+def _pair(old) -> dict:
+    return {path.name: path.read_bytes() for path in (old, churn_log._key_path(old))
+            if path.exists()}
+
+
+def test_0_4_4_s_log_is_deleted_never_served(tmp_path, git):
+    """No version reads that name again: 0.4.5 adopted it and deleted it."""
+    old = _old_log(tmp_path, V044)
+
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
+    assert git.window_calls == 1, "the old log is never read, so the window is walked"
+    assert _pair(old) == {}
     assert cache(tmp_path).is_file()
 
 
-def test_the_old_pair_is_swept_once_a_v2_log_exists(tmp_path, git):
-    """4.4 MB of dead weight per repo otherwise: nothing reads those names again."""
-    list(churn_log.log_lines(tmp_path, 12))
-    old = _old_log(tmp_path)
+def test_the_v2_log_is_never_served_and_stays_as_its_install_wrote_it(tmp_path, git):
+    """An older crapkit on the same tree reads it on its next run."""
+    old = _old_log(tmp_path, V080)
+    written = _pair(old)
 
     assert list(churn_log.log_lines(tmp_path, 12)) == LOG
-    assert git.window_calls == 1, "the v2 log still answers; only the litter goes"
-    assert not old.exists() and not churn_log._key_path(old).exists()
+    assert git.window_calls == 1, "the old log is never read, so the window is walked"
+    assert _pair(old) == written
+    assert churn_log.LOG_NAME != V080
+
+
+def test_0_4_4_s_log_is_swept_beside_a_v3_log(tmp_path, git):
+    list(churn_log.log_lines(tmp_path, 12))
+    old = _old_log(tmp_path, V044)
+
+    assert list(churn_log.log_lines(tmp_path, 12)) == LOG
+    assert git.window_calls == 1, "the v3 log still answers; only the litter goes"
+    assert _pair(old) == {}
 
 
 def test_the_key_file_records_what_it_keys_on(tmp_path, git):

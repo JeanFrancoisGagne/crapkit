@@ -226,6 +226,34 @@ def test_a_store_from_before_split_lines_gains_its_code_on_open(tmp_path):
     assert remedy_codes(db)["split-lines"] == 4
 
 
+def flag_codes(db) -> dict:
+    conn = conn_of(db)
+    codes = dict(conn.execute("SELECT name, id FROM flags"))
+    conn.close()
+    return codes
+
+
+def test_every_flag_holds_a_fixed_code_whatever_the_rows_said(tmp_path):
+    db = tmp_path / "crap.sqlite"
+    seeded(db, scored(3))
+
+    assert flag_codes(db) == {"measured": 1, "untested": 2, "no-lane": 3, "cc-only": 4,
+                              "excluded": 5}
+
+
+def test_a_store_from_before_excluded_gains_its_code_on_open(tmp_path):
+    db = tmp_path / "crap.sqlite"
+    seeded(db, scored(3))
+    conn = conn_of(db)
+    conn.execute("DELETE FROM flags WHERE name = 'excluded'")
+    conn.commit()
+    conn.close()
+
+    SnapshotStore(db)
+
+    assert flag_codes(db)["excluded"] == 5
+
+
 def test_the_reads_still_hand_back_the_strings(tmp_path):
     db = tmp_path / "crap.sqlite"
     rows = scored(40)

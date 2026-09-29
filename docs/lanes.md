@@ -66,21 +66,41 @@ on POSIX, cmd.exe on Windows. One reading feeds two readers. The lane guard uses
 decide whether a token narrows the run, and `doctor` uses it to decide which word is the
 runner and which words are files the repo owes.
 
+On Windows the line is read twice, as it is when it runs. cmd.exe reads it first, for
+its commands, blocks, carets and redirections, and hands each program the rest. The
+program then splits its line into arguments with the C runtime's rules, which python
+and node share. The two passes disagree about carets, backslashes and cmd.exe's
+delimiters (`;`, `,`, `=` and a non-breaking space as well as the blanks), and the guard
+reads both.
+
 | What you write | How it reads |
 |---|---|
 | `-m "not live and not perf"` | One argument. Double quotes are the portable spelling: both shells drop them and hand the runner one token. |
 | `-m 'not live and not perf'` | Five arguments on Windows. cmd.exe has no single-quote rule, so pytest gets `'not`, `live`, `and`, `not`, `perf'` and the lane is refused with a hint. |
 | `-k ^"not slow^"` | One argument. Outside a quoted run cmd.exe drops the caret and hands on the character behind it, so the runner gets `-k "not slow"`. Inside a quoted run the caret stays: `-k "a^b"` reaches the runner with its caret. |
+| `-k ^"x & pytest pylib/unit^"` | Two commands on Windows. The caret hands the quote to the runner but opens no quoted run for cmd.exe, so the `&` starts a second pytest, and that one runs only `pylib/unit`. The lane is refused. |
+| `-k "a\" tests \"b"` | One argument, `a" tests "b`. Inside double quotes `\"` writes a quote. On Windows it is the runner that reads it so; cmd.exe sees the quote close the run, so an `&` between the two `\"` still ends the command. |
 | `--cov-report=json:"cov/py 1.json"` | One argument. A quote opens a quoted run wherever it sits, mid-token included. |
 | `-k "" tests` | Three arguments. An empty pair of quotes writes an empty argument, so `tests` stays the positional it is. Dropping it would slide `tests` onto `-k` and the narrowing lane would load clean. |
-| `pytest --cov && coverage json` | Two commands. `&&`, `\|\|`, `&` and `\|` each start a new one, and every segment that runs the runner is checked on its own. |
-| `pytest --cov > lane.log 2>&1` | The redirections are the shell's; the runner never sees them. A quoted `">"` is an argument and stays. |
-| `pytest --cov; echo done` | On sh the `;` ends the command. To cmd.exe it is an ordinary character, so `echo` and `done` land in pytest's argv and the lane is refused. |
+| `pytest --cov && coverage json` | Two commands. `&&`, `\|\|`, `&` and `\|` each start a new one, blank beside them or not (`py.json&& coverage json` is two commands too), and every segment that runs the runner is checked on its own. |
+| `pytest --cov > lane.log 2>&1` | The redirections are the shell's; the runner never sees them, or their targets, quoted or not (`>"lane log.txt"`). A redirection touching a word leaves that word: `tests>lane.log` hands pytest `tests`. A quoted `">"` is an argument and stays. |
+| `a2>x`, `>lane.log;2>&1` | On sh a number names the stream only when it is the whole word, so `a2>x` hands on `a2`. cmd.exe takes the digit when a delimiter, a quote, `&`, `\|` or a parenthesis stands in front of it, caret or not: `a2>x` hands on `a2`, and `a^\|2>x` hands on `a\|`. cmd.exe also drops the delimiters between two redirections, so `>lane.log;2>&1` hands pytest nothing, while `>lane.log ;b` hands it `;b`. |
+| `(pytest --cov) > lane.log` | pytest gets `--cov` on both shells. sh runs the parentheses as a subshell. On cmd.exe a `(` where a command starts opens a block, an unquoted `)` inside it ends the command, and a block still open at the end of the line runs nothing on that line. Anywhere else, as in `-k (a)`, both are text. |
+| `pytest --cov; echo done` | On sh the `;` ends the command, and so does `;echo done`. To cmd.exe it is an ordinary character, so `echo` and `done` land in pytest's argv and the lane is refused. It does end the program's name: `python;-m pytest` starts python with `;-m` and `pytest`. |
 | `bash -c 'pytest --cov tests'` | The payload is sh text on both OSes. Under cmd.exe, bash.exe splits the line it is handed with sh's quote rules, so `'` quotes there and `tests` is one positional. The guard judges each command inside the payload, and `doctor` WARNs when sh cannot split it (a quote that never closes), since then no check looked inside. |
-| a non-breaking space in a value | Not a word break. Words break on space, tab and line endings, the way both shells break them, so a value pasted out of rendered docs stays one token. |
+| a line break | On sh a line break ends the command the way `;` does, and a backslash at the end of a line joins it to the next. cmd.exe runs the first line only. |
+| `--cov # the whole suite` | On sh a `#` that starts a word comments out the rest of the line. To cmd.exe it is text. |
+| a non-breaking space in a value | Not a word break. Both shells break words on space and tab only, so a value pasted out of rendered docs stays one token. cmd.exe does count it among its delimiters, so after `>` it ends the file name. |
 
-A command the shell itself would refuse (a quote that never closes) falls back to a
-whitespace split. A rough lint beats a crash at config load.
+A quote that never closes: sh refuses the line, and crapkit reads that quote as an
+ordinary character, because a rough lint beats a crash at config load. cmd.exe runs the
+line, the quoted run takes the rest of it, and crapkit reads it the same way.
+
+One cmd.exe rule crapkit leaves out: a block on either side of a `|` runs in a second
+cmd.exe, which reads the block's text again, so its carets work twice. In
+`(pytest -k a ^& echo b) | more` the second read starts `echo`. crapkit reads the block
+once, so there it counts more arguments than pytest gets and may refuse a lane that
+runs. Take the carets out of the block, or take the block out of the pipe.
 
 ### The refusals, as they print
 
@@ -95,9 +115,10 @@ EXIT=3
 
 The same command in double quotes loads, and so does the caret spelling
 (`-k ^"not slow^"`), the mid-token quote
-(`--cov-report=json:".crapkit/cov/py report.json"`) and the redirected form
-(`... --cov-report=json:.crapkit/cov/py.json > lane.log 2>&1`). All four come back
-`doctor: no problems found`, exit 0.
+(`--cov-report=json:".crapkit/cov/py report.json"`), the redirected form
+(`... --cov-report=json:.crapkit/cov/py.json > lane.log 2>&1`) and the same form with
+the operators touching their words (`...py.json>"lane.log" 2>&1&& python -m coverage
+json`). All five come back `doctor: no problems found`, exit 0.
 
 A second run after `&&` narrows as much as the first, so the segment it sits in is checked
 too:
@@ -279,13 +300,33 @@ artifact:
 
 | Key | What crapkit does with it |
 |---|---|
-| `fnMap` | The function list. Every entry needs `decl.start.line`, and `loc.end.line` to close the span. A missing `name` reads as `(anonymous)`. |
+| `fnMap` | The function list. Every entry needs `decl.start.line`, and `loc.end.line` to close the span. A function's span runs from `decl.start` to `loc.end`. Its body starts at `loc.start`, which falls back to `decl.start`. A missing `name` reads as `(anonymous)`. |
 | `f` | Call counts per `fnMap` id. |
-| `branchMap` and `b` | Branch coverage. Each branch counts against the innermost function whose span holds its `loc.start.line`, or the `line` beside it when `loc` is missing. A branch with neither refuses the artifact. This is the function's coverage whenever it has one branch. |
-| `statementMap` and `s` | The fallback for a function with no branch in its span, and the only source of the uncovered lines `verify` measures a diff against. |
+| `branchMap` and `b` | Branch coverage. Each branch counts against the innermost function whose span holds its `loc.start`, or the `line` beside it when `loc` is missing. A branch with neither refuses the artifact. A default parameter's arm sits between the name and the body, so it is the function's; a ternary that opens ahead of an arrow on the same line counts for the code around the arrow. This is the function's coverage whenever it has one branch. |
+| `statementMap` and `s` | The fallback for a function with no branch in its span. Each statement counts against the innermost function whose body holds its `start`. For `const f = (x) => x * 2` istanbul writes one statement for the declaration, which starts ahead of the arrow's body and runs when the declaration does, and one for the body. The first counts for the code around the arrow, so an arrow no test calls reads 0. Statements are also the only source of the uncovered lines `verify` measures a diff against. |
 
 A function with neither a branch nor a statement in its span scores on `f` alone: 1.0 when
 it was called, 0.0 when it was not.
+
+`/* istanbul ignore next */` and `/* v8 ignore next */` drop the function after them from
+`fnMap`, with its branches and statements. A function the source holds and `fnMap` leaves
+out, in a file whose `fnMap` lists others beside a `statementMap`, reads `excluded`:
+`crap = ccn`, remedy `ok` or `decompose`, because no test can move its number. Through
+0.8.0 it read `untested` with `add-tests` advice no test could follow. The statements are
+the proof that an instrumenter wrote the entry: a hand-built entry with `fnMap` alone
+cannot say what it left out, so a function missing from it stays `untested`. A nested
+function a hint drops sits inside its encloser's span and reads the encloser's number, not
+`excluded`: jest's `v8` provider and c8 also leave out a nested callback V8 never compiled,
+so a missing nested function cannot be told from an uncalled one.
+
+Line numbers are placed on crapkit's own lines, which end at LF, CRLF and a lone CR.
+Producers number by their own rule: `@vitest/coverage-v8` ends a JavaScript line at LF
+only, and Babel (jest, nyc, `@vitest/coverage-istanbul`) and TypeScript source maps also
+end one at U+2028 and U+2029. Only a file that holds a lone CR, U+2028 or U+2029 can read
+differently, and for one crapkit reads the source and takes the rule under which each
+named function's name sits on the line its `decl.start` gives, with `column` placing a
+position inside a line V8 counted whole. A file with no named function keeps its numbers
+as written.
 
 The outer object is keyed by path. crapkit strips the crapkit root off an absolute key and
 takes any other key as it stands, so root-relative keys work too. `path_prefix` is
@@ -346,11 +387,11 @@ $ ls .crapkit .crapkit/cov
 .crapkit:
 artifacts.json
 cache.json
-churn-cache-v2.json
+churn-cache-v3.json
 churn-commits-v1.json
-churn-log-v2.json
-churn-log-v2.z
-coupling-cache-v1.json
+churn-log-v3.json
+churn-log-v3.z
+coupling-cache-v2.json
 cov
 crap.sqlite
 lane-py.log
@@ -373,10 +414,10 @@ py.json
 | `measurement.lock` | The lock a lane run holds on this checkout's lane logs and artifact stamps while its commands run, so two crapkit processes never measure one checkout at once. It stays behind between runs and holds nothing. | |
 | `owner.log` | What the measurement owner wrote to stderr: nothing on a run that ends normally, and a dated line and a traceback when it [stops early](#when-the-measurement-owner-stops). Every owner on this checkout appends to it. | |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. A file enters it once it has held still for two seconds, so a run right after the files were written, like the listing above, leaves no `stat-stamps.json` yet. A same-length rewrite put back under its old mtime (`cp -p`, `touch -r`) keeps the old hash until the file's next real write; `crapkit watch` misses that rewrite the same way. | |
-| `churn-cache-v2.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format, history depth. |
+| `churn-cache-v3.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format, history depth. The date never moves the window. |
 | `churn-commits-v1.json` | The window's commits: each one's author, author date and commit date, and each path's commits. Read only when the churn map misses; a HEAD that grew from it walks only the new commits. Not kept in a shallow clone. | HEAD sha, window months, path format and the window cutoff its commits were cut at, plus the body's size and CRC. |
-| `churn-log-v2.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v2.json` beside it. | Same five fields. The key also records the window cutoff the log was cut at; a refresh below it walks the window again. |
-| `coupling-cache-v1.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
+| `churn-log-v3.z` | The window's `git log --name-only` output, deflated, with its key in `churn-log-v3.json` beside it. | Same five fields. The key also records the window cutoff the log was cut at; a refresh below it walks the window again. |
+| `coupling-cache-v2.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
 | `mutate-pool/` | Kept worktrees for every mutation worker, including one. See [mutation worktrees](configuration.md#mutation-worktrees). | |
 | `mutate-tmp/` | Recognized concurrent mutation runs, removed after completion or recovered under an exclusive lease. | |
 | `test-runs/` | Marked default test evidence from crapkit's own development runner, `tools/testing/run.py`, which prunes it by age and count (`--retention-days`, `--retention-count`) before each default run. `clean` leaves it alone. Explicit output and active leases are preserved. | |
@@ -387,8 +428,8 @@ answers in 0.04 s warm on a corpus where it used to rescan 4.3 M rows. It means 
 `report` write to `crap.sqlite` on a cold rollup, best effort: they read as before on a
 checkout they cannot write to, just without the speedup.
 
-The date is in the churn key because the window's months are counted back from the UTC
-clock, so yesterday's map describes a window one day wider than today's. The tracked set is
+The window ends at HEAD's commit date: its cutoff is `churn_window_months` calendar months
+earlier, in UTC, so one HEAD names one window on any day and any machine. The tracked set is
 in the coupling key because ranking drops any pair naming a file `git ls-files` no longer
 lists, and the index moves without HEAD: `git rm --cached src/util.py` leaves the sha alone
 and still has to retire every pair naming that file. The history depth is in all three keys
@@ -404,8 +445,8 @@ the wider thresholds exist to surface.
 
 The version marker is in the file name on purpose. 0.4.3 and 0.4.5 sharing one working tree
 each read the other's cache as cold and rewrote it, so every run of both rebuilt the map.
-Different formats, different files, both warm. A warm 0.4.4 cache is adopted once and its
-file removed rather than left behind.
+Different formats, different files, both warm. This version never reads the files 0.4.5 to
+0.8.0 wrote and leaves them to an older crapkit on the tree; 0.4.4's are deleted.
 
 ---
 
@@ -593,6 +634,14 @@ A machine has more than one python, and the note used to say only "this python".
 one it names is not the one the suite should run in, installing the package is the wrong
 move: repoint the lane instead.
 
+A lane that names its python by path, such as the `.venv\Scripts\python.exe` init writes
+for a repo's venv on Windows, gets an install command that names the file the path
+resolves to, `C:/work/app/.venv/Scripts/python.exe -m pip install pytest-cov`. The word as
+the lane spells it runs only from the lane's directory, and Git Bash reads its
+backslashes as escapes. Forward slashes run in cmd.exe, PowerShell and Git Bash, and a
+directory name that needs quoting is quoted on its own, as in a next step
+([ADR 0003](adr/0003-a-pasted-command-never-opens-with-a-quote.md)).
+
 A lane that reaches `crapkit coverage` with the plugin still missing gets the same fact from
 the refusal: the package has to land in the environment the SUITE runs in, not in the shell's
 active venv. Before 0.4.12 it read `pip install pytest-cov` and named no environment at all,
@@ -701,6 +750,18 @@ region without one exits 5, where it used to score the function as never run:
 ```
 crapkit: lane 'py' FAILED: unparseable coverage.py report /repo/.crapkit/cov/py.json: pkg/mod.py: guarded: no summary object, so crapkit cannot tell how much of it ran; regenerate the report with `coverage json`
 ```
+
+### A function coverage.py excludes
+
+`# pragma: no cover` on a def line, or an `exclude_lines` or `exclude_also` pattern that
+takes every statement in a function, leaves coverage.py a region with no statements and
+its lines under `excluded_lines`. From coverage.py 7.10.1 the default patterns also exclude
+a stub whose body is `...`, such as a `Protocol` method. That function reads `excluded`:
+`crap = ccn`, remedy `ok` or `decompose`.
+A pattern that takes some statements and leaves others, such as a `raise
+NotImplementedError` line, excludes those lines and the function is measured on the rest.
+Through 0.8.0 an excluded function read cov 0, `crap = ccn^2 + ccn`, with `add-tests`
+advice no test could follow.
 
 ### `--continue-on-collection-errors`
 
@@ -1155,11 +1216,14 @@ which is what [refuses that file on reuse](#the-artifact-a-failed-attempt-left-b
 
 | Flag | Behavior |
 |---|---|
-| `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) while it holds the same bytes, so a touch, a copy that drops times or a same-bytes rewrite keeps it refused and a file with new bytes is read. Warns per lane when files under that lane's scopes changed since the stamp. A declared junit it cannot read is a warning under `coverage` and [exit 5 under `verify`](#under---reuse-artifacts-it-is-a-warning). |
+| `--reuse-artifacts` | Skip every lane command, parse whatever is on disk, except the artifact a lane's last attempt failed to write: that one is refused (exit 5) while it holds the same bytes, so a touch, a copy that drops times or a same-bytes rewrite keeps it refused and a file with new bytes is read. Warns per lane when files under that lane's scopes changed since the stamp, or when git could not tell. A declared junit it cannot read is a warning under `coverage` and [exit 5 under `verify`](#under---reuse-artifacts-it-is-a-warning). |
 | `--reuse-unchanged` | Reuse a lane only when its stamp proves nothing it reads changed; otherwise run it again. A lane without `inputs` needs the same clean HEAD, unchanged lane settings, `crapkit.toml` bytes, inherited environment, crapkit version and coverage/JUnit bytes. A lane with `inputs` needs its artifact's commit in this clone, no change under those paths between that commit's tree and the working tree, its own lane table and `env` unchanged, the same crapkit version, and the same coverage/JUnit bytes. A failed attempt's leftover always reruns, whatever its modification time says. Each lane prints one line saying which it did: a rerun names the first condition that failed, and a reuse names what its proof leaves out. |
 
 Without `inputs`, automatic reuse covers the whole tracked tree, including tests and
 shared helpers: any tracked or untracked change, or a new commit, reruns the lane.
+A change means new bytes, as `git status` reads them: a `touch`, a file saved with the
+same bytes or a fresh copy of the checkout is no change, whatever `diff.autoRefreshIndex`
+the repo sets, and crapkit's reads leave `.git/index` as they found it.
 With [`inputs`](configuration.md#lane) it covers exactly those paths, literal paths
 from the root with no globs, so a docs commit or an untracked draft elsewhere reruns
 nothing, and a file the command reads that the list leaves out is never checked. The
@@ -1213,11 +1277,13 @@ crapkit: lane 'web': rerunning: the working tree has 1 uncommitted change(s): we
 ```
 
 A rerun names the first condition that failed: `no artifact at PATH`, a last attempt
-that wrote none, `its stamp holds no proof` (it was measured with the uncommitted
-changes it names, or by a crapkit that recorded none), uncommitted changes, `HEAD is X
-and its artifact was built at Y`, `crapkit.toml changed`, `its lane table changed`,
+that wrote none, `its stamp holds no proof` and why (the uncommitted changes it was
+measured with, a git read that failed while it was measured, or a crapkit that recorded
+none), uncommitted changes, `HEAD is X and its artifact was built at Y`, `crapkit.toml changed`, `its lane table changed`,
 `the crapkit version changed`, `N environment variable(s) changed: NAME`, changes under
-a lane's `inputs` since its commit, a stamp commit this clone does not hold, or a
+a lane's `inputs` since its commit, an artifact built at a commit that is no longer behind
+HEAD, `nothing proves its inputs unchanged` and what git said when a read of them failed, a
+stamp commit this clone does not hold, or a
 declared file that no longer matches its stamp: `PATH: missing`, `PATH: unreadable
 (why)` or `PATH: bytes differ from its stamp`. `crapkit.toml` is compared with CRLF read as LF, so a
 checkout under `core.autocrlf=true` is the file it was. `coverage --json` carries the
@@ -1533,7 +1599,9 @@ Lanes are subprocesses, so this is a thread pool: it moves wall time only. Above
 starts the lane that took longest last time first (its duration rides along in the artifact
 stamp), prints `lane 'x' started` and `finished` to stderr, and folds results back in
 **declaration** order regardless of who finished. The run scores byte-identically to a
-serial one.
+serial one. A lane with no recorded run, because its artifact was reused or `.crapkit/` was
+cleaned, is placed by the time its `results_artifact` JUnit report claims, the figure
+`doctor --tune` costs it by. A lane with neither starts after the measured ones.
 
 Every reuse decision is taken up front on one thread, before any lane starts, because a lane
 command writes to the working tree and deciding lane by lane would let one lane's output
@@ -1874,7 +1942,7 @@ above the artifact path the refusal names. So the refusal counts the shards and 
 they are:
 
 ```
-crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/coverage.json (command exit 1); lane log: /repo/.crapkit/lane-py.log; last output: ...; 8 coverage shards (.coverage.box.pid5.aaaa, ...) sit in /repo, which is what a killed parallel run leaves behind: `coverage combine && coverage json -o .crapkit/cov/coverage.json` there, then a re-run with --reuse-artifacts, scores what that suite did measure
+crapkit: lane 'py' FAILED: lane 'py' produced no artifact at .crapkit/cov/coverage.json (command exit 1); lane log: /repo/.crapkit/lane-py.log; last output: ...; 8 coverage shards (.coverage.box.pid5.aaaa, ...) sit in /repo, which is what a killed parallel run leaves behind: `coverage combine` followed by `coverage json -o .crapkit/cov/coverage.json` there, then a re-run with --reuse-artifacts, scores what that suite did measure
 ```
 
 The `-o` target is written relative to the shard directory, because that is where the
@@ -1882,7 +1950,8 @@ message tells you to stand: on a lane with a `cwd` it reads `../.crapkit/cov/cov
 rather than the repo-relative `artifact` key, which would have put the JSON one directory
 below the path the next run opens. Only a `coveragepy` lane gets the recipe. `coverage
 combine` is coverage.py's command, so a jest or vitest lane rooted beside a python one is
-never told to run it over the python lane's leftovers.
+never told to run it over the python lane's leftovers. The two commands are named one
+after the other rather than chained with `&&`, which Windows PowerShell 5.1 cannot parse.
 
 crapkit does not run the combine for you. Shards from an interrupted suite merge into a
 report that looks exactly like a whole run, and taking that for a full measurement is what

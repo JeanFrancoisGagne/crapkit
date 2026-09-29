@@ -9,6 +9,10 @@ Touched and at or under its mark, the function is the debt the repo signed
 for; above it, the gate fires as rescore's would, and the ratchet check reports
 the rise beside it.
 """
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
 from crapkit.verify import evaluate
@@ -17,7 +21,7 @@ TOUCHED = {"src/a.ts": [(3, 4)]}
 
 
 def row(name: str = "f( )", ccn: int = 5, cov: float = 0.0) -> ScoredRow:
-    crap = ccn * ccn * (1 - cov) ** 3 + ccn
+    crap = float(exact.crap(ccn, Fraction(cov)))
     return ScoredRow("src", "src/a.ts", name, 1, 9, ccn + 1, ccn, ccn, 5, 1, 1, cov,
                      "measured", crap, "add-tests")
 

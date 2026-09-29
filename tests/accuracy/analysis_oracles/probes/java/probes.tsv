@@ -1,0 +1,105 @@
+id	file	function	metric	expected	source	ruling
+eq-straight	Equivalence.java	straight	start	2	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+eq-straight	Equivalence.java	straight	end	5	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+eq-straight	Equivalence.java	straight	ccn_std	1	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; no decision	
+eq-straight	Equivalence.java	straight	ccn_mod	1	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no decision	
+eq-straight	Equivalence.java	straight	ccn	1	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-straight	Equivalence.java	straight	cognitive	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; no structure	
+eq-straight	Equivalence.java	straight	nesting	0	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; no structure	
+eq-straight	Equivalence.java	straight	nloc	4	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-straight	Equivalence.java	straight	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+eq-four-deep	Equivalence.java	fourDeep	start	7	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+eq-four-deep	Equivalence.java	fourDeep	end	18	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+eq-four-deep	Equivalence.java	fourDeep	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + four ifs	
+eq-four-deep	Equivalence.java	fourDeep	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + four ifs	
+eq-four-deep	Equivalence.java	fourDeep	ccn	5	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-four-deep	Equivalence.java	fourDeep	cognitive	10	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, +2, +3, +4 by nesting	
+eq-four-deep	Equivalence.java	fourDeep	nesting	4	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; four ifs, one inside another	
+eq-four-deep	Equivalence.java	fourDeep	nloc	12	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-four-deep	Equivalence.java	fourDeep	params	4	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+eq-nested-loops	Equivalence.java	nestedLoops	start	20	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+eq-nested-loops	Equivalence.java	nestedLoops	end	30	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+eq-nested-loops	Equivalence.java	nestedLoops	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + three loops	
+eq-nested-loops	Equivalence.java	nestedLoops	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + three loops	
+eq-nested-loops	Equivalence.java	nestedLoops	ccn	4	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-nested-loops	Equivalence.java	nestedLoops	cognitive	6	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, +2, +3 by nesting	
+eq-nested-loops	Equivalence.java	nestedLoops	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; three loops, one inside another	AO-ND-LOOPS
+eq-nested-loops	Equivalence.java	nestedLoops	nloc	11	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-nested-loops	Equivalence.java	nestedLoops	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+eq-flat-seven	Equivalence.java	flatSeven	start	32	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+eq-flat-seven	Equivalence.java	flatSeven	end	56	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+eq-flat-seven	Equivalence.java	flatSeven	ccn_std	8	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; 1 + seven ifs	
+eq-flat-seven	Equivalence.java	flatSeven	ccn_mod	8	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; 1 + seven ifs	
+eq-flat-seven	Equivalence.java	flatSeven	ccn	8	docs/agent-json.md item fields: ccn is min(ccn_std, ccn_mod)	
+eq-flat-seven	Equivalence.java	flatSeven	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; seven ifs at nesting 0, +1 each	
+eq-flat-seven	Equivalence.java	flatSeven	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if and loop opens a nesting level; seven ifs side by side	
+eq-flat-seven	Equivalence.java	flatSeven	nloc	25	lizard 1.24.0 README: NLOC counts lines of code without comments and blank lines; the function's non-blank lines	
+eq-flat-seven	Equivalence.java	flatSeven	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+c-branches	Constructs.java	branches	start	2	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+c-branches	Constructs.java	branches	end	10	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+c-branches	Constructs.java	branches	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and else if; else adds no decision	
+c-branches	Constructs.java	branches	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-branches	Constructs.java	branches	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, else if +1, else +1	
+c-branches	Constructs.java	branches	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each arm's body one level deep	
+c-branches	Constructs.java	branches	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+c-pick	Constructs.java	pick	start	12	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+c-pick	Constructs.java	pick	end	23	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+c-pick	Constructs.java	pick	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; three case labels, default excluded	
+c-pick	Constructs.java	pick	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; the switch is one decision	
+c-pick	Constructs.java	pick	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; switch +1	
+c-pick	Constructs.java	pick	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the case bodies sit inside the switch	AO-N-CASE-C
+c-pick	Constructs.java	pick	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+c-logic	Constructs.java	logic	start	25	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+c-logic	Constructs.java	logic	end	30	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+c-logic	Constructs.java	logic	ccn_std	5	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; if and three short-circuit operators	
+c-logic	Constructs.java	logic	ccn_mod	5	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-logic	Constructs.java	logic	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the && run +1, || +1	
+c-logic	Constructs.java	logic	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	AO-N-CONDITION-C
+c-logic	Constructs.java	logic	params	4	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+c-choose	Constructs.java	choose	start	32	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+c-choose	Constructs.java	choose	end	34	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+c-choose	Constructs.java	choose	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one conditional operator	
+c-choose	Constructs.java	choose	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-choose	Constructs.java	choose	cognitive	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1	
+c-choose	Constructs.java	choose	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the ternary's operands	
+c-choose	Constructs.java	choose	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+c-loops	Constructs.java	loops	start	36	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+c-loops	Constructs.java	loops	end	45	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+c-loops	Constructs.java	loops	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops	
+c-loops	Constructs.java	loops	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-loops	Constructs.java	loops	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two loops at nesting 0, +1 each	
+c-loops	Constructs.java	loops	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; two loops side by side	
+c-loops	Constructs.java	loops	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+c-guarded	Constructs.java	guarded	start	47	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+c-guarded	Constructs.java	guarded	end	56	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+c-guarded	Constructs.java	guarded	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two catch clauses	
+c-guarded	Constructs.java	guarded	ccn_mod	3	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-guarded	Constructs.java	guarded	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; two catch clauses at nesting 0, +1 each	
+c-guarded	Constructs.java	guarded	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; each catch body; try opens none	
+c-guarded	Constructs.java	guarded	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+c-outer	Constructs.java	outer	start	58	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+c-outer	Constructs.java	outer	end	68	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+c-outer	Constructs.java	outer	ccn_std	4	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; two loops and an if	
+c-outer	Constructs.java	outer	ccn_mod	4	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-outer	Constructs.java	outer	cognitive	7	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; loop +1, loop +2, if +3, the jump to a label +1	
+c-outer	Constructs.java	outer	nesting	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; an if inside two loops	AO-ND-LOOPS-IF
+c-outer	Constructs.java	outer	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+c-fact	Constructs.java	fact	start	70	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function starts on its defining line	
+c-fact	Constructs.java	fact	end	75	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+c-fact	Constructs.java	fact	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	
+c-fact	Constructs.java	fact	ccn_mod	2	lizard 1.24.0 README option -m: a switch with all its cases counts as one decision; NIST SP 500-235 sec. 4.1 for the rest; no switch	
+c-fact	Constructs.java	fact	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; if +1, the recursive call +1 (recursion)	AO-COG-RECURSION-BRACE
+c-fact	Constructs.java	fact	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: each if, else if, else, switch, loop, catch and ternary opens a nesting level; the if body	
+c-fact	Constructs.java	fact	params	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: the parameters the function declares	
+j-enum-body	Policy.java	value	rows	1	The Java Language Specification SE 21 sec. 8.9.1 Enum Constants: the constant's class body declares one method, value	AO-JAVA-ENUM-BODY
+j-annotated	Annotated.java	inlined	rows	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: inlined is one method; its annotations are modifiers	AO-JAVA-ANNOTATION-NAME
+j-local-annotation	Shapes.java	afterLocalAnnotation	rows	1	The Java Language Specification SE 21 sec. 8.4 Method Declarations: afterLocalAnnotation is one method	AO-JAVA-LOCAL-ANNOTATION
+j-local-annotation	Shapes.java	localAnnotation	end	6	The Java Language Specification SE 21 sec. 8.4 Method Declarations: a function ends on the last line of its body	
+j-field-anon	FieldAnon.java	check	rows	1	The Java Language Specification SE 21 sec. 15.9.5 Anonymous Class Declarations: the anonymous class declares one method, check	AO-JAVA-FIELD-ANON
+j-annotation-default	Element.java	alternate	rows	0	The Java Language Specification SE 21 sec. 9.6.1 Annotation Interface Elements: an element with a default declares no method body	AO-JAVA-ANNOTATION-DEFAULT
+j-anon-field	Anonymous.java	make	nloc	6	lizard 1.24.0 README: NLOC counts lines of code without comments; make's own lines, the anonymous class's field and its method's header among them	AO-JAVA-ANON-FIELD-NLOC
+j-nested-ternary	Ternaries.java	pick	cognitive	3	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; ternary +1, the ternary in its else operand +2	AO-COG-TERNARY-NEST
+j-try-loop	Ternaries.java	tryLoop	nesting	1	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: try opens no level, the for does	AO-N-TRY
+j-closure-if	Lambdas.java	closureIf	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3; B2: the closure raises the nesting level, so its if scores +1 and +1 nesting	AO-COG-CLOSURE
+j-closure-if	Lambdas.java	closureIf	nesting	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B2: the if sits inside the closure	AO-N-CLOSURE-IF
+j-closure-if	Lambdas.java	closureIf	ccn_std	2	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded; one if	

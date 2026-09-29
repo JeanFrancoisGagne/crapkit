@@ -1,0 +1,26 @@
+{
+  "name": "crapkit-accuracy-nightly-oracles",
+  "private": true,
+  "description": "Coverage producers and differential oracles the nightly tier reruns: vitest v8 and istanbul, nyc, c8, Jest with babel and v8, istanbul-lib-coverage, crap-typescript and Stryker.",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/preset-env": "7.29.7",
+    "@babel/preset-typescript": "7.29.7",
+    "@barney-media/crap-typescript-core": "0.5.2",
+    "@stryker-mutator/core": "10.0.0",
+    "@stryker-mutator/vitest-runner": "10.0.0",
+    "@vitejs/plugin-vue": "6.0.9",
+    "@vitest/coverage-istanbul": "5.0.1",
+    "@vitest/coverage-v8": "5.0.1",
+    "babel-jest": "30.5.2",
+    "c8": "12.0.0",
+    "istanbul-lib-coverage": "3.2.2",
+    "jest": "30.5.2",
+    "jest-junit": "17.0.0",
+    "nyc": "18.0.0",
+    "typescript": "6.0.2",
+    "vitest": "5.0.1",
+    "vue": "3.5.43"
+  }
+}

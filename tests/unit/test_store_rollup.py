@@ -63,8 +63,8 @@ def test_a_second_read_never_scans_the_function_rows_again(tmp_path):
 
 
 def test_the_per_scope_read_is_served_from_the_same_fill(tmp_path):
-    """run_totals and run_scope_totals are one scan, not two: the whole-run
-    numbers are the per-scope numbers added up."""
+    """run_totals and run_scope_totals are one scan, not two: the fill writes
+    the whole-run numbers beside the per-scope ones."""
     store = seeded(tmp_path)
 
     store.run_totals(target=6)
@@ -110,6 +110,17 @@ def test_the_ceiling_is_part_of_the_key_so_a_new_target_is_not_served_stale(tmp_
     assert strict[1] != loose[1], "the fixture must straddle the two ceilings"
     assert strict[1] == totals(rows, target=6, scope_targets={"ui": 4}).over_target
     assert loose[1] == totals(rows, target=6, scope_targets={"ui": 40}).over_target
+
+
+def test_the_fill_and_the_cached_read_list_the_scopes_in_one_order(tmp_path):
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    rows = [row._replace(scope=scope) for row, scope in zip(scored(3), ("ui", "api", "core"))]
+    run_id = store.write_run(commit="c0", tool_versions={}, rows=rows, lanes={"unit": {}})
+
+    cold = list(store.run_scope_totals(target=6)[run_id])
+    warm = list(store.run_scope_totals(target=6)[run_id])
+
+    assert cold == warm == ["api", "core", "ui"]
 
 
 def test_a_scope_target_equal_to_the_repo_target_shares_the_key(tmp_path):

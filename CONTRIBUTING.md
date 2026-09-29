@@ -5,18 +5,22 @@
 ```
 git clone https://github.com/JeanFrancoisGagne/crapkit
 cd crapkit
-pip install -e ".[dev]"
+pip install -e ".[dev,accuracy-push]"
 git config core.hooksPath git-hooks
 ```
 
-Quote `".[dev]"`: zsh globs the bare form and the install fails before pip sees it.
+Quote `".[dev,accuracy-push]"`: zsh globs the bare form and the install fails before pip
+sees it.
 
 The dev extra includes pytest, pytest-cov and pytest-xdist. Keep all three in
 the test environment: fixture lanes launch their own pytest processes with
 coverage and worker flags. Run the shared test schedule below after setup.
 
-`core.hooksPath` arms the complexity gate on your own commits. Without it your commits
-pass locally and get rejected in review.
+`core.hooksPath` arms the complexity gate on your own commits and change control on
+your pushes. Without it your commits pass locally and get rejected in review. The
+`accuracy-push` extra is what the pre-push hook runs on: the pinned oracles of the
+calculation-accuracy suite ([docs/accuracy.md](docs/accuracy.md)). Without it the hook
+stops the push and prints the install line.
 
 ## Tests
 
@@ -35,6 +39,14 @@ shared runner to reproduce a unit failure serially, and `--suite unit` or
 `--suite e2e` to run one session, the way each Windows CI job does. Each worker
 has its own Python process and test directories. Both suites disable a globally
 installed pytest-randomly plugin.
+
+A change to anything crapkit computes, a score, a label, a ranking or a pass/fail,
+also runs the calculation-accuracy suite: `python tools/accuracy/run.py --tier push -n 4`
+([docs/accuracy.md](docs/accuracy.md) has every tier). The pre-push hook runs the
+accuracy checks of each calculation whose module your branch touches. A fix to a
+calculation adds a row to `tests/accuracy/suite_strength/retro/bugs.tsv` whose check
+fails at the commit before the fix, and a change that moves a golden declares itself
+with `python tools/accuracy/change_control.py declare`.
 
 Add `--coverage` to the shared runner to combine branch coverage, subprocess
 measurements, configured test contexts and JUnit results. Every direct run retains its
@@ -138,17 +150,24 @@ Two gates, and the first one is yours.
 **Before you push.** `git-hooks/pre-commit` refuses the commit on a staged function over
 ccn 6. Then `python -m crapkit verify` on the branch: it reruns the lane, gates the
 functions your diff touched, and checks that no ratchet mark rose and no test that passed
-in the baseline fails now. CI also runs the event-base hook and a complete verdict
-against separate base and candidate wheel installations.
+in the baseline fails now. `git-hooks/pre-push` runs change control on every pushed
+commit and the accuracy checks of each calculation whose module the branch touches;
+a golden or metric that moved without a declared change stops the push with the
+`change_control.py declare` command that records it. CI also runs the event-base hook,
+a complete verdict against separate base and candidate wheel installations, and the
+accuracy push tier.
 
-**In CI** (`.github/workflows/ci.yml`), nine jobs. A newer push to a pull request
+**In CI** (`.github/workflows/ci.yml`), thirteen jobs. A newer push to a pull request
 cancels the run it replaces; every push to main runs to the end.
 
 | Job | Runs | What fails the job |
 |---|---|---|
 | `test` | Editable dev install, console-script check and `python tools/testing/run.py --suite ...` on Python 3.11, 3.12, 3.13 and 3.14 on Ubuntu and Windows, every version pyproject's classifiers name, and on macOS with Python 3.13 for the letter-case rows; Ubuntu/Python 3.12 belongs to `dogfood`. An Ubuntu or macOS job runs both suites; each Windows suite is a job of its own. `CRAPKIT_REQUIRE_LOCALES=1` makes a Latin-1 locale row fail where localedef cannot build its locale, where elsewhere it skips. | A test failure. |
 | `verdict-measure` | One job per side: `python tools/testing/ci.py --base "$BASE_REF" --measure base` or `--measure candidate` builds and verifies that side's wheel, measures both suites and uploads the coverage evidence, the wheel and its proof. | A build, install or provenance failure. A failing suite still uploads; the join judges it. |
-| `verdict` | `python tools/testing/ci.py --base "$BASE_REF" --join` checks each uploaded wheel against the bytes and commit its proof records, installs it into a fresh venv, proves its source again, transfers the complete baseline ledger and runs `verify --no-tighten`. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict. |
+| `verdict` | `python tools/testing/ci.py --base "$BASE_REF" --join` checks each uploaded wheel against the bytes and commit its proof records, installs it into a fresh venv, proves its source again, transfers the complete baseline ledger and runs `verify --no-tighten`. Then, whatever the join decided: `tools/accuracy/change_control.py` against `refs/accuracy/green`, `tools/accuracy/wheel_diff.py diff` of the two wheels on the small corpus, and the self-measurement floor over the candidate's coverage. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict; a golden, expected value or metric that moved without a declared change; a CLI entry point the candidate's lane never ran. |
+| `accuracy-push` | The calculation-accuracy push tier from the hash-locked `tools/accuracy/requirements-push.txt`: `python tools/accuracy/run.py --tier push -n 4`, every push check on Ubuntu and the `--os-sensitive` ones on Windows. See [docs/accuracy.md](docs/accuracy.md). | A value that departs from its oracle, hand table or model; a strict xfail that passes, which means its bug is fixed and its rulings row must say so. |
+| `accuracy-xplat` | `python tools/accuracy/wheel_diff.py xplat` over the two push receipts: the small corpus's exports as Ubuntu and Windows printed them. | An export that differs: ints and labels exactly, four-decimal floats by their text, full-precision floats beyond 2 ulp. |
+| `accuracy-green` | On a push to main only. When `verdict`, `accuracy-push` and `accuracy-xplat` passed, it moves `refs/accuracy/green` to the commit, the base the next change-control run judges against; otherwise it opens or updates the `accuracy-red` issue. | A ref push or an issue write that GitHub refuses. |
 | `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. Then `test_claude_code_loads_the_manifests_doctor_reads` asks that Claude Code whether each manifest encoding loads, under `CRAPKIT_REQUIRE_CLAUDE=1`. | A validation error, or a manifest this Claude Code reads another way than `doctor --plugin-root` does. |
 | `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on Crapkit, with `CRAPKIT_REQUIRE_LOCALES=1` as in `test`. | Action execution errors, a test failure or an event-base complexity breach (`hook-precommit --base "$BASE_REF"`). Its `gate: false` setting leaves score enforcement to `verdict`. |
 | `deploy-linux` | `python tools/deploy/run.py --cadence push --os linux --image core --cache gha -n 4 --shard 1/2`, and `--shard 2/2` on a second runner at the same time, builds `crapkit-deploy:core`, or reuses it from the Actions cache, and runs half of the Linux push cells of `tests/deploy` in it with no network; the two halves run every one. | A cell failure, or a new image whose tools differ from `tools/deploy/pins.toml`. |
@@ -208,7 +227,11 @@ shell and PowerShell.
 | Module | Why it exists |
 |---|---|
 | `lizardtypescript.py` | keeps sibling JavaScript and TypeScript expression arrows separate; refuses ambiguous TypeScript angle syntax instead of guessing. It extends each reader instance without changing the installed lizard package. `mask_templates` blanks the template-literal characters lizard's tokenizer misreads, so a template nested in `${...}` no longer hides the functions after it; `analyze.py` applies it to every JavaScript-family file. |
-| `lizardrust.py` | lizard's Rust reader counts a `match` block once no matter how many arms it has (lizard #494). This one counts each non-wildcard arm, and retires itself the day upstream fixes it. |
+| `lizardrust.py` | lizard's Rust reader counts a `match` block once no matter how many arms it has (lizard #494). This one counts each non-wildcard arm, and its match rule retires the day upstream fixes it. It also ends a `//` comment at its line. |
+| `lizardlinecomment.py` | lizard's tokenizer reads a `//` comment that ends in a backslash on into the next line, as only C's preprocessor does, so a function whose signature sat on that line had no row. `register()` ends the comment at its line in lizard's Java, Swift, TypeScript and TSX readers in place, so the reader classes stay lizard's; JavaScript and Vue follow the TypeScript reader. The Go, Zig and Rust readers take its `LINE_COMMENT` in their own tokenizers. |
+| `lizardgolike.py` | lizard reads Go and Zig with one state machine that waits for any later `{` after a parameter list, so a function type (`var cb func(int) error`) took the next block as its body. These readers end a signature where the language does. A reader that must decide before any counter sees a token defines `peek`, which `analyze._ReaderLookahead` calls with each raw token. |
+| `lizardclike.py` | lizard's C, C++ and Objective-C readers name a parameter after the last word of its declaration, so an unnamed or array parameter and every Objective-C argument went uncounted; they read a `<` comparison as a template bracket and lost every function after it, and read a class defined inside a function as that function's body; an attribute before the body named the function; and every counter read the `&&` of `auto&& x` or `static_cast<T&&>` as a logical and. These readers keep lizard's class names, because crapkit picks language rules by reader name. |
+| `lizardjava.py` | lizard's Java reader hid every method after an annotated local variable, an enum constant with a body or an annotation element with a default, read a second annotation with arguments as the method, and named a method nested in a method with its class twice (`A::A::go.run`). Same class name as lizard's, same reason. |
 | `lizardshell.py` | lizard ships no shell reader, and answers `.sh` with `CLikeReader` rather than a failure, so the numbers were plausible and wrong. |
 | `lizardpowershell.py` | same for `.ps1` and `.psm1`, plus a cp1252 decode fallback. |
 

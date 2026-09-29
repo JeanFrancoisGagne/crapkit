@@ -20,15 +20,21 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
     from lizard_languages import get_reader_for as _lizard_reader_for
     from lizard_languages.python import PythonReader as _PythonReader
 
+    from .lizardclike import register as _register_clike
+    from .lizardgolike import register as _register_golike
+    from .lizardjava import register as _register_java
+    from .lizardlinecomment import register as _register_line_comments
     from .lizardpowershell import register as _register_powershell
     from .lizardpython import register as _register_python
     from .lizardrust import register as _register_rust
     from .lizardshell import register as _register_shell
+    from .lizardswift import register as _register_swift
     from .lizardtypescript import LizardExtension as _TypeScriptExpressions
     from .lizardtypescript import mask_templates, reads_templates, uses_type_syntax
 
 from .cache import partition_by_cache, updated_cache
-from .errors import ToolError
+from .errors import InternalCheckError, ToolError
+from .invariants import check_record
 from .repotext import source_chars, unmarked_utf16
 from .lizardcognitive import LizardExtension as _Cognitive
 from .merge import FunctionRecord, UnanalyzableFile
@@ -37,36 +43,68 @@ from .keys import bare_name
 # lizard picks a reader by extension off a hardcoded list, and none of these is
 # on it: `.rs` resolves to a reader that counts no `match` arm (lizard #494),
 # `.py` to one that ends a def inside a signature that runs past its first `)`
-# (crapkit #72), and `.sh` and `.ps1` resolve to nothing at all, which lizard
-# answers with CLikeReader rather than a failure. All four belong HERE, at the
+# (crapkit #72), `.go` and `.zig` to one that reads a function type as a
+# function, the C family's suffixes to readers that leave out unnamed and
+# array parameters and every Objective-C argument, `.java` to one that hides
+# the methods after an annotated local variable, `.swift` to one that reads
+# `super.init(...)`, `r.get()` and `#fileID` as declarations and hides the
+# functions after them, and `.sh` and `.ps1` resolve to nothing at all, which
+# lizard answers with CLikeReader rather than a failure. In lizard's Java, Swift
+# and JavaScript-family readers a `//` comment runs on into the next line after
+# a backslash, as only C's does. All nine registrations belong HERE, at the
 # module scope of the module a ProcessPoolExecutor child imports, or spawned
 # workers measure with the readers lizard shipped and report plausible wrong
 # numbers.
 #
 # lizardshell and lizardpowershell already register themselves on import, and
-# lizardrust and lizardpython deliberately do not (rebinding a name in another
-# package's namespace is not something an import should do quietly). Calling
-# all four keeps the wiring readable in one place and costs nothing: each is
-# idempotent.
+# lizardrust, lizardpython, lizardgolike, lizardclike, lizardjava, lizardswift
+# and lizardlinecomment deliberately do not (rebinding a name in another
+# package's namespace is not something an import should do quietly). Calling all
+# nine keeps the wiring readable in one place and costs nothing: each is
+# idempotent. lizardlinecomment goes last: its probe then checks the Java and
+# Swift readers that lizardjava and lizardswift put in place, which inherit the
+# comment rule from lizard's.
 _register_rust()
 _register_shell()
 _register_powershell()
 _register_python()
+_register_golike()
+_register_clike()
+_register_java()
+_register_swift()
+_register_line_comments()
 
 _POOL_THRESHOLD = 16
 
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 12  # A coverage.py function region starts at the start_line the
-#                       report writes, and a report without one is refused: coverage
-#                       7.6 to 7.13.0 write none, and the start read off the body gave a
-#                       nested function its encloser's coverage. A source that opens
-#                       with a UTF-16 byte-order mark is scored, where it read as empty,
-#                       and an identifier holding one of the five bytes cp1252 leaves
-#                       undefined keeps its name (0x81 reads as U+0181), where it keyed
-#                       as U+FFFD, `(anonymous)` or C's `if( x)` at ccn 1.
-# 11: a Python def is named by its name token and names each enclosing def once.
+ANALYSIS_VERSION = 13  # 0.8.1's one bump from 11; 12 was an unreleased step. The
+#                       nesting column reads crapkit's cognitive pass in every
+#                       language, and that pass charges each language's own structures,
+#                       bodies with no braces included. The C family and Java read on
+#                       readers that list the functions lizard hid and count every
+#                       declared parameter; Swift, shell and PowerShell read their own
+#                       syntax, PowerShell keywords in any case; and a `#` keeps the
+#                       rest of a Rust line. CRAP cubes 1 - cov with two products, not
+#                       pow, so every platform computes the same score. The Rust, Go and
+#                       Zig readers read their own syntax: signatures, empty closures,
+#                       let-else, function types, switch prongs and select. A `//`
+#                       comment ends at its line outside C, C++ and Objective-C, a
+#                       comment counts one line per LF, and the shell reader ends a
+#                       heredoc line at LF only. An istanbul counter counts for the
+#                       function whose span or body holds it by line and column, on the
+#                       reader's lines, and a function its lane was told to leave out
+#                       scores crap = ccn under the flag excluded. A coverage.py function
+#                       region starts at the start_line the report writes, and a report
+#                       without one is refused: coverage 7.6 to 7.13.0 write none, and
+#                       the start read off the body gave a nested function its
+#                       encloser's coverage. A source that opens with a UTF-16
+#                       byte-order mark is scored, where it read as empty, and an
+#                       identifier holding one of the five bytes cp1252 leaves undefined
+#                       keeps its name (0x81 reads as U+0181), where it keyed as U+FFFD,
+#                       `(anonymous)` or C's `if( x)` at ccn 1.
+# 11: A Python def is named by its name token and names each enclosing def once.
 #                       A Python def whose body sits on its colon line is listed and ends
 #                       with that logical line, so the lines after it go back to its
 #                       parent and a later def no longer carries its name. A file that
@@ -114,23 +152,54 @@ ANALYSIS_VERSION = 12  # A coverage.py function region starts at the start_line 
 #                          cognitive condition, and source bytes decode utf-8
 #                          then cp1252 instead of by machine locale
 
-# The three tokens lizard's modified rule reacts to. Membership is checked before
-# anything else runs, so the common token pays one frozenset lookup.
-_SWITCH_TOKENS = frozenset({"switch", "match", "case"})
+# The tokens the modified rule reacts to: lizard's three, Go's `select`, and the
+# `=>` of a Zig switch prong. Membership is checked before anything else runs,
+# so the common token pays one frozenset lookup.
+_SWITCH_TOKENS = frozenset({"switch", "match", "case", "select", "=>"})
+
+# The readers of the languages crapkit admits that have no `switch` statement.
+# lizard's modified extension adds 1 for every `switch` token whatever the
+# language, so a Python parameter or a Rust method named `switch` read as a
+# block: `def pick(switch): return switch` scored ccn_mod 3. Exact class names,
+# the discriminator lizardcognitive uses for the same reason.
+_NO_SWITCH_READERS = frozenset({"PythonReader", "PythonSignatureReader", "RustReader",
+                                "CorrectedRustReader", "ShellReader"})
 
 
-def _switch_delta(token: str, reader) -> int:
+def _switch_delta(token: str, reader, previous) -> int:
     """+1 for a switch-like block opener, -1 for one of its arms.
 
     `match` and `case` are soft keywords in Python: the same spelling is an
     identifier elsewhere, so the reader's own flags decide, exactly as lizard's
-    modified extension decides.
+    modified extension decides. `switch` is a name in the languages that have
+    no switch statement. `select` is Go's switch over channel operations, a
+    loop in shell and a name in most languages, so it opens a switch only for
+    a reader that sets `_keyword_select`. A `=>` is an arm only for a reader that
+    counted it in ccn_std, which `previous`, the token before it, decides.
+    A reader whose switch arms carry no `case` sets `_modified_switch = False`,
+    since no arm would take the opener's point back: PowerShell counts its
+    arms by position.
     """
     if token == "case":
         return -int("case" in reader.conditions or getattr(reader, "_keyword_case", False))
+    if token == "=>":
+        return -_counted_prong(reader, previous)
     if token == "switch":
-        return 1
-    return int(getattr(reader, "_keyword_match", False))
+        return _opens_switch(reader)
+    return int(getattr(reader, "_keyword_" + token, False))
+
+
+def _counted_prong(reader, previous) -> int:
+    """1 when the reader counted this `=>` as a prong in ccn_std (crapkit.lizardgolike)."""
+    counts = getattr(reader, "counts_prong", None)
+    return int(counts is not None and counts(previous))
+
+
+def _opens_switch(reader) -> int:
+    """1 when `switch` adds the point its arms each take back: not in a language
+    with no switch statement, nor in one whose arms carry no `case`."""
+    return int(type(reader).__name__ not in _NO_SWITCH_READERS
+               and getattr(reader, "_modified_switch", True))
 
 
 class _ModifiedDelta:
@@ -146,11 +215,34 @@ class _ModifiedDelta:
 
     def __call__(self, tokens, reader):
         context = reader.context
+        previous = None
         for token in tokens:
             if token in _SWITCH_TOKENS:
                 fn = context.current_function
-                delta = _switch_delta(token, reader)
+                delta = _switch_delta(token, reader, previous)
                 fn.modified_delta = getattr(fn, "modified_delta", 0) + delta
+            previous = token
+            yield token
+
+
+class _ReaderLookahead:
+    """Hand the reader each raw token before any extension counts it.
+
+    lizard's extensions see a token before the reader's state machine does, so a
+    reader that learns from a token that the function it opened was never one
+    (a Go or Zig function type: crapkit.lizardgolike) learns it after that
+    token's condition, nesting and line went to the wrong function. A reader
+    with a `peek` method gets the token here first, newlines and comments
+    included. Every other reader pays one attribute read per file.
+    """
+
+    def __call__(self, tokens, reader):
+        peek = getattr(reader, "peek", None)
+        if peek is None:
+            yield from tokens
+            return
+        for token in tokens:
+            peek(token)
             yield token
 
 
@@ -300,6 +392,40 @@ class _PythonBodies:
         signatures.finish()  # after lizard's own end-of-file pops, which run upstream
 
 
+# Where str.splitlines ends a line and the source does not. decode_source has
+# already turned every CR into an LF, so LF is the only line end left.
+_NOT_LINE_ENDS = dict.fromkeys(map(ord, "\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"), " ")
+
+
+class _LineEndComments:
+    """What lizard's comment_counter asks of a reader, with a comment's
+    characters that str.splitlines breaks at, and the source does not, read
+    as spaces.
+
+    comment_counter charges a comment one line per str.splitlines line. A
+    comment holding a form feed, a \\x1c or a U+2028 pushed every function
+    below it down a line, and a span pushed onto the next function joined that
+    function's coverage. Code tokens count LF alone; now comments do too.
+    """
+
+    __slots__ = ("_reader",)
+
+    def __init__(self, reader) -> None:
+        self._reader = reader
+
+    @property
+    def context(self):
+        return self._reader.context
+
+    def get_comment_from_token(self, token):
+        comment = self._reader.get_comment_from_token(token)
+        return comment if comment is None else comment.translate(_NOT_LINE_ENDS)
+
+
+def _comment_counter(tokens, reader):
+    return lizard.comment_counter(tokens, _LineEndComments(reader))
+
+
 def _chain(cognitive_index: int) -> list:
     """lizard's standard extensions with cognitive spliced in at one index.
 
@@ -307,10 +433,18 @@ def _chain(cognitive_index: int) -> list:
     it has to sit for Python: `preprocessing` strips the whitespace tokens the
     python indent rules read, and behind it a 6-branch function scores 6 instead
     of 10. The delta comes last either way, where the modified pass used to sit.
+    lizard's comment_counter goes behind `_LineEndComments`; `index` raises on a
+    lizard that no longer lists it.
+
+    lizard's ND extension is not in it: the `nesting` column is the depth the
+    cognitive pass measures (see lizardcognitive), and ND's own count read
+    three nested loops as 2 and a Go condition with three operators as 4.
     """
-    extensions = lizard.get_extensions(["ND"])
+    extensions = lizard.get_extensions([])
+    extensions[extensions.index(lizard.comment_counter)] = _comment_counter
     extensions.insert(cognitive_index, _Cognitive())
-    return [_TypeScriptExpressions(), *extensions, _ModifiedDelta(), _PythonBodies(), _CreationOrder()]
+    return [_TypeScriptExpressions(), _ReaderLookahead(), *extensions, _ModifiedDelta(), _PythonBodies(),
+            _CreationOrder()]
 
 
 # Two chains, built once per process each, not once per file: 14k files paid 14k
@@ -335,26 +469,19 @@ def _extensions_for(rel_path: str) -> list:
     return _EXTENSIONS
 
 
-# The suffix lizard routes to PythonReader (`PythonReader.ext`), and the one
-# language whose `nesting` is not lizard's. lizard's ND extension counts
-# nesting STRUCTURES for Python rather than depth: a flat function of seven
-# `if`s read 7 and a three-deep one read 3, the same number for opposite
-# shapes. The cognitive pass keeps a per-function stack of open blocks for the
-# Sonar nesting increment, and the deepest it gets is the depth. Brace
-# languages keep lizard's column, which reads their braces.
-_PYTHON_SUFFIXES = (".py",)
-
-
-def _nesting_depth(rel_path: str, fn) -> int:
-    if rel_path.lower().endswith(_PYTHON_SUFFIXES):
-        return getattr(fn, "cognitive_nesting", 0) or 0
-    return getattr(fn, "max_nesting_depth", 0) or 0
+def _parameter_count(fn) -> int:
+    """The count a crapkit reader kept (lizardclike's `crapkit_params`), else one
+    per parameter name lizard read."""
+    count = getattr(fn, "crapkit_params", None)
+    return len(fn.parameters) if count is None else count
 
 
 def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
+    """One function's numbers, checked against their documented bounds before
+    anything can store them (`invariants.check_record`)."""
     std = fn.cyclomatic_complexity
     mod = std + (getattr(fn, "modified_delta", 0) or 0)
-    return FunctionRecord(
+    record = FunctionRecord(
         path=rel_path,
         long_name=fn.long_name,
         start=fn.start_line,
@@ -363,12 +490,14 @@ def _record(rel_path: str, fn, occurrence: int = 0) -> FunctionRecord:
         ccn_mod=mod,
         ccn=min(std, mod),
         nloc=fn.nloc,
-        params=len(fn.parameters),
-        nesting=_nesting_depth(rel_path, fn),
+        params=_parameter_count(fn),
+        nesting=getattr(fn, "cognitive_nesting", 0) or 0,
         cognitive=getattr(fn, "cognitive_complexity", 0) or 0,
         occurrence=occurrence,
         inline_body=int(getattr(fn, "crapkit_inline_body", False)),
     )
+    check_record(record)
+    return record
 
 
 # How many colliding names one warning prints before it stops. A generated file
@@ -624,6 +753,8 @@ def analyze_one(args: tuple[str, str]) -> tuple[str, list[FunctionRecord]]:
     try:
         analysis = _Analyzer(_extensions_for(rel_path))(abs_path)
         return rel_path, _trusted_records(rel_path, analysis)
+    except InternalCheckError:
+        raise  # crapkit's own number broke its bound: a stop, never a refused file
     except Exception as exc:  # loud and counted, never fatal: see _note_unanalyzable
         return rel_path, UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
 
@@ -638,18 +769,39 @@ def analyze_source(rel_path: str, code: str, *, note: bool = True) -> list[Funct
     NOTE=False leaves an unreadable file unannounced, for a caller that reads a
     half-typed edit on purpose.
     """
-    try:
-        analyzer = _Analyzer(_extensions_for(rel_path))
-        analysis = analyzer.analyze_source_code(rel_path, code)
-        records = _trusted_records(rel_path, analysis)
-    except Exception as exc:  # per-file, exactly as in analyze_one; the hook keeps going
-        records = UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
+    records = _source_records(rel_path, code)
     if isinstance(records, UnanalyzableFile):
         if note:
             _note_unanalyzable({rel_path: records})
         return records
     _note_twin_keys(rel_path, records)
     return records
+
+
+def analyze_sources(sources: dict[str, str]) -> dict[str, list[FunctionRecord]]:
+    """analyze_source over a batch of (rel_path -> code), noted once for the batch.
+
+    The hook reads a commit's staged blobs through this. Noted one file at a
+    time, two refused files printed two `1 file(s) could not be tokenized` counts
+    and every file with twins took a line, where the pooled arm prints one count
+    and names five files: the same commit read two ways either side of the pool
+    threshold.
+    """
+    fresh = {rel_path: _source_records(rel_path, code) for rel_path, code in sources.items()}
+    _note_batch(fresh)
+    return fresh
+
+
+def _source_records(rel_path: str, code: str) -> list[FunctionRecord]:
+    """The records for `code` read as `rel_path`, or its refusal; silent."""
+    try:
+        analyzer = _Analyzer(_extensions_for(rel_path))
+        analysis = analyzer.analyze_source_code(rel_path, code)
+        return _trusted_records(rel_path, analysis)
+    except InternalCheckError:
+        raise
+    except Exception as exc:  # per-file, exactly as in analyze_one; the hook keeps going
+        return UnanalyzableFile(f"lizard failed on {rel_path}: {exc}")
 
 
 def content_hash(path: Path) -> str:
@@ -915,6 +1067,8 @@ def _analyze_verified(job: tuple[str, str, str]) -> tuple[str, list[FunctionReco
         analyzer = _Analyzer(_extensions_for(relative))
         analysis = analyzer.analyze_source_code(relative, decode_source(raw))
         return relative, _trusted_records(relative, analysis)
+    except InternalCheckError:
+        raise
     except Exception as exc:  # a parse refusal, unlike the read and hash above, is per-file
         return relative, UnanalyzableFile(f"lizard failed on {relative}: {exc}")
 
@@ -933,7 +1087,7 @@ def analyze_jobs(
     chunksize: int = 32,
     hashes: dict[str, str] | None = None,
     worker_budget: int = 0,
-    note_twins: bool = True,
+    notes: bool = True,
 ) -> dict[str, list[FunctionRecord]]:
     """Run lizard over (abs_path, rel_path) jobs, pooled once there are enough.
 
@@ -941,8 +1095,8 @@ def analyze_jobs(
     different scales: an inventory feeds thousands of files and wants fat
     chunks, a hook feeds a commit's worth and needs each job dealt to a
     different worker (a chunksize above the job count leaves one worker doing
-    all of them, serially, after paying for the pool). NOTE_TWINS=False leaves
-    the twin-key note to a caller that notes more paths than these jobs.
+    all of them, serially, after paying for the pool). NOTES=False leaves the
+    twin-key and refusal notes to a caller that notes more paths than these jobs.
     """
     worker, inputs = _job_inputs(jobs, hashes)
     with _pool_for(jobs, pool_threshold, workers, worker_budget, chunksize) as pool:
@@ -951,10 +1105,16 @@ def analyze_jobs(
     # The parent says things; a worker only measures. A spawned child's stderr
     # never saw `_reconfigure_streams`, so a note printed from analyze_one
     # reached a UTF-8 reader in the legacy codepage on Windows (#31).
-    if note_twins:
-        _note_twin_files(fresh)
-    _note_unanalyzable(fresh)
+    if notes:
+        _note_batch(fresh)
     return fresh
+
+
+def _note_batch(fresh: dict[str, list[FunctionRecord]]) -> None:
+    """A batch's notes, printed once for the whole batch: the twin-key notes
+    for five files at most, then one count over every refusal."""
+    _note_twin_files(fresh)
+    _note_unanalyzable(fresh)
 
 
 _UNANALYZABLE_NAMED = 5
@@ -1037,14 +1197,33 @@ def _miss_origins(misses: list[str], identities: dict[str, str]) -> dict[str, st
     return {path: origins.setdefault(identities[path], path) for path in misses}
 
 
+def _refused_copies(origins: dict[str, str], parsed: dict) -> list[str]:
+    """The paths whose bytes a refused origin shares.
+
+    A refusal's reason names the path it was read under, and it travels with
+    no rows to re-stamp, so a copy handed the origin's refusal was named as the
+    origin, and two refused files printed as one. Each copy is read again under
+    its own path. Refusals are rare; a vendored tree of copies costs one parse
+    per copy, which is what a refused file costs anyway.
+    """
+    return [path for path, origin in origins.items()
+            if path != origin and isinstance(parsed[origin], UnanalyzableFile)]
+
+
 def _analyze_misses(root: Path, misses: list[str], identities: dict, hashes: dict,
                     workers, worker_budget: int) -> dict:
+    def parse(paths) -> dict:
+        jobs = [(str(root / path), path) for path in paths]
+        return analyze_jobs(jobs, workers=workers, hashes=hashes, worker_budget=worker_budget,
+                            notes=False)
+
     origins = _miss_origins(misses, identities)
-    jobs = [(str(root / path), path) for path in dict.fromkeys(origins.values())]
-    parsed = analyze_jobs(jobs, workers=workers, hashes=hashes, worker_budget=worker_budget,
-                          note_twins=False)
+    parsed = parse(dict.fromkeys(origins.values()))
+    copies = _refused_copies(origins, parsed)
+    parsed.update(parse(copies))
+    origins.update(zip(copies, copies))
     records = {path: _rows_for(path, parsed[origin]) for path, origin in origins.items()}
-    _note_twin_files(records)
+    _note_batch(records)
     return records
 
 

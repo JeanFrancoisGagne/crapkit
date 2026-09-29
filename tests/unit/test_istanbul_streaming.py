@@ -20,7 +20,7 @@ import random
 import pytest
 
 from crapkit.config import Lane
-from crapkit.coverage_istanbul import FnCoverage, _fn_spans, _span_owners
+from crapkit.coverage_istanbul import _SIGNATURE, FnCoverage, _fn_spans, _span_owners
 from coverage_readers import parse_istanbul, parse_istanbul_missing, split_top_level
 from crapkit.errors import ToolError
 from crapkit.lanes import run_lane
@@ -96,7 +96,7 @@ def test_composite_artifact_parses_through_both_public_entry_points():
     assert list(per_file) == ["src/a \"quoted\" {braced}.ts",
                               "src/\u00fcn\u00efcode-\u2603.ts", "src/plain.ts"]
     assert per_file["src/plain.ts"] == [
-        FnCoverage("go", 1, 4, True, 0, 0, 2, 1)]
+        FnCoverage("go", 1, 4, True, 0, 0, 2, 1, full_listing=True)]
     assert parse_istanbul_missing(text, repo_root="C:/repo")["src/plain.ts"] == {3}
 
 
@@ -112,21 +112,26 @@ def _innermost_scan(fn_spans, line):
     return best
 
 
+def _taken(hits):
+    return sum(1 for h in hits if h > 0)
+
+
+def _scan_add(spans, line, total_at, total, covered):
+    best = _innermost_scan(spans, line)
+    if best is not None:
+        best[total_at] += total
+        best[total_at + 1] += covered
+
+
 def _scan_attribution(cov):
     """parse_istanbul's per-file result as the scan produced it."""
     spans = _fn_spans(cov)
     for bid, branch in cov["branchMap"].items():
-        best = _innermost_scan(spans, branch["loc"]["start"]["line"])
-        if best is not None:
-            hits = cov["b"].get(bid, [])
-            best[4] += len(hits)
-            best[5] += sum(1 for h in hits if h > 0)
+        hits = cov["b"].get(bid, [])
+        _scan_add(spans, branch["loc"]["start"]["line"], 4, len(hits), _taken(hits))
     for sid, stmt in cov["statementMap"].items():
-        best = _innermost_scan(spans, stmt["start"]["line"])
-        if best is not None:
-            best[6] += 1
-            best[7] += 1 if cov["s"].get(sid, 0) > 0 else 0
-    return [FnCoverage(*s) for s in spans]
+        _scan_add(spans, stmt["start"]["line"], 6, 1, _taken([cov["s"].get(sid, 0)]))
+    return [FnCoverage(*s[:8], full_listing=bool(cov["statementMap"])) for s in spans]
 
 
 def _dense_file(n_fns=200, seed=20260822):
@@ -152,8 +157,9 @@ def test_sweep_picks_the_same_owner_as_the_scan_for_every_line():
     cov = _dense_file()
     spans = _fn_spans(cov)
     lines = set(range(0, 1100))
-    owners = _span_owners(spans, lines)
-    mismatches = [ln for ln in sorted(lines) if owners.get(ln) is not _innermost_scan(spans, ln)]
+    owners = _span_owners(spans, {(ln, 0) for ln in lines}, _SIGNATURE)
+    mismatches = [ln for ln in sorted(lines)
+                  if owners.get((ln, 0)) is not _innermost_scan(spans, ln)]
     assert mismatches == [], f"{len(mismatches)} lines got a different owner, first {mismatches[:5]}"
 
 
@@ -172,7 +178,7 @@ def test_ties_on_span_length_keep_the_first_span_in_start_order():
            "branchMap": {"b0": {"loc": {"start": {"line": 15}}}}, "b": {"b0": [1, 0]},
            "statementMap": {}, "s": {}}
     spans = _fn_spans(cov)
-    assert _span_owners(spans, {15})[15] is _innermost_scan(spans, 15)
+    assert _span_owners(spans, {(15, 0)}, _SIGNATURE)[(15, 0)] is _innermost_scan(spans, 15)
     assert parse_istanbul(json.dumps({"C:/repo/a.ts": cov}), repo_root="C:/repo") == {
         "a.ts": _scan_attribution(cov)}
 

@@ -28,7 +28,7 @@ class FileChurn(NamedTuple):
 class Commit(NamedTuple):
     author: int  # index into WindowCommits.authors
     at: int | None  # author date: what the recency weight reads
-    ct: int | None  # commit date: what --max-age, and so expiry, reads
+    ct: int | None  # commit date: what the window's cutoff, and so expiry, reads
 
 
 def _twr(ts: int, oldest: int, newest: int) -> float:
@@ -53,9 +53,11 @@ def _stamp(raw: str) -> int | None:
 
 
 def _split_header(line: str) -> tuple[str, int | None, int | None]:
-    """Author, author date and commit date off a header; a date it lacks is None."""
-    name, _, dates = line[1:].partition("\x02")
-    at, _, ct = dates.partition("\x02")
+    """Author, author date and commit date off a header; a date it lacks is None.
+
+    Read from the right: git keeps a \\x02 inside an author name, never in a date."""
+    name, *dates = line[1:].rsplit("\x02", 2)
+    at, ct = (dates + ["", ""])[:2]
     return name, _stamp(at), _stamp(ct)
 
 
@@ -164,10 +166,9 @@ class WindowCommits:
         return [ids[name] for name in names]
 
     def expire(self, cutoff: int) -> None:
-        """Drop every commit a walk cut at the window cutoff would no longer
-        list: the ones committed before `cutoff`. The commit date, not the
-        author date: --max-age reads the committer's clock, and a rebased
-        commit has two."""
+        """Drop every commit a walk cut at `cutoff` would no longer list: the
+        ones committed before it. The commit date, not the author date: git's
+        --since reads the committer's clock, and a rebased commit has two."""
         gone = {seq for seq, commit in self.commits.items() if _aged(commit, cutoff)}
         if gone:
             self._drop(gone)

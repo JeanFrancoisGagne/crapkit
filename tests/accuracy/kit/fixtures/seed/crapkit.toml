@@ -1,0 +1,47 @@
+# The kit's seed corpus: one Python and one TypeScript file, scored from
+# recorded artifacts, so a coverage run needs no test runner and no network.
+# The lanes copy recorded/ into place with kit.repos.copy_command. They run
+# no suite, so container_ok lets them run in the accuracy image, where crapkit
+# otherwise refuses a coveragepy lane.
+#
+# Recorded on 2026-09-24 from tests/ (excluded below):
+#   py: coverage 7.16.1, `coverage run --branch --source=src -m pytest
+#       tests/test_seed_calc.py --junitxml=... -o junit_family=xunit2`, then
+#       `coverage json`; file keys written with forward slashes.
+#   ts: vitest 5.0.1 with @vitest/coverage-istanbul 5.0.1, `vitest run
+#       tests/grade.test.ts --coverage.provider=istanbul --coverage.reporter=json`;
+#       the recording's absolute root is cut from each key and path.
+[crapkit]
+target = 6
+
+[[scope]]
+name = "py"
+paths = ["src/py"]
+languages = ["python"]
+
+[[scope]]
+name = "ts"
+paths = ["src/ts"]
+languages = ["typescript"]
+
+[exclude]
+globs = ["tests/**", "recorded/**"]
+
+[[lane]]
+name = "py"
+command = "python -c \"import os,shutil,sys,time;a=sys.argv[1:];p=list(zip(a[::2],a[1::2]));[os.makedirs(os.path.dirname(d) or '.',exist_ok=True) for s,d in p];[shutil.copyfile(s,d) for s,d in p];t=time.time_ns();[os.utime(d,ns=(t,t)) for s,d in p]\" recorded/py.json .crapkit/cov/py.json recorded/py-junit.xml .crapkit/cov/py-junit.xml"
+artifact = ".crapkit/cov/py.json"
+parser = "coveragepy"
+scopes = ["py"]
+env = { COVERAGE_PROCESS_CONFIG = "", COV_CORE_DATAFILE = "" }
+container_ok = true
+results_artifact = ".crapkit/cov/py-junit.xml"
+
+[[lane]]
+name = "ts"
+command = "python -c \"import os,shutil,sys,time;a=sys.argv[1:];p=list(zip(a[::2],a[1::2]));[os.makedirs(os.path.dirname(d) or '.',exist_ok=True) for s,d in p];[shutil.copyfile(s,d) for s,d in p];t=time.time_ns();[os.utime(d,ns=(t,t)) for s,d in p]\" recorded/ts.json .crapkit/cov/ts.json"
+artifact = ".crapkit/cov/ts.json"
+parser = "istanbul"
+scopes = ["ts"]
+env = { COVERAGE_PROCESS_CONFIG = "", COV_CORE_DATAFILE = "" }
+container_ok = true

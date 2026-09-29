@@ -20,7 +20,7 @@ Commit it.
 ## What a mark is
 
 ```
-# crapkit-analysis=12 lizard=1.24.0
+# crapkit-analysis=13 lizard=1.24.0
 # crapkit-keys=1
 path	long_name	crap
 calc/grade.py	classify( score , attempts , late , bonus )	66.0714
@@ -110,7 +110,8 @@ To address one twin by hand, `brief` and `explain` take the same suffix:
 `crapkit brief calc/iso_cost.py "__post_init__#2"`. A bare name still resolves, to the
 worst twin: the one the queue ranks. `brief`, `explain` and the MCP tool
 `get_function_history` all pick it, so the history and the mark each reports belong to
-that twin, wherever it sits in the file.
+that twin, wherever it sits in the file. Twins whose CRAP is equal to 4 decimal places
+resolve to the first in the file.
 
 ---
 
@@ -452,7 +453,7 @@ the identity review below first.
 ### Upgrading to 0.4.5: analysis version 8
 
 This historical transition changed analysis version 7 to 8. The verify refusal quoted
-above belongs to that upgrade; the current reader uses version 12. Follow
+above belongs to that upgrade; the current reader uses version 13. Follow
 [Upgrading](upgrading.md) for current saved-state checks. In the older transition,
 reseeding from a fresh coverage run updated the stamp as follows:
 
@@ -1104,7 +1105,7 @@ The two stamps answer different questions:
 
 | Stamp | What it records |
 | --- | --- |
-| `# crapkit-analysis=12 lizard=1.24.0` | The reader and metric rules that produced the function set and scores. |
+| `# crapkit-analysis=13 lizard=1.24.0` | The reader and metric rules that produced the function set and scores. |
 | `# crapkit-keys=1` | Ordinals ordered by `(start, occurrence)`. |
 
 A missing key-version comment means the old start-only rule. For unchanged groups

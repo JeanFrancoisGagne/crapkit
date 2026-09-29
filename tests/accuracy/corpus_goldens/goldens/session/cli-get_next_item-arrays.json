@@ -1,0 +1,73 @@
+{
+ "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
+ "empty": false,
+ "items": [
+  {
+   "authors": 1,
+   "ccn": 5,
+   "ccn_std": 5,
+   "cognitive": 4,
+   "commits": 1,
+   "cov": 0.0,
+   "crap": 30.0,
+   "end": 28,
+   "est_splits": 0,
+   "est_uncovered_paths": 5,
+   "flag": "measured",
+   "function": "unused_branchy( flag , other )",
+   "handle": "unused_branchy",
+   "nesting": 1,
+   "nloc": 6,
+   "occurrence": 1,
+   "path": "src/py/nested.py",
+   "remedy": "add-tests",
+   "scope": "py",
+   "start": 23,
+   "target": 6,
+   "uncovered_lines": [
+    24,
+    25,
+    26,
+    27,
+    28
+   ]
+  },
+  {
+   "authors": 1,
+   "ccn": 4,
+   "ccn_std": 4,
+   "cognitive": 3,
+   "commits": 1,
+   "cov": 0.0,
+   "crap": 20.0,
+   "end": 11,
+   "est_splits": 0,
+   "est_uncovered_paths": 4,
+   "flag": "measured",
+   "function": "orphan( a , b , c )",
+   "handle": "orphan",
+   "nesting": 1,
+   "nloc": 8,
+   "occurrence": 1,
+   "path": "src/py/untested.py",
+   "remedy": "add-tests",
+   "scope": "py",
+   "start": 4,
+   "target": 6,
+   "uncovered_lines": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  }
+ ],
+ "run_id": 2,
+ "schema": 1,
+ "skipped_no_lane": 0,
+ "stale": false
+}

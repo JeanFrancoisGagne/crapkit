@@ -35,6 +35,7 @@ picked the worst twin in one and the first in the other.
 from __future__ import annotations
 
 from collections import Counter
+import re
 
 from .errors import CrapkitError, ToolError
 
@@ -269,6 +270,11 @@ def claim_in_run(claim: dict, names_in) -> dict:
 
 # --- the naming rules: what a NAME can say and which function it reaches -----
 
+# A Zig identifier spelled as a string (crapkit.lizardgolike reads it as one token),
+# or a Swift raw identifier between backticks (crapkit.lizardswift reads it as one).
+_QUOTED_NAME = re.compile(r'@"(?:\\.|[^"\\])*"|`[^`]*`')
+
+
 def bare_name(long_name: str) -> str:
     """The identifier a long_name opens with, before its parameter list.
 
@@ -286,7 +292,15 @@ def bare_name(long_name: str) -> str:
     Empty for a function lizard could not name: both `(anonymous)` and
     `(anonymous) ( z )` open with the parenthesis, so an empty prefix IS the
     test for anonymity, with no second string to keep in step.
+
+    A Zig name written as a string, `@"weird name" x : i32`, is one token whose
+    text holds a space and can hold a `(`, so it is cut whole. So is a Swift raw
+    identifier, "`keeps onboarding if offline` value : Int": its name runs to its
+    own closing backtick.
     """
+    quoted = _QUOTED_NAME.match(long_name)
+    if quoted:
+        return quoted.group()
     head = long_name.split("(")[0].strip()
     return head.split()[0] if head else ""
 
@@ -461,5 +475,9 @@ def _twin_key(rows: list, long_name: str, ordinal: int | None, run_id: int | Non
 
 def _severity(row) -> tuple:
     """Worst first, and the first in the file among equals. A row with no score,
-    as on an inventory run, ranks with every other unscored one."""
-    return row.crap or 0.0, -row.start, -position(row)[1]
+    as on an inventory run, ranks with every other unscored one.
+
+    Scores compare at the 4 places a mark holds (score.CRAP_PLACES; score imports
+    this module), so equal ones tie: ccn 25 at 80% coverage and ccn 5 at none
+    both score 30, which the floats read as 29.999999999999996 and 30.0."""
+    return round(row.crap or 0.0, 4), -row.start, -position(row)[1]

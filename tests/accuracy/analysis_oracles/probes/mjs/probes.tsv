@@ -1,0 +1,7 @@
+id	file	function	metric	expected	source	ruling
+clamp	clamp.mjs	clamp	start	1	ECMA-262 (2025) sec. 15 Functions: a function starts on its defining line	
+clamp	clamp.mjs	clamp	end	9	ECMA-262 (2025) sec. 15 Functions: a function ends on the last line of its body	
+clamp	clamp.mjs	clamp	ccn_std	3	NIST SP 500-235 (McCabe and Watson 1996) sec. 4.1: 1 + binary decisions; a short-circuit operator adds 1; a switch adds one per case-labeled statement, default excluded	
+clamp	clamp.mjs	clamp	cognitive	2	Sonar Cognitive Complexity v1.7 (2023-08-29) App. B1-B3	
+clamp	clamp.mjs	clamp	nesting	1	Sonar Cognitive Complexity v1.7 App. B2: the most nesting-level structures enclosing any line of the body	
+clamp	clamp.mjs	clamp	params	3	ECMA-262 (2025) sec. 15 Functions: the parameters a function declares	

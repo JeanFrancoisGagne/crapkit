@@ -1,0 +1,84 @@
+"""analysis-oracles: what crapkit reads off source before coverage joins.
+
+The hand, equivalence and oracle checks read crapkit through its CLI, once
+per session per file set (tests/accuracy/analysis_oracles/conftest.py).
+
+The shard's push checks fit in 90 serial seconds. Each push check's seconds
+are the median of three serial runs of `run.py --tier push --shard analysis`
+in the accuracy image, over a copy of the tree inside the container: a bind
+mount from Docker Desktop on Windows costs about 3 ms per stat, which took
+the shard to 162 s. The nightly-only checks keep the seconds their authors
+measured.
+"""
+SHARD = "analysis"
+_PACKET = "tests/accuracy/analysis_oracles/"
+CHECKS = [
+    {"name": "hand probes in every language", "seconds": 1.8,
+     "pytest": [_PACKET + "test_hand_probes.py"]},
+    {"name": "one shape reads the same in every language", "seconds": 0.6,
+     "pytest": [_PACKET + "test_equivalence.py"]},
+    {"name": "Python reader against ast", "seconds": 2.6,
+     "pytest": [_PACKET + "test_python_ast.py"]},
+    {"name": "metamorphic source edits", "seconds": 1.6,
+     "pytest": [_PACKET + "test_metamorphic_source.py"]},
+    {"name": "ccn against radon, mccabe, ESLint and the gate rule", "seconds": 8.4,
+     "pytest": [_PACKET + "test_complexity_oracles.py"]},
+    {"name": "cognitive against the Sonar counter, complexipy and sonarjs", "seconds": 10.1,
+     "pytest": [_PACKET + "test_cognitive_oracles.py"]},
+    {"name": "nesting against the depth model, pylint and ESLint max-depth", "seconds": 3.7,
+     "pytest": [_PACKET + "test_nesting_oracles.py"]},
+    {"name": "JS and TS functions against the TypeScript compiler", "seconds": 0.6,
+     "pytest": [_PACKET + "test_ts_compiler.py"]},
+    {"name": "nloc against tokenize, params against ast", "seconds": 3.5,
+     "pytest": [_PACKET + "test_nloc_params.py"]},
+    {"name": "cold runs, hash seeds and pool vs serial give identical rows", "seconds": 3.4,
+     "pytest": [_PACKET + "test_determinism.py"]},
+    {"name": "byte encodings and line endings read as the same functions",
+     "os_sensitive": True, "seconds": 2.2,
+     "pytest": [_PACKET + "test_decode_matrix.py"]},
+    {"name": "scope ownership against the configuration rules",
+     "os_sensitive": True, "seconds": 2.8,
+     "pytest": [_PACKET + "test_universe_layouts.py"]},
+    {"name": "unanalyzable files and twin-name notes", "seconds": 1.1,
+     "pytest": [_PACKET + "test_notes.py"]},
+    {"name": "a warm analysis cache reads what a cold run reads", "seconds": 6.4,
+     "pytest": [_PACKET + "test_cache_identity.py"]},
+    {"name": "an edit inside the content hash reads as a cold run", "seconds": 0.5,
+     "pytest": [_PACKET + "test_cache_race_seam.py"]},
+    {"name": "stock lizard tripwire over the patch list", "seconds": 0.4,
+     "pytest": [_PACKET + "test_lizard_tripwire.py"]},
+    {"name": "near-duplicate pairs against hand containment and jscpd", "seconds": 5.0,
+     "pytest": [_PACKET + "test_duplicates.py"]},
+    {"name": "init proposes the scopes, lanes and ignores the docs name", "seconds": 17.5,
+     "pytest": [_PACKET + "test_init_scaffold.py"]},
+    {"name": "watch names each changed tracked file once", "seconds": 2.1,
+     "pytest": [_PACKET + "test_watch.py"]},
+    {"name": "watch snapshots against a plain os.stat model", "seconds": 0.3,
+     "pytest": [_PACKET + "test_watch_stat_model.py"]},
+    {"name": "inventory rows against hand bytes and the portable record rules", "seconds": 2.3,
+     "pytest": [_PACKET + "test_inventory_rows.py"]},
+    {"name": "brief's parameter lists against ast and the TypeScript compiler", "seconds": 1.0,
+     "pytest": [_PACKET + "test_packet_params.py"]},
+    {"name": "PowerShell functions against the Parser AST and PSComplexity",
+     "os_sensitive": True, "seconds": 3,
+     "pytest": [_PACKET + "test_powershell_oracles.py"]},
+    {"name": "brief twins while a newer run's twin index lands", "seconds": 1,
+     "pytest": [_PACKET + "test_duplicates_race_seam.py"]},
+    {"name": "Go ccn, cognitive and nesting against gocyclo, gocognit and revive", "seconds": 40,
+     "pytest": [_PACKET + "test_go_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "Rust ccn and cognitive against rust-code-analysis and cargo-crap", "seconds": 60,
+     "pytest": [_PACKET + "test_rust_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "Java ccn, cognitive and nesting against Checkstyle and PMD", "seconds": 90,
+     "pytest": [_PACKET + "test_java_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "C-family ccn, cognitive and nesting against OCLint and clang-tidy", "seconds": 120,
+     "pytest": [_PACKET + "test_c_family_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "shell ccn against shellmetrics", "seconds": 30,
+     "pytest": [_PACKET + "test_shell_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "Swift ccn against SwiftLint", "seconds": 40,
+     "pytest": [_PACKET + "test_swift_oracles.py"], "os": ["linux"], "tiers": ["nightly"]},
+    {"name": "Objective-C against OCLint, clang-tidy and tree-sitter", "seconds": 60,
+     "pytest": [_PACKET + "test_objc_oracles.py"], "tiers": ["nightly"]},
+    {"name": "JS, TS and Vue ccn, cognitive and nesting against ESLint and sonarjs",
+     "seconds": 30, "pytest": [_PACKET + "test_js_corpus_oracles.py"], "os": ["linux"],
+     "tiers": ["nightly"]},
+]

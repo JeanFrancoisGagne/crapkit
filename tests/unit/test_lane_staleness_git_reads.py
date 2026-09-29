@@ -5,7 +5,7 @@ and `explain` judge it by git, per lane: is the stamp commit behind HEAD, what
 changed in the commits since, what is staged or edited, what is untracked. That
 was one git process after another, and `ls-files --others` listed every
 untracked file in the checkout, a large drafts tree included, to keep only the
-ones under a scope. The reads now start together, and diff and ls-files take
+ones under a scope. The reads now start together, and diff and status take
 the scope paths of the lanes git judges as a pathspec. The stamp file is read
 once per command (lane_freshness.Freshness), so a lane is judged by the stamp
 the command read, whatever a concurrent run writes meanwhile.
@@ -19,6 +19,8 @@ from types import SimpleNamespace
 import pytest
 
 from crapkit.config import Lane
+from crapkit import gitio, lane_changes
+from crapkit.errors import GitError
 from crapkit.gitio import GitFacts
 from crapkit.lane_freshness import Freshness
 from crapkit.lanes import _warn_stale_artifact, write_stamps
@@ -86,46 +88,33 @@ def _after(argv: list, word: str) -> list:
     return argv[argv.index(word) + 1:] if word in argv else []
 
 
-def _opens_the_index(argv: list) -> bool:
-    return "--cached" in argv or "ls-files" in argv or "hash-object" in argv
-
-
-def _starts(spawns: list) -> list:
-    return [argv for kind, argv in spawns if kind == "start"]
-
-
-def _starts_around_the_first_wait(spawns: list) -> tuple[list, list]:
-    """(what started before git was first waited on, what started after)."""
-    first = [kind for kind, _ in spawns].index("wait")
-    return _starts(spawns[:first]), _starts(spawns[first:])
-
-
-def test_every_read_that_leaves_the_index_alone_starts_before_any_is_waited_on(repo, git_spawns):
-    """The staged diff and the file listings open .git/index, which the
-    worktree diff rewrites when it refreshes a stat-dirty entry, so they start
-    once that diff is read (lane_changes). Every other read starts at once."""
+def test_every_staleness_read_starts_before_any_is_waited_on(repo, git_spawns):
+    """One `git --no-optional-locks status` compares content and writes no
+    index (gitio.STATUS), so no read waits on another: the staged diff and the
+    worktree diff used to take turns around the worktree diff's index write."""
     root, cfg = repo
 
     lane_states(root, cfg)
 
-    early, late = _starts_around_the_first_wait(git_spawns)
-    assert early and not list(filter(_opens_the_index, early)), early
-    assert late and all(map(_opens_the_index, late)), late
+    kinds = [kind for kind, _ in git_spawns]
+    assert kinds, "the staleness check asked git nothing"
+    first_wait = kinds.index("wait")
+    assert "start" not in kinds[first_wait:], kinds
 
 
 def _scope_reads(spawns: list) -> list:
-    """The argv of every diff and file listing git started."""
+    """The argv of every diff, status and file listing git started."""
     return [argv for kind, argv in spawns
-            if kind == "start" and ("diff" in argv or "ls-files" in argv)]
+            if kind == "start" and ("diff" in argv or "status" in argv or "ls-files" in argv)]
 
 
-def test_diff_and_untracked_reads_ask_only_about_lane_scopes(repo, git_spawns):
+def test_diff_and_status_reads_ask_only_about_lane_scopes(repo, git_spawns):
     root, cfg = repo
 
     lane_states(root, cfg)
 
     reads = _scope_reads(git_spawns)
-    assert any("ls-files" in argv for argv in reads)
+    assert any("status" in argv for argv in reads)
     scopes = {tuple(_after(argv, "--")) for argv in reads}
     assert scopes == {("src", "web")}, "the two lanes git judges, lib has no stamp"
 
@@ -290,3 +279,79 @@ def test_three_hundred_touches_raise_no_index_race(repo):
             failures.append(str(exc))
 
     assert (failures[:3], changes[:3]) == ([], [])
+
+
+# git exits 128 with "fatal: Needed a single revision" for a ref it cannot read,
+# the exit a read gets when git cannot read the repository.
+FAILED_GIT = ("rev-parse", "--verify", "refs/crapkit/no-such-ref")
+
+
+@pytest.mark.parametrize("command", ["merge-base", "diff", "status"])
+def test_a_failed_read_names_no_changed_file(repo, monkeypatch, command):
+    """One read behind the verdict fails on a tree nobody touched. The lines
+    go null, since nothing proved them, and the note says git cannot say: it
+    used to say files in the lane's scopes changed and to commit or revert
+    them."""
+    root, cfg = repo
+    real = lane_changes._start
+    monkeypatch.setattr(lane_changes, "_start", lambda r, *args: real(
+        r, *(FAILED_GIT if command in args[:2] else args)))
+
+    states = dict(lane_states(root, cfg))
+
+    for lane in ("src", "web"):
+        assert "git cannot say" in states[lane] and "no-such-ref" in states[lane], states
+        assert "file(s) in its scopes changed" not in states[lane]
+        assert "commit or revert" not in states[lane]
+
+
+def test_an_unreadable_commit_since_the_stamp_names_the_failed_read(repo):
+    """A commit between the stamp and HEAD cannot be read, so `merge-base
+    --is-ancestor` exits 1, its "no", and prints `error: Could not read <sha>`.
+    The stamp commit is still behind HEAD and the tree is clean: the note used
+    to say the artifact was built at a commit not behind HEAD."""
+    root, cfg = repo
+    _write(root, "docs/notes.md", "two\n")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-am", "two")
+    lost = _git(root, "rev-parse", "HEAD").strip()
+    _write(root, "docs/notes.md", "three\n")
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-am", "three")
+    loose = root / ".git" / "objects" / lost[:2] / lost[2:]
+    loose.chmod(0o644)
+    loose.unlink()
+
+    states = dict(lane_states(root, cfg))
+
+    for lane in ("src", "web"):
+        assert "git cannot say" in states[lane] and lost in states[lane], states
+        assert "not behind HEAD" not in states[lane] and "commit or revert" not in states[lane]
+
+
+def test_trace_output_leaves_a_rewritten_history_named_as_such(repo, monkeypatch):
+    """GIT_TRACE=1 prints trace lines on stderr beside the ancestry read's plain
+    "no". Read as a failed read, the note said git could not tell which files
+    changed, where the stamp commit had left history."""
+    root, cfg = repo
+    stamped = _git(root, "rev-parse", "HEAD").strip()
+    _git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--amend", "-m", "amended")
+    monkeypatch.setenv("GIT_TRACE", "1")
+
+    states = dict(lane_states(root, cfg))
+
+    assert stamped[:11] in states["src"] and "which is not behind HEAD" in states["src"], states
+    assert "git cannot say" not in states["src"]
+
+
+def test_reuse_says_when_git_could_not_tell_whether_an_artifact_is_stale(repo, monkeypatch, capsys):
+    """`--reuse-artifacts` warns about an artifact that predates a change. A
+    failed diff read used to warn nothing, which reads as a fresh artifact."""
+    root, cfg = repo
+
+    def unavailable(*_args):
+        raise GitError("git unavailable")
+
+    monkeypatch.setattr(gitio, "diff_names_since", unavailable)
+    _warn_stale_artifact(GitFacts(root), cfg.lanes[0], cfg.scope_paths)
+
+    err = capsys.readouterr().err
+    assert "git cannot say which files in its scopes changed" in err and "git unavailable" in err, err

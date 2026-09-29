@@ -23,6 +23,7 @@ import re
 from typing import NamedTuple
 
 from .errors import ToolError
+from .sourcelines import line_end, source_lines
 from .universe import LANGUAGE_EXTENSIONS, assign_files
 
 
@@ -36,14 +37,18 @@ class Mutant(NamedTuple):
 
 # source token -> mutation targets. Negation flips plus boundary shifts —
 # the boundary mutant (> vs >=) is the one an off-by-one test hole misses.
-# Word operators retain their historical display spelling in this table.
+# Word operators retain their historical display spelling in this table. Zig
+# compares like C but joins with `and` and `or`: its `||` merges error sets and
+# it has no `&&`, so the C-family table flipped `A || B` to `A && B`, which does
+# not compile.
+_COMPARISONS = {"==": ("!=",), "!=": ("==",), "<=": ("<", ">"), ">=": (">", "<"),
+                "<": ("<=", ">="), ">": (">=", "<=")}
 _OPS = {
-    "python": {"==": ("!=",), "!=": ("==",), "<=": ("<", ">"), ">=": (">", "<"),
-               "<": ("<=", ">="), ">": (">=", "<="),
+    "python": {**_COMPARISONS,
                " and ": (" or ",), " or ": (" and ",), "True": ("False",), "False": ("True",)},
-    "typescript": {"===": ("!==",), "!==": ("===",), "==": ("!=",), "!=": ("==",),
-                   "<=": ("<", ">"), ">=": (">", "<"), "<": ("<=", ">="), ">": (">=", "<="),
+    "typescript": {"===": ("!==",), "!==": ("===",), **_COMPARISONS,
                    "&&": ("||",), "||": ("&&",), "true": ("false",), "false": ("true",)},
+    "zig": {**_COMPARISONS, "and": ("or",), "or": ("and",), "true": ("false",), "false": ("true",)},
 }
 # a short token matching INSIDE one of these is not that operator (== in ===,
 # > in => arrows, < in <=, < in a Swift half-open range): skip the occurrence
@@ -54,7 +59,47 @@ _PROTECT = ("===", "!==", "==", "!=", "<=", ">=", "=>", "->", "..<", "...")
 # Keep lexer selection aligned with the source languages the corpus admits.
 _LANGUAGE_BY_SUFFIX = {suffix: language for language, suffixes in LANGUAGE_EXTENSIONS.items()
                        for suffix in suffixes}
-_LEXEMES = re.compile(r"\w+|===|!==|==|!=|<=|>=|<<=?|>>=?|&&|\|\||->|=>|\.\.<|\.\.\.|[<>]")
+_SHARED_LEXEMES = re.compile(r"\w+|===|!==|==|!=|<=|>=|<<=?|>>=?|&&|\|\||->|=>|\.\.<|\.\.\.|[<>]")
+# Operators a language lexes as one token where the shared alternatives would
+# split them and leave a piece that reads as a comparison. A mutant of that
+# piece does not compile, so the compiler kills it and the run counts a kill no
+# test made: Go's channel arrow (`ch <- v` grew `ch <=- v`), the unsigned shift
+# (`a >>> b` grew `a >><= b`), C++'s three-way comparison and brace digraphs
+# (`a <=> b` grew `a <> b`), and Swift, which reads any run of operator
+# characters as one operator (`x |> f` grew `x |>= f`). Each entry belongs to
+# its languages alone: in C, Java and TypeScript `a<-1` is `a < -1`. The
+# decrement `--` runs the other way: split, it left `->` in `n-->0`, which is
+# `n-- > 0`, and the loop bound grew no mutant at all.
+_WHOLE_TOKENS = {"go": r"<-", "cpp": r"<=>|<%|%>|--", "objectivec": r"<=>|<%|%>|--",
+                 "swift": r"[-/=+!*%<>&|^~?]{2,}",
+                 **dict.fromkeys(("javascript", "typescript", "tsx", "vue", "java"), r">>>=?|--")}
+_LEXEMES = {language: re.compile(f"{whole}|{_SHARED_LEXEMES.pattern}")
+            for language, whole in _WHOLE_TOKENS.items()}
+# A connective opens an operand in two languages: Rust's `||` is a closure with
+# no parameters and its `&&` borrows twice (`&&x`, `x: &&str`), and C++'s `&&`
+# declares an rvalue reference (`auto&& x`, `int&& y`). A binary one follows an
+# operand, which ends in a name, a literal or one of these: `)`, `]`, `}`, a
+# template's `>` (`is_same_v<T, U> && ok`), Rust's `x?` and `.await`, C++'s
+# `this`, and a postfix `++` or `--` (`while (n-- && ok)`). Rust's `x as bool`
+# ends in a type; a C++ type keyword before `&&` declares a reference.
+_PREFIX_CONNECTIVES = frozenset({"rust", "cpp", "objectivec"})
+_OPERAND_ENDS = frozenset({")", "]", "}", ">", "?", "+", "-", "this", "await"})
+# A C++ reference also follows a name, the type's (`Foo&& other`,
+# `std::vector<int>&& v`), so the token before cannot tell it from `a && b`. The
+# layout can: clang-format hugs a reference to its type (`Foo&& x`) or to its
+# name (`Foo &&x`) and spaces a connective on both sides, and a connective needs
+# a right operand, which `)`, `,`, `>`, `;`, `=` and a pack's `... args` cannot
+# start (`Foo(Foo&&)`, `static_cast<T&&>(x)`, `Args&&... args`). A fold,
+# `(ts && ...)`, joins operands and keeps its mutant. C files share the `cpp`
+# label, so a C `ok&& ready` loses its mutant too: a missed mutant in a layout
+# clang-format never writes, never a kill no test made.
+_REFERENCE_LANGUAGES = frozenset({"cpp", "objectivec"})
+_REFERENCES = re.compile(r"(?<=[\w>])&&(?=\s)|(?<=\s)&&(?=\w)|&&(?=\s*(?:[),>;=\]}]|\.\.\.\s*\w))")
+# A C++ cast names its target type in angles, so `static_cast<T&&>` holds no comparison.
+_CASTS = frozenset({"static_cast", "dynamic_cast", "const_cast", "reinterpret_cast"})
+# The keyword before a declared operator's own name: `bool operator<(...)` and
+# Swift's `static func <` name the operator they define and compare nothing.
+_OPERATOR_NAMERS = {"cpp": "operator", "objectivec": "operator", "swift": "func"}
 _SYNTAX = re.compile(r"\w+|::|->|=>|<=|>=|==|!=|&&|\|\||<<|\.\.<|\.\.\.|[^\s]")
 _TYPE_ARGUMENTS = re.compile(r"(?:[\w\s:,.?*\[\]'<>]|&(?!&))+")
 _ANGLE_LANGUAGES = {"typescript", "tsx", "vue", "cpp", "rust", "java", "swift", "objectivec"}
@@ -101,9 +146,10 @@ def mutation_language(rel_path: str) -> str:
     """The language whose operator table this path's mutants come from.
 
     Everything unnamed answers `typescript`, which is what the C-family table is.
-    Swift, Go, Vue and Zig spell their operators that way, and C, C++,
-    Objective-C and Java are where the spelling came from — none of them needs a
-    table of its own, and a table per label would be four copies to drift apart.
+    Swift, Go and Vue spell their operators that way, and C, C++, Objective-C and
+    Java are where the spelling came from — none of them needs a table of its own,
+    and a table per label would be four copies to drift apart. Zig takes its own
+    table: its connectives are `and` and `or`.
     """
     for suffix, language in _LANGUAGE_BY_SUFFIX.items():
         if rel_path.endswith(suffix):
@@ -116,27 +162,27 @@ def refusal(language: str) -> str | None:
     return UNMUTABLE.get(language)
 
 
-def _covered_by_longer(mask: str, at: int, token: str) -> bool:
-    for p in _PROTECT:
-        if len(p) <= len(token):
-            continue
-        for start in range(max(0, at - len(p) + 1), at + 1):
-            if mask.startswith(p, start):
-                return True
-    return False
+def _covered_by_longer(mask: str, at: int, token: str, inside: frozenset = frozenset()) -> bool:
+    """A longer operator in `mask` holds `token`, unless that operator starts at
+    an offset in `inside`, the middle of a token lexed whole: `->` in `n-->0`
+    starts inside `--`, so its `>` is a comparison."""
+    return any(mask.startswith(p, start) and start not in inside
+               for p in _PROTECT if len(p) > len(token)
+               for start in range(max(0, at - len(p) + 1), at + 1))
 
 
 def _line_mutations(line: str, tokens: list, ops: dict) -> list[tuple[str, str]]:
     """Mutate whole code tokens, in the existing operator-table order."""
-    out = []
-    for source, targets in ops.items():
-        for at, token in tokens:
-            if token != source or _covered_by_longer(line, at, source):
-                continue
-            for target in targets:
-                out.append((line[:at] + target + line[at + len(source):],
-                            f"{source.strip()} -> {target.strip()}"))
-    return out
+    inside = frozenset(at + 1 for at, token in tokens if token == "--")
+    return [mutant for source, targets in ops.items()
+            for mutant in _source_mutations(line, tokens, source, targets, inside)]
+
+
+def _source_mutations(line: str, tokens: list, source: str, targets: tuple,
+                      inside: frozenset) -> list[tuple[str, str]]:
+    return [(line[:at] + target + line[at + len(source):], f"{source.strip()} -> {target.strip()}")
+            for at, token in tokens if token == source and not _covered_by_longer(line, at, source, inside)
+            for target in targets]
 
 
 def file_mutants(text: str, changed_lines: set[int] | None, language: str) -> list[Mutant]:
@@ -158,15 +204,54 @@ def _code_tokens(text: str, language: str):
     lexed = list(get_lexer_by_name(aliases.get(language, language)).get_tokens_unprocessed(text))
     mask, syntax = _code_masks(text, lexed, language)
     protected, ambiguous = _type_angles(syntax, lexed, language)
-    tokens = ((match.start(), match.group()) for match in _LEXEMES.finditer(mask)
+    protected |= _not_operations(lexed, language) | _references(text, language)
+    lexemes = _LEXEMES.get(language, _SHARED_LEXEMES)
+    tokens = ((match.start(), match.group()) for match in lexemes.finditer(mask)
               if match.start() not in protected)
     return tokens, ambiguous
+
+
+def _not_operations(lexed: list, language: str) -> set:
+    """Offsets where a table spelling names an operator or opens an operand."""
+    tokens = _significant_tokens(lexed)
+    namer = _OPERATOR_NAMERS.get(language)
+    return {at for (at, _, value), (_, kind, before) in zip(tokens, [(0, None, "")] + tokens)
+            if before == namer or _opens_an_operand(value, kind, before, language)}
+
+
+def _references(text: str, language: str) -> set:
+    """Offsets of a C++ `&&` laid out as a reference, not a connective."""
+    if language not in _REFERENCE_LANGUAGES:
+        return set()
+    return {match.start() for match in _REFERENCES.finditer(text)}
+
+
+def _significant_tokens(lexed: list) -> list:
+    from pygments.token import Comment
+
+    return [(at, kind, value) for at, kind, value in lexed
+            if value.strip() and kind not in Comment]
+
+
+def _opens_an_operand(value: str, kind, before: str, language: str) -> bool:
+    """A `&&` or `||` with no operand on its left. `kind` and `before` are
+    the token ahead of `value`."""
+    if language not in _PREFIX_CONNECTIVES or value[:1] not in ("&", "|"):
+        return False
+    return not _ends_an_operand(kind, before, language)
+
+
+def _ends_an_operand(kind, value: str, language: str) -> bool:
+    from pygments.token import Keyword, Literal, Name
+
+    families = (Name, Literal, Keyword.Constant, *((Keyword.Type,) if language == "rust" else ()))
+    return value in _OPERAND_ENDS or any(kind in family for family in families)
 
 
 def _code_masks(text: str, lexed: list, language: str) -> tuple[str, str]:
     mask, syntax = [" "] * len(text), [" "] * len(text)
     for at, kind, value in lexed:
-        if _code_kind(kind, language):
+        if _code_kind(kind, value, language):
             mask[at:at + len(value)] = value
         if _syntax_kind(kind):
             syntax[at:at + len(value)] = value
@@ -241,17 +326,23 @@ def _java_type_tail(tokens: list, end: int, language: str) -> bool:
 
 
 def _type_angles(syntax: str, lexed: list, language: str) -> tuple[set, set]:
-    from pygments.token import Keyword, Name
-
     protected, ambiguous = set(), set()
     if language not in _ANGLE_LANGUAGES:
         return protected, ambiguous
-    typed = {at for at, kind, _ in lexed if kind in Keyword.Type or kind in Name.Builtin}
+    typed = _typed_offsets(lexed)
     tokens = _syntax_depths(syntax)
     for start, end in _angle_pairs(tokens):
         kind = _angle_kind(syntax, tokens, start, end, typed, language)
         _record_angles(tokens, start, end, kind, protected, ambiguous)
     return protected, ambiguous - protected
+
+
+def _typed_offsets(lexed: list) -> set:
+    """Tokens whose next `<` opens type arguments: a type, a builtin, a C++ cast."""
+    from pygments.token import Keyword, Name
+
+    return {at for at, kind, value in lexed
+            if kind in Keyword.Type or kind in Name.Builtin or value in _CASTS}
 
 
 def _record_angles(tokens: list, start: int, end: int, kind: str, protected: set, ambiguous: set) -> None:
@@ -262,14 +353,29 @@ def _record_angles(tokens: list, start: int, end: int, kind: str, protected: set
         ambiguous.update((tokens[start][0], tokens[end][0]))
 
 
-def _code_kind(kind, language: str) -> bool:
+def _code_kind(kind, value: str, language: str) -> bool:
     from pygments.token import Keyword, Name, Operator, Punctuation
 
-    return kind in Keyword or kind in Name.Builtin or kind in Operator or (language == "go" and kind in Punctuation)
+    if kind in Punctuation:
+        return _operator_punctuation(value, language)
+    return kind in Keyword or kind in Name.Builtin or kind in Operator
+
+
+def _operator_punctuation(value: str, language: str) -> bool:
+    """Pygments calls every Go operator punctuation, and Swift's `=`, so without
+    this `a == b` and `a === b` grew no mutant in Swift. Only the `=` joins: a
+    Swift `<` before a name is punctuation too, and there it opens a generic's
+    angles as often as it compares (`Foo<Bar>`, `a<b`)."""
+    return language == "go" or (language == "swift" and value == "=")
+
+
+def _line_starts(text: str) -> list[int]:
+    """The offset each line starts at, on the lines the diff's ranges number."""
+    return list(accumulate((len(line) for line in source_lines(text, keepends=True)), initial=0))
 
 
 def _tokens_by_line(text: str, language: str, changed: set[int] | None) -> dict:
-    starts = list(accumulate((len(line) for line in text.splitlines(keepends=True)), initial=0))
+    starts = _line_starts(text)
     by_line = defaultdict(list)
     tokens, ambiguous = _code_tokens(text, language)
     for at, token in tokens:
@@ -285,7 +391,7 @@ def _tokens_by_line(text: str, language: str, changed: set[int] | None) -> dict:
 def _mutants(text: str, changed_lines: set[int] | None, language: str) -> list[Mutant]:
     ops = {key.strip(): tuple(value.strip() for value in values)
            for key, values in _OPS.get(language, _OPS["typescript"]).items()}
-    lines = text.splitlines()
+    lines = source_lines(text)
     return [Mutant("", number, lines[number - 1], mutated, op)
             for number, tokens in sorted(_tokens_by_line(text, language, changed_lines).items())
             for mutated, op in _line_mutations(lines[number - 1], tokens, ops)]
@@ -295,7 +401,6 @@ def apply_mutant(text: str, mutant: Mutant) -> str:
     """`text` with the mutated line in place of line `mutant.line`. The line
     keeps its own ending (CRLF, CR, LF or none): rebuilt as LF, it changed a
     byte of a CRLF file outside what the mutant mutates."""
-    lines = text.splitlines(keepends=True)
-    line = lines[mutant.line - 1]
-    lines[mutant.line - 1] = mutant.mutated + line[len(line.splitlines()[0]):]
+    lines = source_lines(text, keepends=True)
+    lines[mutant.line - 1] = mutant.mutated + line_end(lines[mutant.line - 1])
     return "".join(lines)

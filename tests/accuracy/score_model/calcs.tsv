@@ -1,0 +1,17 @@
+calc	independent_test	modules	functions
+CRAP score	tests/accuracy/score_model/test_crap.py::test_reduced_grid_matches_the_exact_value	src/crapkit/score.py	src/crapkit/score.py:crap,src/crapkit/score.py:_finish
+Function coverage ratio	tests/accuracy/score_model/test_counts_join.py::test_every_scored_row_matches_its_artifact_counts	src/crapkit/coverage_istanbul.py,src/crapkit/coverage_py.py	src/crapkit/coverage_istanbul.py:FnCoverage.coverage,src/crapkit/coverage_py.py:_fn_coverage
+Remedy label	tests/accuracy/score_model/test_remedy_grade_budget.py::test_remedy_matches_the_readme_table	src/crapkit/score.py	src/crapkit/score.py:remedy
+Grade letter	tests/accuracy/score_model/test_remedy_grade_budget.py::test_grade_matches_the_band_table_for_every_count_to_400	src/crapkit/score.py	src/crapkit/score.py:grade
+Work budget estimates	tests/accuracy/score_model/test_remedy_grade_budget.py::test_uncovered_paths_match_away_from_exact_halves	src/crapkit/packet.py	src/crapkit/packet.py:budget
+Ceiling per row	tests/accuracy/score_model/test_ceiling.py::test_every_scope_s_ceiling_matches_the_docs	src/crapkit/config.py,src/crapkit/store.py	src/crapkit/config.py:Config.ceiling_of,src/crapkit/config.py:Config.scope_targets,src/crapkit/store.py:_ceiling_expr
+Rescore overlay	tests/accuracy/score_model/test_overlay.py::test_overlay_matches_the_join_by_name	src/crapkit/score.py	src/crapkit/score.py:overlay_stale_coverage
+Queue admission and floors	tests/accuracy/score_model/test_queue.py::test_the_lowest_debt_ccn_is_the_closed_form_for_every_ceiling_to_2000	src/crapkit/worklist.py	src/crapkit/worklist.py:over_target_floor,src/crapkit/worklist.py:Admission.admits,src/crapkit/worklist.py:_hot_threshold
+Worklist ranking and dormant list	tests/accuracy/score_model/test_queue.py::test_the_worklist_ranks_what_the_docs_admit_in_the_docs_order	src/crapkit/worklist.py	src/crapkit/worklist.py:build_worklist,src/crapkit/worklist.py:_rank_key
+next-item ranking and empty-queue reasons	tests/accuracy/score_model/test_queue.py::test_next_item_ranks_by_crap_what_the_docs_let_it_take	src/crapkit/cli/queue.py	src/crapkit/cli/queue.py:_next_ranked,src/crapkit/cli/queue.py:_skip_reason,src/crapkit/cli/queue.py:_actionable
+Batch split	tests/accuracy/score_model/test_batch_split.py::test_batches_are_disjoint_cover_every_entry_and_keep_groups_whole	src/crapkit/worklist.py	src/crapkit/worklist.py:split_batches
+Brief packet fields and regrowth	tests/accuracy/score_model/test_rejudge.py::test_regrowth_label_matches_model	src/crapkit/packet.py	src/crapkit/packet.py:regrowth,src/crapkit/packet.py:rejudged,src/crapkit/packet.py:file_totals
+Run totals and trend rollup	tests/accuracy/score_model/test_rollups.py::test_totals_match_the_exact_sums	src/crapkit/digest.py,src/crapkit/store.py	src/crapkit/digest.py:totals_from_counts,src/crapkit/store.py:SnapshotStore.run_totals
+Digest deltas	tests/accuracy/score_model/test_rollups.py::test_only_identical_lane_sets_pair	src/crapkit/digest.py	src/crapkit/digest.py:latest_comparable_pair,src/crapkit/digest.py:build_digest
+Coverage run summary	tests/accuracy/score_model/test_rollups.py::test_the_coverage_summary_is_the_scored_rows_counted	src/crapkit/cli/scoring.py	src/crapkit/cli/scoring.py:_coverage_summary
+doctor --tune knobs and lane cost	tests/accuracy/score_model/test_tune.py::test_the_cost_line_is_lpt_within_graham_s_bound	src/crapkit/doctor.py	src/crapkit/doctor.py:parallel_seconds,src/crapkit/doctor.py:suggest_knobs

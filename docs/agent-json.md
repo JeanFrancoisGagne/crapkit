@@ -53,7 +53,8 @@ does not change JSON schema 1.
 ## `next-item`
 
 The top of the burn-down queue: the rows a lane measures, whose remedy is not `ok`,
-ranked by **`crap` descending**. That ordering is the difference from
+ranked by **`crap` descending**. Scores equal at 4 decimal places go to the file with more
+commits in the churn window, then by path and start line. That ordering is the difference from
 [`worklist`](#worklist), which ranks the same run by risk and lists rows this command
 never offers, so the two do not lead with the same function.
 
@@ -129,18 +130,18 @@ $ crapkit next-item
 | `occurrence` | int | Source creation order among functions sharing `start`, from 1; `0` on older rows with no recorded position. |
 | `ccn` | int | `min(ccn_std, ccn_mod)`. This is what the gate and the ratchet judge. |
 | `ccn_std` | int | Standard cyclomatic complexity. |
-| `cognitive` | int | Sonar-spec cognitive complexity, measured in every language crapkit scans. Reporting only, never gated. |
-| `nloc` | int | Non-comment lines of code. |
-| `nesting` | int | Maximum nesting depth. A Python row reads it off crapkit's cognitive pass: the deepest that pass's nesting stack gets, one level per `if`, `elif`, `else`, `for`, `while`, `except` and comprehension `for`, none for `with`, `try`, `finally`, `match`, `case` or a nested `def` (a nested function's blocks count on its own row). A flat function of seven `if`s reads 1, a three-deep one reads 3, an `if` inside a `with` inside an `if` reads 2. Every other language keeps lizard's ND column. |
-| `cov` | float | Branch coverage in the span, 0.0 to 1.0. |
-| `flag` | string | `measured`, `untested`, `no-lane` or `cc-only`. See the [README](../README.md#flags-why-a-coverage-number-is-missing). |
-| `crap` | float | The score. |
+| `cognitive` | int | Sonar-spec cognitive complexity (v1.7), measured in every language crapkit scans. Each language charges its own control structures: Swift's `guard` costs what an `if` costs, a Python `match` statement what a `switch` costs, and a member such as `c.do(1)` nothing. Recursion is a call that reaches the function itself: a Python, JavaScript, Go or Rust method through its object or its type, a Swift function only with its own argument labels, never a bare name that a parameter, an import or an assignment in the body binds. In C++, Java and Swift a call that another function of the same name in the file also takes is not counted, because crapkit reads no types. `??` is free. Reporting only, never gated. |
+| `nloc` | int | Non-comment lines of code, lizard's NLOC: comment-only lines and blank lines do not count. |
+| `nesting` | int | Maximum nesting depth, read off crapkit's cognitive pass in every language: the deepest level that pass reaches. In a brace language each `if`, `else if`, `else`, loop, `switch` (and Rust `match`) and `catch` opens a level for its body, with or without braces (`if (a) return 0;` is one level), and a conditional operator `?:` puts its arms one level down, a second one inside an arm one further. A logical operator such as `&&`, a `case` label (Zig's `else =>` prong is one), `try`, `finally`, a bare block, `@synchronized`, `@autoreleasepool`, a literal in a structure's header (`range []int{1, 2} {`) and a `?` with no `:` (Rust's `?`, `??`, an optional type) open none; so does a closure, whose blocks count on its own row where lizard lists it as a function and at the level around it where lizard does not. In Python one level per `if`, `elif`, `else`, `for`, `while`, `except`, `match` statement and comprehension `for`, none for `with`, `try`, `finally`, `case`, a conditional expression or a nested `def` (a nested function's blocks count on its own row); a comprehension's level closes with its bracket, so `[p for p in a] + [q for q in b]` reads 1, and a line inside a bracket opens and closes nothing. In shell `if`, `case` and each loop open a level and `fi`, `done` and `esac` close it: seven ifs side by side read 1, four nested read 4, a `case` reads 1 whatever its arm count, and `&&` or `||` opens none. A flat function of seven `if`s reads 1, three nested loops read 3, a `switch` reads 1 whatever its case count, and an `if` inside a `with` inside an `if` reads 2. |
+| `cov` | float | Branch coverage in the span, 0.0 to 1.0. With no branches it falls back to statement coverage, and with no statements to invoked-or-not (1.0 or 0.0). Python `and`/`or` add to `ccn`, but coverage.py records no branch arc for them, so a short-circuit no test takes leaves `cov` unchanged. An `untested`, `excluded`, `no-lane` or `cc-only` row reads 0.0. |
+| `flag` | string | `measured`, `untested`, `excluded`, `no-lane` or `cc-only`. See the [README](../README.md#flags-why-a-coverage-number-is-missing). `untested` also marks a function the artifact cannot tell apart from another: one whose line span another function shares, or a Python def whose body starts on the line its signature ends. That row scores `cov` 0.0 whatever the tests do, and its `uncovered_lines` still lists what the artifact saw, `[]` when every line ran; its `remedy` is `split-lines` once `crap` is over `target`. |
+| `crap` | float | The score, `ccn^2 * (1 - cov)^3 + ccn`, unrounded. A `cc-only` or `excluded` row scores `ccn`, since no test can move a number its lane was told not to measure. |
 | `remedy` | string | `decompose`, `split-lines`, `add-tests` or `ok`. `split-lines` means another function shares the source lines, or a Python def's body starts on the line its signature ends under a coverage.py lane, which reads that body as the `def` statement that runs at import; either way no test lowers the score until the definitions, or the signature and its body, are on separate lines. Judged against `target`, the ceiling `crapkit.toml` holds now, not the one the run was scored under: an uncommitted ceiling edit moves the remedy, and what the queue offers, before the next run lands. |
-| `target` | int | This scope's effective ceiling. |
+| `target` | int | This scope's effective ceiling: the highest CRAP a function may carry, and so also the highest `ccn`, since CRAP never falls below `ccn`. A scope's own `target` overrides the `[crapkit]` one. |
 | `commits`, `authors` | int | Churn for the file in the window. |
 | `est_splits` | int | `0` when `ccn <= target`, else `ceil(ccn / target)`. Roughly how many functions this needs to become. |
-| `est_uncovered_paths` | int | `round((1 - cov) * ccn)`. Decision paths no test walks. |
-| `unmeasured` | bool | `true` when no measurement stands behind `cov`: `flag` is `no-lane` or `cc-only`, so no artifact could speak about the span. `cov` then reads 0.0 and `est_uncovered_paths` reads `ccn`, stand-ins rather than counts; both keep those values in schema 1. `false` for `measured` and `untested`: an `untested` row was measured at 0.0 by a lane whose artifact never reached it. |
+| `est_uncovered_paths` | int | `(1 - cov) * ccn`, rounded half to even on the exact product: 2.5 reads 2 and 3.5 reads 4. Decision paths no test walks. |
+| `unmeasured` | bool | `true` when no measurement stands behind `cov`: `flag` is `no-lane` or `cc-only`, so no artifact could speak about the span. `cov` then reads 0.0 and `est_uncovered_paths` reads `ccn`, stand-ins rather than counts; both keep those values in schema 1. `false` for `measured`, `untested` and `excluded`: an `untested` row was measured at 0.0 by a lane whose artifact never reached it, and an `excluded` row's artifact measured the file and was told to leave the function out. |
 | `uncovered_lines` | array or **null** | See below. |
 | `uncovered_lines_note` | string | Present **only** when `uncovered_lines` is null. |
 
@@ -213,7 +214,8 @@ from, or the git error that left the question open. On
 whole span is dark and the first test is the move, not another `coverage` run. On
 `cc-only` the scope set `coverage_optional`, so no artifact can ever name lines for it and
 nothing to do will change that. A `no-lane` row is a wiring gap; `next-item` never hands
-one out.
+one out. An `excluded` row comes back `[]`, not null: the artifact measured the file and was
+told to leave the function out, so `crap` is `ccn` and only `decompose` moves it.
 
 ### `stale` and `scored_changes`: does the run still describe the files?
 
@@ -467,7 +469,7 @@ $ crapkit brief app/parse_csv.py parse_row --json
   "target": 6,
   "uncovered_lines": [6, 8, 12, 14],
   "unmeasured": false,
-  "versions": {"analysis_version": 12, "crapkit": "<version>", "lizard": "1.24.0", "python": "3.11.2"}
+  "versions": {"analysis_version": 13, "crapkit": "<version>", "lizard": "1.24.0", "python": "3.11.2"}
 }
 ```
 
@@ -482,9 +484,9 @@ $ crapkit brief app/parse_csv.py parse_row --json
 | `est_splits`, `est_uncovered_paths` | int | no | The budget, from the same code `next-item` publishes it with. Formulas under [`item` fields](#item-fields). |
 | `unmeasured` | bool | no | `true` when no measurement stands behind `cov` (`flag` `no-lane` or `cc-only`), so `cov` and `est_uncovered_paths` are stand-ins. Same field, same rule as on [`next-item`](#item-fields). The text form prints `cov not measured` for these rows. |
 | `source` | string | no | The function's own text, `start` to `end` inclusive, newlines intact. The packet is editable without a second read of the file. |
-| `params` | array of object | no | Its parameters in declaration order, each `{name, type}`: `name` as declared, `type` the annotation as lizard printed it, or `null` when there is none. A new test can call the function without opening the file. `scored.params` is the count of these. |
-| `scored` | object | no | The whole scored row: the 17 fields above, including `occurrence`, `params` and `ccn_mod`. `next-item` does not carry the latter two. |
-| `target` | int | no | The scope's effective ceiling. |
+| `params` | array of object | no | Its parameters in declaration order, each `{name, type}`: `name` as declared, `type` the annotation as lizard printed it, or `null` when there is none. A new test can call the function without opening the file. `scored.params` is the count of these. It counts a Python signature the way lizard reads it, up to its first `)` at any depth, which keeps the long name, and so the ratchet key, a def has always had: `def defaults(a, bases=(), skip=None)` counts 2. |
+| `scored` | object | no | The whole scored row: the 17 fields above, including `occurrence`, `params` and `ccn_mod`. `next-item` does not carry the latter two. `ccn_mod` is lizard's modified count (`-m`): a switch and all its `case` arms are one decision. A Rust `match`, a shell `case` and a PowerShell `switch` have no `case` keyword per arm and cost one point per arm in `ccn_mod` as in `ccn_std`. A switch whose only arm is `default` reads one above `ccn_std`, as lizard reads it; `ccn` is the smaller of the two, so the gate never sees that point. |
+| `target` | int | no | The scope's effective ceiling: the highest CRAP a function may carry, and so also the highest `ccn`. Same value as `gate_rule.ceiling`. |
 | `stale` | bool | no | `true` when `commit` is not HEAD. It judges the commit, not the files; see [`stale` and `scored_changes`](#stale-and-scored_changes-does-the-run-still-describe-the-files). |
 | `scored_changes` | int or **null** | **yes** | How many files the run scored hold other content now than the run recorded, as on `next-item`. Not `0` (or `null`, when crapkit cannot compare): run `commands.refresh` before trusting any number here. |
 | `shallow` | bool | no | `true` when the checkout is a shallow clone, so `churn` and `gate_rule.mark_age_days` count only the commits the clone holds: in a depth-1 clone every file changed once and every mark is 0 days old. stderr carries one line naming the fix, `set fetch-depth: 0 on the checkout or run git fetch --unshallow`. The numbers keep their values. |
@@ -584,8 +586,8 @@ same answers.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `is_test` | bool | On a coupling partner: the path is a test file. Test paths are excluded from the corpus unconditionally, so a coupled test never appears in `file_functions` or the worklist, and it is still the file your edit breaks. |
-| `contained` | bool | On a twin: every shingle of the smaller function appears in the larger. Containment, not mere similarity, so one of the two can call the other instead of being rewritten. |
+| `is_test` | bool | On a coupling partner: the path is a test file, by a `test`, `tests` or `__tests__` directory in any case or by a runner's naming convention (`test_x.py`, `x_test.py`, `x_test.go`, `x.test.ts`, `x.spec.ts`), the rule `init` and `doctor` read. A test directory leaves the corpus on its own and the default exclude globs drop those names, so a coupled test does not appear in `file_functions` or the worklist, and it is still the file your edit breaks. |
+| `contained` | bool | On a twin: `true` when the twin and the target nest in one file, one defined inside the other. Each is shingled from its own lines, so such a twin shows up only where the enclosing function's own lines copy the nested one's. `duplication --json` drops these pairs. |
 
 ### Name resolution
 
@@ -838,6 +840,11 @@ or `stale` off a batched call still gets them.
 
 At most N batches, sharing no file, with co-changing files kept in the same batch. One batch
 per agent session: two sessions working different batches cannot collide in the same file.
+Files go out largest summed `risk` first, a group of co-changing files counting as one, each
+to the batch with the least `risk` so far, and on a tie to the one with fewer entries. That is
+LPT scheduling (longest processing time first), so the heaviest batch stays within
+4/3 - 1/(3N) times the heaviest batch of the best split: 7/6 for two batches. Batches come
+highest summed `risk` first, and batches of equal risk in the order of their files.
 
 The session that holds a batch briefs its own rows. Every entry carries `path` and
 `function`, the two arguments `brief` takes. [`--batch N`](#--batch-n) is not the per-batch
@@ -933,7 +940,9 @@ $ crapkit verify --json
 the file holds that name, and `long_name#2` for the second function holding it. It is the
 string to look up in `crapkit-ratchet.tsv`, and `long_name` alone is not, whenever a file
 gives one name to several functions. `ratchet_regressions` carries the key in `long_name`
-already, because the entry it reports comes from the marks file.
+already, because the entry it reports comes from the marks file. It lists the largest rise
+first, and rises equal at 4 places in path order. `gate_violations` lists the highest `crap`
+first, and scores equal at 4 places by path, then start line.
 
 **`diff_uncovered` truncates at 50 entries; `diff_uncovered_count` does not.** Above 50 the
 two disagree on purpose. Trust the count.
@@ -1004,7 +1013,7 @@ reasonably look at `committed_findings` alone.
 
 ## `coverage`
 
-The run summary: corpus size, the four flags counted, the grade, and provenance for every
+The run summary: corpus size, the five flags counted, the grade, and provenance for every
 lane that spoke.
 
 ```
@@ -1021,6 +1030,7 @@ $ crapkit coverage --json
   "crap_load": 124.07,
   "db": "/repo/.crapkit/crap.sqlite",
   "empty_scopes": {},
+  "excluded": 0,
   "files": 2,
   "functions": 3,
   "grade": "F",
@@ -1054,9 +1064,9 @@ $ crapkit coverage --json
 | `skipped_max_bytes` | Files dropped by `[exclude] max_file_bytes`. |
 | `empty_scopes` | Scope name to its file count, for each declared scope that claims no file or whose every file no reader could read: `0` when its `paths` and `languages` claim no file (a renamed directory, a typo, the wrong language), else the number of files it claims, none of which a reader could read. A scope whose readable files hold no function is not listed: a reader measured each file, and a package of constants has no debt to hide. `{}` when no scope is in either case. Nothing in such a scope counts over the ceiling, so `grade` alone reads as a clean tree; stderr names the scope and what to fix. |
 | `unreadable_names` | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`. The `crapkit: left out` lines on stderr name the same files. `[]` when every name is UTF-8. |
-| `measured`, `untested`, `no_lane`, `cc_only` | The four flags, counted. They sum to `functions`. |
+| `measured`, `untested`, `excluded`, `no_lane`, `cc_only` | The five flags, counted. They sum to `functions`. |
 | `over_target` | Functions whose `crap` exceeds their scope ceiling, counted over the measured scopes: on a `partial` run the scopes in `unmeasured_scopes` are left out, since a skipped lane's functions score at cov 0 and would read as this run's debt. On a full run that is every function. The key keeps its name; the ceiling is what the config's `target` sets. |
-| `crap_load` | Sum of the CRAP of every function in the scopes this run measured, over or under its ceiling: the same functions `over_target` and `grade` are taken over. Rounded to 2dp. On a `partial` run a scope in `unmeasured_scopes` carries its load under `by_scope` only: its functions score at the cov-0 stand-in, and summing them put a failed lane's code into this run's load beside 0 over the ceiling. |
+| `crap_load` | Sum of the CRAP of every function in the scopes this run measured, over or under its ceiling: the same functions `over_target` and `grade` are taken over. Added exactly (`math.fsum`) and rounded to 2 dp; `trend` prints the same number for a run that measured every scope. On a `partial` run a scope in `unmeasured_scopes` carries its load under `by_scope` only: its functions score at the cov-0 stand-in, and summing them put a failed lane's code into this run's load beside 0 over the ceiling. |
 | `grade` | The letter for over-ceiling density over the same functions `over_target` counts. `A+` only at exactly zero. |
 | `by_scope` | Per scope: `{functions, over_target, crap_load, grade}`. |
 | `lanes` | Provenance per lane that succeeded: `artifact_sha256`, the command's `exit_code` (`null` when the artifact was reused), `parser`, `scopes`, plus `results_artifact_sha256`, `failures`, `tests_total` and `tests_skipped` when the lane declares a `results_artifact`. The digests bind coverage and JUnit to the bytes read for this run. Under `--reuse-unchanged` each lane also carries `rerun_reason`: `""` when its artifact was reused, else the sentence its `rerunning:` stderr line gave, such as `the working tree has 1 uncommitted change(s): src/app.ts`. |
@@ -1100,7 +1110,7 @@ quotes git's error, since no lane without `inputs` can be reused then either.
 ## `doctor --json`
 
 The captured example below uses analysis version 8. A current `doctor` reports
-version 12; read the field from the running tool when checking a ratchet stamp.
+version 13; read the field from the running tool when checking a ratchet stamp.
 
 The only health payload crapkit exposes. It works on a repo that has never run anything.
 
@@ -1135,7 +1145,7 @@ $ crapkit doctor --json
 | `problems` | The FAIL findings, as text. **Non-empty is exit 1.** |
 | `warnings` | The WARN findings: unmeasured directories, scopes a lane measures with no `scoped_tests` template, lanes writing their artifacts at the repo root instead of under `.crapkit/`, lanes with no `results_artifact`, a lane whose artifact on disk is the leftover its last attempt failed to replace (the lane's `refusal`, prefixed `lane '<name>': `), and a `.crapkit/artifacts.json` crapkit cannot read. Exit stays 0. |
 | `versions` | crapkit, lizard, python. `lizard` is `null` when it is not importable, which is also a FAIL. |
-| `analysis_version` | The analysis semantics version, currently `12`. Together with `lizard` it forms the ratchet's metric stamp. Follow [the upgrade checks](upgrading.md#measure-before-changing-marks) before restamping; changed function identity can require a reviewed mapping. |
+| `analysis_version` | The analysis semantics version, currently `13`. Together with `lizard` it forms the ratchet's metric stamp. Follow [the upgrade checks](upgrading.md#measure-before-changing-marks) before restamping; changed function identity can require a reviewed mapping. |
 | `store` | `.crapkit/crap.sqlite`: whether it exists and how big it is. `present: false` and `size_bytes: 0` on a fresh repo. |
 | `newest_run` | `{id, kind, verdict_ok}`, or `null` when nothing has run. `verdict_ok` is `null` for non-verify runs. |
 | `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. `refusal` (since 0.8.1) is `null`, or the sentence saying why `--reuse-artifacts` will not score the file on disk: the lane's last attempt wrote no artifact, and the file predates that attempt, or `.crapkit/artifacts.json` cannot be read, so crapkit cannot tell whether the file is such a leftover. doctor asks the question `--reuse-artifacts` asks, so both give one answer for a lane. `artifact_present: true` beside a `refusal` is a file reuse will not score, not the lane's output. |
@@ -1432,13 +1442,13 @@ name, so `anchor_ts`, every age and every repayment count across the rename, and
 | `trend --json` | `{"runs": [{run_id, commit, created_at, functions, over_target, crap_load, avg, by_scope}], "target": 6}`, trusted runs only. Reads and fills the `run_rollup` cache; see below. |
 | `overrides --json` | `{"overrides": [{run_id, commit, created_at, path, function, crap, reason}]}`. |
 | `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, occurrence, ccn, cov, flag, crap, remedy, stale_coverage, unmeasured}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. `unmeasured: true` marks a row no measurement stands behind: the baseline run holds no row it joins by name (a function added or renamed since that run), or its flag is `no-lane` or `cc-only`. Such a row keeps `cov` 0.0, `flag` `untested` for an added or renamed function, and the `crap` and `remedy` those give; the table prints `-` for its cov and ends the line with `(coverage not measured)`. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path], "unread_files": [{path, reason, dirty}]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark pardons (a mark pardons only while the function's crap is at or under it), `unread_files` the changed files no reader could read, whose functions were never judged, in the name and shape verify's `unread_files` has (`dirty` is always true here: the gate judges the working tree's changes since HEAD), `ok` is `breaches == [] and unread_files == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
-| `duplication --json` | `{"run_id", "pairs": [{similarity, contained, functions: [{path, long_name, start, end, nloc}, ...]}]}`. Containment scoring: shared shingles over the smaller function. A pair whose two spans nest in one file is dropped, not ranked: a factory and the closure defined inside it score 1.0 by construction and cannot be deduplicated. `contained` is therefore `false` on every pair here, and it is emitted so pairs and `duplication_twins` read as one shape. |
-| `coupling --json` | `{"window_months", "pairs": [{files: [a, b], support, confidence}]}`. `support` is shared commits, `confidence` is the max-direction ratio. It reads raw `git log`, so any path in the history can appear, not only scoped source. Ranked pairs are cached; see below. |
+| `duplication --json` | `{"run_id", "pairs": [{similarity, contained, functions: [{path, long_name, start, end, nloc}, ...]}]}`. Containment scoring: shared shingles over the smaller function. Each function is shingled from its own lines: a nested function's lines past its first line are its own, not the enclosing function's, so a factory never pairs through its closure and one with fewer than `--min-lines` lines of its own pairs with nothing. A pair whose two spans nest in one file is dropped, not ranked: nobody can deduplicate a factory from its own closure. `contained` is therefore `false` on every pair here, and it is emitted so pairs and `duplication_twins` read as one shape. |
+| `coupling --json` | `{"window_months", "pairs": [{files: [a, b], support, confidence}]}`. `support` is shared commits, `confidence` is the max-direction ratio. Pairs come highest `support` x `confidence` first, taken over the 4-place `confidence` shown, and pairs that tie come in path order. It reads raw `git log`, so any path in the history can appear, not only scoped source. Ranked pairs are cached; see below. |
 | `mutate --json` | `{"mutants", "killed", "survived", "timed_out", "no_verdict", "survivors": [{path, line, op, original, mutated}], "outside_corpus": [path]}`. `mutants` is the count **after** `--max-mutants`; the truncation warning goes to stderr only. `timed_out` counts the mutants whose suite ran out of time: they stay detected, so `killed` includes them. `no_verdict` counts the mutants whose suite collected no tests (pytest exit 5): no test judged them, and they stay inside `killed` too, as in 0.8.0, so `killed` + `survived` is `mutants`. JSON schema 2 leaves them out of `killed` and the rate; schema 1 keeps the field's meaning. `outside_corpus` lists the diff's paths (or `--files`' paths) the scored corpus does not hold, a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims, sorted; they grew no mutants, and a run with `mutants` 0 and a non-empty `outside_corpus` never started the suite. Every worker uses a kept worktree, including one; see [mutation worktrees](configuration.md#mutation-worktrees). |
 | `claims --json` | Above. |
 | `digest` | **Never JSON.** Plain lines, and silent when nothing changed. |
 | `report` | No payload of its own. It writes one self-contained HTML page to `.crapkit/report.html` (or `--out PATH`, repo-relative, or an absolute path you name) and prints that path on stdout, rendering the `worklist` and `trend` payloads above at their defaults. Read those two instead of parsing the page. |
-| `explain` | Plain lines by default. `--json` emits the same content as one sorted-keys object with `schema` 1: the score per run, the ratchet mark, and under `--history` the commits that touched the function, each carrying its message `body` alongside its sha. `NAME` takes a start line as of 0.4.5, the same form `brief` takes. `--history` reads the span the newest run measured on the working tree, maps it through the uncommitted diff onto HEAD's lines, and asks `git log -L` about those. `commits` is `null` with a `commits_note` when the span holds only uncommitted lines (`pkg/m.py:9-10 holds only uncommitted lines, so no commit has touched it yet`) and when git cannot answer, quoting git's error and ending ``fix what git reports, then run `crapkit explain --history` again``. `--tests` withholds its test ids whenever the file's dark lines are withheld: `tests` is `null` and `tests_note` repeats `uncovered_lines_note`, because the contexts sit on the same stale line numbers. |
+| `explain` | Plain lines by default. `--json` emits the same content as one sorted-keys object with `schema` 1: the score per run, the ratchet mark, and under `--history` the newest 10 commits that touched the function, newest first, each a `{sha, date, subject, body}` object. `subject` and `body` are git's `%s` and `%b` as the commit stores them, control characters and `\r` included; `body` drops only the newlines at either end. `NAME` takes a start line as of 0.4.5, the same form `brief` takes. `--history` reads the span the newest run measured on the working tree, maps it through the uncommitted diff onto HEAD's lines, and asks `git log -L` about those. `commits` is `null` with a `commits_note` when the span holds only uncommitted lines (`pkg/m.py:9-10 holds only uncommitted lines, so no commit has touched it yet`) and when git cannot answer, quoting git's error and ending ``fix what git reports, then run `crapkit explain --history` again``. `--tests` withholds its test ids whenever the file's dark lines are withheld: `tests` is `null` and `tests_note` repeats `uncovered_lines_note`, because the contexts sit on the same stale line numbers. |
 | `--version --json` | `{"analysis_version", "commit", "dirty", "schema", "version"}` (since 0.8.1), with the two flags in either order. `version` is the number `crapkit --version` prints. `commit` is the full sha this crapkit was built from: git answers for a source checkout or an editable install, and an installed wheel reads the stamp its build wrote into `crapkit/_build.json` (every build made in a git checkout writes one, and a wheel built from an sdist carries the sdist's). `dirty` is true when that checkout held staged or unstaged edits or a file git neither tracks nor ignores. Both are `null` for a build made with no checkout at hand and for a checkout git cannot read. `analysis_version` is the number `doctor --json` reports and the ratchet's metric stamp carries. The text form is `crapkit X.Y.Z` in a pipe; on a terminal a build that is not a release adds `(commit <sha>, clean)` or `(commit <sha>, dirty)`. |
 
 ### Read commands that write
@@ -1448,7 +1458,9 @@ the store. Both used to re-derive per-run totals from every scored row of every 
 on every invocation: 4.3 M rows on the corpus the 0.4.5 work was measured against, 4.58 s per
 `trend`. A run is immutable once written, so its totals are now summed once into a
 `run_rollup` table and read back from there: `trend` 4.58 s to 0.04 s warm, `report` down
-76%. A prune takes a run's rollup rows with it.
+76%. A prune takes a run's rollup rows with it. The table holds each scope's totals and the
+whole run's, each load added exactly from the run's scores, so a run's `trend` row prints
+the `crap_load` its `coverage` summary printed when the run measured every scope.
 
 Two consequences for a caller.
 
@@ -1479,20 +1491,24 @@ it built.
 
 `coupling`, `brief` and `worklist --batches` rank the same co-change pairs out of the same
 window, and each one used to re-cut the churn log and re-count every combination on every
-run. Since 0.4.5 the ranked pairs live in `.crapkit/coupling-cache-v1.json`, beside
-`churn-cache-v2.json` and `churn-log-v2.z`. Warm `coupling` on the measured corpus went from
+run. Since 0.4.5 the ranked pairs live in `.crapkit/coupling-cache-v2.json` (v1 until
+0.8.0), beside `churn-cache-v3.json` and `churn-log-v3.z`. Warm `coupling` on the measured corpus went from
 1.05 s to 0.11 s, `worklist --batches` down 62%, a single `brief` down 25%.
 
 What is stored is the ranking at the **default** thresholds, in full order, uncut. `--top`
 truncates that order, so it reads the cache. `--min-support` or `--min-confidence` off the
 defaults ask a wider question than the file answers and recompute, because serving them a
-filtered subset would drop the pairs those thresholds exist to surface.
+filtered subset would drop the pairs those thresholds exist to surface. A read ranks the
+stored pairs again with the same key the walk sorts by, so a file an older crapkit wrote,
+which ranked tied pairs by float noise, comes back in this version's order.
 
-The key is HEAD, the window, the UTC date, the path format and a digest of the tracked set,
-the churn map's key plus that digest. The tracked set is in the key
+The key is HEAD, the window, the UTC date, the path format, the history depth and a digest
+of the tracked set, the churn map's key plus that digest. The window ends at HEAD's commit
+date, so the date never changes the pairs. The tracked set is in the key
 because ranking drops any pair naming a file `git ls-files` no longer lists, and the index
 moves without HEAD: `git rm --cached src/util.py` leaves the sha alone and must still retire
-every pair naming that file. Unreadable or unkeyable content reads as cold, never as a crash.
+every pair naming that file. Unreadable or unkeyable content reads as cold, never as a crash,
+and so does a count or confidence the JSON spells `Infinity` or `NaN`.
 
 The paths are decoded. git spells a non-ASCII name in a log with C-style escapes, and since
 0.4.5 all three readers undo that before joining, so a pair names the file `git ls-files`
@@ -1515,6 +1531,11 @@ the sentence that names the fix instead of an empty stream:
 | 3 | `config` | `crapkit.toml` is missing, does not parse, or refuses a value; an unknown `--lane` or `--scope` is this too, and so is a file whose name is not UTF-8. |
 | 4 | `git` | A git command failed or a commit is missing: no repository, a repository with no commit yet or one git refuses to open, a baseline that is not an ancestor (a rewrite, or a run made on another branch with none behind HEAD), a shallow clone, or `ratchet report --enforce` with a debt key set in a shallow clone, whose history cannot age a mark. |
 | 5 | `tool` | A lane or an external tool failed: every lane failed, an artifact the last attempt never wrote, lizard missing. Also a process with no home directory, whose message names the variable to set. |
+| 5 | `internal` | An internal check failed before anything was written: a number crapkit computed broke a bound its docs set, such as a CRAP outside `ccn` to `ccn^2 + ccn`. This is a crapkit bug, not a problem in your repo. No run was stored and no ratchet mark changed. Do not retry and do not edit the config: report the message and `crapkit --version` at https://github.com/JeanFrancoisGagne/crapkit/issues. |
+
+`internal` shares exit 5 with `tool`, so a wrapper that reads only the exit code still
+fails the job; read `kind` to tell a crapkit bug from a lane that failed. Its stderr
+opens with `crapkit stopped: an internal check failed before anything was written.`
 
 `message` is the stderr line without its `crapkit: ` prefix; that line and the exit code
 are unchanged. A refusal of a file whose name is not UTF-8 adds `unread_files`, one

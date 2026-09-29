@@ -1,0 +1,12 @@
+{
+ "isError": true,
+ "structuredContent": null,
+ "text": {
+  "error": {
+   "exit": 1,
+   "kind": "state",
+   "message": "no function named 'no_such_function' in src/py/grades.py in the latest scored run — it holds: curve, letter, pick, spread, weighted"
+  },
+  "schema": 1
+ }
+}

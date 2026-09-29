@@ -420,10 +420,17 @@ def _temporary_trees(root: Path, base: Path) -> list[Path]:
                 'workers': receipt['workers']}
     if not _receipt_matches(receipt, expected) or not re.fullmatch(r'[0-9a-f]{32}', base.name):
         raise ValueError('temporary mutation receipt does not match this directory')
+    return [_unlinked_path(base, f'w{i}') for i in range(_worker_count(receipt))]
+
+
+def _worker_count(receipt: dict) -> int:
+    """Any whole number from 1 up, with no ceiling: the writer records the
+    smaller of `mutation_workers` and the mutant count, and `mutation_workers`
+    has none. A cap of 100 here once left every bigger abandoned run on disk."""
     count = receipt['workers']
-    if type(count) is not int or not 1 <= count <= 100:
+    if type(count) is not int or count < 1:
         raise ValueError('temporary mutation receipt has an invalid worker count')
-    return [_unlinked_path(base, f'w{i}') for i in range(count)]
+    return count
 
 
 def _receipt_matches(receipt: dict, expected: dict) -> bool:

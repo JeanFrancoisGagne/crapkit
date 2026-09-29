@@ -1,5 +1,9 @@
 """SARIF 2.1.0 emission: code-scanning UIs and PR annotation bots read this,
 so ruleIds, levels, and locations are contract, not decoration."""
+from fractions import Fraction
+
+from accuracy.kit import exact
+
 import json
 from types import SimpleNamespace
 from urllib.parse import unquote
@@ -13,7 +17,7 @@ from crapkit.verify import GateViolation, UnreadFile
 
 
 def scored(path="src/a.ts", name="f( )", ccn=8, cov=0.0, scope="src"):
-    c = ccn * ccn * (1 - cov) ** 3 + ccn
+    c = float(exact.crap(ccn, Fraction(cov)))
     return ScoredRow(scope, path, name, 3, 9, ccn, ccn, ccn, 5, 1, 1, cov, "measured", c, "decompose")
 
 
@@ -25,6 +29,20 @@ def test_document_shape_and_rule_registration():
     rule_ids = {r["id"] for r in run["tool"]["driver"]["rules"]}
     assert {"crapkit/over-target", "crapkit/gate", "crapkit/ratchet-regression",
             "crapkit/diff-uncovered", "crapkit/unread"} <= rule_ids
+
+
+# The identifier the SARIF 2.1.0 schema document declares for itself: the OASIS
+# errata01 location, which answered HTTP 200 on 2026-09-26. The oasis-tcs/sarif-spec
+# master/Schemata path crapkit used to print answered 404.
+OASIS_SCHEMA = ("https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/"
+                "sarif-schema-2.1.0.json")
+
+
+def test_the_schema_uri_is_where_oasis_publishes_the_schema():
+    """SARIF 2.1.0 errata01 section 3.13.3: `$schema` is an absolute URI from
+    which the schema can be obtained, so a validator that fetches it gets the
+    schema and not a 404."""
+    assert sarif_document([])["$schema"] == OASIS_SCHEMA
 
 
 def test_over_target_results_locate_the_function():

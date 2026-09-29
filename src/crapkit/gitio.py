@@ -23,6 +23,8 @@ _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _LOG_HEADER = re.compile(rb"^\0(-?\d+) ([0-9a-f]+)\n", re.MULTILINE)
 _INDEX_LINE = re.compile(rb"^index ([0-9a-f]+)\.\.([0-9a-f]+)", re.MULTILINE)
 _NO_FILE = {"0" * 40, "0" * 64}  # the side of a commit that added or deleted the file
+_LINE_LOG_HEADER = re.compile(rb"^\0([0-9a-f]{40}|[0-9a-f]{64})$", re.MULTILINE)
+_MESSAGE_FORMAT = "--format=%h%x00%ad%x00%s%x00%b"
 
 # Every path this module hands out is joined against root-relative rows, because
 # `git ls-files` answers relative to the cwd. Diffs do not: git names their files
@@ -58,17 +60,35 @@ _NO_FILE = {"0" * 40, "0" * 64}  # the side of a commit that added or deleted th
 # said "1 file(s) in its scopes changed", reuse refused a clean tree and verify
 # counted the file dirty. On, a CRLF checkout under core.autocrlf=true still
 # matches its LF blob, which a raw-bytes comparison would not.
+#
+# The three log settings hold every history read to git's own defaults.
+# log.showSignature=true prints each signed commit's verification ahead of its
+# record: explain --history read it as part of the commit's name, the churn
+# window as a changed path, and the ratchet history as patch text. Off, a walk
+# also runs no gpg or ssh-keygen per signed commit. log.follow=true follows a
+# lone path across a rename, and git's --follow drops commits under --reverse,
+# which the ratchet history reads with. log.showRoot=false prints no diff for
+# the root commit, so its files got no churn from it and its ratchet marks
+# never entered the report.
 _RELATIVE = ("-c", "diff.relative=true", "-c", "core.quotePath=false",
              "-c", "i18n.logOutputEncoding=UTF-8",
-             "-c", "diff.autoRefreshIndex=true")
+             "-c", "diff.autoRefreshIndex=true",
+             "-c", "log.showSignature=false", "-c", "log.follow=false", "-c", "log.showRoot=true")
 # Parsed patches are a protocol, independent of display settings and converters.
 _PATCH = ("-U0", "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
           "--no-ext-diff", "--no-textconv", "--inter-hunk-context=0",
           "--output-indicator-new=+", "--output-indicator-old=-", "--output-indicator-context= ")
 
 
-def _environment() -> dict[str, str]:
+# git translates the prefix that marks a failed step: under a French locale
+# `error:` prints as `erreur :`. The merge-base reads tell a failed read from a
+# plain "no" by that prefix, so they run with git's messages untranslated.
+UNTRANSLATED = (("LC_ALL", "C"), ("LANGUAGE", "C"))
+
+
+def _environment(*pinned: tuple[str, str]) -> dict[str, str]:
     """GIT_DIFF_OPTS overrides even explicit -U0; it is display state.
+    `pinned` holds variables one read sets, such as UNTRANSLATED.
 
     GIT_OPTIONAL_LOCKS=0 is git's own spelling of `--no-optional-locks`, set on
     every process here because crapkit never wants an index write it did not
@@ -77,14 +97,15 @@ def _environment() -> dict[str, str]:
     .git/index. On Windows that write-back made a sibling read that opened the
     index at the same moment fail with `index file open failed: Permission
     denied`. `git diff` (2.43) writes it back whatever this says, which is why
-    lane_changes starts its index reads after the worktree diff and the content
-    record reads one after the other. A command that must lock the index
+    the uncommitted set comes from `git status` (STATUS) and every patch read
+    turns the stat refresh off (_PATCH_READ). A command that must lock the index
     (`add`, a worktree checkout) takes that lock anyway. The environment rather
     than the flag, so the subcommand stays the first word after the `-c` pairs.
     """
     environment = dict(os.environ)
     environment.pop("GIT_DIFF_OPTS", None)
     environment["GIT_OPTIONAL_LOCKS"] = "0"
+    environment.update(pinned)
     return environment
 
 
@@ -102,7 +123,8 @@ def _git_unflagged(root: Path, *args: str) -> str:
     return _run(root, args, args)
 
 
-def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subprocess.CompletedProcess:
+def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False,
+           pinned: tuple[tuple[str, str], ...] = ()) -> subprocess.CompletedProcess:
     """One git process run to completion, whatever it exits with.
 
     Read as bytes and decoded here, never by subprocess: a text-mode read
@@ -113,7 +135,8 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False) -> subpro
     an OS path, so a directory named in Latin-1 on Linux still opens. stderr is
     only ever quoted in a message, so it reads through repotext.lenient."""
     try:
-        res = subprocess.run(["git", *argv], cwd=root, env=_environment(), capture_output=True)
+        res = subprocess.run(["git", *argv], cwd=root, env=_environment(*pinned),
+                             capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     if binary:
@@ -307,14 +330,15 @@ def staged_diff(root: Path) -> str:
 
 
 def unstaged_paths(root: Path) -> set[str]:
-    """Tracked files whose working-tree content differs from the index.
+    """Tracked files whose working-tree content differs from the index: the
+    status records whose second letter is set and is not `?`, untracked.
 
     git decides it, through its own filters. Comparing a staged blob to the
-    file's raw bytes reads every file as different under `core.autocrlf=true` —
-    git-for-windows' installer default — because the blob holds LF and the
+    file's raw bytes reads every file as different under `core.autocrlf=true`,
+    git-for-windows' installer default, because the blob holds LF and the
     checkout holds CRLF by design.
     """
-    return set(_diff_names(root))
+    return _unstaged(_status(root))
 
 
 # --ignore-submodules=none: a `.gitmodules` entry with `ignore = dirty` hides
@@ -371,24 +395,54 @@ def renamed_paths(root: Path, since: str, *, similarity: int = 50) -> dict[str, 
 
 
 def status_names(root: Path) -> list[str]:
-    """Files with uncommitted changes: staged, unstaged, or never added.
-
-    Two diffs and an ls-files rather than `git status --porcelain`, which names
-    its files relative to the repo TOP and cannot be talked out of it —
-    `status.relativePaths=true` and `--porcelain=v1` both still print
-    `app/core/x.py` from a root one directory down, while every caller joins
-    these names against root-relative rows. The diffs take `diff.relative` like
-    the rest of this module and `ls-files --others` answers relative to the cwd
-    already.
+    """Files with uncommitted changes under `root`: staged, unstaged, or never added.
 
     Untracked files are in the set because lane reuse reads it: a test file that
     exists and git has never seen still makes that lane's coverage stale. The
     dirty-file set verify builds from this only ever meets tracked rows, so the
-    wider answer cannot relabel a finding there. So are the edits git's diff
+    wider answer cannot relabel a finding there. So are the edits git status
     never compares (`hidden_edits`).
     """
-    return sorted({*_diff_names(root, "--cached"), *_diff_names(root),
-                   *untracked_files(root), *hidden_edits(root)})
+    return sorted({*(path for _, path in _status(root)), *hidden_edits(root)})
+
+
+# Which files changed is `git status`'s question. A worktree `git diff` answers
+# it from the index's stat cache: with diff.autoRefreshIndex off it named every
+# file whose mtime moved, so a `touch` or a copied checkout read as an edit, and
+# with it on it compares the content and then writes the refreshed index over
+# .git/index, whatever GIT_OPTIONAL_LOCKS says. crapkit starts its lane reads at
+# once, and on Windows a read that opened the index during that rename failed
+# with "index file open failed: Permission denied". `git --no-optional-locks
+# status` compares content whatever diff.autoRefreshIndex says and writes
+# nothing. -uall names each untracked file, as `ls-files --others` does, and
+# --no-renames keeps one path per record.
+STATUS = ("--no-optional-locks", "status", "--porcelain", "-z", "-uall", "--no-renames",
+          "--ignore-submodules=none")
+# porcelain names every path from the repo top, whatever the cwd and
+# status.relativePaths say; this read answers the part of each name above the root.
+SHOW_PREFIX = ("rev-parse", "--show-prefix")
+
+
+def status_records(out: str, prefix: str) -> list[tuple[str, str]]:
+    """(the two status letters, the path from the root) for each `XY path`
+    record of `git status --porcelain -z` run under a root whose `rev-parse
+    --show-prefix` answer is `prefix`. The status pathspec keeps every record
+    under that prefix."""
+    cut = 3 + len(prefix.removesuffix("\n"))
+    return [(record[:2], record[cut:]) for record in out.split("\0") if record]
+
+
+def _status(root: Path, paths: tuple[str, ...] = ()) -> list[tuple[str, str]]:
+    """The status records under `paths` (the root when none), each path named
+    from the root and each name that is not UTF-8 in its surrogateescape
+    spelling (gitpaths.repo_path)."""
+    out = _git_bytes(root, "--literal-pathspecs", *STATUS, "--", *(paths or (".",)))
+    return status_records(escaped(out), _show_prefix(root))
+
+
+def _unstaged(records: list[tuple[str, str]]) -> set[str]:
+    """The records whose second letter is set and is not `?`, untracked."""
+    return {path for letters, path in records if letters[1] not in " ?"}
 
 
 def hidden_edits(root: Path, *paths: str) -> list[str]:
@@ -402,7 +456,19 @@ def hidden_edits(root: Path, *paths: str) -> list[str]:
     sparse checkout's cone) is not an edit. git hashes the disk bytes through
     the repo's filters, so a CRLF checkout still matches its LF blob.
     """
-    flagged = _on_disk(root, _flagged(root, paths))
+    return flagged_edits(root, _git_paths(root, "--literal-pathspecs", *FLAGS, "--", *paths))
+
+
+# `ls-files -v` tags a skip-worktree file `S` and an assume-unchanged one in
+# lowercase.
+FLAGS = ("ls-files", "-v", "-z")
+
+
+def flagged_edits(root: Path, records: list[str]) -> list[str]:
+    """The files among `ls-files -v` records (FLAGS) that are flagged, on disk,
+    and hold other content than the index: hidden_edits once the listing is
+    read, for a caller that started it beside its other reads."""
+    flagged = _on_disk(root, _flagged(records))
     if not flagged:
         return []
     index = index_blobs(root, flagged)
@@ -412,12 +478,11 @@ def hidden_edits(root: Path, *paths: str) -> list[str]:
 
 def worktree_changes(root: Path, paths: tuple[str, ...] = ()) -> list[str]:
     """Tracked files under `paths` (all when none) whose content on disk differs
-    from the index: git's worktree diff, which compares a stat-dirty file's
-    content through the repo's filters, plus the flagged files it never
-    compares (`hidden_edits`). A deleted file is in it, and so is a submodule
-    whose checkout moved or holds an edit."""
-    names = _git_paths(root, "--literal-pathspecs", *_NAME_DIFF, "--", *paths)
-    return sorted({*names, *hidden_edits(root, *paths)})
+    from the index: the unstaged status records, which git decides by content
+    through the repo's filters and without writing .git/index (STATUS), plus
+    the flagged files it never compares (`hidden_edits`). A deleted file is in
+    it, and so is a submodule whose checkout moved or holds an edit."""
+    return sorted({*_unstaged(_status(root, tuple(paths))), *hidden_edits(root, *paths)})
 
 
 def _on_disk(root: Path, paths: list[str]) -> list[str]:
@@ -425,10 +490,8 @@ def _on_disk(root: Path, paths: list[str]) -> list[str]:
     return [path for path in paths if (root / path).is_file()]
 
 
-def _flagged(root: Path, paths: tuple[str, ...]) -> list[str]:
-    """`ls-files -v` tags a skip-worktree file `S` and an assume-unchanged one
-    in lowercase."""
-    records = _git_paths(root, "--literal-pathspecs", "ls-files", "-v", "-z", "--", *paths)
+def _flagged(records: list[str]) -> list[str]:
+    """The paths of the flagged records."""
     return [record[2:] for record in records if record[:1] == "S" or record[:1].islower()]
 
 
@@ -527,12 +590,14 @@ def merge_base(root: Path, ref: str) -> str:
     """The commit REF and HEAD forked from — a branch's real diff basis, which
     is what a mid-branch run's own commit is not.
 
-    A refusal says why. git exits 1 with nothing on stderr when the two share no
-    commit it holds: unrelated histories, or a shallow clone whose boundary cuts
-    the fork off. A shallow clone is the default CI checkout, so there every
-    refusal also names the fetch that brings the missing history in.
+    A refusal says why. git exits 1 with no error line (_reports_failure) when
+    the two share no commit it holds: unrelated histories, or a shallow clone
+    whose boundary cuts the fork off. It also exits 1, printing `error: Could
+    not read <sha>`, when a commit on the way cannot be read. A shallow clone is
+    the default CI checkout, so there every refusal also names the fetch that
+    brings the missing history in.
     """
-    res = _spawn(root, (*_RELATIVE, "merge-base", ref, "HEAD"))
+    res = _spawn(root, (*_RELATIVE, "merge-base", ref, "HEAD"), pinned=UNTRANSLATED)
     if res.returncode != 0:
         raise GitError(_gap_behind(root, res.returncode)
                        or _merge_base_refusal(root, ref, res) + shallow_fix(root))
@@ -541,7 +606,7 @@ def merge_base(root: Path, ref: str) -> str:
 
 def _merge_base_refusal(root: Path, ref: str, res: subprocess.CompletedProcess) -> str:
     reason = res.stderr.strip()
-    if res.returncode == 1 and not reason:
+    if res.returncode == 1 and not _reports_failure(reason):
         return f"no merge base between {ref} and HEAD in {root}"
     return f"git merge-base {ref} HEAD failed in {root}: {reason}"
 
@@ -589,6 +654,58 @@ def branches_containing(root: Path, commit: str) -> list[str]:
     branch from one whose commit a rebase or an amend left on no branch."""
     res = _spawn(root, ("branch", "--contains", commit, "--format=%(refname:short)"))
     return res.stdout.split() if res.returncode == 0 else []
+
+
+def ancestry_answer(root: Path, commit: str, code: int, said: str, failure: str) -> bool:
+    """`merge-base --is-ancestor`'s answer, from its exit code and `said`, its
+    stderr. Exit 0 is yes. Exit 1 is no unless git printed an `error:` or
+    `fatal:` line, the rule merge_base reads its exit 1 by: git also exits 1,
+    printing `error: Could not read <sha>`, when a commit on its walk back from
+    HEAD cannot be read. Trace output and warnings print beside a plain no.
+    Exit 128 comes both from a commit this clone does not hold, which is not
+    behind HEAD, and from a read that failed; `rev-parse --verify --quiet`
+    tells the two apart.
+
+    A read that failed is no answer at all and raises GitError with `failure`.
+    Read as "no", it told next-item that the stamp commit was not behind HEAD,
+    or that files in a lane's scopes changed, on a tree nobody touched."""
+    return _ancestry(root, commit, code, said, failure) is True
+
+
+def _ancestry(root: Path, commit: str, code: int, said: str, failure: str) -> bool | None:
+    """ancestry_answer's rule, None where this clone does not hold `commit` or
+    git cannot open the repository (proven_ancestor names which)."""
+    if code == 0:
+        return True
+    if not _failed_read(root, commit, code, said):
+        return False if code == 1 else None
+    raise GitError(failure)
+
+
+def _failed_read(root: Path, commit: str, code: int, said: str) -> bool:
+    """Exit 1 with an `error:` or `fatal:` line, or a fatal exit while the
+    repository opens and holds `commit`."""
+    if code == 1:
+        return _reports_failure(said)
+    return _repository_gap(root) is None and has_commit(root, commit)
+
+
+def _reports_failure(said: str) -> bool:
+    """Whether git's stderr holds a line that starts with `error:` or `fatal:`.
+    Trace output (GIT_TRACE) and warnings print beside a plain answer too, and
+    taken as a failure they turned an amended history's "no" into a failed
+    read. The reads that ask run with UNTRANSLATED, so the prefix is git's own
+    word whatever the user's locale."""
+    return any(line.startswith(("error:", "fatal:")) for line in said.splitlines())
+
+
+def commit_time(root: Path, commit: str) -> int:
+    """`commit`'s commit date, in Unix seconds. rev-list, which no `log.*`
+    setting reaches, prints a `commit <sha>` line and then the date."""
+    stamp = _git(root, "rev-list", "-1", "--format=%ct", commit).strip().rpartition("\n")[2]
+    if not stamp.isdigit():
+        raise GitError(f"git rev-list named no commit date for {commit} in {root}")
+    return int(stamp)
 
 
 def is_shallow(root: Path) -> bool:
@@ -708,20 +825,30 @@ class _Started:
     records, and decides how those decode.
     """
 
-    def __init__(self, root: Path, args: tuple[str, ...], *, stdin: bool) -> None:
+    def __init__(self, root: Path, args: tuple[str, ...], *, stdin: bool,
+                 pinned: tuple[tuple[str, str], ...] = ()) -> None:
         self._args, self._root = args, root
+        self.stderr = ""
         try:
             self._proc = subprocess.Popen(
-                ["git", *_RELATIVE, *args], cwd=root, env=_environment(),
+                ["git", *_RELATIVE, *args], cwd=root, env=_environment(*pinned),
                 stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except FileNotFoundError as exc:
             raise GitError("git executable not found") from exc
 
+    @property
+    def returncode(self) -> int | None:
+        """The exit code once the read was collected, else None."""
+        return self._proc.returncode
+
     def result(self, payload=None) -> bytes:
+        """The answer; a non-zero exit raises GitError and leaves what git said
+        in `stderr`, for the one read whose exit code is itself the answer."""
         out, err = self._proc.communicate(payload)
         if self._proc.returncode != 0:
-            raise _failure(self._root, self._args, self._proc.returncode, lenient(err))
+            self.stderr = lenient(err)
+            raise _failure(self._root, self._args, self._proc.returncode, self.stderr)
         return out
 
     def close(self) -> None:
@@ -732,18 +859,27 @@ class _Started:
             self._proc.communicate()
 
 
-def start_read(root: Path, *args: str) -> _Started:
+def start_read(root: Path, *args: str, pinned: tuple[tuple[str, str], ...] = ()) -> _Started:
     """One git read with no stdin, started now and collected later with
-    `.result()`, which answers bytes or raises GitError."""
-    return _Started(root, args, stdin=False)
+    `.result()`, which answers bytes or raises GitError. `pinned` as for
+    _environment."""
+    return _Started(root, args, stdin=False, pinned=pinned)
+
+
+# Only a patch carries line numbers, so verify, rescore, mutate and the advisory
+# hook read one with `git diff`. Against the worktree that diff refreshes the stat
+# cache of a file whose bytes did not change and writes the index back, whatever
+# GIT_OPTIONAL_LOCKS says: the rewrite STATUS exists to avoid, here beside
+# crapkit's own reads and the agent's git commands. With the refresh off git
+# still compares the content, prints no patch for that file and writes nothing.
+_PATCH_READ = ("-c", "diff.autoRefreshIndex=false", "--literal-pathspecs", "diff")
 
 
 def _source_diff_args(basis: tuple[str, ...], paths: tuple[str, ...], *,
                       force_text: bool = False) -> tuple[str, ...]:
     # Source body bytes need no character decoding to count hunk lines.
     text = ("--text",) if force_text else ()
-    return ("--literal-pathspecs", "diff", *basis,
-            *_PATCH, *text, "--", *paths)
+    return (*_PATCH_READ, *basis, *_PATCH, *text, "--", *paths)
 
 
 def _binary_source_path(record: bytes, extensions: tuple[str, ...]) -> str | None:
@@ -755,10 +891,13 @@ def _binary_source_path(record: bytes, extensions: tuple[str, ...]) -> str | Non
 
 def _binary_source_paths(root: Path, basis: tuple[str, ...],
                          paths: tuple[str, ...]) -> tuple[str, ...]:
+    """The source files git summarized as binary. With the stat refresh off,
+    numstat also names a touched file whose bytes did not change; its forced
+    --text patch is empty, so the patch is the same."""
     from .universe import LANGUAGE_EXTENSIONS
 
     extensions = tuple(ext for group in LANGUAGE_EXTENSIONS.values() for ext in group)
-    records = _git_bytes(root, "--literal-pathspecs", "diff", *basis, "--numstat", "-z",
+    records = _git_bytes(root, *_PATCH_READ, *basis, "--numstat", "-z",
                          "--no-renames", "--no-ext-diff", "--no-textconv", "--", *paths).split(b"\0")
     return tuple(path for record in records if (path := _binary_source_path(record, extensions)))
 
@@ -951,6 +1090,37 @@ def _patch_sides(patch: bytes) -> tuple[str, ...]:
     the patch has no such line."""
     found = _INDEX_LINE.search(patch)
     return (found[1].decode(), found[2].decode()) if found else ()
+
+
+def line_commits(root: Path, rel_path: str, start: int, end: int, limit: int) -> list[str]:
+    """The full names of the newest `limit` commits that changed lines
+    start..end of one file (`git log -L`), newest first.
+
+    The walk names commits and nothing else. -L prints each commit's hunks after
+    its header in the file's own bytes, and -s drops them only on a git that
+    honors it with -L. A hunk line starts with its +, - or space indicator, so a
+    whole line that is NUL and an object name can only be a header.
+    """
+    out = _git_bytes(root, "log", f"-L{start},{end}:{rel_path}", "-s", "--format=%x00%H",
+                     f"--max-count={limit}")
+    return [name.decode("ascii") for name in _LINE_LOG_HEADER.findall(out)]
+
+
+def commit_messages(root: Path, names: list[str]) -> list[tuple[str, ...]]:
+    """(abbreviated name, author date as YYYY-MM-DD, subject, body) per named
+    commit, in the order named. Subject and body are git's %s and %b.
+
+    A commit message can hold any byte but NUL, so NUL ends every field and -z
+    ends every record: a body line of \\x01 or \\x02, a \\r, a form feed or a
+    missing final newline stays text. Asked for as UTF-8 whatever the repo's
+    i18n.logOutputEncoding says, and decoded field by field.
+    """
+    if not names:
+        return []
+    out = _git_bytes(root, "log", "--no-walk=unsorted", "-z", "--date=short", "--encoding=UTF-8",
+                     _MESSAGE_FORMAT, *names, "--")
+    fields = [lenient(field) for field in out.split(b"\0")]
+    return [tuple(fields[i:i + 4]) for i in range(0, len(fields) - 1, 4)]
 
 
 def _revisions(root: Path, patches: list[bytes]) -> dict[str, bytes]:

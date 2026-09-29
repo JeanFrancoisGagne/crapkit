@@ -233,8 +233,11 @@ def suggest_knobs(*, cpus: int, lanes: int, shared: tuple[tuple[str, ...], ...] 
 def parallel_seconds(durations: tuple[float, ...], slots: int) -> float:
     """Makespan of these lanes on `slots` runners, longest first (LPT).
 
-    A bound, never a promise: lanes contend for the same cores and disk. It is
-    exact for the handful of lanes a real config declares.
+    An estimate, never a promise: lanes contend for the same cores and disk.
+    LPT is not always the best split either. Graham (1969) bounds it at
+    4/3 - 1/(3 x slots) times the optimal makespan, and five lanes already
+    reach that bound: (3, 3, 2, 2, 2) on 2 slots gives 7.0 where 6.0 is
+    possible, by running 3 and 3 on one slot and the three 2s on the other.
     """
     ends = [0.0] * max(1, slots)
     for seconds in sorted(durations, reverse=True):

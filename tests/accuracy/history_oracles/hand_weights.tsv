@@ -1,0 +1,7 @@
+path	commits	authors	weight	derivation	source
+src/all.py	5	2	0.8188	t = 0, 1/2, 3/4, 11/12, 1: 1/(1+e^12) + 1/(1+e^6) + 1/(1+e^3) + 1/(1+e) + 1/2 = 0.0000061 + 0.0024726 + 0.0474259 + 0.2689414 + 0.5 = 0.8188461	logistic 1/(1+e^(-12t+12)) from Lewis and Ou, Bug Prediction at Google (2011); README.md#risk-what-ranks-the-worklist fixes the newest commit at 0.5
+src/old.py	1	1	0.0000	t = 0: 1/(1+e^12) = 1/162755.79 = 0.0000061	logistic 1/(1+e^(-12t+12)) from Lewis and Ou, Bug Prediction at Google (2011); README.md#risk-what-ranks-the-worklist: near zero for the oldest commit
+src/mid.py	2	2	0.0499	t = 1/2, 3/4: 1/(1+e^6) + 1/(1+e^3) = 1/404.4288 + 1/21.0855 = 0.0024726 + 0.0474259 = 0.0498985	logistic 1/(1+e^(-12t+12)) from Lewis and Ou, Bug Prediction at Google (2011)
+src/late.py	1	1	0.2689	t = 11/12: 1/(1+e^1) = 1/3.7182818 = 0.2689414	logistic 1/(1+e^(-12t+12)) from Lewis and Ou, Bug Prediction at Google (2011)
+src/new.py	1	1	0.5	t = 1: 1/(1+e^0) = 1/2	README.md#risk-what-ranks-the-worklist: the newest commit weighs 0.5
+crapkit.toml	1	1	0.0000	t = 0: as src/old.py	logistic 1/(1+e^(-12t+12)) from Lewis and Ou, Bug Prediction at Google (2011)

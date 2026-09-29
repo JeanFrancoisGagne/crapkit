@@ -5,7 +5,7 @@ arrow ended `coverage`, which left the ratchet unseeded and refused every commit
 in the repo, in every language. Refusing to read the arrow is specified,
 tested behaviour; ending the run over it was not.
 """
-from crapkit import analyze
+from crapkit import analyze, hook
 from crapkit.merge import UnanalyzableFile
 
 
@@ -47,3 +47,18 @@ def test_a_long_refusal_list_names_the_first_few_and_counts_the_rest(tmp_path, c
     assert '... and 1 more' in err
     assert cache['entries'] == {}, 'a refusal cached as an empty file goes silent'
     assert all(isinstance(fresh[name], UnanalyzableFile) for name in names)
+
+
+def test_a_commit_sized_hook_counts_its_refusals_once(capsys):
+    """Below the pool threshold the hook reads each blob in-process. It printed a
+    `1 file(s)` count per refused file, where the pooled arm and every other run
+    print one count over all of them."""
+    blobs = {f"source{n}.ts": f"// {n}\n{AMBIGUOUS}".encode() for n in range(2)}
+
+    records = hook.staged_records(blobs)
+
+    err = capsys.readouterr().err
+    assert err.count("could not be tokenized") == 1, err
+    assert "crapkit: 2 file(s) could not be tokenized" in err
+    assert [f"crapkit:   lizard failed on {rel}: " in err for rel in blobs] == [True, True]
+    assert {type(rows) for rows in records.values()} == {UnanalyzableFile}

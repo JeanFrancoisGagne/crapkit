@@ -322,10 +322,15 @@ def _porcelain(top: Path) -> str:
     answer. -uall, because a heredoc that creates a new DIRECTORY of source
     would otherwise arrive as one collapsed `?? newdir/` row naming no file.
     Each name keeps its bytes: read leniently, a Latin-1 name held U+FFFD,
-    named no file on disk, and a breach written under it passed in silence."""
+    named no file on disk, and a breach written under it passed in silence.
+    --no-optional-locks, because this read runs beside the agent's own git
+    commands: a plain status writes its refreshed index over .git/index, and
+    on Windows another git process that opens the index during that rename
+    fails with "index file open failed: Permission denied"."""
     from ..repotext import escaped
 
-    res = subprocess.run(["git", "status", "--porcelain", "-z", "-uall"], cwd=top, capture_output=True)
+    res = subprocess.run(["git", "--no-optional-locks", "status", "--porcelain", "-z", "-uall"],
+                         cwd=top, capture_output=True)
     return escaped(res.stdout) if res.returncode == 0 else ""
 
 
@@ -441,6 +446,16 @@ def _unreadable(cfg, rel: str) -> list[str]:
             "the commit gate refuses such a file (exit 3); rename it to a UTF-8 name"]
 
 
+def _check_advisory(breaches: list, ceiling: int, in_scope: dict, cfg) -> None:
+    """The breaches and the ceiling the head line prints, against the parsed
+    config (`invariants.check_advisory`). A number past its bound stops the
+    advisory before it prints; the catch-all turns that stop into the silent
+    exit 0 every internal failure here gets."""
+    from ..invariants import check_advisory
+
+    check_advisory(breaches, ceiling, in_scope, cfg.ceiling_of)
+
+
 def _config(root: Path):
     """crapkit.toml, parsed straight rather than through `cli._shared`, whose
     module scope imports the snapshot store this hook must never open.
@@ -532,9 +547,9 @@ def _changed(root: Path, rel: str, diff):
     except GitError as exc:
         return _without_diff(root, rel, exc)
     if text.strip():
-        from ..diffparse import changed_ranges
+        from ..diffparse import worktree_ranges
 
-        return changed_ranges(text).get(rel, [])
+        return worktree_ranges(text, root).get(rel, [])
     return _listed(root, rel)
 
 
@@ -585,6 +600,7 @@ def _answer(root: Path, cfg, in_scope: dict, rel: str, records: list, ranges) ->
     if unjudged:
         return unjudged
     breaches, ceiling = _verdict(cfg, in_scope, rel, records, ranges)
+    _check_advisory(breaches, ceiling, in_scope, cfg)
     return _report(root, cfg, rel, breaches, ceiling, records)
 
 

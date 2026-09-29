@@ -208,6 +208,16 @@ _OCCURRENCE = {"type": "integer", "description": (
     "source creation order among functions sharing start, from 1; 0 on an older row with no "
     "recorded position")}
 
+# The field definitions every row schema shares, said once so no tool's schema
+# drifts from docs/agent-json.md (tests/accuracy/definitions reads both).
+_COV_DESCRIPTION = ("branch coverage inside the span, 0.0 to 1.0; statement coverage when the "
+                    "span has no branches, and invoked-or-not (1.0 or 0.0) when it has no "
+                    "statements; Python and/or add to ccn but coverage.py records no branch arc "
+                    "for them; 0.0 on an untested, excluded, no-lane or cc-only row")
+_CRAP_DESCRIPTION = "ccn^2 x (1 - cov)^3 + ccn, or ccn on a cc-only or excluded row"
+_CEILING_DESCRIPTION = "the highest CRAP a function may carry, and so also the highest ccn"
+_UNCOVERED_PATHS_DESCRIPTION = "(1 - cov) x ccn rounded half to even, so 2.5 reads 2"
+
 
 def _unread_files_schema(payload: str, key: str) -> dict:
     """The one shape an unread-file finding has in every payload that carries it."""
@@ -260,21 +270,23 @@ _PACKET_PROPERTIES = {'scope': {'type': 'string', 'description': 'the declared s
                'description': 'Sonar-spec cognitive complexity, reporting only, never gated'},
  'nloc': {'type': 'integer', 'description': 'non-comment lines of code'},
  'nesting': {'type': 'integer', 'description': 'maximum nesting depth'},
- 'cov': {'type': 'number', 'description': 'branch coverage inside the span, 0.0 to 1.0'},
+ 'cov': {'type': 'number', 'description': _COV_DESCRIPTION},
  'flag': {'type': 'string',
-          'description': 'measured, untested, no-lane or cc-only: whether a lane artifact could '
-                         'measure this span',
-          'enum': ('measured', 'untested', 'no-lane', 'cc-only')},
- 'crap': {'type': 'number', 'description': 'the score: ccn^2 x (1 - cov)^3 + ccn'},
+          'description': 'measured, untested, excluded, no-lane or cc-only: whether a lane '
+                         'artifact could measure this span',
+          'enum': ('measured', 'untested', 'excluded', 'no-lane', 'cc-only')},
+ 'crap': {'type': 'number', 'description': 'the score: ' + _CRAP_DESCRIPTION},
  'remedy': _REMEDY,
- 'target': {'type': 'integer', 'description': "this scope's effective ccn ceiling"},
+ 'target': {'type': 'integer',
+            'description': "this scope's effective ceiling: " + _CEILING_DESCRIPTION},
  'commits': {'type': 'integer', 'description': 'commits touching the file in the churn window'},
  'authors': {'type': 'integer', 'description': 'distinct authors of those commits'},
  'est_splits': {'type': 'integer',
                 'description': '0 when ccn <= target, else ceil(ccn / target): roughly how many '
                                'functions this must become'},
  'est_uncovered_paths': {'type': 'integer',
-                         'description': 'round((1 - cov) x ccn): decision paths no test walks'},
+                         'description': _UNCOVERED_PATHS_DESCRIPTION + ': decision paths no '
+                                        'test walks'},
  'uncovered_lines': {'type': ('array', 'null'),
                      'description': 'line numbers no test ran; [] when the span is fully covered; '
                                     'null when no artifact could answer, then uncovered_lines_note '
@@ -309,9 +321,9 @@ _WORKLIST_ITEM = {'type': 'object',
                 'risk': {'type': 'number',
                          'description': 'ccn x weight, four decimals: the sort key'},
                 'flag': {'type': ('string', 'null'),
-                         'description': 'measured, untested, no-lane or cc-only; null on an '
-                                        'inventory-only run',
-                         'enum': ('measured', 'untested', 'no-lane', 'cc-only', None)},
+                         'description': 'measured, untested, excluded, no-lane or cc-only; null '
+                                        'on an inventory-only run',
+                         'enum': ('measured', 'untested', 'excluded', 'no-lane', 'cc-only', None)},
                 'remedy': {'type': ('string', 'null'),
                            'description': 'decompose, split-lines, add-tests or ok, as the run '
                                           'judged it; null on an inventory-only run. A row a '
@@ -321,10 +333,10 @@ _WORKLIST_ITEM = {'type': 'object',
                                           'and it can differ from this one',
                            'enum': (*_REMEDIES, None)},
                 'crap': {'type': ('number', 'null'),
-                         'description': 'the score from the ranked run; null on an inventory-only '
-                                        'run'},
+                         'description': ('the score from the ranked run, ' + _CRAP_DESCRIPTION
+                                         + '; null on an inventory-only run')},
                 'cov': {'type': ('number', 'null'),
-                        'description': 'branch coverage 0.0 to 1.0; null on an inventory-only run'},
+                        'description': _COV_DESCRIPTION + '; null on an inventory-only run'},
                 'ratchet_mark': {'type': ('number', 'null'),
                                  'description': 'the committed ratchet mark on this function, read '
                                                 'under its own ratchet key; null when it carries '
@@ -427,7 +439,8 @@ _WORKLIST = {
         "when over their ceiling or in a hot file")},
     "churn_window_months": {
         "type": "integer",
-        "description": "months of git history the churn weights cover"},
+        "description": ("months of git history the churn weights cover, counted "
+        "back from the commit date of HEAD")},
     "active": {
         "type": "array",
         "description": ("the ranking: functions in files with churn in the window, risk "
@@ -495,8 +508,8 @@ _TREND = {
         "description": "payload schema version, 1"},
     "target": {
         "type": "integer",
-        "description": ("the [crapkit] target: the default ccn ceiling every scope inherits "
-        "unless it sets its own")},
+        "description": ("the [crapkit] target: the default ceiling, "
+        + _CEILING_DESCRIPTION + ", that every scope inherits unless it sets its own")},
     "runs": {
         "type": "array",
         "description": "one row per trusted run, oldest first",
@@ -521,7 +534,7 @@ _TREND = {
                     "description": "functions over their scope's ceiling"},
                 "crap_load": {
                     "type": "number",
-                    "description": "sum of every function's crap, two decimals"},
+                    "description": "exact sum of every function's crap (math.fsum), two decimals"},
                 "avg": {
                     "type": "number",
                     "description": "mean crap per function, four decimals"},
@@ -540,7 +553,7 @@ _TREND = {
                                 "description": "of those, over the scope's ceiling"},
                             "crap_load": {
                                 "type": "number",
-                                "description": "sum of crap over the scope"},
+                                "description": "exact sum of crap over the scope (math.fsum), two decimals"},
                             "grade": {
                                 "type": "string",
                                 "description": ("A+ at zero over_target, then A under 2% "
@@ -581,8 +594,8 @@ _BRIEF = {
         "enum": _REMEDIES},
     "target": {
         "type": "integer",
-        "description": ("this scope's effective ccn ceiling, the same value as "
-        "gate_rule.ceiling")},
+        "description": ("this scope's effective ceiling: " + _CEILING_DESCRIPTION
+        + "; the same value as gate_rule.ceiling")},
     "scored": {
         "type": "object",
         "description": "the whole scored row from the run",
@@ -626,15 +639,15 @@ _BRIEF = {
                 "description": "parameter count"},
             "cov": {
                 "type": "number",
-                "description": "branch coverage 0.0 to 1.0"},
+                "description": _COV_DESCRIPTION},
             "flag": {
                 "type": "string",
-                "description": ("measured, untested, no-lane or cc-only: whether a lane "
-                "artifact could measure this span"),
-                "enum": ("measured", "untested", "no-lane", "cc-only")},
+                "description": ("measured, untested, excluded, no-lane or cc-only: whether a "
+                "lane artifact could measure this span"),
+                "enum": ("measured", "untested", "excluded", "no-lane", "cc-only")},
             "crap": {
                 "type": "number",
-                "description": "the score: ccn^2 x (1 - cov)^3 + ccn"},
+                "description": "the score: " + _CRAP_DESCRIPTION},
             "remedy": _REMEDY}},
     "source": {
         "type": "string",
@@ -660,7 +673,7 @@ _BRIEF = {
         "description": "0 when ccn <= target, else ceil(ccn / target)"},
     "est_uncovered_paths": {
         "type": "integer",
-        "description": "round((1 - cov) x ccn)"},
+        "description": _UNCOVERED_PATHS_DESCRIPTION},
     "uncovered_lines": {
         "type": ("array", "null"),
         "description": ("line numbers no test ran; [] when the span is fully covered; null "
@@ -693,7 +706,7 @@ _BRIEF = {
                     "description": "complexity"},
                 "crap": {
                     "type": "number",
-                    "description": "score"},
+                    "description": "score: " + _CRAP_DESCRIPTION},
                 "remedy": _REMEDY,
                 "occurrence": _OCCURRENCE}}},
     "file_totals": {
@@ -708,7 +721,7 @@ _BRIEF = {
                 "description": "of those, over their own scope's ceiling"},
             "crap_load": {
                 "type": "number",
-                "description": "sum of crap over the file"}}},
+                "description": "exact sum of crap over the file (math.fsum), two decimals"}}},
     "gate_rule": {
         "type": "object",
         "description": "what check_gate will judge this edit by",
@@ -916,8 +929,8 @@ _BRIEF = {
                     "description": "shared shingles over the smaller function's, 0 to 1"},
                 "contained": {
                     "type": "boolean",
-                    "description": ("true when every shingle of the smaller function appears "
-                    "in the larger: one can call the other")}}}}}
+                    "description": ("true when the twin and this function nest in one file, "
+                    "one defined inside the other")}}}}}
 
 
 _EXPLAIN = {
@@ -968,16 +981,18 @@ _EXPLAIN = {
                                 "description": "complexity in that run"},
                             "cov": {
                                 "type": ("number", "null"),
-                                "description": ("branch coverage 0.0 to 1.0; null on an "
-                                "inventory run")},
+                                "description": (_COV_DESCRIPTION
+                                                + "; null on an inventory run")},
                             "crap": {
                                 "type": ("number", "null"),
-                                "description": "score; null on an inventory run"},
+                                "description": ("score: " + _CRAP_DESCRIPTION
+                                                + "; null on an inventory run")},
                             "flag": {
                                 "type": ("string", "null"),
-                                "description": ("measured, untested, no-lane or cc-only; null "
-                                "on an inventory-only run"),
-                                "enum": ("measured", "untested", "no-lane", "cc-only", None)}}}},
+                                "description": ("measured, untested, excluded, no-lane or "
+                                "cc-only; null on an inventory-only run"),
+                                "enum": ("measured", "untested", "excluded", "no-lane",
+                                         "cc-only", None)}}}},
                 "ratchet_mark": {
                     "type": ("number", "null"),
                     "description": "the committed ratchet mark, or null"},
@@ -1149,8 +1164,8 @@ _COUPLING = {
         "description": "payload schema version, 1"},
     "window_months": {
         "type": "integer",
-        "description": ("months of git history the pairs were counted over (the config's "
-        "churn_window_months)")},
+        "description": ("months of git history the pairs were counted over, back from "
+        "the commit date of HEAD (the config's churn_window_months)")},
     "pairs": {
         "type": "array",
         "description": ("pairs clearing both thresholds, ordered by support x confidence "
@@ -1313,15 +1328,16 @@ _RESCORE_GATE = {
                     "description": "complexity measured fresh from the working tree"},
                 "cov": {
                     "type": "number",
-                    "description": "branch coverage from the baseline run, 0.0 to 1.0"},
+                    "description": "from the baseline run: " + _COV_DESCRIPTION},
                 "flag": {
                     "type": "string",
-                    "description": ("measured, untested, no-lane or cc-only: whether a lane "
-                    "artifact could measure this span"),
-                    "enum": ("measured", "untested", "no-lane", "cc-only")},
+                    "description": ("measured, untested, excluded, no-lane or cc-only: whether a "
+                    "lane artifact could measure this span"),
+                    "enum": ("measured", "untested", "excluded", "no-lane", "cc-only")},
                 "crap": {
                     "type": "number",
-                    "description": "score from fresh ccn and baseline cov"},
+                    "description": ("score from fresh ccn and baseline cov: "
+                                    + _CRAP_DESCRIPTION)},
                 "remedy": _REMEDY,
                 "occurrence": _OCCURRENCE,
                 "stale_coverage": {
@@ -1371,10 +1387,10 @@ _RESCORE_GATE = {
                             "description": "fresh complexity"},
                         "cov": {
                             "type": "number",
-                            "description": "baseline coverage"},
+                            "description": "from the baseline run: " + _COV_DESCRIPTION},
                         "crap": {
                             "type": "number",
-                            "description": "score"},
+                            "description": "score: " + _CRAP_DESCRIPTION},
                         "remedy": _REMEDY,
                         "key_name": {
                             "type": "string",

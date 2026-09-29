@@ -13,6 +13,8 @@ subcommand still reaches its handler, and the public entry point stays lazy.
 import argparse
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -111,6 +113,49 @@ def test_a_path_as_the_first_argument_names_the_repo_flag(arg, capsys):
     assert code == 2
     assert "--repo" in err
     assert "invalid choice" not in err
+
+
+WINDOWS_PATHS = [r"C:\work\app", r"C:\my repos\app"] if os.name == "nt" else []
+
+
+@pytest.mark.parametrize("arg", ["my repos/app", "./a b/c", "/home/a b/app", *WINDOWS_PATHS])
+def test_the_command_a_path_refusal_prints_keeps_the_path_one_argument(arg, capsys):
+    r"""The refusal prints `inventory --repo <the path>`. Printed as it came, a
+    path holding a space reached crapkit as two arguments from every shell, and
+    Git Bash read `C:\work\app` as `C:workapp`. sh's reading of the printed
+    word is Git Bash's, and on Windows cmd.exe and PowerShell read a word of
+    forward slashes and quoted segments the same way."""
+    from crapkit.cli import main
+
+    main([arg])
+
+    printed = re.search(r"e\.g\. `[^`]* inventory --repo (.+?)` ", capsys.readouterr().err)
+    assert [Path(word) for word in shlex.split(printed.group(1))] == [Path(arg)]
+
+
+# Only Windows reads a backslash as a separator, so only there does a backslash
+# path reach the refusal; elsewhere argparse answers it with its own dump.
+WINDOWS_REFUSALS = ([(r"C:\my repos\app", '"C:/my repos/app"'), (r"C:\work\app", "C:/work/app")]
+                    if os.name == "nt" else [])
+
+
+@pytest.mark.parametrize(("arg", "word"), [("my repos/app", '"my repos/app"'),
+                                           ("a b/c d/e", '"a b/c d/e"'), *WINDOWS_REFUSALS])
+def test_a_refused_windows_path_that_needs_quotes_goes_in_one_pair(arg, word, capsys,
+                                                                  monkeypatch):
+    """PowerShell ends an argument that opens with a quote at the closing quote,
+    so `--repo "my repos"/app` reached crapkit as `my repos` and `/app`. One pair
+    of quotes around the whole path is one argument in cmd.exe, PowerShell and
+    Git Bash. `test_self_invocation` spells the backslash cases on every OS."""
+    from types import SimpleNamespace
+
+    from crapkit import invocation
+    from crapkit.cli import main
+
+    monkeypatch.setattr(invocation, "os", SimpleNamespace(name="nt"))
+    main([arg])
+
+    assert f" inventory --repo {word}` " in capsys.readouterr().err
 
 
 def test_a_misspelled_subcommand_is_still_argparses_error():

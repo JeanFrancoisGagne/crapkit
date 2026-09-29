@@ -11,6 +11,7 @@ structure, so they are the two commands measured here.
 """
 import json
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -19,10 +20,10 @@ from conftest import cli_runner
 from repo_templates import copy_of, template
 
 CRAPKIT = Path(".crapkit")
-LOG_Z = CRAPKIT / "churn-log-v2.z"
-LOG_KEY = CRAPKIT / "churn-log-v2.json"
+LOG_Z = CRAPKIT / "churn-log-v3.z"
+LOG_KEY = CRAPKIT / "churn-log-v3.json"
 WINDOW_CUTOFF = ("--since", "--max-age")
-COUPLING_CACHE = CRAPKIT / "coupling-cache-v1.json"
+COUPLING_CACHE = CRAPKIT / "coupling-cache-v2.json"
 
 APP_PY = """def plain(x):
     a = x + 1
@@ -118,8 +119,9 @@ def _subcommand(argv: list[str]) -> str:
 
 
 def window_walks(walks: list[list[str]]) -> list[list[str]]:
-    """Walks cut at the window cutoff: --max-age when crapkit read the cutoff
-    first, --since when git named none."""
+    """Walks of the window. crapkit cuts one with --since=@<seconds> +0000; a
+    walk cut with --max-age, or with a --since that reads git's clock, counts
+    as a walk too."""
     return [argv for argv in walks if any(a.startswith(WINDOW_CUTOFF) for a in argv)]
 
 
@@ -164,6 +166,28 @@ def test_brief_answers_from_the_log_without_walking_history(coupled_repo, tmp_pa
     assert warm_walks == [], "a warm brief must not walk git history at all"
 
 
+def _year_before(stamp: int) -> int:
+    """12 calendar months before `stamp`, in UTC, counted here without crapkit:
+    the same date a year earlier, and Feb 29 runs on into Mar 1."""
+    moment = datetime.fromtimestamp(stamp, timezone.utc)
+    try:
+        return int(moment.replace(year=moment.year - 1).timestamp())
+    except ValueError:
+        return int(moment.replace(year=moment.year - 1, month=3, day=1).timestamp())
+
+
+def test_the_window_walk_is_cut_a_year_before_head_s_commit_date(coupled_repo, tmp_path):
+    """README "Risk": the window ends at HEAD's commit date, never at the wall
+    clock. The walk the CLI hands git names that cutoff and reads no clock."""
+    head_date = subprocess.run(["git", "log", "-1", "--format=%ct"], cwd=coupled_repo,
+                               capture_output=True, check=True, text=True).stdout
+    res, walks = traced(coupled_repo, tmp_path, "cold", *BRIEF)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert {arg for argv in window_walks(walks) for arg in argv
+            if arg.startswith(WINDOW_CUTOFF)} == {f"--since=@{_year_before(int(head_date))} +0000"}
+
+
 def test_brief_really_reports_coupling(coupled_repo):
     """A byte-identity test over an empty list would pass on a broken cache."""
     out = json.loads(run_cli(coupled_repo, *BRIEF).stdout)
@@ -173,12 +197,14 @@ def test_brief_really_reports_coupling(coupled_repo):
 
 def test_the_cached_log_is_the_log_git_streams(coupled_repo):
     """The contract under every byte-identity claim: the lines git prints for
-    the window in the stored format, cold and warm alike."""
+    the window in the stored format, cold and warm alike. The fixture's commits
+    were all made moments ago, so the window, a year back from HEAD's commit
+    date, holds every one of them and git's whole log is the oracle."""
     from crapkit.churn_log import LOG_FORMAT, log_lines
 
     raw = subprocess.run(["git", "-c", "diff.relative=true", "-c", "core.quotePath=false",
-                          "log", "--relative", "--since=12 months ago", LOG_FORMAT,
-                          "--name-only"], cwd=coupled_repo, capture_output=True, check=True,
+                          "log", "--relative", LOG_FORMAT, "--name-only"],
+                         cwd=coupled_repo, capture_output=True, check=True,
                          text=True, encoding="utf-8").stdout
     from_git = raw.split("\n")[:-1]
     cold = [line.rstrip("\n") for line in log_lines(coupled_repo, 12)]
@@ -208,11 +234,11 @@ def test_brief_and_batches_share_one_log(coupled_repo, tmp_path):
     assert warm.returncode == 0, warm.stdout + warm.stderr
     assert warm_walks == [], "batches must read brief's log, not write a rival one"
     assert sorted(p.name for p in (coupled_repo / CRAPKIT).glob("churn-log*")) == \
-        ["churn-log-v2.json", "churn-log-v2.z"]
+        ["churn-log-v3.json", "churn-log-v3.z"]
 
 
 def test_the_queue_commands_that_need_no_structure_never_build_the_log(coupled_repo):
-    """worklist and next-item read the per-file map, which churn-cache.json already
+    """worklist and next-item read the per-file map, which churn-cache-v3.json already
     holds. Building a 23 MB log for them would cost the walk this cache removes."""
     assert run_cli(coupled_repo, "worklist", "--json").returncode == 0
     assert run_cli(coupled_repo, "next-item").returncode == 0

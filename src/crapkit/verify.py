@@ -19,7 +19,7 @@ from typing import NamedTuple
 from .keys import key_names, key_of
 from .ratchet import RatchetEntry
 from .repopath import file_separators
-from .score import ScoredRow, parse_scored_tsv, scored_tsv_lines
+from .score import CRAP_PLACES, ScoredRow, over_ceiling, parse_scored_tsv, scored_tsv_lines
 
 
 def diff_uncovered(changed_ranges: dict, missing: dict,
@@ -326,11 +326,19 @@ def _gate_violations(fresh, changed_ranges, target, scope_targets, dirty,
         GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
                       r.path in dirty, key_of(names, r)[1])
         for r in fresh
-        if r.crap > _ceiling(r, target, scope_targets) and _touched(r, changed_ranges)
+        if over_ceiling(r.crap, _ceiling(r, target, scope_targets)) and _touched(r, changed_ranges)
         and not _within_mark(r, key_of(names, r), marks)
     ]
-    gate.sort(key=lambda v: (-v.crap, v.path, v.start))
+    gate.sort(key=_worst_first)
     return gate
+
+
+def _worst_first(row: ScoredRow | GateViolation) -> tuple:
+    """Highest CRAP first, compared at the 4 places a mark holds, then path and
+    start line. ccn 25 at 80% coverage and ccn 5 at none both score 30, which
+    the floats read as 29.999999999999996 and 30.0: compared unrounded, the
+    second listed first whatever the paths said."""
+    return -round(row.crap, CRAP_PLACES), row.path, row.start
 
 
 def _ratchet_regressions(fresh, ratchet, dirty) -> list[RatchetRegression]:
@@ -344,8 +352,16 @@ def _ratchet_regressions(fresh, ratchet, dirty) -> list[RatchetRegression]:
         if row is not None and round(row.crap, 4) > entry.crap:
             regressions.append(RatchetRegression(entry.path, entry.long_name, entry.crap,
                                                  round(row.crap, 4), entry.path in dirty))
-    regressions.sort(key=lambda r: (-(r.fresh_crap - r.recorded), r.path))
+    regressions.sort(key=_largest_rise_first)
     return regressions
+
+
+def _largest_rise_first(r: RatchetRegression) -> tuple:
+    """The rise is rounded to the 4 places both scores hold, so equal rises tie
+    and list by path. In binary floating point 10.3 - 10.1 is 0.20000000000000107
+    and 20.3 - 20.1 is 0.1999999999999993: two marks that rose by 0.2 listed by
+    that noise, and the refusal line names whichever came first."""
+    return -round(r.fresh_crap - r.recorded, CRAP_PLACES), r.path
 
 
 def unmarked_over_ceiling(fresh: list[ScoredRow], ratchet: list[RatchetEntry], target: int,
@@ -360,8 +376,8 @@ def unmarked_over_ceiling(fresh: list[ScoredRow], ratchet: list[RatchetEntry], t
     """
     marks = _marks_of(ratchet)
     rows = [row for key, row in rows_by_key(fresh).items()
-            if row.crap > _ceiling(row, target, scope_targets) and key not in marks]
-    rows.sort(key=lambda r: (-r.crap, r.path, r.start))
+            if over_ceiling(row.crap, _ceiling(row, target, scope_targets)) and key not in marks]
+    rows.sort(key=_worst_first)
     return rows
 
 

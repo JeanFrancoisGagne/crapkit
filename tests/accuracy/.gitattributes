@@ -1,0 +1,8 @@
+# Fixture bytes are the test input: a CRLF, lone-CR or BOM probe that git
+# normalized on checkout would test LF on every OS. The repo-wide
+# `* text=auto eol=lf` must not reach these trees.
+**/probes/** -text
+**/small/** -text
+**/recorded/** -text
+**/fixtures/** -text
+**/goldens/** -text

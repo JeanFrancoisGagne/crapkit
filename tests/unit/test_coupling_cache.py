@@ -94,6 +94,45 @@ def test_the_stored_order_round_trips_byte_stably(tmp_path, log):
     assert json.dumps(warm) == json.dumps(_fresh(ranked))
 
 
+# 48 of a.ts's 80 commits also touch b.ts (48 x 0.6) and 36 of c.ts's 45 do
+# (36 x 0.8): both products are 28.8, which floats read as 28.799999999999997
+# and 28.8.
+TIED = _log(*[["src/a.ts", "src/b.ts"]] * 48, *[["src/a.ts"]] * 32,
+            *[["src/b.ts", "src/c.ts"]] * 36, *[["src/c.ts"]] * 9)
+
+
+def test_a_cache_an_older_crapkit_ranked_by_float_noise_reads_in_path_order(tmp_path, log):
+    """An older crapkit put the tied b.ts/c.ts pair first by that noise. Its file
+    carries today's key, so it would serve that order until HEAD or the UTC
+    date moved; a read ranks the pairs again instead."""
+    log.text = TIED
+    coupling_cache.load_coupling(tmp_path, 12, TRACKED)
+    doc = _doc(tmp_path)
+    doc["pairs"] = [["src/b.ts", "src/c.ts", 36, 0.8], ["src/a.ts", "src/b.ts", 48, 0.6]]
+    _rewrite(tmp_path, doc)
+
+    warm = coupling_cache.load_coupling(tmp_path, 12, TRACKED)
+
+    assert log.reads == 1, "an old order is ranked again, not rebuilt"
+    assert warm == _fresh(TIED) == [
+        {"files": ["src/a.ts", "src/b.ts"], "support": 48, "confidence": 0.6},
+        {"files": ["src/b.ts", "src/c.ts"], "support": 36, "confidence": 0.8}]
+
+
+@pytest.mark.parametrize("support, confidence", [(6, float("inf")), (6, float("nan")),
+                                                 (float("inf"), 1.0), (float("nan"), 1.0)])
+def test_a_count_or_confidence_that_is_not_a_number_reads_as_cold(tmp_path, log, support,
+                                                                  confidence):
+    """JSON spells them Infinity and NaN, and neither counts nor ranks: a miss,
+    never a crash."""
+    coupling_cache.load_coupling(tmp_path, 12, TRACKED)
+    doc = _doc(tmp_path)
+    doc["pairs"] = [["src/a.ts", "src/b.ts", support, confidence]]
+    _rewrite(tmp_path, doc)
+    assert coupling_cache.load_coupling(tmp_path, 12, TRACKED) == _fresh()
+    assert log.reads == 2
+
+
 def test_a_moved_head_rebuilds(tmp_path, log):
     coupling_cache.load_coupling(tmp_path, 12, TRACKED)
     log.head = "beef" * 10
@@ -106,12 +145,12 @@ def test_a_moved_head_rebuilds(tmp_path, log):
 def test_a_different_window_rebuilds(tmp_path, log):
     coupling_cache.load_coupling(tmp_path, 12, TRACKED)
     coupling_cache.load_coupling(tmp_path, 3, TRACKED)
-    assert log.reads == 2, "--since=3 months is a different question"
+    assert log.reads == 2, "a 3-month window is a different question"
 
 
 def test_a_new_utc_day_rebuilds(tmp_path, log, monkeypatch):
-    """`--since=N months ago` is wall-clock relative, exactly as the churn map's
-    key says: yesterday's ranking covers a window a day too wide."""
+    """The window ends at HEAD's commit date, so a new day never moves it. The
+    date stays in the key, as in the churn map's, for a deepened shallow clone."""
     monkeypatch.setattr(coupling_cache, "_utc_date", lambda: "2026-08-21")
     coupling_cache.load_coupling(tmp_path, 12, TRACKED)
     monkeypatch.setattr(coupling_cache, "_utc_date", lambda: "2026-08-22")
