@@ -19,11 +19,12 @@ parser = "coveragepy"
 scopes = ["calc"]
 ```
 
-Four required parts and one rule each, plus `results_artifact`, which is optional and on
-every lane on this page.
+Five required keys, `name` plus the four below, and one rule each, plus `results_artifact`,
+which is optional and on every lane on this page.
 
 | Part | Rule |
 |---|---|
+| `name` | The lane's id. It names the lane's log, `.crapkit/lane-<name>.log`, and what `coverage --lane` takes. A name Windows cannot use as a file name, or two names that differ only in case, is refused at load with exit 3. |
 | `command` | Runs through the shell at the repo root (or `cwd`). Its **exit code is recorded, not enforced**. A brownfield suite with 98 known failures still writes a valid artifact, and demanding green here would make such a repo unmeasurable. |
 | `artifact` | The coverage file the command writes, repo-relative. Its absence after the command and all its retries is the failure. Two lanes may not declare the same artifact path: reused paths cross-attribute coverage under `--reuse-artifacts`. It names one file. An empty value or one that names the root (`.`, `cov/..`) is refused at load with exit 3, and so is a `results_artifact` that names the root. `doctor` FAILs an `artifact` or `results_artifact` that names a directory, such as vitest's `coverage` report directory: point it at the report file inside. |
 | `parser` | `istanbul` or `coveragepy`. Nothing else exists. |
@@ -412,6 +413,7 @@ py.json
 | `aside/` | A lane's declared artifact and results file while its attempt runs: they move here before the command starts, so a file at the declared path afterwards is one the attempt wrote. Each goes back when the attempt wrote nothing in its place, and the directory is removed when the lane ends. A kill or a CI timeout runs no cleanup, so the next crapkit command that measures or reuses the lane puts each file back first and says so: `crapkit: lane 'unit': coverage/coverage-final.json is back at its path; an attempt that did not finish (a kill or a timeout) had set it aside under .crapkit/aside/`. Where a file was written at the path since, it stays, and the line names the copy's path so you can move it back. | |
 | `cache.json` | Analysis records per file, so an unchanged file is not re-analyzed. | The file's content hash, under a fingerprint of the lizard pin and the analysis version. |
 | `measurement.lock` | The lock a lane run holds on this checkout's lane logs and artifact stamps while its commands run, so two crapkit processes never measure one checkout at once. It stays behind between runs and holds nothing. | |
+| `<ratchet_file name>.lock` | The lock each marks-file write holds: seed, prune, move, merge, verify's tighten and overrides. It stays behind, holds nothing between writes and is safe to delete. It lives in a `.crapkit/` beside the marks file, so `ratchet_file = "gates/r.tsv"` puts it at `gates/.crapkit/r.tsv.lock`. | |
 | `owner.log` | What the measurement owner wrote to stderr: nothing on a run that ends normally, and a dated line and a traceback when it [stops early](#when-the-measurement-owner-stops). Every owner on this checkout appends to it. | |
 | `stat-stamps.json` | What the last run saw for each file (mtime, size, hash), so unchanged files are not re-hashed. A file enters it once it has held still for two seconds, so a run right after the files were written, like the listing above, leaves no `stat-stamps.json` yet. A same-length rewrite put back under its old mtime (`cp -p`, `touch -r`) keeps the old hash until the file's next real write; `crapkit watch` misses that rewrite the same way. | |
 | `churn-cache-v3.json` | Per-file churn for the window: commits, authors, weight. | HEAD sha, window months, today's UTC date, path format, history depth. The date never moves the window. |
@@ -420,6 +422,7 @@ py.json
 | `coupling-cache-v2.json` | Ranked co-change pairs at the default thresholds, ordered and uncut. | The churn map's key plus a digest of the tracked set. |
 | `mutate-pool/` | Kept worktrees for every mutation worker, including one. See [mutation worktrees](configuration.md#mutation-worktrees). | |
 | `mutate-tmp/` | Recognized concurrent mutation runs, removed after completion or recovered under an exclusive lease. | |
+| `mutate-pool.lock` | The lease on `mutate-pool/`, held while a mutation run uses the kept worktrees. | |
 | `test-runs/` | Marked default test evidence from crapkit's own development runner, `tools/testing/run.py`, which prunes it by age and count (`--retention-days`, `--retention-count`) before each default run. `clean` leaves it alone. Explicit output and active leases are preserved. | |
 | `report.html` | Where `crapkit report` writes by default. | |
 
@@ -555,7 +558,9 @@ scopes = ["web"]
 vitest ships the junit reporter, so those three flags need no package. Name `default`
 alongside it: `--reporter=junit` on its own replaces the console output you watch the run
 through. That is the lane `crapkit init` writes for a repo whose `devDependencies` name
-vitest.
+vitest and whose package.json has a `test` script. When the test script has another name
+that starts with `test`, the command runs that script. With no such script it writes
+`npx vitest run --coverage ...` with the same flags.
 
 Never put a file filter in a `--coverage` command. vitest silently narrows the coverage
 include set to the filtered files, so everything else reads as uncovered. crapkit refuses
@@ -1397,7 +1402,9 @@ The refusal is written to `.crapkit/artifacts.json` through a temporary file tha
 replaces it in one step, and `crap.sqlite` keeps a copy, so deleting
 `.crapkit/artifacts.json` does not lift it. A stamp file that cannot be read (cut short,
 a top level that is not an object, or an entry for the lane's artifact that is not an
-object) may have held a refusal the store does not, so reuse refuses that lane too:
+object) may have held a refusal the store does not, so reuse refuses that lane too. Before
+0.8.1 each of those read as no stamp at all, and reuse scored a dead lane's leftover as a
+trusted run:
 
 ```
 $ crapkit coverage --reuse-artifacts
@@ -1416,16 +1423,6 @@ records nothing either: that file is this run's, and reuse judges it on its own 
 `--reuse-unchanged` reads the same refusal, so a lane whose last attempt wrote nothing
 reruns even when every other input still matches, and a touch of the leftover does not
 change that.
-
-The refusal lives only in `.crapkit/artifacts.json`, so reuse also refuses a lane while
-that record cannot be read: a file that does not parse, one whose top level is not an
-object, or an entry for the lane's artifact that is not an object. Each of those read as no
-stamp at all, and reuse scored a dead lane's leftover as a trusted run:
-
-```
-$ crapkit coverage --reuse-artifacts
-crapkit: lane 'py' FAILED: lane 'py': .crapkit/artifacts.json cannot be read (it does not parse as JSON), so crapkit cannot tell whether .crapkit/cov/py.json is the file a failed attempt left; rerun the lane (`crapkit coverage --lane py`), or delete .crapkit/artifacts.json to reuse the file as it stands
-```
 
 `doctor` WARNs about the same file. crapkit writes it through a temporary file that
 replaces the old one in one step, so a crash mid-write no longer leaves it cut short. A
@@ -1636,8 +1633,8 @@ max_parallel_lanes = 1
 # held at 1: lanes 'py-conform', 'py-impl' write coverage.py data files that one of them deletes and combines, and two of them at once can fail one lane; give each lane its own COVERAGE_FILE, for example env = { COVERAGE_FILE = ".coverage.py-conform" } in lane 'py-conform' and env = { COVERAGE_FILE = ".coverage.py-impl" } in lane 'py-impl', then rerun doctor --tune
 ```
 
-`[crapkit] analysis_workers` (default `0` = one process per core) caps the lizard pool
-separately. Set it when the analysis pass runs beside parallel lanes so the two are not both
+`[crapkit] analysis_workers` (default `0`, automatic sizing within the CPU limit; see
+[configuration.md](configuration.md#crapkit)) caps the lizard pool separately. Set it when the analysis pass runs beside parallel lanes so the two are not both
 claiming every core.
 
 ---

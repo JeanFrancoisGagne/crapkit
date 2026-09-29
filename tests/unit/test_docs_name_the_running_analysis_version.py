@@ -20,7 +20,7 @@ from crapkit.analyze import ANALYSIS_VERSION
 ROOT = Path(__file__).resolve().parent.parent.parent
 CLAIMS = [
     ("README.md", r"The current reader is\s+analysis version (\d+)"),
-    ("docs/agent-json.md", r"A current `doctor` reports\s+version (\d+)"),
+    ("docs/agent-json.md", r'^\{\n  "analysis_version": (\d+),\n  "lanes": \['),
     ("docs/agent-json.md", r"The analysis semantics version, currently `(\d+)`"),
     ("docs/ratchet.md", r"## What a mark is\s+```\s+# crapkit-analysis=(\d+) "),
     ("docs/ratchet.md", r"the current reader uses version (\d+)"),

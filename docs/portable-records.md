@@ -30,8 +30,8 @@ ratchet salvage reports a complaint for each unreadable row.
 
 A `verify --emit-baseline` file starts with one stamp line before the scored export:
 `# commit=<sha> run_kind=<kind>`, then, when the run recorded test results,
-` results=` and a JSON object of each lane's `tests_total`, `tests_skipped`, `failures` and
-`retried_passes`. The JSON's punctuation stays as written and every other character a test
+` results=` and a JSON object of each lane's `tests_total`, `tests_skipped` and `failures`,
+plus `retried_passes` when a test passed its flake retry. The JSON's punctuation stays as written and every other character a test
 id can hold, a space, `=` or `%` among them, is percent-encoded, so the stamp stays one line
 of space-separated `key=value` fields. A reader older than the `results` field reads
 `commit` and `run_kind` and ignores the rest; `--baseline-tsv` reads a file without it as a

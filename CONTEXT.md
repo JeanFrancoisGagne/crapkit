@@ -42,14 +42,14 @@ The short name a payload prints for a function: the bare identifier, `NAME#N` fo
 A named set of path prefixes and languages that shares one ceiling and one set of lanes.
 
 **Lane**:
-One configured test command that writes one coverage artifact for one scope.
+One configured test command that writes one coverage artifact for the scopes it lists.
 
 **Lane log**:
 The file a lane's output streams to, `.crapkit/lane-<name>.log`, kept as the command wrote it, colour included. A refusal quotes its tail as plain text.
 
 **Launcher token**:
 `{python}` or `{python:DIR}` in a lane, scoped-tests, retest or mutation command: the python the command names, spelled so either OS can read the committed file. The loader reads it as `python` on Windows and `python3` elsewhere, or as the launcher inside the venv at DIR (`DIR\Scripts\python.exe`, `DIR/bin/python`). `init` writes it.
-_Avoid_: placeholder (that is `{files}` or `{tests}`, filled in when the command runs)
+_Avoid_: placeholder (that is `{files}`, `{tests}` or `{names}`, filled in when the command runs)
 
 **Inputs**:
 The root-relative paths a lane declares its command reads. While none of them changed since the artifact's commit, `--reuse-unchanged` reuses the lane instead of rerunning it.
@@ -88,8 +88,9 @@ One scored snapshot: an inventory joined with the artifacts of the lanes that ra
 **Partial run**:
 A run in which some declared lanes did not run; never a baseline.
 
-**Legacy run**:
+**Positionless run**:
 A stored run written before crapkit recorded where same-line functions sit. Its same-line twins cannot be told apart: a function's history leaves the run out, and a command that must read the twins from it, such as a seed, refuses and names the run.
+_Avoid_: legacy run (`legacy` is the `runs` kind of a run stored before crapkit recorded run kinds)
 
 **Stale**:
 The run's commit is not HEAD. It judges the commit, not the files: an amend that moves no byte makes a run stale, and an uncommitted edit leaves it fresh. Schema 2, planned for 0.9.0, redefines it as the content question.
@@ -176,16 +177,16 @@ A checkout that holds only part of its history (`git clone --depth N`, the `acti
 ### Mutation
 
 **Killed mutant**:
-A mutant whose suite failed a test, or ran past `mutation_timeout_seconds`. A timeout counts as killed and is reported apart, as `timed_out`.
+A mutant whose suite failed a test, ran past `mutation_timeout_seconds`, or ran no test (exit 5), also reported as no verdict. A timeout counts as killed and is reported apart, as `timed_out`.
 
 **No verdict**:
-A mutant whose suite ran no test (exit 5, pytest's "no tests collected"). No test judged it, so it is in neither `killed` nor `survived`, and the kill rate leaves it out.
-_Avoid_: killed, for a suite that never ran a test
+A mutant whose suite ran no test (exit 5, pytest's "no tests collected"). No test judged it. JSON schema 1 counts it inside `killed` and the kill rate and reports it again as `no_verdict`; schema 2 will leave it out of both.
+_Avoid_: a plain kill, for a suite that never ran a test
 
 ### What crapkit prints
 
 **Next step**:
-The command a refusal or note tells its reader to run next. It names `crapkit` when PATH finds this installation's console script, and otherwise the running interpreter spelled with forward slashes, so Git Bash, cmd.exe and PowerShell run it as printed. A segment of the interpreter path that holds a space is quoted on its own, so the line never opens with a quote; only cmd.exe loses one case, a venv in a spaced directory with no 8.3 short name (docs/adr/0003). The brief packet's `commands.*` always say `crapkit`.
+The command a refusal or note tells its reader to run next. It names `crapkit` when PATH finds this installation's console script, and otherwise the running interpreter spelled with forward slashes, so Git Bash, cmd.exe and PowerShell run it as printed. A segment of the interpreter path that holds a space is quoted on its own, so the line never opens with a quote; only cmd.exe loses one case, a venv in a spaced directory with no 8.3 short name (docs/adr/0003). The brief packet's `commands.*` say `crapkit`, or `uvx crapkit` when uvx ran the command that built the packet.
 
 **Typed path**:
 A path a message quotes back the way the reader typed it, in single quotes with one backslash where they typed one. A lane or scope name keeps its repr.
