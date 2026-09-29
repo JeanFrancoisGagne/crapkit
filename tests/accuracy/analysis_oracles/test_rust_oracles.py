@@ -16,6 +16,7 @@ from accuracy.analysis_oracles import analysis_corpora, analysis_tables, analysi
 from accuracy.analysis_oracles import analysis_tooldiff as tooldiff
 from accuracy.analysis_oracles.analysis_tooldiff import Tool
 from accuracy.analysis_oracles.oracles import rust_adapters
+from accuracy.analysis_oracles.oracles import treesitter_cognitive
 from accuracy.analysis_oracles.oracles import treesitter_counters as counters
 from accuracy.kit import rulings
 
@@ -161,6 +162,13 @@ def _negative(count):
     return lambda fn, context: -count(fn, context)
 
 
+def recursion(fn, context) -> int:
+    """AO-RCA-RECURSION: rust-code-analysis leaves out the paper's +1 for
+    recursion; a call that reaches the function gets it back, read as the
+    tree-sitter counter reads one (`self.walk`, `R::walk`, a free fn's name)."""
+    return int(treesitter_cognitive.measure(fn, context.spec, context.data).recursed)
+
+
 CLOSURE = "closure_expression"
 NESTED = tooldiff.holds({"function_item"})
 TOOLS = {
@@ -170,7 +178,7 @@ TOOLS = {
                     "AO-RCA-LOOP": _negative(loops), "AO-RCA-CLOSURE-BASE": _negative(closures)},
         set_aside={"AO-RCA-NESTED-FN": NESTED}),
     "rust-code-analysis-cognitive": Tool(
-        "cognitive", _rca("cognitive"),
+        "cognitive", _rca("cognitive"), transforms={"AO-RCA-RECURSION": recursion},
         set_aside={"AO-RCA-NESTED-FN": NESTED, "AO-RCA-NESTED-FN-DEPTH": _nested_function,
                    "AO-RCA-RUN-OF-THREE": run_of_three,
                    "AO-RCA-RUN-AFTER-RUN": run_after_run}),
@@ -234,6 +242,8 @@ CFG_TEST = ("#[cfg(test)]\nmod tests {\n    fn helper(a: i32) -> i32 {\n        
             "            return 1;\n        }\n        0\n    }\n}\n")
 RUN_OF_THREE = ("pub fn run3(a: bool, b: bool, c: bool, d: bool) -> bool {\n"
                 "    (a && b && c) || d\n}\n")
+WALK = ("pub struct R;\n\nimpl R {\n    pub fn walk(&self, n: u32) -> u32 {\n"
+        "        if n > 0 { self.walk(n - 1) } else { 0 }\n    }\n}\n")
 RUN_AFTER_RUN = ("pub fn then_and(k: bool, a: bool, b: bool) -> bool {\n    if k && a {\n"
                  "        return true;\n    }\n    a && b\n}\n")
 # ruling id -> (tool, source, start line of the function the case judges).
@@ -245,6 +255,7 @@ HAND = {
     "AO-RCA-NESTED-FN-DEPTH": ("rust-code-analysis-cognitive", NESTED_FN, 2),
     "AO-RCA-RUN-OF-THREE": ("rust-code-analysis-cognitive", RUN_OF_THREE, 1),
     "AO-RCA-RUN-AFTER-RUN": ("rust-code-analysis-cognitive", RUN_AFTER_RUN, 1),
+    "AO-RCA-RECURSION": ("rust-code-analysis-cognitive", WALK, 4),
     "AO-CARGOCRAP-WILDCARD-ARM": ("cargo-crap", PICK, 1),
     "AO-CARGOCRAP-LOOP": ("cargo-crap", SPIN, 1),
     "AO-CARGOCRAP-GUARD": ("cargo-crap", GUARD, 1),

@@ -28,7 +28,8 @@ pytestmark = pytest.mark.process
 
 
 def _counter(fn, source: str, path: str) -> int:
-    return py_sonar.count(fn, analysis_choices.CRAPKIT).cognitive
+    owner = py_sonar.owners(source).get((fn.lineno, fn.col_offset))
+    return py_sonar.count(fn, analysis_choices.CRAPKIT, owner).cognitive
 
 
 def _sonar_differential(files: dict, measured, outcome=None) -> analysis_pydiff.Outcome:
@@ -112,7 +113,7 @@ def test_complexipy_agrees_with_the_counter_on_the_stdlib(stdlib_unparsed, oracl
     assert problems == []
 
 
-# complexipy's raw value against crapkit's for one def each. The first eight
+# complexipy's raw value against crapkit's for one def each. The first nine
 # are conventions (the counter reproduces complexipy under COMPLEXIPY); the
 # last two are places complexipy reads nothing or another level, so a def
 # holding them is set aside from the complexipy comparison.
@@ -125,6 +126,7 @@ COMPLEXIPY_CASES = {
     "AO-CXP-COMP-FLAT": "def f(x):\n    return [b for a in x for b in a]\n",
     "AO-CXP-COMP-FILTER": "def f(x):\n    return [a for a in x if a]\n",
     "AO-CXP-LOOP-ELSE": "def f(a):\n    for x in a:\n        a.pop()\n    else:\n        return 1\n",
+    "AO-CXP-RECURSION-NAME": "def f(a, f):\n    return f(a)\n",
     "AO-CXP-SKIPS": "def f(a, b):\n    return 1 + (a if b else 2)\n",
     "AO-CXP-NESTED-DEF": ("def f(a):\n    def g(b):\n        if b:\n            return 1\n"
                           "        return 0\n    return g(a)\n"),

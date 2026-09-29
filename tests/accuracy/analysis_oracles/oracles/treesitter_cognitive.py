@@ -9,6 +9,14 @@ no lizard reader and no crapkit.
   continue that names a label (+1, "Jumps to labels"); direct recursion (+1
   once, "Recursion"). An Objective-C method recurses when it sends its own
   full selector to self.
+- Recursion is a call that reaches the function: its bare name, or a member
+  call through `self`, `this`, `Self` or, in Rust, the type its impl names
+  (`self.walk`, `this->walk`, `R::walk`). A Rust fn in an impl or a trait is
+  not reached by its bare name, which is a free function's. In C++ and Java,
+  where one name can belong to several functions, the call must pass a
+  number of arguments the function takes, and no other function of the name
+  in its class may take that number too: the reading sees no types, so such a
+  call is either one's.
 - B2 nesting level: the bodies of if, else if, else, switch, loops, catch and
   a conditional operator, and a closure's body, sit one level deeper than the
   structure; a condition sits at the structure's own level.
@@ -42,6 +50,10 @@ class Count:
     selector: bytes = b""
     total: int = 0
     recursed: bool = False
+    receivers: frozenset = frozenset()  # what a member call reaches it through
+    bare: bool = True                    # its bare name reaches it
+    arity: tuple | None = None           # (fewest, most) arguments, where names overload
+    others: tuple = ()                   # the arities of the name's other overloads
     deepest: int = 0
     seen: set = field(default_factory=set)
 
@@ -169,7 +181,55 @@ def _calls_itself(node, count: Count) -> bool:
     if node.type == "message_expression":
         return bool(count.selector) and _messages_itself(node, count)
     callee = _callee(node)
-    return callee is not None and count.data[callee.start_byte:callee.end_byte] == count.name
+    return callee is not None and _reaches(callee, count) and _fits(node, count)
+
+
+# A callee that names a member through what holds it: Rust's `self.walk` and
+# `R::walk`, C++'s `this->walk`.
+MEMBER_CALLEES = frozenset({"field_expression", "scoped_identifier"})
+OWNER_FIELDS = ("value", "argument", "path")
+MEMBER_FIELDS = ("field", "name")
+SELF_RECEIVERS = frozenset({b"self", b"this", b"Self"})
+
+
+def _text(node, data: bytes) -> bytes:
+    return data[node.start_byte:node.end_byte]
+
+
+def _reaches(callee, count: Count) -> bool:
+    if callee.type in MEMBER_CALLEES:
+        return _through_receiver(callee, count)
+    return count.bare and _text(callee, count.data) == count.name
+
+
+def _field(node, names: tuple):
+    return next((found for found in map(node.child_by_field_name, names) if found is not None),
+                None)
+
+
+def _through_receiver(callee, count: Count) -> bool:
+    owner, member = _field(callee, OWNER_FIELDS), _field(callee, MEMBER_FIELDS)
+    return (owner is not None and member is not None and _text(member, count.data) == count.name
+            and _text(owner, count.data) in count.receivers)
+
+
+def _fits(call, count: Count) -> bool:
+    """A call that passes a number of arguments this function does not take is
+    another overload's."""
+    if count.arity is None:
+        return True
+    passed = _passed(call, count)
+    return _takes(count.arity, passed) and not any(_takes(other, passed) for other in count.others)
+
+
+def _passed(call, count: Count) -> int:
+    listed = call.child_by_field_name("arguments")
+    return 0 if listed is None else sum(
+        1 for kid in listed.named_children if kid.type not in count.spec.comments)
+
+
+def _takes(span: tuple, passed: int) -> bool:
+    return span[0] <= passed <= span[1]
 
 
 def _recursion(node, count: Count) -> int:
@@ -289,10 +349,131 @@ def _visit_plain(node, level: int, count: Count) -> None:
 PARAMETER_LISTS = frozenset({"parameters", "parameter_list", "formal_parameters"})
 
 
+# Per grammar where one name can belong to several functions: the parameter nodes
+# a call must fill, those a default lets it leave out, and those taking any number.
+ARITY = {
+    "tree_sitter_cpp": (frozenset({"parameter_declaration"}),
+                        frozenset({"optional_parameter_declaration"}),
+                        frozenset({"variadic_parameter_declaration", "..."})),
+    "tree_sitter_java": (frozenset({"formal_parameter"}), frozenset(),
+                         frozenset({"spread_parameter"})),
+}
+
+
+def arity(fn, spec, data: bytes) -> tuple | None:
+    """(fewest, most) arguments a call to fn passes, where names overload."""
+    kinds, listed = ARITY.get(spec.grammar), counters._parameter_list(fn)
+    if kinds is None or listed is None:
+        return None
+    return _span([kid.type for kid in listed.children if _text(kid, data) != b"void"], *kinds)
+
+
+def _span(types: list, required, optional, variadic) -> tuple:
+    fewest = sum(kind in required for kind in types)
+    taken = sum(kind in required | optional for kind in types)
+    return fewest, float("inf") if variadic & set(types) else taken
+
+
+# What holds a member function, where a name can overload inside it.
+CLASS_BODIES = frozenset({"class_specifier", "struct_specifier", "union_specifier",
+                          "class_declaration", "interface_declaration", "enum_declaration",
+                          "record_declaration"})
+_FILE: dict = {}  # the last file's functions by (class, name); see _index
+
+
+def overloads(fn, spec, data: bytes) -> tuple:
+    """The arities of the other functions of fn's name in its class, where
+    names overload. One with the same parameters is fn written again, in
+    another preprocessor branch."""
+    if ARITY.get(spec.grammar) is None:
+        return ()
+    holder, name, parameters = _signature(fn, data)
+    return tuple(span for start, spelled, span in _index(fn, spec, data).get((holder, name), ())
+                 if start != fn.start_byte and spelled != parameters)
+
+
+def _index(fn, spec, data: bytes) -> dict:
+    """Every function of fn's file by (class, name), read once per file."""
+    if _FILE.get("data") is not data or _FILE.get("grammar") != spec.grammar:
+        root = fn
+        while root.parent is not None:
+            root = root.parent
+        _FILE.update(data=data, grammar=spec.grammar, index=_by_name(root, spec, data))
+    return _FILE["index"]
+
+
+class _Tree:
+    def __init__(self, root):
+        self.root_node = root
+
+
+def _by_name(root, spec, data: bytes) -> dict:
+    index: dict = {}
+    for fn in counters.functions(_Tree(root), spec):
+        holder, name, parameters = _signature(fn, data)
+        index.setdefault((holder, name), []).append((fn.start_byte, parameters, arity(fn, spec, data)))
+    return index
+
+
+def _signature(fn, data: bytes) -> tuple:
+    listed = counters._parameter_list(fn)
+    spelled = b"" if listed is None else b" ".join(_text(listed, data).split())
+    return _holder(fn, data), counters.name(fn, data), spelled
+
+
+def _holder(fn, data: bytes) -> bytes:
+    """The class fn is a member of, by name: the class around it, or the scope
+    a C++ definition outside its class names (`V::starts_with`)."""
+    node = fn.parent
+    while node is not None and node.type not in CLASS_BODIES:
+        node = node.parent
+    if node is None:
+        return _qualifier(fn, data)
+    named = node.child_by_field_name("name")
+    return b"" if named is None else _text(named, data)
+
+
+def _qualifier(fn, data: bytes) -> bytes:
+    node = fn.child_by_field_name("declarator")
+    while node is not None and node.type in counters.DECLARATOR_TYPES:
+        node = node.child_by_field_name("declarator")
+    scope = _scope(node)
+    return b"" if scope is None else _text(scope, data)
+
+
+def _scope(declared):
+    if declared is None or declared.type != "qualified_identifier":
+        return None
+    return declared.child_by_field_name("scope")
+
+
+def impl_of(fn):
+    """The Rust impl or trait fn stands directly in, or None."""
+    holder = fn.parent
+    outer = holder.parent if holder is not None and holder.type == "declaration_list" else None
+    return outer if outer is not None and outer.type in ("impl_item", "trait_item") else None
+
+
+def _type_name(node):
+    """`R` in `R`, `W<T>` and `a::R`."""
+    while node is not None and node.type in ("generic_type", "scoped_type_identifier"):
+        node = node.child_by_field_name("type" if node.type == "generic_type" else "name")
+    return node
+
+
+def _receivers(fn, data: bytes) -> frozenset:
+    impl = impl_of(fn)
+    typed = None if impl is None else _type_name(
+        impl.child_by_field_name("type") or impl.child_by_field_name("name"))
+    return SELF_RECEIVERS | (frozenset() if typed is None else {_text(typed, data)})
+
+
 def measure(fn, spec, data: bytes) -> Count:
     name = counters.name_node(fn)
     count = Count(spec, data, b"" if name is None else data[name.start_byte:name.end_byte],
-                  method_selector(fn, data))
+                  method_selector(fn, data), receivers=_receivers(fn, data),
+                  bare=impl_of(fn) is None, arity=arity(fn, spec, data),
+                  others=overloads(fn, spec, data))
     for child in (child for child in fn.children if child.type not in PARAMETER_LISTS):
         _visit(child, 0, count)
     return count
