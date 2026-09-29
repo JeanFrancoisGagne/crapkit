@@ -86,7 +86,9 @@ def _comments(line: tuple[str, ...], block: tuple[str, str] | None = None,
 # a PowerShell "..." string; a PowerShell '...' string and a Go `...` string
 # escape nothing. `'` opens a string in JavaScript, TypeScript and Vue; in the
 # other C-family languages it marks one character, `'a'` or `'\n'`, and a `'`
-# that marks none, a Rust lifetime or label, is no quote.
+# that marks none, a Rust lifetime or label, is no quote. A raw string or a regex
+# literal reads as plain strings; the README's duplication row names the lines
+# that misreads.
 _BACKSLASH = r'"(?:\\.|[^"\\])*"'
 _C_FAMILY = _comments(("//",), ("/*", "*/"), rf"{_BACKSLASH}|'(?:\\.[^'\\]{{0,8}}|[^'\\])'|`[^`]*`", '"`')
 _JS_FAMILY = _comments(("//",), ("/*", "*/"), rf"{_BACKSLASH}|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`", "\"'`")

@@ -1443,13 +1443,17 @@ is rebuilt at the first `duplication` or `brief` after upgrading.
   default 0.8. Python leaves out `#` lines and, as before, a line starting with three
   quotes; shell leaves out `#`; PowerShell `#` and `<# #>`; Zig `//`; every other
   language `//` and `/* */`, where a block comment's lines without a leading `*` were
-  read as code.
+  read as code. A line that holds code after a block comment's closer is code now:
+  `/*@__PURE__*/ build(a)`, `/* lead */ x += 1;` and `*/ x = a` were left out for their
+  first characters.
 - A block comment opened after code, `int x = a; /* starts here`, leaves its later lines
   out, where only those starting with `*` were left out before. The line is read from its
   start: an opener inside a string or after a `//` opens nothing, and a `//` inside a
   closed string does not stop one, so `s = "http://x"; /* note` opens a block comment. An
   opener that no later line of the function closes opens nothing either: a line starting
-  with `/*` inside a template literal is code, as are the lines after it.
+  with `/*` inside a template literal is code, as are the lines after it. Raw strings and
+  regex literals read as plain strings here, and the README's `duplication` row names
+  the few lines that misreads.
 
 ## 0.8.0 — 2026-09-23
 

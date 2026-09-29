@@ -8,12 +8,15 @@ line and a JavaScript `*method() {` line never entered a shingle, and two
 functions that differ only there read as closer than they are. The other way
 round, a block comment's lines that open with no star were read as code.
 """
+from pathlib import Path
+
 import pytest
 
 from crapkit.dup import find_duplicates, function_index
 from crapkit.snapshot import InventoryRow
 
 NL = "\n"
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def row(path, name, start, end):
@@ -214,10 +217,6 @@ AFTER_CODE_READ_FROM_THE_START = {
                                                    '    more', '    */', '    return x;', '}'], 4),
     "powershell-backslash-ends-a-string": ("m.ps1", ['function F {', '    $d = "C:\\temp\\" <# note',
                                                      '    more', '    #>', '    $d', '}'], 4),
-    # The limit the README names: a raw string escapes nothing, but its last
-    # backslash reads as escaping the quote, so the string reads as open.
-    "raw-string-ending-in-a-backslash": ("m.rs", ['fn f() -> usize {', '    let p = r"C:\\"; /* note',
-                                                  '    more', '    */', '    p.len()', '}'], 6),
 }
 
 
@@ -229,3 +228,51 @@ def test_a_block_comment_opened_after_code_leaves_its_later_lines_out(shape):
     ((_, shingles),) = function_index(rows, {path: NL.join(lines) + NL}, min_lines=1).functions()
 
     assert shingles == max(kept - 3, 0)
+
+
+# Every line the README's duplication row quotes, read as the row says. A line
+# holding code after a block comment's closer is code. The reader knows plain
+# strings and character literals only, so the row names what it misreads: a
+# raw string ending in a backslash or holding one quote, and a regex literal
+# holding one, leave a string open, so the opener after them opens nothing; a
+# ` /*` in a regex literal opens a block comment; and a PowerShell `#` inside a
+# word starts a line comment.
+README_EXAMPLES = {
+    "code-after-a-closer-on-its-line": ("/* tag */ acc += 1;", "m.c", [
+        'int f(int acc) {', '    /* tag */ acc += 1;', '    /* note */', '    return acc;', '}'], 4),
+    "code-after-a-closer-that-ends-a-block": ("*/ x = a", "m.ts", [
+        'function f(a: number) {', '  let x = 0;', '  /*', '    old', '  */ x = a', '  return x;', '}'], 5),
+    "opener-after-a-closed-string": ('s = "http://x"; /* note', "m.c", [
+        'int f(void) {', '    s = "http://x"; /* note', '    more', '    */', '    return s;', '}'], 4),
+    "opener-in-a-line-comment": ("x = 1; // see /* here", "m.c", [
+        'int f(void) {', '    x = 1; // see /* here', '    x += 2;', '    /* note */', '    return x;', '}'], 5),
+    "raw-string-ending-in-a-backslash": ('r"C:\\"', "m.rs", [
+        'fn f() -> usize {', '    let p = r"C:\\"; /* note', '    more', '    */', '    p.len()', '}'], 6),
+    "raw-string-holding-a-quote": ('r#"a"b"#', "m.rs", [
+        'fn f() -> usize {', '    let s = r#"a"b"#; /* note', '    more', '    */', '    s.len()', '}'], 6),
+    "cpp-raw-string-holding-a-quote": ('R"(a"b)"', "m.cpp", [
+        'int f() {', '    auto s = R"(a"b)"; /* note', '    more', '    */', '    return 0;', '}'], 6),
+    "regex-literal-holding-a-quote": ('/"/', "m.js", [
+        'function f(a) {', '  const re = /"/; /* note', '  more', '  */', '  return re;', '}'], 6),
+    "opener-in-a-regex-literal": ("re = /a /* b/;", "m.js", [
+        'function f(a) {', '  re = /a /* b/;', '  let t = 1;', '  /* note */', '  return re;', '}'], 4),
+    "powershell-hash-inside-a-word": ("echo a#b <# note", "m.ps1", [
+        'function F {', '    echo a#b <# note', '    more', '    #>', '    $x', '}'], 5),
+}
+
+
+def _duplication_row() -> str:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    (line,) = [line for line in readme.splitlines() if line.startswith("| `duplication ")]
+    return line
+
+
+@pytest.mark.parametrize("shape", README_EXAMPLES)
+def test_each_line_the_readme_row_quotes_reads_as_the_row_says(shape):
+    quoted, path, lines, kept = README_EXAMPLES[shape]
+    rows = [row(path, "f", 1, len(lines))]
+
+    ((_, shingles),) = function_index(rows, {path: NL.join(lines) + NL}, min_lines=1).functions()
+
+    assert any(quoted in line for line in lines)
+    assert (f"`{quoted}`" in _duplication_row(), shingles) == (True, kept - 3)
