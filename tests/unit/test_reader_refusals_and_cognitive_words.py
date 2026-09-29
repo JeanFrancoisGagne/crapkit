@@ -9,7 +9,7 @@ in another +1 per level (B3).
 import lizard
 import pytest
 
-from crapkit import lizardpython
+from crapkit import lizardpython, lizardrust
 from crapkit.analyze import analyze_source
 
 
@@ -58,3 +58,18 @@ def test_a_word_s_cognitive_increment(path, code, score):
 ])
 def test_a_spelling_that_names_one_operator_or_one_recursion_counts_once(path, code, score):
     assert cognitive(path, code) == [score]
+
+
+@pytest.mark.parametrize("resolved, named", [(None, "no reader"), (lizard.CLikeReader, "CLikeReader")])
+def test_a_rust_registration_that_did_not_take_names_what_lizard_resolved(
+        monkeypatch, resolved, named):
+    monkeypatch.setattr(lizard, "get_reader_for", lambda name: resolved)
+
+    with pytest.raises(RuntimeError) as refused:
+        lizardrust.register()
+
+    assert str(refused.value) == (
+        f"crapkit.lizardrust.register() did not take: lizard resolves '.rs' to {named}, not "
+        f"CorrectedRustReader. lizard {lizard.version} picks readers some other way than "
+        "lizard_languages.languages(); rewrite register() against the new mechanism, or drop "
+        "this module if #494 is fixed.")

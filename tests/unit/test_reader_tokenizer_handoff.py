@@ -6,12 +6,13 @@ extension chain asks for tokens that way. register() runs at import, so these
 tests reach it again on a stock lizard.
 """
 import lizard_languages
+from lizard_languages.code_reader import CodeReader
 from lizard_languages.go import GoReader
 from lizard_languages.script_language import ScriptLanguageMixIn
 from lizard_languages.zig import ZigReader
 import pytest
 
-from crapkit import lizardgolike, lizardlinecomment, lizardpowershell, lizardshell
+from crapkit import lizardgolike, lizardlinecomment, lizardpowershell, lizardrust, lizardshell
 
 
 def _recording(handed: list):
@@ -30,6 +31,8 @@ def _recording(handed: list):
     (lizardgolike.CorrectedZigReader, ZigReader, "generate_tokens",
      lizardgolike._ZIG_QUOTED_NAME + lizardlinecomment.LINE_COMMENT
      + lizardgolike._ZIG_STRING_LINE),
+    (lizardrust.CorrectedRustReader, CodeReader, "generate_tokens",
+     lizardlinecomment.LINE_COMMENT + lizardrust._LIFETIME),
 ])
 def test_a_reader_hands_its_patterns_ahead_of_the_caller_s_and_the_token_class_on(
         monkeypatch, reader, owner, stock, added):
