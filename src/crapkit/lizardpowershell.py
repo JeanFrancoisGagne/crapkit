@@ -134,7 +134,9 @@ from lizard_languages.script_language import ScriptLanguageMixIn
 # falls back to ending the string at the first inner quote, as it always did.
 # Every loop is possessive (`*+`): with no closing quote left in the file, the
 # backtracking version tried each `$( )` after the quote both as a
-# subexpression and as text, twice the time per subexpression.
+# subexpression and as text, twice the time per subexpression. No loop holds a
+# negative lookahead or lookbehind: CPython 3.11.2 misreads one inside a
+# possessive loop (lizardshell._loop spells such a loop so that it reads right).
 _PAREN_LEVELS = 8
 
 

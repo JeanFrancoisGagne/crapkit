@@ -178,13 +178,24 @@ from crapkit.sourcelines import source_lines
 # the substitution's close, it cut `"$(case $os in Linux) echo l;; esac)"` at
 # `Linux)`: `case` reached the counters and `esac` stayed in the string.
 #
-# Every loop is possessive (`*+`, `++`): it never gives back what it matched. A
-# string with no closing quote after it made the backtracking version try each
-# `$( )` both as a substitution and as text, twice the time per substitution.
+# No loop gives back what it matched. A string with no closing quote after it
+# made the backtracking version try each `$( )` both as a substitution and as
+# text, twice the time per substitution. A loop that holds a negative lookahead,
+# at any depth, is an atomic group around a greedy loop (_loop) and every other
+# loop is possessive (`*+`, `++`). The two spellings mean the same, but on
+# CPython 3.11.2 (gh-100061) a lookahead that fires inside a possessive loop
+# keeps the text it looked at, and the case rule read nothing right there.
+# tests/unit/test_reader_regex_portability.py holds every reader to this.
 _PAREN_LEVELS = 8
 _CASE_START = (r"\bcase\s++(?:\"[^\"]*+\"|[^\s\"])++\s++in\s++\(?+"
                r"(?:\"[^\"]*+\"|'[^']*+'|[^\s\"'()])++\)")
-_CASE_BLOCK = _CASE_START + r"(?:(?!\besac\b)[\s\S])*+\besac\b"
+_CASE_BLOCK = _CASE_START + r"(?>[\s\S]*?\besac\b)"
+
+
+def _loop(body: str) -> str:
+    """BODY any number of times, giving back nothing: `(?:BODY)*+`, in the
+    spelling CPython 3.11.2 matches right when BODY holds a lookahead."""
+    return r"(?>(?:" + body + r")*)"
 
 
 def _parens(levels: int) -> str:
@@ -196,12 +207,11 @@ def _parens(levels: int) -> str:
 
 
 def _run(nested: str) -> str:
-    return (r"(?:" + _CASE_BLOCK + r"|(?!" + _CASE_START + r")[^()]" + nested
-            + r")*+")
+    return _loop(_CASE_BLOCK + r"|(?!" + _CASE_START + r")[^()]" + nested)
 
 
 _COMMAND_SUB = r"\$\(" + _parens(_PAREN_LEVELS) + r"\)"
-_DQ_STRING = r'"(?:\\.|' + _COMMAND_SUB + r'|[^"\\])*+"'
+_DQ_STRING = r'"' + _loop(r"\\.|" + _COMMAND_SUB + r'|[^"\\]') + r'"'
 
 # Extra alternatives for lizard's shared token pattern. Order matters only among
 # alternatives that can start at the same character.
