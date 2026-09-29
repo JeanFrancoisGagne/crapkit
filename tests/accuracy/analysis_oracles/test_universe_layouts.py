@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import re
 
 from hypothesis import given, strategies as st
 import pytest
@@ -361,15 +362,29 @@ def test_coverage_counts_per_scope_equal_the_inventory(targeted):
         name: TARGETS[name] for name in counts}
 
 
+NOTE_SCOPE = re.compile(r"scope '([^']+)'")
+
+
+def _note_names(brief: dict) -> str | None:
+    """The scope `commands.scoped_tests_note` names. docs/agent-json.md: the note is
+    there only when `scoped_tests` is null and names the scope with no template;
+    this config declares no template, so every packet carries one."""
+    found = NOTE_SCOPE.search(brief.get("commands", {}).get("scoped_tests_note", ""))
+    return found and found[1]
+
+
 @pytest.mark.parametrize("path", ["src/deep/x.py", "src/deep/y.ts", "src/hot.py", "srcx/z.py"])
 def test_one_owner_across_packet_lane_and_ceiling(path, targeted):
+    """docs/agent-json.md: `lane`, `target` and `commands.scoped_tests` all describe
+    one scope, the one the run scored the file under. src/deep/x.py sits under
+    `b`'s path, but `b` claims only typescript, so all three name `a`."""
     measured, driver, _ = targeted
     (row,) = measured.in_file(path)
     brief = json.loads(driver.run("brief", path, analysis_inventory.bare(row["long_name"]),
                                   "--json").stdout)
-    ceiling = TARGETS[owner(path, *RICH)]
-    assert (row["scope"], brief["target"], brief["gate_rule"]["ceiling"]) == (
-        owner(path, *RICH), ceiling, ceiling)
+    want = owner(path, *RICH)
+    assert (row["scope"], brief["target"], brief["gate_rule"]["ceiling"], _note_names(brief)) == (
+        want, TARGETS[want], TARGETS[want], want)
 
 
 @pytest.mark.parametrize(("paths", "languages"), [
