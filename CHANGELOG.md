@@ -1292,6 +1292,12 @@ analysis-version bump, so each marks file re-seeds once
   `called: if (safety) bool else void = if (safety) false else {},` that gives the
   value sits beside the first, not in its else. In the Zig standard library these
   two rules alone lower both columns in 4 of 3,487 functions.
+- A `,` ends a body with no braces in Zig, where an `if` is a value that sits in a
+  list and there is no comma operator: each `if` in a switch's prongs or an
+  argument list sits at its own level. In C, C++, Objective-C, Java and JavaScript
+  the `,` is the comma operator and the body goes on past it, so in `if (a) x++, y =
+  b ? 1 : 2;` the conditional operator sits in the if's body, `nesting` 2, as 0.8.0
+  read it.
 - Measured over 21,099 functions in 20 open-source projects: 1,489 of the 6,465
   functions outside Python move `nesting`, 1,289 down and 200 up, and 54 move
   `cognitive`, 36 down and 18 up. No Python row moves `nesting`, 3 move `cognitive`

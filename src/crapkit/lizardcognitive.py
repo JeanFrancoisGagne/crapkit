@@ -279,7 +279,9 @@ class _Dialect(NamedTuple):
     the file takes it too (see _settle_overloads). `braceless`: a structure's body can
     go without braces (C, C++, Objective-C, Java, JavaScript, TypeScript, Zig).
     `line_statements`: a line break can end a statement that has no `;`
-    (JavaScript, TypeScript).
+    (JavaScript, TypeScript, Kotlin, Scala). `list_commas`: a `,` ends a body
+    with no braces, since an `if` is a value that sits in a list and the
+    language has no comma operator (Zig, Kotlin, Scala; see _comma).
     `bracket_lines`: a bracket holds commands, one per line, so a line break
     inside one ends a run of logical operators: a shell subshell `( ... )` or
     `$( ... )`, PowerShell's `$( ... )` and `@( ... )`.
@@ -323,6 +325,7 @@ class _Dialect(NamedTuple):
     overloads: bool = False
     braceless: bool = False
     line_statements: bool = False
+    list_commas: bool = False
     classes: frozenset = frozenset()
     self_only: bool = False
     binders: frozenset = frozenset()
@@ -432,6 +435,9 @@ _JAVASCRIPT = _Dialect(counting=_C_FAMILY_COUNTING, goto=False, labels=_named_la
                        braceless=True, line_statements=True, classes=frozenset({"class"}),
                        self_only=True,
                        binders=frozenset({"const", "let", "var", "function", "class"}))
+# Kotlin and Scala: an `if` is a value, its arms can go without braces, a line
+# break ends a statement and a `,` ends an argument.
+_LIST_VALUES = _Dialect(braceless=True, line_statements=True, list_commas=True)
 _DIALECTS = {
     "CLikeReader": _Dialect(counting=_C_FAMILY_COUNTING, declarator_and=True, word_ops=_AND_OR,
                             elvis=True, overloads=True, braceless=True),
@@ -458,7 +464,10 @@ _DIALECTS = {
     "PythonReader": _PYTHON,
     "PythonSignatureReader": _PYTHON,
     "ZigReader": _Dialect(counting=_ZIG_COUNTING, do_loops=frozenset(), goto=False,
-                          labels=_zig_label, word_ops=_AND_OR, braceless=True, types=_zig_type),
+                          labels=_zig_label, word_ops=_AND_OR, braceless=True, types=_zig_type,
+                          list_commas=True),
+    "KotlinReader": _LIST_VALUES,
+    "ScalaReader": _LIST_VALUES,
 }
 
 # The rules crapkit's reader fixes add: Rust's own syntax (see _Dialect.rust),
@@ -2396,10 +2405,13 @@ def _semicolon(state: _FnState, _token: str) -> None:
 
 
 def _comma(state: _FnState, _token: str) -> None:
-    """A comma at the depth of a body that has begun ends it: the next Zig
-    prong, `0 => if (a) 1 else 2, 1 => ...`, or C's comma operator. A comma in
-    a Zig payload, `for (a, b) |x, y|`, ends nothing."""
-    if _begun(state):
+    """A comma at the depth of a body that has begun ends it where an `if` is a
+    value in a list and the language has no comma operator (see
+    _Dialect.list_commas): the next Zig prong, `0 => if (a) 1 else 2, 1 =>
+    ...`, or the next argument, `g(if (a) 1 else 2, x)`. C's and JavaScript's
+    comma operator goes on with the body, `if (a) x++, y = b ? 1 : 2;`. A comma
+    in a Zig payload, `for (a, b) |x, y|`, ends nothing."""
+    if state.dialect.list_commas and _begun(state):
         _close_bodies(state, state.bracket_depth)
 
 

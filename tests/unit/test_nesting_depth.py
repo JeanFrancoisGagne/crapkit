@@ -483,6 +483,42 @@ ELSE_SWITCH_DEPTHS = {
                         "        .int => {},\n    }\n    @compileError(\"x\");\n}\n", 2),
 }
 
+# In Zig, Kotlin and Scala an `if` is a value that sits in a list, and the `,`
+# after it ends its body: a switch prong, an argument, a struct field. Kotlin and
+# Scala had no rules for a body without braces, and their rows read nesting 0. C
+# and JavaScript keep a body open past a `,`, their comma operator (see
+# COMMA_OPERATORS), where the pass ended it and read nesting 1.
+# file: (source, (nesting, cognitive))
+_PRONGS = "fn f(x: E, a: bool, b: bool) u8 {\n    return switch (x) {\n"
+LIST_ARMS = {
+    "prongs.zig": (_PRONGS + "        .a => if (a) 1 else 2,\n        .b => if (b) 3 else 4,\n"
+                   "        .c => if (a) 5 else 6,\n    };\n}\n", (2, 10)),
+    "prongs-bare.zig": ("fn f(x: E, a: bool, b: bool) void {\n    switch (x) {\n        .a => if (a) g(),\n"
+                        "        .b => if (b) h(),\n        .c => if (a) k(),\n    }\n}\n", (2, 7)),
+    "args.zig": ("fn f(a: bool, b: bool) void {\n    g(.{ if (a) \"x\" else \"\", if (b) \"y\" else \"\" });\n}\n",
+                 (1, 4)),
+    "fields.zig": ("fn f(a: bool, b: bool) S {\n    return .{ .x = if (a) 1 else 2, .y = if (b) 3 else 4,"
+                   " .z = if (a) 5 else 6 };\n}\n", (1, 6)),
+    "args.kt": ("fun f(a: Boolean, b: Boolean) {\n    g(if (a) 1 else 2, if (b) 3 else 4, if (a) 5 else 6)\n}\n",
+                (1, 6)),
+    "args.scala": ("object O {\n  def f(a: Boolean, b: Boolean): Unit = {\n"
+                   "    g(if (a) 1 else 2, if (b) 3 else 4, if (a) 5 else 6)\n  }\n}\n", (1, 6)),
+}
+COMMA_OPERATORS = {
+    "comma.c": "void f(int a, int b) {\n    if (a) x++, y = b ? 1 : 2;\n}\n",
+    "comma.js": "function f(a, b) {\n  if (a) x++, y = b ? 1 : 2;\n}\n",
+}
+
+# A Zig payload after a loop's header comes before the body: its `,` ends
+# nothing, and a line break after it does not end the body either.
+# file: (source, nesting)
+PAYLOAD_DEPTHS = {
+    "block.zig": ("fn f(xs: []u8, b: bool) void {\n    for (xs, 0..) |x, i| {\n        if (b) {\n"
+                  "            g(x, i);\n        }\n    }\n}\n", 2),
+    "bare.zig": ("fn f(xs: []u8, b: bool) void {\n    for (xs, 0..) |x, i| if (b) g(x, i);\n}\n", 2),
+    "next-line.zig": ("fn f(xs: []u8, b: bool) void {\n    for (xs) |x|\n        if (b) g(x);\n}\n", 2),
+}
+
 
 # An `if` right after a `:` in Zig is a type, and only there does the `=` after
 # it end its arms. In a statement's arm the `=` is an assignment inside the arm,
@@ -726,6 +762,28 @@ def test_only_the_equals_after_a_zig_type_ends_the_if_in_it(name):
     (record,) = analyze_source(name, source)
 
     assert (record.nesting, record.cognitive) == (nesting, cognitive)
+
+
+@pytest.mark.parametrize("name", sorted(LIST_ARMS))
+def test_a_comma_ends_a_body_where_the_language_has_no_comma_operator(name):
+    source, (nesting, cognitive) = LIST_ARMS[name]
+    (record,) = analyze_source(name, source)
+
+    assert (record.nesting, record.cognitive) == (nesting, cognitive)
+
+
+@pytest.mark.parametrize("name", sorted(COMMA_OPERATORS))
+def test_a_comma_operator_keeps_the_body_open(name):
+    """C's and JavaScript's `,` is their comma operator, so the `if` body goes on
+    past it and the conditional operator after it sits in that body, two deep."""
+    assert _nesting(name, COMMA_OPERATORS[name]) == 2
+
+
+@pytest.mark.parametrize("name", sorted(PAYLOAD_DEPTHS))
+def test_a_zig_payload_comes_before_the_body_and_ends_nothing(name):
+    source, depth = PAYLOAD_DEPTHS[name]
+
+    assert _nesting(name, source) == depth
 
 
 @pytest.mark.parametrize("name", sorted(SCRIPT_DEPTHS))
