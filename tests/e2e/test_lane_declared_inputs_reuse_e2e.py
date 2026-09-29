@@ -299,8 +299,7 @@ def test_a_measurement_over_dirty_inputs_is_named_as_no_proof(repo: Path):
     _commit(repo, "commit the wip")
 
     assert lane_reuse_verdict(repo, _lane(repo)).reason == (
-        "its stamp holds no proof: it was measured with 1 uncommitted change(s) under its inputs: "
-        "src/app.ts")
+        "its stamp holds no proof: it was measured with 1 uncommitted change(s): src/app.ts")
 
 
 def test_a_git_failure_while_measuring_is_named_not_read_as_dirty_inputs(repo: Path, monkeypatch):
@@ -325,7 +324,7 @@ def test_a_git_failure_while_measuring_is_named_not_read_as_dirty_inputs(repo: P
 
     assert failed
     assert lane_reuse_verdict(repo, _lane(repo)).reason == (
-        "its stamp holds no proof: git could not read its inputs when it was measured: "
+        "its stamp holds no proof: when it was measured, nothing proves its inputs unchanged: "
         "git exited 128: forced")
 
 
