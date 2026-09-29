@@ -743,8 +743,8 @@ def test_sync_copies_another_packet_s_row_when_the_bug_is_new_to_this_one(tmp_pa
     synced = retro.synced_bugs(BUGS_BEFORE, retro.landed(_landed(tmp_path, table)))
 
     moved = [row for row in synced if row["test"].endswith("test_moved")]
-    assert [(row["packet"], row["calc"], row["platform"]) for row in moved] == [
-        ("p1", "calc R3", "any")]
+    assert [(row["packet"], row["calc"], row["platform"], row["probe"], row["env"])
+            for row in moved] == [("p1", "calc R3", "any", "", "")]
 
 
 def test_a_packet_s_platform_all_syncs_as_any_and_replays_everywhere(tmp_path):
@@ -1716,3 +1716,46 @@ def test_a_commit_only_the_bundle_holds_gets_a_worktree_at_it(tmp_path, monkeypa
     assert retro.have_commit(sha, clone)
     assert retro._checked(["git", "rev-parse", "HEAD"], tree).strip() == sha
     assert (tree / "f.txt").read_bytes() == b"source"
+
+
+# --- a row's env, its check's node id, and what the commands say ---------------------------------
+
+def test_a_row_s_env_moves_the_digest_its_ledger_row_records_and_reads():
+    bug = retro.Bug("R1", OTHER, "a" * 12, "b" * 12, "", CUT)
+    recorded = retro.ledger_row(bug, retro.Outcome("red", "E", "e"), retro.Outcome("pass", "", "p"))
+    listed = {**_bug_row("R1"), "test": OTHER, "env": CUT}
+
+    assert recorded["digest"] == retro.digest(OTHER, env=CUT) != retro.digest(OTHER)
+    assert not retro._is_stale(listed, {retro.row_key(listed): recorded})
+
+
+def test_a_row_without_an_env_cell_replays_with_no_env():
+    row = {name: value for name, value in _bug_row("R1").items() if name != "env"}
+
+    assert retro.bug_of(row).env == ""
+
+
+def test_a_check_inside_a_class_exists_once_its_file_defines_the_method(tmp_path):
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_c.py").write_text(
+        "class TestC:\n    def test_x(self):\n        pass\n", encoding="utf-8")
+
+    assert retro.check_exists({"test": "tests/test_c.py::TestC::test_x[a]"}, tmp_path)
+
+
+def test_an_env_word_outside_the_switches_is_refused_with_every_switch_named():
+    with pytest.raises(retro.RetroError) as refused:
+        retro.switches("PATH=/bin")
+
+    assert str(refused.value) == (
+        "a bugs.tsv env names PATH; it may set only CRAPKIT_ACCURACY_LANGUAGES, "
+        "CRAPKIT_ACCURACY_ROOT_PATHS, each as NAME=value")
+
+
+def test_nightly_s_platform_only_flag_says_which_rows_it_replays(capsys):
+    with pytest.raises(SystemExit):
+        retro.main(["nightly", "--help"])
+
+    assert ("--platform-only replay only the rows whose platform is this OS (a Windows or "
+            "macOS cell); the Linux job replays the `any` rows") in " ".join(
+        capsys.readouterr().out.split())
