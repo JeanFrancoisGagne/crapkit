@@ -52,6 +52,17 @@ def test_the_page_previews_the_release_body_with_notes():
     assert "python tools/release/release.py notes VERSION > notes.md" in _flat(_text())
 
 
+def test_the_page_quotes_each_line_check_prints_for_a_gh_that_cannot_dispatch(tmp_path):
+    kit = tmp_path / "tools" / "deploy" / "candidate.py"
+    kit.parent.mkdir(parents=True)
+    kit.write_text("# the deploy kit\n", encoding="utf-8")
+    lines = (release.deploy_preflight(tmp_path, which=lambda name: None)
+             + release.deploy_preflight(tmp_path, which=lambda name: name, token=lambda: ""))
+
+    assert len(lines) == 2
+    assert [line for line in lines if line not in _text().splitlines()] == []
+
+
 def test_the_page_names_every_file_whose_codex_ref_stage1_rewrites():
     files = sorted({surface.path for surface in release.SURFACES if surface.pattern == "--ref v{v}"})
     text = _flat(_text())

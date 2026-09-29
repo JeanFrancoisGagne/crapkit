@@ -2,6 +2,7 @@
 stamped with a version newer than every release in the wheelhouse.
 
     python tools/deploy/candidate.py --tree tree.tar --out DIR [--lock wheelhouse.lock]
+        [--no-build] [--source-hash SHA256]
 
 Writes into DIR:
 
@@ -10,13 +11,20 @@ Writes into DIR:
                    server.json all name the candidate version. docsnip reads
                    the docs from here and gitmirror commits it as the release.
   dist/            the wheel and the sdist, built with the running interpreter
-                   (`python -m build --no-isolation`, offline).
-  candidate.json   version, the release it follows, both artifact names, and
-                   hashes of the staged sources and of their file list.
+                   (`python -m build --no-isolation`, offline). --no-build
+                   skips it.
+  candidate.json   version, the release it follows, both artifact names (none
+                   under --no-build), and hashes of the staged sources and of
+                   their file list.
 
 A tree whose version is not above the newest release in wheelhouse.lock is
 stamped one patch past that release, so pip, uv and pipx always see the
 candidate as the upgrade.
+
+source_hash keys the release's deploy record. `release.py run deploy` hashes
+the tag commit's tree with --no-build and dispatches deploy.yml with the
+result; the workflow's scope job reruns this with --source-hash, which exits 1
+when the tree it checked out hashes otherwise.
 """
 from __future__ import annotations
 
@@ -113,28 +121,61 @@ def _artifact(built: list[Path], suffix: str) -> str:
     return next(path.name for path in built if path.name.endswith(suffix))
 
 
-def candidate(tree: Path, out: Path, lock: Path, python: str = sys.executable) -> dict:
+def stage(tree: Path, out: Path, lock: Path) -> dict:
+    """Unpack and stamp the tree under out/staged: the record, less its artifacts."""
     staged = extract(tree, out / "staged")
     base, newest = tree_version(staged), newest_release(lock)
     version = stamp_version(base, newest)
     changed = stamp(staged, base, version) if version != base else []
-    record = {"version": version, "tree_version": base, "newest_release": newest,
-              "stamped": changed, **hashes(staged)}
-    built = build(staged, out / "dist", python)
-    record.update(wheel=_artifact(built, ".whl"), sdist=_artifact(built, ".tar.gz"))
+    return {"version": version, "tree_version": base, "newest_release": newest,
+            "stamped": changed, **hashes(staged)}
+
+
+def candidate(tree: Path, out: Path, lock: Path, python: str = sys.executable,
+              build_dist: bool = True) -> dict:
+    record = stage(tree, out, lock)
+    if build_dist:
+        built = build(out / "staged", out / "dist", python)
+        record.update(wheel=_artifact(built, ".whl"), sdist=_artifact(built, ".tar.gz"))
     (out / "candidate.json").write_text(json.dumps(record, indent=2, sort_keys=True) + "\n",
                                         encoding="utf-8")
     return record
 
 
-def main(argv: list[str] | None = None) -> int:
+def source_problem(record: dict, expected: str | None) -> str | None:
+    """Why the staged tree is not the one a release dispatched this run for."""
+    if expected is None or record["source_hash"] == expected:
+        return None
+    return (f"candidate: the tree hashes to source_hash {record['source_hash']}, and the release "
+            f"dispatched this run for {expected}")
+
+
+def summary(record: dict) -> str:
+    if "wheel" not in record:
+        return f"candidate: crapkit {record['version']} (not built; source_hash {record['source_hash']})"
+    return f"candidate: crapkit {record['version']} ({record['wheel']}, {record['sdist']})"
+
+
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--tree", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--lock", type=Path, default=HERE / "wheelhouse.lock")
-    args = parser.parse_args(argv)
-    record = candidate(args.tree, args.out, args.lock)
-    print(f"candidate: crapkit {record['version']} ({record['wheel']}, {record['sdist']})")
+    parser.add_argument("--no-build", action="store_true",
+                        help="stage and hash the tree only; candidate.json names no artifact")
+    parser.add_argument("--source-hash", metavar="SHA256",
+                        help="exit 1 unless the staged tree hashes to this source_hash")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    record = candidate(args.tree, args.out, args.lock, build_dist=not args.no_build)
+    problem = source_problem(record, args.source_hash)
+    if problem:
+        print(problem, file=sys.stderr)
+        return 1
+    print(summary(record))
     return 0
 
 
