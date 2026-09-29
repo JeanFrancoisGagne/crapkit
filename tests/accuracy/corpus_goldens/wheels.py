@@ -9,7 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 import zipfile
 
-SOURCE = Path(__file__).resolve().parents[3] / "src" / "crapkit"
+from accuracy.kit import source_tree
+
 CRAP_LINE = "    return ccn * ccn * (uncovered * uncovered * uncovered) + ccn\n"
 COGNITIVE_LINE = '        cognitive=getattr(fn, "cognitive_complexity", 0) or 0,\n'
 # Cognitive complexity gains 1 at ccn 3, and nowhere else. The runtime guards
@@ -25,6 +26,13 @@ STOP_PLANT = ("score.py", CRAP_LINE, "    raise SystemExit(5)\n")
 PLANTS = {"cognitive": COGNITIVE_PLANT, "stop": STOP_PLANT}
 
 
+def planted_count(name: str) -> int:
+    """How many times the file PLANTS[name] plants holds its line, in the source
+    tree kit.source_tree names (the calc mutation stage's checkout there)."""
+    file_name, line, _ = PLANTS[name]
+    return (source_tree.root() / file_name).read_bytes().decode("utf-8").count(line)
+
+
 def _text(path: Path, plant: tuple | None) -> str:
     text = path.read_bytes().decode("utf-8")
     if plant is None or path.name != plant[0]:
@@ -34,7 +42,8 @@ def _text(path: Path, plant: tuple | None) -> str:
 
 
 def zipped(dest: Path, plant: tuple | None = None) -> Path:
+    source = source_tree.root()
     with zipfile.ZipFile(dest, "w") as archive:
-        for path in sorted(SOURCE.rglob("*.py")):
-            archive.writestr("crapkit/" + path.relative_to(SOURCE).as_posix(), _text(path, plant))
+        for path in sorted(source.rglob("*.py")):
+            archive.writestr("crapkit/" + path.relative_to(source).as_posix(), _text(path, plant))
     return dest

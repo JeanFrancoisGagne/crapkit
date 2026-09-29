@@ -18,14 +18,13 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-import os
 from pathlib import Path
 import sys
 
-from accuracy.kit import corpus_dir
+from accuracy.kit import corpus_dir, source_tree
 
 REPO = Path(__file__).resolve().parents[3]
-SOURCE_ENV = "CRAPKIT_ACCURACY_SOURCE"
+SOURCE_ENV = source_tree.ENV
 
 
 @dataclass(frozen=True)
@@ -57,9 +56,8 @@ def _collect(root: Path, prefix: str, skip=()) -> Corpus:
 
 def source_root() -> Path:
     """crapkit's source tree as written: the directory SOURCE_ENV names, else
-    this checkout's src/crapkit."""
-    named = os.environ.get(SOURCE_ENV)
-    return Path(named) if named else REPO / "src" / "crapkit"
+    this checkout's src/crapkit (kit.source_tree)."""
+    return source_tree.root()
 
 
 def crapkit_sources() -> Corpus:

@@ -27,7 +27,7 @@ import sys
 import pytest
 
 import hang_guard
-from accuracy.kit import exact, rulings
+from accuracy.kit import exact, rulings, source_tree
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
@@ -188,13 +188,26 @@ def _suite(tree: Path) -> subprocess.CompletedProcess:
     return hang_guard.run(argv, env=env, cwd=REPO, text=True, encoding="utf-8", errors="replace")
 
 
+def canary_count() -> int:
+    """How many times score.py holds score.crap's canary line, in the source tree
+    kit.source_tree names (the calc mutation stage's checkout there)."""
+    return (source_tree.root() / "score.py").read_text(encoding="utf-8").count(ORIGINAL)
+
+
 def test_score_crap_reads_as_the_canary_expects():
     """The canaries run nightly; this check runs on every push, so an edit to
     score.crap that the canary texts no longer match fails before the nightly."""
-    text = (REPO / "src" / "crapkit" / "score.py").read_text(encoding="utf-8")
-
-    assert text.count(ORIGINAL) == 1
+    assert canary_count() == 1
     assert all(mutant != ORIGINAL for mutant in [*CANARIES.values(), EXPONENT])
+
+
+def test_the_canary_line_is_read_from_the_tree_the_stage_names(tmp_path, monkeypatch):
+    """mutmut's copy of score.py holds every mutant's body beside the original,
+    so the calc stage names its checkout's src/crapkit and the check reads it."""
+    (tmp_path / "score.py").write_text(ORIGINAL * 2, encoding="utf-8")
+    monkeypatch.setenv(source_tree.ENV, str(tmp_path))
+
+    assert canary_count() == 2
 
 
 @pytest.mark.nightly

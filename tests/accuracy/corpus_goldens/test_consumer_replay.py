@@ -107,9 +107,18 @@ def test_declared_calcs_are_the_rows_added_since_the_ref(tmp_path):
 def test_every_plant_s_line_is_in_the_file_it_plants(name):
     """The replays that plant run nightly; this check runs on every push, so a
     source edit that moves a planted line fails before the nightly."""
-    file_name, line, _ = wheels.PLANTS[name]
+    assert wheels.planted_count(name) == 1
 
-    assert (wheels.SOURCE / file_name).read_bytes().decode("utf-8").count(line) == 1
+
+def test_a_plant_line_is_read_from_the_tree_the_stage_names(tmp_path, monkeypatch):
+    """The calc mutation stage names its checkout's src/crapkit (kit.source_tree):
+    mutmut's copy holds every mutant's body beside the original, so a line read
+    there counts once per mutant of its function."""
+    file_name, line, _ = wheels.PLANTS["cognitive"]
+    (tmp_path / file_name).write_bytes((line * 3).encode("utf-8"))
+    monkeypatch.setenv("CRAPKIT_ACCURACY_SOURCE", str(tmp_path))
+
+    assert wheels.planted_count("cognitive") == 3
 
 
 def replayed(test):
