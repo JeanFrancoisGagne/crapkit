@@ -380,7 +380,9 @@ the MCP tools on the first run after upgrading, most often by 1:
   which cost nothing before.
 - A sequence of logical operators continued on the next line, or split by a comma in a
   call's arguments, costs +1 once where it cost 2. A negated group such as
-  `a && !(b && c)` costs its own +1, and `??` costs nothing.
+  `a && !(b && c)` costs its own +1, and `??` costs nothing. A group of the other
+  operator inside a sequence, `a && (b || c) && d`, costs one more, because the
+  operators read left to right through it.
 - Swift's `repeat` and `guard`, Rust's `loop`, Go's `select`, PowerShell's `trap` and
   a Python `match` statement cost what a loop, an `if` or a `switch` costs; they cost
   nothing before. Words that are a keyword in another language, such as Python's
@@ -392,8 +394,8 @@ the MCP tools on the first run after upgrading, most often by 1:
 In Python the same pass measures `nesting`, which moves too: a comprehension's level
 closes with its bracket, so `[p for p in a] + [q for q in b]` reads 1 where it read 2,
 and a `match` statement opens a level. The other languages keep lizard's `nesting`.
-Over 12,433 functions in 20 open-source projects, 1,130 moved `cognitive`, 897 of
-them by 1 and 1,061 by 3 or less, and 69 Python rows moved `nesting`. The
+Over 12,433 functions in 20 open-source projects, 1,127 moved `cognitive`, 894 of
+them by 1 and 1,058 by 3 or less, and 69 Python rows moved `nesting`. The
 [changelog](../CHANGELOG.md) lists every rule with an example.
 
 ### Analysis version 11

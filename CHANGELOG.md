@@ -1144,6 +1144,15 @@ and missed some that were. Each rule now reads the language it is in:
   so `a ?? 0` cost 2. `and` and `or` are operators only in Python, Zig and the C family,
   and not before a `:`, where they name an Objective-C selector part. GCC's `a ?: b`
   costs what a conditional operator costs.
+- The operators of a sequence read left to right through a plain group, as Sonar's
+  reference implementation flattens a logical expression: `a && (b || c) && d` changes
+  operator twice and costs 3, where it read 2. A group that is the operand of a
+  comparison, an arithmetic operator or a call, `(a || b) == c`, holds a sequence of its
+  own, as a list, a dict and an Objective-C message do, and so does each operand of a
+  conditional expression: `x && y ? a && b : c && d` reads 4 where it read 2. A braceless
+  body's statement is a sequence apart from its header's, so `if (a && b) return c && d;`
+  reads 3 like its braced form. In shell and PowerShell a line break inside `( ... )` or
+  `$( ... )` ends a sequence, because those brackets hold commands.
 - A word is a control structure only in a language that has it. `c.do(1)` in Python
   and `do(n)` in Go read as do-while loops, `p.then(g).catch(h)` and `Symbol.for(k)` as
   a catch and a loop, and Swift's `do`, which only opens the scope a `catch` handles, as
@@ -1177,8 +1186,8 @@ and missed some that were. Each rule now reads the language it is in:
   it costs on one line.
 - A Zig `else |err| if (...)` is an else-if and costs the flat +1 an else-if costs.
 
-Measured over 12,433 functions in 20 open-source projects: 1,130 move `cognitive`, 958
-down and 172 up. Python moves most, 626 of 5,967 rows; 473 of its 582 drops are the
+Measured over 12,433 functions in 20 open-source projects: 1,127 move `cognitive`, 954
+down and 173 up. Python moves most, 627 of 5,967 rows; 473 of its 582 drops are the
 recursion rule, most of them a method that calls another object's method of the same
 name, as an `__init__` calls `super().__init__()` or a `close` calls
 `self.x.close()`. TypeScript moves 185 of 1,948, Swift 123 of 871

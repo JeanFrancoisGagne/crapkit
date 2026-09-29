@@ -5,10 +5,11 @@ same rules with no second parse and no new dependency:
   +1 and +nesting for if / ternary / switch / loops / catch-except
   +1 flat for else / elif / elseif (an else-if chain costs one per link, no
   deepening)
-  +1 per sequence of logical operators, +1 each time the operator changes;
-  a call's arguments, an index and a negated group hold sequences of their
-  own, and a sequence runs on over line breaks (see `_follow_runs`); `??`
-  costs nothing
+  +1 per sequence of logical operators, +1 each time the operator changes,
+  read left to right through a plain group; a call's arguments, an index,
+  a negated group, a group compared and each operand of a conditional hold
+  sequences of their own, and a sequence runs on over line breaks (see
+  `_follow_runs`); `??` costs nothing
   +1 for a labeled break/continue or goto, +1 once when the body calls the
   function itself (see `_recursion` for what a call is in each language)
   try / finally / case labels / with are free; nesting rises inside the
@@ -133,8 +134,19 @@ _NEGATIONS = frozenset({"!", "not", "-not"})
 # A bracket after a name is a call or an index, unless the name is one of these
 # words, which a plain group follows.
 _GROUPING_WORDS = frozenset({"if", "elif", "while", "for", "foreach", "switch", "match", "case",
-                             "when", "return", "yield", "await", "and", "or", "in", "is",
+                             "when", "return", "yield", "await", "and", "or",
                              "else", "do", "until", "catch", "assert", "throw", "guard"})
+
+# The operators that bind tighter than a logical one. A group beside one of
+# them is its operand, `x == (b && c)` or `(p, q) == (r, s)`, and its operators
+# are a sequence of their own, as a call's arguments are (see _groups and
+# _after_group). PowerShell spells its own as `-eq`, `-like` and so on.
+_TIGHTER = frozenset({"==", "!=", "===", "!==", "<", ">", "<=", ">=", "+", "-", "*", "/", "%",
+                      "**", "//", "<<", ">>", ">>>", "&", "|", "^", "in", "is", "not",
+                      "instanceof"})
+
+# After a group, these apply something to it: `(f || g)(x)`, `(a || b).c`.
+_APPLIED = frozenset({"(", "[", ".", "?.", "->"})
 
 # The tokens that end a statement, and every run open in it.
 _STATEMENT_ENDS = frozenset({";", "{", "}"})
@@ -246,6 +258,9 @@ class _Dialect(NamedTuple):
     go without braces (C, C++, Objective-C, Java, JavaScript, TypeScript, Zig).
     `line_statements`: a line break can end a statement that has no `;`
     (JavaScript, TypeScript).
+    `bracket_lines`: a bracket holds commands, one per line, so a line break
+    inside one ends a run of logical operators: a shell subshell `( ... )` or
+    `$( ... )`, PowerShell's `$( ... )` and `@( ... )`.
     `imports`: the words that start an import statement, whose list binds
     names (Python's `import`, Rust's `use`).
     `classes`: the words that open a class body in braces, whose methods the
@@ -281,6 +296,7 @@ class _Dialect(NamedTuple):
     binders: frozenset = frozenset()
     assigns: frozenset = frozenset()
     imports: frozenset = frozenset()
+    bracket_lines: bool = False
 
 
 # Keyed on the reader's exact class name, never on an issubclass test: JavaReader,
@@ -317,10 +333,11 @@ _DIALECTS = {
                             labels=_named_label, overloads=True, binders=frozenset({"let", "var"})),
     "RustReader": _RUST,
     "CorrectedRustReader": _RUST,
-    "ShellReader": _Dialect(labels=_shell_label, shell_blocks=True, command_leads=_SHELL_LEADS),
+    "ShellReader": _Dialect(labels=_shell_label, shell_blocks=True, command_leads=_SHELL_LEADS,
+                            bracket_lines=True),
     "PowerShellReader": _Dialect(counting=_POWERSHELL_COUNTING, goto=False, labels=_named_label,
                                  command_leads=_POWERSHELL_LEADS, fold_case=True,
-                                 word_ops=_POWERSHELL_OPS),
+                                 word_ops=_POWERSHELL_OPS, bracket_lines=True),
     "PythonReader": _PYTHON,
     "PythonSignatureReader": _PYTHON,
     "ZigReader": _Dialect(counting=_ZIG_COUNTING, do_loops=frozenset(), goto=False,
@@ -460,7 +477,8 @@ class _FnState:
                  "prev", "prev2", "label_check", "dialect", "call_pending", "call",
                  "messages", "runs", "run_break", "word_op", "braces", "closed_do",
                  "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies",
-                 "ended", "brace_base", "scopes", "home", "bare_call", "shadowed", "importing")
+                 "ended", "brace_base", "scopes", "home", "bare_call", "shadowed", "importing",
+                 "after_group")
 
     def __init__(self, fn=None, dialect: _Dialect = _DEFAULT_DIALECT, scopes: _Scopes | None = None):
         self.dialect = dialect
@@ -497,6 +515,7 @@ class _FnState:
         self.call = None          # that call's arguments so far; see _follow_call
         self.messages = []        # Objective-C: one entry per open `[`, see _message_token
         self.runs = []            # per open bracket: the run outside it; see _open_run
+        self.after_group = None   # a plain group just closed; see _after_group
         self.run_break = False    # a line ended; the next token says whether the run did
         self.word_op = None       # `and`/`or` just seen; a `:` next makes it a selector part
         self.braces = []          # per open `{`: whether a `do` opened it; see _loop_tail
@@ -736,13 +755,14 @@ def _line_event(state: _FnState, token: str) -> None:
 def _may_end_statement(state: _FnState) -> bool:
     """Whether a line break can end the run of logical operators.
 
-    Not inside a bracket, and not after an operator or a backslash, which
+    Not inside a bracket, unless the language's brackets hold commands (see
+    _Dialect.bracket_lines), and not after an operator or a backslash, which
     continue the expression on the next line. Whether a line that starts with
     an operator continues it is for that line's first token to say; see
     _settle_line.
     """
     after_operator = _is_bool_op(state, state.prev) or state.prev == "\\"
-    return not state.runs and not after_operator
+    return (not state.runs or state.dialect.bracket_lines) and not after_operator
 
 
 def _is_bool_op(state: _FnState, token: str) -> bool:
@@ -867,6 +887,7 @@ def _resolve_question(state: _FnState, token: str, is_python: bool) -> bool:
         return True
     if _is_conditional(state, token):
         state.total += 1 + _nesting(state, is_python)
+        state.bool_op = None  # the condition's run ends; each operand has its own
     return False
 
 
@@ -963,6 +984,8 @@ def _consume(state: _FnState, token: str, is_python: bool) -> None:
 def _observe(state: _FnState, token: str) -> None:
     """What a body token tells the rules that follow expressions across tokens,
     whatever else the token does."""
+    if state.after_group is not None:
+        _after_group(state, token)
     _follow_runs(state, token)
     if state.call is not None:
         _follow_call(state, token)
@@ -999,50 +1022,79 @@ def _fits(state: _FnState, call: list) -> bool:
 def _follow_runs(state: _FnState, token: str) -> None:
     """Keep one run of logical operators per open bracket.
 
-    A comma ends the run it sits in, which is one argument's or one element's.
-    A statement's end ends every run. See _open_run and _close_run for the
-    brackets.
+    A comma ends the run it sits in, which is one argument's or one element's,
+    and so does a `:`, which ends a conditional's middle operand, a key or a
+    label. A statement's end ends every run. See _open_run and _close_run for
+    the brackets.
     """
     if token in state.dialect.openers:
-        _open_run(state)
+        _open_run(state, token)
     elif token in state.dialect.closers:
         _close_run(state)
-    elif token == ",":
+    elif token in (",", ":"):
         state.bool_op = None
     elif token in _STATEMENT_ENDS:
         state.bool_op = None
         state.runs.clear()
 
 
-def _open_run(state: _FnState) -> None:
+def _open_run(state: _FnState, token: str) -> None:
     """A bracket after a name (a call's arguments, an index) or after a negation
     holds a run of its own, and the paper counts `a && !(b && c)` as two runs.
-    Any other bracket is a plain group, which continues the run outside it:
-    `a && (b && c)` is one."""
-    grouping = _groups(state.prev)
+    So does a `[` or a `{`, a list, a dict or an Objective-C message, whose
+    elements are expressions of their own. A `(` anywhere else is a plain
+    group, which continues the run outside it: `a && (b && c)` is one. See
+    _close_run."""
+    grouping = token == "(" and _groups(state)
     state.runs.append((state.bool_op, grouping))
     if not grouping:
         state.bool_op = None
 
 
-def _groups(prev: str) -> bool:
-    if prev in _NEGATIONS:
+def _groups(state: _FnState) -> bool:
+    """Whether the bracket opening here is a plain group: not a call's or an
+    index's, not negated, and not the operand of a comparison or an arithmetic
+    operator (see _TIGHTER)."""
+    prev = state.prev
+    if prev in _NEGATIONS or _binds_tighter(state, prev):
         return False
     if prev in _GROUPING_WORDS:
         return True
     return not (prev[:1].isalnum() or prev[:1] in ("_", "$", ")", "]"))
 
 
+def _binds_tighter(state: _FnState, token: str) -> bool:
+    if token in _TIGHTER:
+        return True
+    return token[:1] == "-" and token[1:2].isalpha() and not _is_bool_op(state, token)
+
+
 def _close_run(state: _FnState) -> None:
-    """The run outside the bracket resumes. A group opened where no run was
-    open hands its own run out instead, so `(a && b) && c` is one run."""
+    """A call's arguments, an index and a negated group hand the run outside
+    them back. A plain group leaves the run where its last operator left it,
+    so the operators read left to right through it, as Sonar's reference
+    implementation flattens a logical expression: `a && (b || c) && d`
+    changes operator twice and costs 3, and `(a && b) && c` is one run.
+    Handing the outer run back read the first 2."""
     if not state.runs:
         state.bool_op = None
         return
     outer, grouping = state.runs.pop()
-    if outer is not None or not grouping:
+    if grouping:
+        state.after_group = (outer,)  # the next token decides; see _after_group
+    else:
         state.bool_op = outer
     _close_comprehensions(state)
+
+
+def _after_group(state: _FnState, token: str) -> None:
+    """The token after a plain group says whether the group was an operand of
+    the sequence around it. An operator that binds tighter, a call, an index
+    or a member access makes it the operand of something else, `(a || b) ==
+    c`, and the run outside the group resumes, as after a call's arguments."""
+    (outer,), state.after_group = state.after_group, None
+    if token in _APPLIED or _binds_tighter(state, token):
+        state.bool_op = outer
 
 
 def _message_token(state: _FnState, token: str) -> None:
@@ -1542,6 +1594,7 @@ def _counts_question(state: _FnState) -> bool:
 def _if_token(state: _FnState, is_python: bool) -> None:
     if is_python and not _statement_start(state):
         state.total += 1 + _nesting(state, is_python)  # ternary expression form
+        state.bool_op = None  # each operand is an expression of its own
         return
     state.total += 1 + _nesting(state, is_python)
     _push_structure(state, is_python, "if")
@@ -1549,7 +1602,8 @@ def _if_token(state: _FnState, is_python: bool) -> None:
 
 def _else_token(state: _FnState, token: str, is_python: bool) -> None:
     if is_python and not _statement_start(state):
-        return  # the else arm of a ternary expression is part of its +1
+        state.bool_op = None  # the else arm of a ternary expression is part of its +1
+        return
     if state.guard_else:
         state.guard_else = False
         state.pending = True  # the guard's block, which the guard paid for
@@ -1711,7 +1765,9 @@ def _open_bracket(state: _FnState, _token: str) -> None:
 def _close_bracket(state: _FnState, token: str) -> None:
     """A closing bracket ends the bodies inside it. A `}` back at a body's
     depth ends the statement that body holds, and the next token says whether
-    it goes on; a `)` back at a body's header ends the header."""
+    it goes on; a `)` back at a body's header ends the header, and the run of
+    logical operators the header held: `if (a && b) return c && d;` holds two
+    sequences, as its braced form does."""
     state.bracket_depth -= 1
     depth = state.bracket_depth
     _close_bodies(state, depth + 1)
@@ -1722,6 +1778,7 @@ def _close_bracket(state: _FnState, token: str) -> None:
         state.ended = depth
     elif body[1] == _HEADER:
         body[1] = _AWAITING
+        state.bool_op = None
 
 
 def _semicolon(state: _FnState, _token: str) -> None:

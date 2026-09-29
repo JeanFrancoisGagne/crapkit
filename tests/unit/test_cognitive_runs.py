@@ -9,9 +9,21 @@ a call's arguments split the sequence around the call, and a negated group
 joined the sequence it sat in.
 
 The run is now kept per bracket: a call's arguments, an index and a negated
-group each start their own and hand the outer one back at the closing bracket,
-a plain group continues the outer one, and a line break ends a run only
-outside brackets and when neither side of it is an operator.
+group each start their own and hand the outer one back at the closing bracket.
+A plain group continues the outer one, and the operators read left to right
+through it, as sonarjs flattens a logical expression (S3776,
+flattenLogicalExpression): `a && (b || c) && d` changes operator twice and
+costs 3. A line break ends a run only outside brackets and when neither side
+of it is an operator; in shell and PowerShell, whose brackets hold commands,
+inside them too. A braceless body's statement is a sequence apart from its
+header's.
+
+A group that is the operand of a comparison, an arithmetic operator, a call or
+a member access is not part of the sequence around it: in `a && (b || c) == d
+&& e` the `==` takes the group, so the outer sequence is `a && ... && e` and
+the group's `||` is a sequence of its own. Each operand of a conditional
+expression is an expression of its own too: `x && y ? a && b : c && d` holds
+three sequences.
 
 Three spellings that are not sequences at all: `??` and `??=` coalesce a null,
 which the paper ignores (Ignore shorthand); `and` and `or` are identifiers
@@ -48,7 +60,14 @@ CASES = [  # (label, path, source, Sonar value)
      "function f(a: boolean, b: boolean, c: boolean) {\n  return (a && b) && c;\n}\n", 1),
     ("a group of the other operator", "a.ts",
      "function f(a: boolean, b: boolean, c: boolean, d: boolean) {\n"
-     "  return a && (b || c) && d;\n}\n", 2),
+     "  return a && (b || c) && d;\n}\n", 3),
+    ("a group of the other operator, Python", "a.py",
+     "def f(a, b, c, d):\n    if a and (b or c) and d:\n        return 1\n    return 0\n", 4),
+    ("nested groups read left to right, Python", "a.py",
+     "def f(a, b, c, d, e, g):\n    if a or b or ((c or (d and e)) and g):\n        return 1\n"
+     "    return 0\n", 3),
+    ("a group ends on the operator after it", "a.js",
+     "function f(a, b, c, d) {\n  return (a && b || c) || d;\n}\n", 2),
     ("a call's arguments hold their own run", "a.ts",
      "function f(a: boolean, b: boolean, c: boolean) {\n  return g(a && b) && c;\n}\n", 2),
     ("a comma inside a call keeps the run around it", "a.py",
@@ -73,6 +92,43 @@ CASES = [  # (label, path, source, Sonar value)
     ("over lines, PowerShell", "a.ps1",
      "function Test-SplitRun($a, $b, $c) {\n    if ($a -and\n        $b -and $c) {\n"
      "        return 1\n    }\n    return 0\n}\n", 2),
+    ("a subshell's lines, shell", "a.sh",
+     "f() {\n  (\n    a || true\n    b || true\n  )\n}\n", 2),
+    ("a command substitution's lines, shell", "a.sh",
+     "f() {\n  x=$(\n    a || true\n    b || true\n  )\n}\n", 2),
+    ("a subexpression's lines, PowerShell", "a.ps1",
+     "function Test-Lines {\n  $x = $(\n    $a -or $true\n    $b -or $true\n  )\n}\n", 2),
+    ("over lines before the operator in a condition, PowerShell", "a.ps1",
+     "function Test-Before($a, $b) {\n    if ($a\n        -and $b) {\n        return 1\n    }\n"
+     "    return 0\n}\n", 2),
+    ("a braceless body after its header, C", "a.c",
+     "int f(int a, int b, int c, int d) {\n    if (a && b) return c && d;\n    return 0;\n}\n", 3),
+    ("a braceless body after its header, JavaScript", "a.js",
+     "function f(a, b, c, d) {\n  while (a && b) c = c && d;\n}\n", 3),
+    ("a braceless body after its header, Zig", "a.zig",
+     "fn f(a: bool, b: bool, c: bool) bool {\n    if (a and b) return c and a;\n    return false;\n}\n", 3),
+    ("a Python condition in parentheses is a group", "a.py",
+     "def f(a, b, c):\n    if (a and b) and c:\n        return 1\n    return 0\n", 2),
+    ("a group compared is the comparison's operand", "a.js",
+     "function f(a, b, c, d, e) {\n  return a && (b || c) == d && e;\n}\n", 2),
+    ("a group after a comparison is its operand", "a.js",
+     "function f(a, x, b, c, d) {\n  return a && x == (b && c) && d;\n}\n", 2),
+    ("tuples compared stay out of the run, Python", "a.py",
+     "def f(row, other):\n    return (other.flag and (other.start, other.end) == (row.start, row.end)\n"
+     "            and other.x != row.x)\n", 1),
+    ("a group compared, PowerShell", "a.ps1",
+     "function Test-Compared($a, $b, $c, $d) {\n    return $a -and ($b -or $c) -eq $d -and $c\n}\n", 2),
+    ("a group called is the call's operand", "a.js",
+     "function f(a, g, h, x, b) {\n  return a && (g || h)(x) && b;\n}\n", 2),
+    ("messages hold their own runs, Objective-C", "a.m",
+     "BOOL f(NSString *key) {\n    if ([key isEqualToString:@\"a\"] || [key isEqualToString:@\"b\"]"
+     " || [key isEqualToString:@\"c\"]) {\n        return YES;\n    }\n    return NO;\n}\n", 2),
+    ("a list's elements hold their own runs, Python", "a.py",
+     "def f(a, b, c, d, e):\n    return a and [b or c, d] and e\n", 2),
+    ("a conditional's operands, JavaScript", "a.js",
+     "function f(x, y, a, b, c, d) {\n  return x && y ? a && b : c && d;\n}\n", 4),
+    ("a conditional's operands, Python", "a.py",
+     "def f(a, b, c, d, e):\n    return a and b if c else d and e\n", 3),
     ("two statements hold two runs", "a.go",
      "package p\n\nfunc Two(a, b, c, d bool) bool {\n\tx := a && b\n\ty := c && d\n"
      "\treturn x || y\n}\n", 3),
