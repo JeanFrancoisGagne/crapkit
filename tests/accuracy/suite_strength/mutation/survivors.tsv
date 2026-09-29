@@ -498,3 +498,5 @@ src/crapkit/config.py	_runner_quotes	316e577a960aeb9702084c24c172790681d3b0b5267
 src/crapkit/config.py	_sh_segments	7b9331f36a0f528e22a8fc37d50264608b936b25307b1d267c4c23f30ca9a4dc	matching from index 0 every time reads the first piece forever, which mutmut reports as a timeout	2026-09-29
 src/crapkit/config.py	_CmdLines.read	b234b0ba4c171d9e6220c25a1f033c22461bf4c452b9afe41f353f3e0e257d67	matching from index 0 every time reads the first piece forever, which mutmut reports as a timeout	2026-09-29
 src/crapkit/config.py	_ShLine.take	c92e83de97e5189bfc909fdd3896e69ad706d5b2b57e99cd391eed3e2436a089	returning to the character before the # reads the same two pieces forever, which mutmut reports as a timeout	2026-09-29
+src/crapkit/report.py	_chart_points	440e162a1a6d640f0d707e67d7b6e1aaab489a0046bc9f558c9bf30f7ff0cbe4	the fallback is used only when every load is 0, and then every value over it is 0 whatever it is	2026-09-29
+src/crapkit/report.py	_esc	8f8c4ad08e0d503102cb807091cf02d2c7f422a23df57d2f686cb48ddc49d7a8	html.escape's own default for quote is True	2026-09-29
