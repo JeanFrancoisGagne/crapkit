@@ -377,7 +377,8 @@ the MCP tools on the first run after upgrading, most often by 1:
   `__init__` calls `super().__init__()`, a method that wraps the module function it
   is named after, or a local variable or import named like its function.
   It rises in Go, shell, PowerShell, Java and C++ functions that call themselves,
-  which cost nothing before.
+  which cost nothing before, and in a Rust, Swift or Zig function that calls itself
+  through its type's name (`R::spin(n - 1)`).
 - A sequence of logical operators continued on the next line, or split by a comma in a
   call's arguments, costs +1 once where it cost 2. A negated group such as
   `a && !(b && c)` costs its own +1, and `??` costs nothing. A group of the other

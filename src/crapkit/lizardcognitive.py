@@ -267,9 +267,15 @@ class _Dialect(NamedTuple):
     token stream has to name, because lizard does not (JavaScript,
     TypeScript). `self_only`: a method is reached only through its object or
     its class, and a bare name in its body is looked up outside the class
-    (Python, JavaScript, TypeScript, Go). `binders`: the words before a name
-    that bind it in the body, and `assigns`: the operators after one, so a
+    (Python, JavaScript, TypeScript, Go, Rust). `binders`: the words before a
+    name that bind it in the body, and `assigns`: the operators after one, so a
     call to that name reaches the value bound (see _binds).
+    `types`: reads the header of a type whose body defines functions, so its
+    name reaches them (`R::spin`, `A.f`, `R.f`), because lizard names none of
+    them with it: a Rust impl or trait, a Swift class, struct, enum, actor or
+    extension, a Zig container (see _rust_type, _swift_type, _zig_type).
+    `argument_labels`: a function's name holds its parameters' argument labels,
+    so `d(for: x)` does not call `d(of:)` (Swift; see _labels_fit).
     """
 
     rust: bool = False
@@ -297,6 +303,89 @@ class _Dialect(NamedTuple):
     assigns: frozenset = frozenset()
     imports: frozenset = frozenset()
     bracket_lines: bool = False
+    types: object = None
+    argument_labels: bool = False
+
+
+# --- the type a function is defined in, where lizard does not name it --------------
+# Each reader sets scopes.pending to the type body the next `{` opens (see
+# _brace_scopes), named by the time it opens; a function lizard starts directly
+# in that body is its member (see _home).
+
+# `impl` opens a type only where an item starts; `-> impl Iterator` names a
+# return type.
+_RUST_ITEM_STARTS = frozenset({"", "{", "}", ";", "]", "unsafe"})
+_ANGLES = {"<": 1, ">": -1, ">>": -2}
+
+
+def _rust_type(scopes, token: str) -> None:
+    """`impl<T> Walk<T> for R<T> where T: Copy {` names its body R: the last
+    word outside angle brackets, after `for` when there is one, before `where`.
+    `trait T {` names its body T."""
+    if _opens_rust_type(token, _last(scopes.recent)):
+        scopes.pending, scopes.angles = _Scope(None, "class"), 0
+    elif scopes.pending is not None:
+        _rust_header(scopes, token)
+
+
+def _opens_rust_type(token: str, before: str) -> bool:
+    if token == "impl":
+        return before in _RUST_ITEM_STARTS
+    return token == "trait" and before not in _MEMBER_ACCESS
+
+
+def _rust_header(scopes, token: str) -> None:
+    if scopes.angles is None:
+        return  # past `where`: the bounds name no type
+    scopes.angles += _ANGLES.get(token, 0)
+    if scopes.angles == 0:
+        _rust_type_word(scopes, token)
+
+
+def _rust_type_word(scopes, token: str) -> None:
+    if token == "where":
+        scopes.angles = None
+    elif token == "for":
+        scopes.pending = scopes.pending._replace(name="")
+    elif _WORD.fullmatch(token):
+        scopes.pending = scopes.pending._replace(name=token)
+
+
+_SWIFT_TYPES = frozenset({"class", "struct", "enum", "actor", "extension", "protocol"})
+# Words after `class` that make it a modifier (`class func f`), not a type.
+_SWIFT_DECLARATIONS = frozenset({"func", "var", "let", "subscript", "init", "deinit",
+                                 "override", "final", "static", "required", "convenience",
+                                 "private", "fileprivate", "internal", "public", "open"})
+
+
+def _swift_type(scopes, token: str) -> None:
+    """`class A: B {`, `struct Box<T> {`, `extension A {` name their body by the
+    word after the keyword."""
+    if scopes.pending is not None and not scopes.pending.name:
+        scopes.pending = _swift_named(scopes.pending, token)
+    elif token in _SWIFT_TYPES and _last(scopes.recent) not in _MEMBER_ACCESS:
+        scopes.pending = _Scope(None, "class")
+
+
+def _swift_named(pending, token: str):
+    return None if token in _SWIFT_DECLARATIONS else _named(pending, token)
+
+
+_ZIG_CONTAINERS = frozenset({"struct", "union", "enum", "opaque"})
+_ZIG_LAYOUTS = frozenset({"extern", "packed"})
+
+
+def _zig_type(scopes, token: str) -> None:
+    """`const R = struct {` names its body R, as do `packed struct`, `extern
+    union` and `union(enum)`; a container with no such name opens a body with
+    none."""
+    if token in _ZIG_CONTAINERS and scopes.pending is None and _last(scopes.recent) != ".":
+        scopes.pending = _Scope(None, "class", _zig_name(scopes.recent))
+
+
+def _zig_name(recent) -> str:
+    before = [token for token in recent if token not in _ZIG_LAYOUTS][-2:]
+    return before[0] if len(before) == 2 and before[1] == "=" else ""
 
 
 # Keyed on the reader's exact class name, never on an issubclass test: JavaReader,
@@ -307,7 +396,8 @@ class _Dialect(NamedTuple):
 # table reads under the defaults.
 _DEFAULT_DIALECT = _Dialect()
 _RUST = _Dialect(counting=_RUST_COUNTING, do_loops=frozenset(), goto=False, labels=_rust_label,
-                 binders=frozenset({"let", "mut", "as"}), imports=frozenset({"use"}))
+                 self_only=True, binders=frozenset({"let", "mut", "as"}),
+                 imports=frozenset({"use"}), types=_rust_type)
 _PYTHON = _Dialect(counting=_PYTHON_COUNTING, do_loops=frozenset(), goto=False, word_ops=_AND_OR,
                    openers=_PYTHON_OPENERS, closers=_PYTHON_CLOSERS, self_only=True,
                    binders=frozenset({"import", "as", "for"}), assigns=frozenset({"=", ":="}),
@@ -330,7 +420,8 @@ _DIALECTS = {
     "GoReader": _Dialect(counting=_GO_COUNTING, do_loops=frozenset(), labels=_named_label,
                          self_only=True, binders=frozenset({"var"}), assigns=frozenset({":="})),
     "SwiftReader": _Dialect(counting=_SWIFT_COUNTING, do_loops=frozenset({"repeat"}), goto=False,
-                            labels=_named_label, overloads=True, binders=frozenset({"let", "var"})),
+                            labels=_named_label, overloads=True, binders=frozenset({"let", "var"}),
+                            types=_swift_type, argument_labels=True),
     "RustReader": _RUST,
     "CorrectedRustReader": _RUST,
     "ShellReader": _Dialect(labels=_shell_label, shell_blocks=True, command_leads=_SHELL_LEADS,
@@ -341,7 +432,7 @@ _DIALECTS = {
     "PythonReader": _PYTHON,
     "PythonSignatureReader": _PYTHON,
     "ZigReader": _Dialect(counting=_ZIG_COUNTING, do_loops=frozenset(), goto=False,
-                          labels=_zig_label, word_ops=_AND_OR, braceless=True),
+                          labels=_zig_label, word_ops=_AND_OR, braceless=True, types=_zig_type),
 }
 
 # The rules crapkit's reader fixes add: Rust's own syntax (see _Dialect.rust) and
@@ -354,8 +445,9 @@ _DIALECTS.update({f"Corrected{stock}": _DIALECTS.get(stock, _DEFAULT_DIALECT)
 
 # What a function calls itself through: nothing (but see _Dialect.self_only),
 # one of these receivers, its own qualifier (`Calc::fact`, `K.fact`), its
-# class's name or, in Go, its receiver's name. A call through any other
-# receiver is another object's method with the same name.
+# class's or type's name (see _Dialect.types) or, in Go, its receiver's name.
+# A call through any other receiver is another object's method with the same
+# name.
 _SELF_RECEIVERS = frozenset({"self", "this", "Self", "cls"})
 _MEMBER_ACCESS = frozenset({".", "->", "::", "?."})
 
@@ -375,6 +467,7 @@ class _Own(NamedTuple):
     receivers: frozenset    # what a call to it can be made through
     arity: tuple            # the fewest and the most arguments a call passes
     bare_calls: bool        # a call through no receiver reaches it; see _bare_calls
+    labels: tuple = ()      # (argument label, has a default) per parameter; see _labels
 
 
 # How a call to the function's own name reaches it: through no receiver, which
@@ -425,20 +518,23 @@ class _Scopes:
     """The classes and defs open in the token stream, one per analysis pass.
 
     lizard names a Python or JavaScript method without its class (`open` for
-    `A.open`), and a function's own tokens start after its name, so neither
-    can tell a method from a function. The stream can: this reads what each
-    function lizard starts is defined in (see _home).
+    `A.open`), and a Rust, Swift or Zig function without its type, and a
+    function's own tokens start after its name, so neither can tell a method
+    from a function. The stream can: this reads what each function lizard
+    starts is defined in (see _home).
     """
 
-    __slots__ = ("classes", "open", "naming", "pending", "home", "recent")
+    __slots__ = ("classes", "types", "open", "naming", "pending", "home", "recent", "angles")
 
-    def __init__(self, classes: bool):
+    def __init__(self, classes: bool, types=None):
         self.classes = classes  # the language has classes in braces; see _Dialect.classes
+        self.types = types      # reads a type's header; see _Dialect.types
         self.open = []          # a _Scope per open class or def (Python) or brace
         self.naming = False     # Python: the next token names the scope just opened
-        self.pending = None     # JavaScript: a class awaiting its name or its `{`
+        self.pending = None     # a class or type awaiting its name or its `{`
         self.home = None        # Python: the scope the last `def` stands in
         self.recent = deque(maxlen=8)  # the stream's last tokens
+        self.angles = 0         # Rust: `<` open in an impl header, None past `where`
 
 # Shell's block openers. `until` and `select` are here and not in `_COUNTING`
 # because no other language crapkit reads spells a loop that way; `case` is
@@ -541,7 +637,7 @@ class LizardExtension:
         is_python = reader_name.lower().startswith("python")
         dialect = _DIALECTS.get(reader_name, _DEFAULT_DIALECT)._replace(
             conditions=getattr(reader, "conditions", _QUESTION))
-        scopes = _Scopes(bool(dialect.classes))
+        scopes = _Scopes(bool(dialect.classes), dialect.types)
         last = None
         for token in tokens:
             if is_python:
@@ -610,8 +706,11 @@ def _stream_braces(last) -> int:
 def _home(scopes: _Scopes):
     """What the function lizard just started is defined in, read when its
     state is made: in Python the scope its `def` stands in; in JavaScript the
-    stream around it, which _js_member reads once the name is final. Any
-    other language reads None: nothing the rules need."""
+    stream around it, which _js_member reads once the name is final; in Rust,
+    Swift and Zig the type body it stands directly in. Any other language
+    reads None: nothing the rules need."""
+    if scopes.types:
+        return _type_body(scopes.open)
     if not scopes.classes:
         return scopes.home
     top = scopes.open[-1] if scopes.open else _BLOCK
@@ -622,11 +721,18 @@ def _innermost_class(open_scopes: list) -> str:
     return next((s.name for s in reversed(open_scopes) if s.kind == "class"), "")
 
 
+def _type_body(open_scopes: list):
+    """The type body on top of the stack, or None: a function in a block, or
+    in a function inside the type, is no member of it."""
+    top = open_scopes[-1] if open_scopes else _BLOCK
+    return top if top.kind == "class" else None
+
+
 def _track_scopes(state: _FnState, token: str, is_python: bool) -> None:
     scopes = state.scopes
     if is_python:
         _python_scopes(scopes, state, token)
-    elif scopes.classes:
+    elif scopes.classes or scopes.types:
         _brace_scopes(scopes, token)
     scopes.recent.append(token)
 
@@ -663,16 +769,16 @@ def _enter_scope(scopes: _Scopes, scope: _Scope) -> None:
 
 
 def _brace_scopes(scopes: _Scopes, token: str) -> None:
-    """One scope per open brace: the class body a `class` word named, or a
-    block. lizard's JSX tokens swallow some braces, so the stack can drift in
-    a .tsx file; the rules read it only for a class field and a class's name
-    (see _js_member)."""
+    """One scope per open brace: the class body a `class` word named (a type
+    header, in a language with _Dialect.types), or a block. lizard's JSX
+    tokens swallow some braces, so the stack can drift in a .tsx file; the
+    rules read it only for a class field and a class's name (see _js_member)."""
     if token == "{":
         scopes.open.append(_opened_scope(scopes))
     elif token == "}":
         _close_scope(scopes)
     else:
-        _class_name(scopes, token)
+        (scopes.types or _class_name)(scopes, token)
 
 
 def _opened_scope(scopes: _Scopes) -> _Scope:
@@ -938,7 +1044,8 @@ def _resolve_call(state: _FnState, token: str) -> None:
 
 def _call(state: _FnState, bare: bool) -> None:
     if state.dialect.overloads:
-        state.call = [len(state.runs) + 1, 0, -1, bare]  # depth inside, commas, tokens
+        # depth inside, commas, tokens, whether through no receiver, labels by argument
+        state.call = [len(state.runs) + 1, 0, -1, bare, {}]
     else:
         _count_recursion(state, True, bare)
 
@@ -1010,15 +1117,52 @@ def _follow_call(state: _FnState, token: str) -> None:
     if len(state.runs) < call[0]:
         state.call = None
         _count_recursion(state, token not in state.dialect.closers or _fits(state, call), call[3])
-    elif token == "," and len(state.runs) == call[0]:
-        call[1] += 1
+    elif len(state.runs) == call[0]:
+        _argument_token(state, token, call)
     call[2] += 1
+
+
+def _argument_token(state: _FnState, token: str, call: list) -> None:
+    """A token at the call's own depth: a comma starts the next argument, and
+    in Swift a word right after `(` or `,` and before `:` is its label."""
+    if token == ",":
+        call[1] += 1
+    elif token == ":" and state.dialect.argument_labels and state.prev2 in ("(", ","):
+        call[4][call[1]] = state.prev
 
 
 def _fits(state: _FnState, call: list) -> bool:
     passed = call[1] + 1 if call[2] else 0
     fewest, most = _own(state).arity
-    return fewest <= passed <= most
+    return fewest <= passed <= most and _labels_fit(state, call[4], passed)
+
+
+def _labels_fit(state: _FnState, given: dict, passed: int) -> bool:
+    """Swift: each argument takes the next parameter with its label, `_` for
+    none; a parameter with a default can be passed over, and one after the
+    last argument must have a default. A variadic parameter's labels are not
+    followed."""
+    own = _own(state)
+    if not state.dialect.argument_labels or own.arity[1] == math.inf:
+        return True
+    return _labels_in_order([given.get(number, "_") for number in range(passed)], own.labels)
+
+
+def _labels_in_order(labels: list, parameters: tuple) -> bool:
+    rest = list(parameters)
+    for label in labels:
+        rest = _after_label(rest, label)
+    return rest is not None and all(default for _, default in rest)
+
+
+def _after_label(rest, label: str):
+    """The parameters after the one the label takes, or None when none can."""
+    for number, (want, default) in enumerate(rest or ()):
+        if want == label:
+            return rest[number + 1:]
+        if not default:
+            return None
+    return None
 
 
 def _follow_runs(state: _FnState, token: str) -> None:
@@ -1497,7 +1641,8 @@ def _own_of(state: _FnState) -> _Own:
     method, cls = _membership(state.home, parts[-1])
     receivers = _SELF_RECEIVERS.union(parts[-2:-1], go_receiver, cls)
     return _Own(name, parts[-1], receivers, _arity(parameters),
-                _bare_calls(state.dialect, parts[-1], parameters, method or bool(go_receiver)))
+                _bare_calls(state.dialect, parts[-1], parameters, method or bool(go_receiver)),
+                _labels(parameters))
 
 
 def _membership(home, bare: str) -> tuple:
@@ -1550,6 +1695,18 @@ def _arity(parameters) -> tuple:
     kinds = [_parameter_kind(p.strip()) for p in parameters if p.strip()]
     most = math.inf if "variadic" in kinds else len(kinds)
     return kinds.count("required"), most
+
+
+def _labels(parameters) -> tuple:
+    """(argument label, has a default) per parameter, as Swift spells them:
+    `of request: URLRequest` is labeled `of`, `x: Int` is labeled `x`, and
+    `_ x: Int` has none, `_`."""
+    return tuple((_label(p), "=" in p) for p in parameters if p.strip())
+
+
+def _label(spelled: str) -> str:
+    words = _WORD.findall(spelled.partition(":")[0])
+    return words[0] if words else "_"
 
 
 def _parameter_kind(spelled: str) -> str:

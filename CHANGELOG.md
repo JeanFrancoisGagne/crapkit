@@ -1126,16 +1126,21 @@ and missed some that were. Each rule now reads the language it is in:
   shell and PowerShell, as a message to `self` with the whole selector in Objective-C,
   and through a Go method's own receiver. In C++, Java and Swift, where several
   functions can share a name, it must also pass as many arguments as the function
-  takes, so an overload that forwards to another is not recursion.
-- In Python, JavaScript, TypeScript and Go a method is reached only through its object
-  or its class, so a bare name in its body is another function: `return open(self.path)`
-  in a method `open` calls the builtin and costs nothing, and `T.walk(n - 1)` in a static
-  method is recursion, through the class's name. A parameter, an import or an assignment
-  spelled like the function hides it in Python, JavaScript, TypeScript, Go, Rust and
-  Swift: `from json import dumps` in `def dumps`, `use std::os::unix::fs::symlink;` in
-  `fn symlink` and `const route = app.route` in `function route` each make the call the
-  bound value's. An arrow whose body is an expression, `const fact = (n) => n ? n *
-  fact(n - 1) : 1`, calls itself; it read no recursion before.
+  takes, so an overload that forwards to another is not recursion. Swift's argument
+  labels are part of a function's name, so `description(for: headers)` inside
+  `description(of request:)` calls another function.
+- In Python, JavaScript, TypeScript, Go and Rust a method is reached only through its
+  object or its type, so a bare name in its body is another function: `return
+  open(self.path)` in a method `open` calls the builtin and costs nothing, and so does
+  `walk(n)` inside a Rust `impl`. `T.walk(n - 1)` in a static method is recursion,
+  through the class's name, and so are `R::spin(n - 1)` in a Rust impl, `A.f(n - 1)`
+  in a Swift type and `R.f(n - 1)` in a Zig container. A parameter, an import or an
+  assignment spelled like the function hides it in Python, JavaScript, TypeScript, Go,
+  Rust and Swift: `from json import dumps` in `def dumps`, `use
+  std::os::unix::fs::symlink;` in `fn symlink` and `const route = app.route` in
+  `function route` each make the call the bound value's. An arrow whose body is an
+  expression, `const fact = (n) => n ? n * fact(n - 1) : 1`, calls itself; it read no
+  recursion before.
 - A sequence of logical operators costs +1 per bracket, across line breaks. A sequence
   continued on the next line cost twice, a comma in a call's arguments split it, and a
   negated group joined the sequence around it: `if (a && !(b && c))` reads 3, as the
@@ -1188,11 +1193,11 @@ and missed some that were. Each rule now reads the language it is in:
   it costs on one line.
 - A Zig `else |err| if (...)` is an else-if and costs the flat +1 an else-if costs.
 
-Measured over 12,433 functions in 20 open-source projects: 1,127 move `cognitive`, 954
-down and 173 up. Python moves most, 627 of 5,967 rows; 473 of its 582 drops are the
+Measured over 12,433 functions in 20 open-source projects: 1,110 move `cognitive`, 954
+down and 156 up. Python moves most, 627 of 5,967 rows; 473 of its 582 drops are the
 recursion rule, most of them a method that calls another object's method of the same
 name, as an `__init__` calls `super().__init__()` or a `close` calls
-`self.x.close()`. TypeScript moves 185 of 1,948, Swift 123 of 871
+`self.x.close()`. TypeScript moves 185 of 1,948, Swift 106 of 871
 and Objective-C 62 of 288; every other language moves fewer than 40. Python `nesting`
 comes from this pass and moves in 69 rows, 68 of them through the comprehension and
 continuation-line rules; a `match` statement and a loop after a dict literal now open

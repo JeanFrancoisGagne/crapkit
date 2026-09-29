@@ -162,6 +162,45 @@ def test_an_overload_with_another_arity_is_another_function(label, path, source,
     assert _cognitive(path, source, name) == want
 
 
+def _swift_d(parameters: str, arguments: str) -> str:
+    return (f"class A {{\n    func d({parameters}) -> Int {{\n"
+            f"        if x > 0 {{ return d({arguments}) }}\n        return 0\n    }}\n}}\n")
+
+
+# Swift names a function by its argument labels as well: `d(of:)` and `d(for:)`
+# are two functions, so a call reaches this one only when each argument's label,
+# or its lack of one, is the next parameter's, a parameter with a default left
+# out. if +1, and +1 when the call is recursion.
+SWIFT_LABELS = [  # (label, parameters, arguments, Sonar value)
+    ("same label", "of x: Int", "of: x - 1", 2),
+    ("another label", "of x: Int", "for: x", 1),
+    ("a label where the parameter has none", "_ x: Int", "of: x", 1),
+    ("no label where the parameter has none", "_ x: Int", "x - 1", 2),
+    ("no label where the parameter has one", "of x: Int", "x - 1", 1),
+    ("the parameter's name is its label", "x: Int", "x: x - 1", 2),
+    ("two labels", "a x: Int, b y: Int", "a: x - 1, b: y", 2),
+    ("the second label differs", "a x: Int, b y: Int", "a: x - 1, c: y", 1),
+    ("a default left out", "a x: Int, b y: Int = 0", "a: x - 1", 2),
+    ("a default left out before a label", "a x: Int, b y: Int = 0, c z: Int", "a: x - 1, c: z", 2),
+    ("a conditional's colon is no label", "_ x: Int", "x > 1 ? x - 1 : 0", 4),
+]
+
+
+@pytest.mark.parametrize("label,parameters,arguments,want", SWIFT_LABELS,
+                         ids=[c[0] for c in SWIFT_LABELS])
+def test_a_swift_call_reaches_the_function_only_with_its_labels(label, parameters, arguments, want):
+    assert _cognitive("a.swift", _swift_d(parameters, arguments), "d") == want
+
+
+def test_a_swift_type_name_call_with_another_label_is_another_function():
+    """`DebugDescription.description(for: request.headers)` inside
+    `description(of request:)`: the type's name reaches its functions, and the
+    label picks another one."""
+    source = ("private enum DebugDescription {\n    static func description(of request: Req) -> String {\n"
+              "        return DebugDescription.description(for: request.headers)\n    }\n}\n")
+    assert _cognitive("a.swift", source, "description") == 0
+
+
 def test_a_go_method_calls_itself_through_its_receiver():
     source = ("package p\n\nfunc (c *Command) Traverse(args []string) int {\n\tif len(args) == 0 {\n"
               "\t\treturn 0\n\t}\n\treturn c.Traverse(args[1:])\n}\n\n"
@@ -223,6 +262,71 @@ METHODS = [  # (label, path, source, name, Sonar value)
 
 @pytest.mark.parametrize("label,path,source,name,want", METHODS, ids=[c[0] for c in METHODS])
 def test_a_method_calls_itself_only_through_its_object_or_its_class(label, path, source, name, want):
+    assert _cognitive(path, source, name) == want
+
+
+def _typed(header: str, body: str, footer: str = "}\n") -> str:
+    return header + body + footer
+
+
+_RS_SPIN = ("    fn spin(n: u32) -> u32 {{\n        if n > 0 {{ return {call}(n - 1); }}\n"
+            "        0\n    }}\n")
+_SWIFT_F = ("    {decl} f(_ n: Int) -> Int {{\n        if n > 0 {{ return {call}(n - 1) }}\n"
+            "        return 0\n    }}\n")
+_ZIG_F = "    fn f(n: u32) u32 {{\n        if (n > 0) return {call}(n - 1);\n        return 0;\n    }}\n"
+
+# A type's name reaches the functions its body defines: `R::spin(n - 1)` in a
+# Rust impl, `A.f(n - 1)` in a Swift type, `R.f(n - 1)` in a Zig container.
+# lizard names none of them with their type, so the pass reads the type off the
+# stream. Rust looks a bare name in an impl up outside it, as Python does for a
+# method: `walk(n)` there is the free function. Swift and Zig look it up in the
+# type first.
+TYPE_NAMES = [  # (label, path, source, name, Sonar value)
+    ("Rust associated function through its type", "a.rs",
+     _typed("impl R {\n", _RS_SPIN.format(call="R::spin")), "spin", 2),
+    ("Rust generic impl", "a.rs",
+     _typed("impl<T: Clone> W<T> {\n", _RS_SPIN.format(call="W::spin")), "spin", 2),
+    ("Rust trait impl names its type after for", "a.rs",
+     _typed("impl<T> Walk<T> for R<T> where T: Copy {\n", _RS_SPIN.format(call="R::spin")),
+     "spin", 2),
+    ("Rust through Self", "a.rs", _typed("impl R {\n", _RS_SPIN.format(call="Self::spin")), "spin", 2),
+    ("Rust another type's function", "a.rs",
+     _typed("impl R {\n", _RS_SPIN.format(call="Q::spin")), "spin", 1),
+    ("Rust bare name in an impl is the free function", "a.rs",
+     "fn walk(n: u32) -> u32 { n }\n\nimpl R {\n    fn walk(&self, n: u32) -> u32 {\n"
+     "        if n > 0 { return walk(n - 1); }\n        0\n    }\n}\n", "walk & self", 1),
+    ("Rust fn nested in a method calls itself", "a.rs",
+     "impl R {\n    fn a(&self) -> u32 {\n        fn walk(n: u32) -> u32 {\n"
+     "            if n > 0 { return walk(n - 1); }\n            0\n        }\n        walk(3)\n"
+     "    }\n}\n", "walk", 2),
+    ("Rust free function after an impl", "a.rs",
+     "impl R {\n    fn a(&self) -> u32 { 1 }\n}\n\nfn walk(n: u32) -> u32 {\n"
+     "    if n > 0 { return walk(n - 1); }\n    0\n}\n", "walk", 2),
+    ("Swift static function through its class", "a.swift",
+     _typed("class A: B {\n", _SWIFT_F.format(decl="static func", call="A.f")), "f", 2),
+    ("Swift generic struct", "a.swift",
+     _typed("struct Box<T> {\n", _SWIFT_F.format(decl="static func", call="Box.f")), "f", 2),
+    ("Swift extension", "a.swift",
+     _typed("extension A {\n", _SWIFT_F.format(decl="static func", call="A.f")), "f", 2),
+    ("Swift class func is a modifier, not a type", "a.swift",
+     _typed("class A {\n", _SWIFT_F.format(decl="class func", call="A.f")), "f", 2),
+    ("Swift bare name in a type is its method", "a.swift",
+     _typed("class A {\n", _SWIFT_F.format(decl="func", call="f")), "f", 2),
+    ("Swift another type's function", "a.swift",
+     _typed("class A {\n", _SWIFT_F.format(decl="static func", call="B.f")), "f", 1),
+    ("Zig container function through its name", "a.zig",
+     _typed("const R = struct {\n", _ZIG_F.format(call="R.f"), "};\n"), "f", 2),
+    ("Zig packed struct", "a.zig",
+     _typed("pub const R = packed struct {\n", _ZIG_F.format(call="R.f"), "};\n"), "f", 2),
+    ("Zig tagged union", "a.zig",
+     _typed("const U = union(enum) {\n", _ZIG_F.format(call="U.f"), "};\n"), "f", 2),
+    ("Zig another container's function", "a.zig",
+     _typed("const R = struct {\n", _ZIG_F.format(call="Q.f"), "};\n"), "f", 1),
+]
+
+
+@pytest.mark.parametrize("label,path,source,name,want", TYPE_NAMES, ids=[c[0] for c in TYPE_NAMES])
+def test_a_type_name_reaches_the_functions_its_body_defines(label, path, source, name, want):
     assert _cognitive(path, source, name) == want
 
 
