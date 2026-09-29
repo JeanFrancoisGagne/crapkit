@@ -364,7 +364,9 @@ are left under names the run no longer has.
   Get.Name` and a function that followed a stray `configuration` or `filter` word, and
   the phantom rows those words opened go. A function whose header list writes a
   parameter in braces changes its key: `function A(${x})` reads `A ${x}` where it read
-  `A $ { x }`. A class method's decisions leave the function that declares the class.
+  `A $ { x }`. So does one whose header list holds `$?` (`A $x = $?` where it read
+  `A $x = $ ?`) or a keyword or operator in capitals (`-AND`, `-Or`, `IF` and `ELSE`
+  read in lower case). A `param(...)` block moves no key. A class method's decisions leave the function that declares the class.
   An unquoted URL's `//`, a glob's `/*` and a `#` inside a word (`a#b`, `C#`) no
   longer hide the code after them, so a function on the same line or between `a/*`
   and a later `*/` can gain decisions or a row, and `function Get-A#B` gets a row

@@ -1376,8 +1376,8 @@ moves, so no CRAP score, gate verdict or mark value moves
   hashes sit in strings. Reading a word through its `#` costs the tokenizer about a
   quarter more time on PowerShell files.
 - `params` counts the parameters of the `param(...)` block that opens a function body,
-  so an advanced function no longer reads 0. The long name, which is the ratchet key,
-  still holds only the header list, so no key changes.
+  so an advanced function no longer reads 0. Counting the block changes no key: the
+  long name, which is the ratchet key, holds only the header list.
 - A parameter counts once whatever its entry holds, in the header list and in the
   `param(...)` block. A comma inside an attribute or a default value,
   `[Parameter(Mandatory, Position = 0)]` or `$Items = @(1, 2, 3)`, added a parameter,
@@ -1386,6 +1386,10 @@ moves, so no CRAP score, gate verdict or mark value moves
 - A header parameter written in braces keeps its braces in the long name:
   `function A(${x}, ${y})` reads `A ${x} , ${y}` where it read `A $ { x } , $ { y }`,
   so that function's ratchet key changes.
+- A header list that holds `$?`, or a keyword or operator in capitals, changes its key
+  too: `function A($x = $?)` reads `A $x = $?` where it read `A $x = $ ?`, and `-AND`,
+  `-Or`, `IF` and `ELSE` in a default value or an attribute read `-and`, `-or`, `if`
+  and `else`, the spelling that now counts.
 - Rows appear, phantom rows go and some keys change, so upgrade in this order:
   `crapkit coverage`, then `crapkit ratchet prune` to drop marks left under names the
   run no longer has, then `crapkit ratchet seed`.

@@ -877,6 +877,28 @@ def test_a_parameter_counts_once_whatever_its_name_or_value_holds(parameters, lo
     assert (record.long_name, record.params) == (long_name, count)
 
 
+# Each header list whose key moved when the reader learned PowerShell's spelling, and
+# the key it reads now. Before, `$?` read `$ ?` and each capital stayed as written.
+RESPELLED_HEADERS = [
+    ("($x = $?)", "Get-A $x = $?"),
+    ("($x = ($a -AND $b))", "Get-A $x = $a -and $b"),
+    ("($x = ($a -Or $b))", "Get-A $x = $a -or $b"),
+    ("([ValidateScript({ IF ($_) { $true } ELSE { $false } })] $x)",
+     "Get-A [ ValidateScript { if $_ { $true } else { $false } } ] $x"),
+]
+
+
+@pytest.mark.parametrize("parameters, long_name", RESPELLED_HEADERS,
+                         ids=["automatic variable", "capital and", "mixed-case or", "capital keywords"])
+def test_a_header_key_spells_each_word_as_it_counts(parameters, long_name):
+    """CHANGELOG and docs/upgrading.md tell users these keys change: `$?` is one
+    variable, and a keyword or operator in capitals reads in lower case, the
+    spelling that counts. A `param(...)` block stays out of the key."""
+    (record,) = analyze_source("probe.ps1", f"function Get-A{parameters} {{\n    1\n}}\n")
+
+    assert record.long_name == long_name
+
+
 # --- only declarations, never top-level code -----------------------------------
 
 def test_top_level_script_code_is_not_reported_as_a_function():
