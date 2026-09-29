@@ -9,8 +9,10 @@ oracles/lizard_tripwire.py reads the same files through lizard's own API in a
 process that imports no crapkit. The check pairs rows by (path, start,
 long_name):
 
-- C, C++, Objective-C, Java and Swift: every row and every column (start, end,
-  nloc, params, ccn_std, ccn_mod, nesting) equals stock lizard's.
+- Swift: every row and every column (start, end, nloc, params, ccn_std, ccn_mod,
+  nesting) equals stock lizard's. C, C++, Objective-C and Java run on crapkit's
+  readers (crapkit.lizardclike, crapkit.lizardjava), which find, name and count
+  what stock lizard misses, so they are patches.
 - The languages in PATCHES: a difference passes only when the patch covers its
   column and its source shows the patch's construct. Each patch must still
   excuse at least one probe difference, so a patch upstream has made redundant
@@ -37,7 +39,8 @@ pytestmark = pytest.mark.process
 
 ORACLE = Path(__file__).parent / "oracles" / "lizard_tripwire.py"
 COLUMNS = ("start", "end", "nloc", "params", "ccn_std", "ccn_mod", "nesting")
-STOCK_SUFFIXES = (".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".m", ".mm", ".java", ".swift")
+STOCK_SUFFIXES = (".swift",)
+C_FAMILY = (".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".m", ".mm")
 JS_FAMILY = (".js", ".cjs", ".mjs", ".jsx", ".ts", ".tsx", ".vue")
 
 # A construct lizard reads as C where Rust means something else: `?`, an operator
@@ -61,11 +64,21 @@ PATCHES = (
           "docs/upgrading.md 'Analysis version 11' section; docs/agent-json.md `nesting` row: a "
           "Python row reads nesting off crapkit's cognitive pass"),
     Patch("TRIP-SHELL", (".sh", ".bash"), None, None,
-          "README.md 'Three readers are crapkit's own. lizard ships none for shell or "
-          "PowerShell'"),
+          "README.md 'Shell, PowerShell and Rust run on crapkit's own readers. lizard ships "
+          "none for shell or PowerShell'"),
     Patch("TRIP-POWERSHELL", (".ps1", ".psm1"), None, None,
-          "README.md 'Three readers are crapkit's own. lizard ships none for shell or "
-          "PowerShell'"),
+          "README.md 'Shell, PowerShell and Rust run on crapkit's own readers. lizard ships "
+          "none for shell or PowerShell'"),
+    Patch("TRIP-C-FAMILY", C_FAMILY, None, None,
+          "README.md 'C, C++, Objective-C and Java run on lizard's readers with crapkit's "
+          "fixes on top'; docs/configuration.md 'cpp, objectivec and java run on lizard's "
+          "readers with crapkit's fixes on top': rows lizard hid, invented or misnamed, "
+          "every declared parameter, and the && of a reference"),
+    Patch("TRIP-JAVA", (".java",), None, None,
+          "README.md 'C, C++, Objective-C and Java run on lizard's readers with crapkit's "
+          "fixes on top'; docs/configuration.md 'cpp, objectivec and java run on lizard's "
+          "readers with crapkit's fixes on top': methods after annotations and enum "
+          "bodies, qualified names, text blocks, every declared parameter"),
     Patch("TRIP-RUST-MATCH", (".rs",), ("ccn_std", "ccn_mod"), r"\bmatch\b",
           "README.md 'Its Rust reader scores a 7-arm match as ccn 2 (filed as lizard #494)'"),
     Patch("TRIP-RUST-SYNTAX", (".rs",), None, RUST_SYNTAX,
@@ -194,10 +207,21 @@ def test_a_rust_let_else_is_excused_as_rust_syntax_and_a_plain_moved_end_is_not(
 
 
 def test_a_stock_language_excuses_nothing():
-    source = "int f(int k) {\n  return k ? 1 : 0;\n}\n"
-    found = differences([_hand_row("a.c", 1, 3)], [_hand_row("a.c", 1, 3, ccn_std=2)],
-                        {"a.c": source})
+    source = "func f(k: Int) -> Int {\n    return k > 0 ? 1 : 0\n}\n"
+    found = differences([_hand_row("a.swift", 1, 3)], [_hand_row("a.swift", 1, 3, ccn_std=3)],
+                        {"a.swift": source})
     assert [(d.column, excused_by(d)) for d in found] == [("ccn_std", None)]
+
+
+def test_crapkits_c_family_and_java_readers_excuse_every_column():
+    """C, C++, Objective-C and Java run on crapkit's readers: a row stock lizard
+    never lists and a moved column both pass, and each names its patch."""
+    source = "int f(int k) {\n  return k ? 1 : 0;\n}\n"
+    found = differences([_hand_row("a.cpp", 1, 3)],
+                        [_hand_row("a.cpp", 1, 3, params=1), _hand_row("b.java", 1, 3)],
+                        {"a.cpp": source, "b.java": source})
+    assert [(d.path, d.column, excused_by(d)) for d in found] == [
+        ("a.cpp", "params", "TRIP-C-FAMILY"), ("b.java", "row", "TRIP-JAVA")]
 
 
 def test_a_js_row_needs_an_arrow_template_or_ternary_near_it():
@@ -228,8 +252,7 @@ def probe_differences(oracle, probe_inventory):
 def test_stock_reader_languages_equal_stock_lizard_on_the_probes(probe_differences,
                                                                  probe_inventory):
     compared = [row for row in probe_inventory.rows if row["path"].endswith(STOCK_SUFFIXES)]
-    assert {Path(row["path"]).suffix for row in compared} >= {".c", ".cpp", ".m", ".java",
-                                                               ".swift"}
+    assert {Path(row["path"]).suffix for row in compared} >= {".swift"}
     assert _unexcused(probe_differences) == []
 
 
@@ -241,7 +264,7 @@ def test_every_patch_still_excuses_a_probe_difference(probe_differences, patch):
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("language", ["java", "c", "cpp", "objc", "swift"])
+@pytest.mark.parametrize("language", ["swift"])
 def test_stock_reader_languages_equal_stock_lizard_on_the_corpus(oracle, corpus_language,
                                                                  language):
     oracle("lizard")
