@@ -608,7 +608,8 @@ def _contexts_for_span(contexts: dict, span) -> list[str]:
 def _function_commits(root: Path, rel_path: str, start: int, end: int,
                       limit: int = 10) -> list[dict]:
     """Commits that touched HEAD's lines START to END, subject AND body, as git
-    stored them. Raises GitError.
+    stored them but for a CRLF, which ends a body line as LF does. Raises
+    GitError.
 
     The body is what says why a span keeps changing; a subject line rarely does.
     The span is the reader's, and git numbers it in HEAD's copy of the file at LF
@@ -620,7 +621,8 @@ def _function_commits(root: Path, rel_path: str, start: int, end: int,
     start, end = git_span(start_read(root, "cat-file", "blob", f"HEAD:./{rel_path}").result(),
                           start, end)
     messages = commit_messages(root, line_commits(root, rel_path, start, end, limit))
-    return [{"sha": sha, "date": date, "subject": subject, "body": body.strip("\n")}
+    return [{"sha": sha, "date": date, "subject": subject,
+             "body": body.replace("\r\n", "\n").strip("\n")}
             for sha, date, subject, body in messages]
 
 

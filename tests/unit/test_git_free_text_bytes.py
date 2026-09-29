@@ -74,10 +74,16 @@ def test_the_churn_window_names_an_author_the_way_the_commit_stored_it(tmp_path,
 
 
 def test_an_author_outside_the_window_never_reaches_the_walk(tmp_path):
+    """The window runs back from HEAD's commit date, so HEAD is today's commit
+    and the author's is three years older."""
     root = repository(tmp_path)
     commit(root, author=LATIN1, age_days=3 * 365)
+    commit(root, files={b"b.py": SOURCE})
 
-    assert list(churn_log.log_lines(root, 12)) == []
+    walked = list(churn_log.log_lines(root, 12))
+
+    assert list(parse_git_log_lines(walked)) == ["b.py"]
+    assert not any(REPLACED in line for line in walked), walked
 
 
 def test_a_cr_inside_an_author_name_is_one_author_on_every_commit(tmp_path):
