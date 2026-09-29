@@ -1,7 +1,7 @@
 {
  "runs": [
   {
-   "avg": 4.1017,
+   "avg": 4.1063,
    "by_scope": {
     "legacy": {
      "crap_load": 32.0,
@@ -16,8 +16,8 @@
      "over_target": 1
     },
     "py": {
-     "crap_load": 284.72,
-     "functions": 48,
+     "crap_load": 290.72,
+     "functions": 49,
      "grade": "F",
      "over_target": 12
     },
@@ -41,9 +41,9 @@
     }
    },
    "commit": "901b727247a28c5d34a593db89a0b9065772919e",
-   "crap_load": 1702.21,
+   "crap_load": 1708.21,
    "created_at": "<created_at>",
-   "functions": 415,
+   "functions": 416,
    "over_target": 33,
    "run_id": 2
   }

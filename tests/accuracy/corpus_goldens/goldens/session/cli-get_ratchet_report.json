@@ -7,5 +7,6 @@
  "open": 0,
  "policy_violations": null,
  "schema": 1,
+ "shallow": false,
  "uncommitted": 0
 }

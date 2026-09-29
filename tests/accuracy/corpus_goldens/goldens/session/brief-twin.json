@@ -128,12 +128,15 @@
   "scope": "py",
   "start": 27
  },
+ "scored_changes": 0,
+ "shallow": false,
  "source": "def helper(values):\n    if not values:\n        return []\n    return sorted(values)",
  "stale": false,
  "target": 6,
  "uncovered_lines": [
   29
  ],
+ "unmeasured": false,
  "versions": {
   "analysis_version": 13,
   "crapkit": "<crapkit>",

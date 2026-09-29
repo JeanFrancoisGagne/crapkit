@@ -1,6 +1,9 @@
 {
  "isError": false,
  "structuredContent": {
+  "commands": {
+   "refresh": "crapkit coverage --reuse-unchanged"
+  },
   "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
   "empty": false,
   "items": [
@@ -32,7 +35,8 @@
      26,
      27,
      28
-    ]
+    ],
+    "unmeasured": false
    },
    {
     "authors": 1,
@@ -65,15 +69,21 @@
      9,
      10,
      11
-    ]
+    ],
+    "unmeasured": false
    }
   ],
   "run_id": 2,
   "schema": 1,
+  "scored_changes": 0,
+  "shallow": false,
   "skipped_no_lane": 0,
   "stale": false
  },
  "text": {
+  "commands": {
+   "refresh": "crapkit coverage --reuse-unchanged"
+  },
   "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
   "empty": false,
   "items": [
@@ -105,7 +115,8 @@
      26,
      27,
      28
-    ]
+    ],
+    "unmeasured": false
    },
    {
     "authors": 1,
@@ -138,11 +149,14 @@
      9,
      10,
      11
-    ]
+    ],
+    "unmeasured": false
    }
   ],
   "run_id": 2,
   "schema": 1,
+  "scored_changes": 0,
+  "shallow": false,
   "skipped_no_lane": 0,
   "stale": false
  }

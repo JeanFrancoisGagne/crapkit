@@ -64,13 +64,28 @@ def _nonempty(found: dict) -> dict:
     return {path: set(lines) for path, lines in found.items() if lines}
 
 
+WALKED = [name for name in PRODUCERS if name not in probe_repo.REFUSED]
+
+
 @pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
-@pytest.mark.parametrize("producer", PRODUCERS)
+@pytest.mark.parametrize("producer", WALKED)
 def test_dead_lines_are_the_statements_the_driver_never_ran(producer, scenario):
     expected = _nonempty(hand_dark(producer, scenario))
 
     assert _nonempty(_walked(producer, scenario)) == expected
     assert _nonempty(_reread(producer, scenario)) == expected
+
+
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+@pytest.mark.parametrize("producer", probe_repo.REFUSED)
+def test_a_report_without_start_line_is_refused_and_its_dead_lines_still_read(producer,
+                                                                              scenario):
+    """The scoring walk refuses a region with no start_line (ruling CO-B2); the
+    missing lines, which need no region, read as the driver left them."""
+    with pytest.raises(Exception, match="no start_line; coverage.py writes it"):
+        _walked(producer, scenario)
+
+    assert _nonempty(_reread(producer, scenario)) == _nonempty(hand_dark(producer, scenario))
 
 
 # --- 2. the spans next-item and explain read ----------------------------------------------------

@@ -1053,11 +1053,16 @@
  ],
  "active_total": 100,
  "churn_window_months": 12,
+ "commands": {
+  "refresh": "crapkit coverage --reuse-unchanged"
+ },
  "commit": "901b727247a28c5d34a593db89a0b9065772919e",
  "dormant_count": 0,
  "dormant_top": [],
  "floor": 5,
  "run_id": 2,
  "schema": 1,
+ "scored_changes": 0,
+ "shallow": false,
  "stale": false
 }

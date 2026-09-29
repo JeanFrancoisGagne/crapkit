@@ -153,6 +153,8 @@
   "scope": "py",
   "start": 18
  },
+ "scored_changes": 0,
+ "shallow": false,
  "source": "def curve(scores, mode, floor, ceiling, skip_none):\n    result = []\n    for score in scores:\n        if score is None and skip_none:\n            continue\n        if score is None:\n            score = floor\n        if mode == \"sqrt\":\n            score = int((score / 100) ** 0.5 * 100)\n        elif mode == \"flat\":\n            score = score + 5\n        if score > ceiling:\n            score = ceiling\n        result.append(score)\n    return result",
  "stale": false,
  "target": 6,
@@ -161,6 +163,7 @@
   26,
   30
  ],
+ "unmeasured": false,
  "versions": {
   "analysis_version": 13,
   "crapkit": "<crapkit>",

@@ -317,6 +317,12 @@
        "shortDescription": {
         "text": "a changed line no lane ever ran"
        }
+      },
+      {
+       "id": "crapkit/unread",
+       "shortDescription": {
+        "text": "a changed file no reader could read, so the gate judged none of it"
+       }
       }
      ],
      "version": "<crapkit>"

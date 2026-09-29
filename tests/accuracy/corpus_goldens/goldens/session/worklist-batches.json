@@ -2132,11 +2132,16 @@
   }
  ],
  "churn_window_months": 12,
+ "commands": {
+  "refresh": "crapkit coverage --reuse-unchanged"
+ },
  "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
  "dormant_count": 0,
  "dormant_top": [],
  "floor": 5,
  "run_id": 2,
  "schema": 1,
+ "scored_changes": 0,
+ "shallow": false,
  "stale": false
 }

@@ -14,6 +14,7 @@
 ::warning file=src/py/fresh.py,line=15,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
 ::warning file=src/py/fresh.py,line=16,title=crapkit/diff-uncovered::changed line has no coverage: no lane ran it
 verify FAILED @ fd39664600a vs baseline fd39664600a (3 changed files)
+  changed files: src/py/fresh.py, src/py/grades.py, crapkit.toml
   GATE  crap     90.0  ccn   9 cov 0%  src/py/fresh.py:4  route( a , b , c , d )  -> decompose  [dirty]
   GATE  crap     13.1  ccn   7 cov 50%  src/py/grades.py:8  letter( score )  -> decompose  [dirty]
   findings: 0 committed / 2 dirty (uncommitted edits and untracked files)

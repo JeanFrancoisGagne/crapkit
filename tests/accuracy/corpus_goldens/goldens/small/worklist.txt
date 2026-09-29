@@ -1,51 +1,53 @@
 worklist @ fd39664600a (run 2, floor ccn>=5, churn 12mo) - 50 of 92 active (worklist_top 50), 0 dormant
-  risk     38.0  ccn  38  crap    38.0  cov   0%    1c/1a  vendor/ky/merge.ts:207  deepMergeInternal ( isRoot , sources Array )
-  risk     37.0  ccn  37  crap    37.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:807  apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)
-  risk     29.0  ccn  29  crap    29.0  cov   0%    1c/1a  vendor/gson/ISO8601Utils.java:147  ISO8601Utils::parse( String date , ParsePosition pos)
-  risk     29.0  ccn  29  crap    29.0  cov   0%    1c/1a  vendor/nvm/install.sh:401  nvm_do_install()
-  risk     29.0  ccn  29  crap    29.0  cov   0%    1c/1a  vendor/posh-git/Utils.ps1:99  Add-PoshGitToProfile
-  risk     21.0  ccn  21  crap    21.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:484  sort_list( cJSON * list , const cJSON_bool case_sensitive)
-  risk     20.0  ccn  20  crap    20.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:1141  create_patches( cJSON * const patches , const unsigned char * const path , cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)
-  risk     19.0  ccn  19  crap    19.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:604  compare_json( cJSON * a , cJSON * b , const cJSON_bool case_sensitive)
-  risk     18.0  ccn  18  crap    18.0  cov   0%    1c/1a  vendor/nvm/install.sh:152  install_nvm_from_git()
-  risk     18.0  ccn  18  crap    18.0  cov   0%    1c/1a  vendor/posh-git/Utils.ps1:249  Remove-PoshGitFromProfile
-  risk     17.0  ccn  17  crap    17.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:120  compare_pointers( const unsigned char * name , const unsigned char * pointer , const cJSON_bool case_sensitive)
-  risk     17.0  ccn  17  crap    17.0  cov   0%    1c/1a  vendor/ky/merge.ts:148  appendSearchParameters ( target , source )
-  risk     15.0  ccn  15  crap    15.0  cov   0%    1c/1a  vendor/nvm/install.sh:119  nvm_download()  ok
-  risk     14.0  ccn  14  crap    14.0  cov   0%    1c/1a  vendor/nvm/install.sh:310  nvm_detect_profile()  ok
-  risk     13.0  ccn  13  crap    13.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:1391  generate_merge_patch( cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)  ok
-  risk     12.0  ccn  12  crap    12.0  cov   0%    1c/1a  vendor/posh-git/Utils.ps1:393  Get-PromptPath  ok
-  risk     11.0  ccn  11  crap    11.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:301  get_item_from_pointer( cJSON * const object , const char * pointer , const cJSON_bool case_sensitive)  ok
-  risk     10.0  ccn  10  crap    10.0  cov   0%    1c/1a  vendor/click/parser.py:51  _unpack_args( args : cabc . Sequence [ str ] , nargs_spec : cabc . Sequence [ int ] )  ok
+  risk     38.0  ccn  38  crap    38.0  cov    -    1c/1a  vendor/ky/merge.ts:207  deepMergeInternal ( isRoot , sources Array )
+  risk     37.0  ccn  37  crap    37.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:807  apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)
+  risk     29.0  ccn  29  crap    29.0  cov    -    1c/1a  vendor/gson/ISO8601Utils.java:147  ISO8601Utils::parse( String date , ParsePosition pos)
+  risk     29.0  ccn  29  crap    29.0  cov    -    1c/1a  vendor/nvm/install.sh:401  nvm_do_install()
+  risk     29.0  ccn  29  crap    29.0  cov    -    1c/1a  vendor/posh-git/Utils.ps1:99  Add-PoshGitToProfile
+  risk     21.0  ccn  21  crap    21.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:484  sort_list( cJSON * list , const cJSON_bool case_sensitive)
+  risk     20.0  ccn  20  crap    20.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:1141  create_patches( cJSON * const patches , const unsigned char * const path , cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)
+  risk     19.0  ccn  19  crap    19.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:604  compare_json( cJSON * a , cJSON * b , const cJSON_bool case_sensitive)
+  risk     18.0  ccn  18  crap    18.0  cov    -    1c/1a  vendor/nvm/install.sh:152  install_nvm_from_git()
+  risk     18.0  ccn  18  crap    18.0  cov    -    1c/1a  vendor/posh-git/Utils.ps1:249  Remove-PoshGitFromProfile
+  risk     17.0  ccn  17  crap    17.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:120  compare_pointers( const unsigned char * name , const unsigned char * pointer , const cJSON_bool case_sensitive)
+  risk     17.0  ccn  17  crap    17.0  cov    -    1c/1a  vendor/ky/merge.ts:148  appendSearchParameters ( target , source )
+  risk     15.0  ccn  15  crap    15.0  cov    -    1c/1a  vendor/nvm/install.sh:119  nvm_download()  ok
+  risk     14.0  ccn  14  crap    14.0  cov    -    1c/1a  vendor/nvm/install.sh:310  nvm_detect_profile()  ok
+  risk     13.0  ccn  13  crap    13.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:1391  generate_merge_patch( cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)  ok
+  risk     12.0  ccn  12  crap    12.0  cov    -    1c/1a  vendor/posh-git/Utils.ps1:393  Get-PromptPath  ok
+  risk     11.0  ccn  11  crap    11.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:301  get_item_from_pointer( cJSON * const object , const char * pointer , const cJSON_bool case_sensitive)  ok
+  risk     10.0  ccn  10  crap    10.0  cov    -    1c/1a  vendor/click/parser.py:51  _unpack_args( args : cabc . Sequence [ str ] , nargs_spec : cabc . Sequence [ int ] )  ok
   risk      9.0  ccn   9  crap    19.1  cov  50%    1c/1a  src/py/signatures.py:34  __init__( self , args , bufsize = - 1 , executable = None , stdin = None , stdout = None , stderr = None , preexec_fn = None , close_fds = True , shell = False , cwd = None , env = None , universal_newlines = None , startupinfo = None , creationflags = 0 , restore_signals = True , start_new_session = False , pass_fds = ( )
-  risk      9.0  ccn   9  crap     9.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:198  cJSONUtils_FindPointerFromObjectTo( const cJSON * const object , const cJSON * const target)  ok
-  risk      9.0  ccn   9  crap     9.0  cov   0%    1c/1a  vendor/click/parser.py:390  _match_short_opt( self , arg : str , state : _ParsingState )  ok
-  risk      9.0  ccn   9  crap     9.0  cov   0%    1c/1a  vendor/nvm/install.sh:255  install_nvm_as_script()  ok
-  risk      9.0  ccn   9  crap     9.0  cov   0%    1c/1a  vendor/requests/cookies.py:423  _find_no_duplicates( self , name : str , domain : str | None = None , path : str | None = None )  ok
+  risk      9.0  ccn   9  crap     9.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:198  cJSONUtils_FindPointerFromObjectTo( const cJSON * const object , const cJSON * const target)  ok
+  risk      9.0  ccn   9  crap     9.0  cov    -    1c/1a  vendor/click/parser.py:390  _match_short_opt( self , arg : str , state : _ParsingState )  ok
+  risk      9.0  ccn   9  crap     9.0  cov    -    1c/1a  vendor/nvm/install.sh:255  install_nvm_as_script()  ok
+  risk      9.0  ccn   9  crap     9.0  cov    -    1c/1a  vendor/requests/cookies.py:423  _find_no_duplicates( self , name : str , domain : str | None = None , path : str | None = None )  ok
   risk      8.0  ccn   8  crap    10.4  cov  67%    1c/1a  src/py/grades.py:18  curve( scores , mode , floor , ceiling , skip_none )
-  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/afnetworking/AFNetworkReachabilityManager.m:51  AFNetworkReachabilityStatusForFlags( SCNetworkReachabilityFlags flags)  ok
-  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:274  decode_array_index_from_pointer( const unsigned char * const pointer , size_t * const index)  ok
-  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:393  detach_item_from_array( cJSON * array , size_t which)  ok
-  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:742  decode_patch_operation( const cJSON * const patch , const cJSON_bool case_sensitive)  ok
-  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:1321  merge_patch( cJSON * target , const cJSON * const patch , const cJSON_bool case_sensitive)  ok
-  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/click/parser.py:430  _get_value_from_state( self , option_name : str , option : _Option , state : _ParsingState )  ok
-  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/gson/ISO8601Utils.java:332  ISO8601Utils::parseInt( String value , int beginIndex , int endIndex)  ok
-  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/nvm/install.sh:71  nvm_source()  ok
-  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/posh-git/Utils.ps1:351  Get-FileEncoding $Path  ok
-  risk      8.0  ccn   8  crap     8.0  cov   0%    1c/1a  vendor/requests/cookies.py:164  remove_cookie_by_name( cookiejar : CookieJar , name : str , domain : str | None = None , path : str | None = None )  ok
-  risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  src/native/matcher.rs:2  weight kind : & str
+  risk      8.0  ccn   8  crap     8.0  cov    -    1c/1a  vendor/afnetworking/AFNetworkReachabilityManager.m:51  AFNetworkReachabilityStatusForFlags( SCNetworkReachabilityFlags flags)  ok
+  risk      8.0  ccn   8  crap     8.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:274  decode_array_index_from_pointer( const unsigned char * const pointer , size_t * const index)  ok
+  risk      8.0  ccn   8  crap     8.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:393  detach_item_from_array( cJSON * array , size_t which)  ok
+  risk      8.0  ccn   8  crap     8.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:742  decode_patch_operation( const cJSON * const patch , const cJSON_bool case_sensitive)  ok
+  risk      8.0  ccn   8  crap     8.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:1321  merge_patch( cJSON * target , const cJSON * const patch , const cJSON_bool case_sensitive)  ok
+  risk      8.0  ccn   8  crap     8.0  cov    -    1c/1a  vendor/click/parser.py:430  _get_value_from_state( self , option_name : str , option : _Option , state : _ParsingState )  ok
+  risk      8.0  ccn   8  crap     8.0  cov    -    1c/1a  vendor/gson/ISO8601Utils.java:332  ISO8601Utils::parseInt( String value , int beginIndex , int endIndex)  ok
+  risk      8.0  ccn   8  crap     8.0  cov    -    1c/1a  vendor/nvm/install.sh:71  nvm_source()  ok
+  risk      8.0  ccn   8  crap     8.0  cov    -    1c/1a  vendor/posh-git/Utils.ps1:351  Get-FileEncoding $Path  ok
+  risk      8.0  ccn   8  crap     8.0  cov    -    1c/1a  vendor/requests/cookies.py:164  remove_cookie_by_name( cookiejar : CookieJar , name : str , domain : str | None = None , path : str | None = None )  ok
+  risk      7.0  ccn   7  crap     7.0  cov    -    1c/1a  src/native/matcher.rs:2  weight kind : & str
   risk      7.0  ccn   7  crap    13.1  cov  50%    1c/1a  src/web/nullish.ts:8  firstSet ( a , b , c )
-  risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:83  compare_strings( const unsigned char * string1 , const unsigned char * string2 , const cJSON_bool case_sensitive)  ok
-  risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:430  detach_path( cJSON * object , const unsigned char * path , const cJSON_bool case_sensitive)  ok
-  risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:1096  compose_patch( cJSON * const patches , const unsigned char * const operation , const unsigned char * const path , const unsigned char * suffix , const cJSON * const value)  ok
-  risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  vendor/express/utils.js:89  acceptParams ( str )  ok
-  risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  vendor/ky/merge.ts:89  cloneShallow ( value T )  ok
-  risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  vendor/requests/cookies.py:401  _find( self , name : str , domain : str | None = None , path : str | None = None )  ok
-  risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  vendor/requests/cookies.py:579  cookiejar_from_dict( cookie_dict : dict [ str , str ] | None , cookiejar : CookieJar | None = None , overwrite : bool = True , )  ok
-  risk      7.0  ccn   7  crap     7.0  cov   0%    1c/1a  vendor/zig-std/ascii.zig:367  indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8  ok
-  risk      6.0  ccn   6  crap     6.0  cov   0%    1c/1a  vendor/alamofire/Validation.swift:105  validate contentType acceptableContentTypes : S , response : HTTPURLResponse  ok
-  risk      6.0  ccn   6  crap     6.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:359  decode_pointer_inplace( unsigned char * string)  ok
-  risk      6.0  ccn   6  crap     6.0  cov   0%    1c/1a  vendor/cjson/cJSON_Utils.c:693  insert_item_in_array( cJSON * array , size_t which , cJSON * newitem)  ok
-  risk      6.0  ccn   6  crap     6.0  cov   0%    1c/1a  vendor/click/parser.py:128  __init__( self , obj : CoreOption , opts : cabc . Sequence [ str ] , dest : str | None , action : str | None = None , nargs : int = 1 , const : t . Any | None = None , )  ok
-  risk      6.0  ccn   6  crap     6.0  cov   0%    1c/1a  vendor/click/parser.py:169  process( self , value : t . Any , state : _ParsingState )  ok
-  risk      6.0  ccn   6  crap     6.0  cov   0%    1c/1a  vendor/click/parser.py:191  process( self , value : str | cabc . Sequence [ str | T_UNSET ] | T_UNSET , state : _ParsingState , )  ok
+  risk      7.0  ccn   7  crap     7.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:83  compare_strings( const unsigned char * string1 , const unsigned char * string2 , const cJSON_bool case_sensitive)  ok
+  risk      7.0  ccn   7  crap     7.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:430  detach_path( cJSON * object , const unsigned char * path , const cJSON_bool case_sensitive)  ok
+  risk      7.0  ccn   7  crap     7.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:1096  compose_patch( cJSON * const patches , const unsigned char * const operation , const unsigned char * const path , const unsigned char * suffix , const cJSON * const value)  ok
+  risk      7.0  ccn   7  crap     7.0  cov    -    1c/1a  vendor/express/utils.js:89  acceptParams ( str )  ok
+  risk      7.0  ccn   7  crap     7.0  cov    -    1c/1a  vendor/ky/merge.ts:89  cloneShallow ( value T )  ok
+  risk      7.0  ccn   7  crap     7.0  cov    -    1c/1a  vendor/requests/cookies.py:401  _find( self , name : str , domain : str | None = None , path : str | None = None )  ok
+  risk      7.0  ccn   7  crap     7.0  cov    -    1c/1a  vendor/requests/cookies.py:579  cookiejar_from_dict( cookie_dict : dict [ str , str ] | None , cookiejar : CookieJar | None = None , overwrite : bool = True , )  ok
+  risk      7.0  ccn   7  crap     7.0  cov    -    1c/1a  vendor/zig-std/ascii.zig:367  indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8  ok
+  risk      6.0  ccn   6  crap     6.0  cov    -    1c/1a  vendor/alamofire/Validation.swift:105  validate contentType acceptableContentTypes : S , response : HTTPURLResponse  ok
+  risk      6.0  ccn   6  crap     6.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:359  decode_pointer_inplace( unsigned char * string)  ok
+  risk      6.0  ccn   6  crap     6.0  cov    -    1c/1a  vendor/cjson/cJSON_Utils.c:693  insert_item_in_array( cJSON * array , size_t which , cJSON * newitem)  ok
+  risk      6.0  ccn   6  crap     6.0  cov    -    1c/1a  vendor/click/parser.py:128  __init__( self , obj : CoreOption , opts : cabc . Sequence [ str ] , dest : str | None , action : str | None = None , nargs : int = 1 , const : t . Any | None = None , )  ok
+  risk      6.0  ccn   6  crap     6.0  cov    -    1c/1a  vendor/click/parser.py:169  process( self , value : t . Any , state : _ParsingState )  ok
+  risk      6.0  ccn   6  crap     6.0  cov    -    1c/1a  vendor/click/parser.py:191  process( self , value : str | cabc . Sequence [ str | T_UNSET ] | T_UNSET , state : _ParsingState , )  ok
+no crapkit-ratchet.tsv yet: seed marks each function over its ceiling at today's score, and from then on a mark may only fall
+-> next: crapkit ratchet seed

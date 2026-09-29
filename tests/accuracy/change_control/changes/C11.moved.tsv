@@ -1,0 +1,5 @@
+golden	path	handle	column	old	new	oracle	oracle_value	ruling
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/py/Upper.PY	shout	row	absent	present	ast	present	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/py/Upper.PY	shout	row	absent	present	ast	present	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/py/Upper.PY	shout	row	absent	present	ast	present	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/py/Upper.PY	shout	row	absent	present	ast	present	

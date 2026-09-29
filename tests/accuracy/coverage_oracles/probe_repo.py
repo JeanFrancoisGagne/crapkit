@@ -1,11 +1,14 @@
 """The probes scored by crapkit: one repo, one `crapkit coverage` run, read with no crapkit import.
 
-Every (producer, scenario) recording gets a directory of its own, `pNN/`, that
+Every (producer, scenario) recording crapkit reads gets a directory of its own, `pNN/`, that
 holds a copy of each probe the producer measured and a scope over it. The
 recordings of one format merge into one artifact with every key moved under its
 slot's `pNN/`, and one lane per format copies it into place
 (kit.repos.copy_command). `live` adds recordings made in this session (the push
-tier's own coverage.py 7.16.1 run) beside the committed ones.
+tier's own coverage.py 7.16.1 run) beside the committed ones. A coverage.py
+recording whose regions carry no start_line (REFUSED: coverage.py writes it from
+7.13.1) stays out of the repo, since crapkit refuses such a report and the lane
+would take every other recording down with it.
 
 measure() builds the repo once per session under a FileLock, runs
 `crapkit coverage --export scored.tsv`, and hands back the scored rows keyed
@@ -48,6 +51,24 @@ PRODUCERS = {
     "nyc-18.0.0": ("istanbul", ("js/shapes.js",)),
     "c8-12.0.0": ("istanbul", ("mjs/shapes.mjs",)),
 }
+
+
+def _regions(artifact: Path) -> list[dict]:
+    files = json.loads(artifact.read_bytes())["files"].values()
+    return [region for data in files for name, region in data.get("functions", {}).items() if name]
+
+
+def without_start_line(name: str) -> bool:
+    """Whether a coverage.py recording's regions carry no start_line. coverage.py
+    writes the def's line there from 7.13.1; crapkit refuses a report without it
+    (exit 5), so such a recording is read for its counts and never scored."""
+    parser, _ = PRODUCERS[name]
+    artifact = RECORDED / name / "call.json"
+    return parser == "coveragepy" and any("start_line" not in fn for fn in _regions(artifact))
+
+
+REFUSED = tuple(sorted(name for name in PRODUCERS if without_start_line(name)))
+SCORED = {name: value for name, value in PRODUCERS.items() if name not in REFUSED}
 LANGUAGES = {".py": "python", ".js": "javascript", ".mjs": "javascript", ".jsx": "javascript",
              ".ts": "typescript", ".tsx": "tsx", ".vue": "vue"}
 HEADER = "[crapkit]\ntarget = 6\nanalysis_workers = 1\n\n[exclude]\nglobs = [\"recorded/**\"]\n"
@@ -66,11 +87,12 @@ class Slot:
 
 def _committed() -> list[tuple]:
     return [(name, scenario, parser, probes, RECORDED / name / f"{scenario}.json")
-            for name, (parser, probes) in PRODUCERS.items() for scenario in SCENARIOS]
+            for name, (parser, probes) in SCORED.items() for scenario in SCENARIOS]
 
 
 def slots(live: dict[tuple[str, str], Path] | None = None) -> list[Slot]:
-    """Every committed recording, then the live ones, each with its own pNN/."""
+    """Every committed recording crapkit reads, then the live ones, each with its
+    own pNN/."""
     found = _committed() + [(name, scenario, "coveragepy", PYTHON, path)
                             for (name, scenario), path in sorted((live or {}).items())]
     return [Slot(name, scenario, f"p{number:02d}", parser, probes, path)
