@@ -208,7 +208,9 @@ def test_a_lone_cr_ends_a_line():
 
 
 def test_a_path_no_reader_claims_is_keyed_under_the_c_reader():
-    assert analyze._analysis_key("notes.txt", "d").startswith("lizard_languages.clike.CLikeReader:")
+    """lizard answers a suffix no reader declares with its CLikeReader, which
+    lizardclike.register() rebinds to crapkit's own C-family reader."""
+    assert analyze._analysis_key("notes.txt", "d").startswith("crapkit.lizardclike.CLikeReader:")
 
 
 def test_the_decoder_rebinds_lizards_read_and_refuses_a_lizard_without_one(monkeypatch):
