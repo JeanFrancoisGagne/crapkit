@@ -79,7 +79,14 @@ _POOL_THRESHOLD = 16
 # Bump whenever analysis semantics change (merge rules, extension set, record
 # extraction): the fingerprint must invalidate cached records produced by older
 # logic even when file content and tool versions are identical.
-ANALYSIS_VERSION = 12  # CRAP cubes 1 - cov with two products, not pow, so every platform
+ANALYSIS_VERSION = 13  # The nesting column reads crapkit's cognitive pass in every
+#                       language, and that pass charges each language's own structures,
+#                       bodies with no braces included. The C family and Java read on
+#                       readers that list the functions lizard hid and count every
+#                       declared parameter; Swift, shell and PowerShell read their own
+#                       syntax, PowerShell keywords in any case; and a `#` keeps the
+#                       rest of a Rust line.
+# 12: CRAP cubes 1 - cov with two products, not pow, so every platform
 #                       computes the same score. The Rust, Go and Zig readers read their
 #                       own syntax: signatures, empty closures, let-else, function types,
 #                       switch prongs and select. A `//` comment ends at its line outside

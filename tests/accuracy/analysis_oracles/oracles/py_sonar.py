@@ -13,6 +13,8 @@ version 1.7 (29 August 2023). No crapkit: every rule below cites the paper.
   match (a switch) and lambdas raise it; try, finally and with do not.
 - B3 nesting increments: if, a conditional expression, loops, except and a
   switch add the nesting level they sit at.
+- A match case's guard (`case int() if v < 0:`) is not in the paper, which
+  names no guard: it adds only what its expression holds.
 - "Ignore shorthand" and "Jumps to labels": Python has no null-coalescing
   operator and no labeled jump, so neither appears.
 - Section "Sequences of logical operators": a chain of logical operators is
@@ -66,6 +68,7 @@ class Choices:
     for_nests: bool = True         # B2 lists loops: a comprehension's for raises the level
     filter_increment: bool = True  # B3 lists if: a comprehension's if adds its nesting level
     recursion_scopes: bool = True  # "Recursion": a call that reaches the def by Python's scopes
+    guard_counts: bool = False     # the paper names no guard; True reads one as an if in the match
 
 
 PAPER = Choices()
@@ -148,9 +151,15 @@ class _Counter:
         self.expression(node.subject, level)
         inner = level + 1 if self.choices.match_nests else level
         for case in node.cases:
-            if case.guard is not None:
-                self.expression(case.guard, inner)
+            self.guard(case.guard, inner)
             self.body(case.body, inner)
+
+    def guard(self, guard, level: int) -> None:
+        if guard is None:
+            return
+        if self.choices.guard_counts:
+            self.add(1 + level)
+        self.expression(guard, level)
 
     def with_statement(self, node, level: int) -> None:
         for item in node.items:

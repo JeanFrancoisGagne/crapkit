@@ -1,1 +1,1 @@
-run 1 @ fd39664600a: 414 functions in 64 files (0 cached) -> <root>/repo/.crapkit/crap.sqlite
+run 1 @ fd39664600a: 415 functions in 64 files (0 cached) -> <root>/repo/.crapkit/crap.sqlite

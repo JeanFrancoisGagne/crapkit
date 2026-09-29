@@ -44,6 +44,7 @@ symilar the nightly oracle.
 """
 from __future__ import annotations
 
+import functools
 import json
 from pathlib import Path
 import re
@@ -236,17 +237,46 @@ def renamed(tmp_path_factory):
     return driver
 
 
+# hub's 0.9 ties in location order for each layout.
+TIES_BY_LOCATION = {"given": ["tie_1", "tie_2", "tie_3", "tie_4"],
+                    "renamed": ["tie_4", "tie_3", "tie_2", "tie_1"]}
+
+
 @pytest.mark.parametrize("seed", ["0", "1", "4242"])
 @pytest.mark.parametrize("layout", ["given", "renamed"])
 def test_top_pairs_ignore_hash_seed_and_input_order(hand, renamed, layout, seed):
-    """R29: the pairs --top 4 keeps, and their order, under three hash seeds and
-    two layouts of the same bytes."""
+    """R29: however many of hub's ties --top 4 has room for, it keeps the ones that
+    sort first by location, under three hash seeds and two layouts of the same
+    bytes. How many pairs rank above the tie is the next test's; this check reads
+    the tie alone, so it replays on commits that ranked those pairs otherwise."""
+    kept = _top_four(hand, renamed, layout, seed)
+    ties = [min(names - {"hub"}) for names in kept if "hub" in names]
+    assert ties and ties == TIES_BY_LOCATION[layout][:len(ties)]
+
+
+@pytest.mark.parametrize("seed", ["0", "1", "4242"])
+@pytest.mark.parametrize("layout", ["given", "renamed"])
+def test_top_four_is_the_pair_at_1_and_the_first_three_ties(hand, renamed, layout, seed):
+    """The pairs --top 4 keeps, and their order, under the same seeds and layouts:
+    outer.copy_a with copy_a at 1.0, then the three ties that sort first."""
+    assert _top_four(hand, renamed, layout, seed) == TOP_FOUR[layout]
+
+
+def _top_four(hand, renamed, layout: str, seed: str) -> list[set[str]]:
+    """The bare names of each pair `duplication --top 4` lists under PYTHONHASHSEED=seed."""
     root = {"given": hand.root, "renamed": renamed.root}[layout]
+    return [set(names) for names in _top_four_pairs(root, seed)]
+
+
+@functools.cache
+def _top_four_pairs(root: Path, seed: str) -> tuple[frozenset[str], ...]:
+    """One `duplication --top 4` run in its own process per root and seed; both
+    tests above read it."""
     seeded = drive.Driver(root, spawn=True, env={"PYTHONHASHSEED": seed})
     done = seeded.run("duplication", "--json", "--top", "4")
     assert done.code == 0, done.stderr
-    kept = [{_bare(f["long_name"]) for f in pair["functions"]} for pair in done.json()["pairs"]]
-    assert kept == TOP_FOUR[layout]
+    return tuple(frozenset(_bare(f["long_name"]) for f in pair["functions"])
+                 for pair in done.json()["pairs"])
 
 
 def test_renamed_paths_give_the_same_pairs(pairs, renamed):

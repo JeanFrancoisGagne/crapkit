@@ -2,26 +2,26 @@ scope	path	long_name	start	end	ccn_std	ccn_mod	ccn	nloc	params	nesting	cov	flag	
 legacy	src/legacy/old.py	migrate( rows , version )	4	12	5	5	5	9	2	2	0.0	no-lane	30.0	add-tests	6	1
 legacy	src/legacy/old.py	noop( )	15	16	1	1	1	2	0	0	0.0	no-lane	2.0	ok	0	1
 native	src/native/Bridge.mm	longest( const std :: vector<int> & runs)	5	14	3	3	3	10	1	2	0.0	cc-only	3.0	ok	3	1
-native	src/native/Bridge.mm	longestOf:( NSArray < NSNumber * > * )	21	28	3	3	3	8	0	1	0.0	cc-only	3.0	ok	2	1
+native	src/native/Bridge.mm	longestOf:( NSArray < NSNumber * > * )	21	28	3	3	3	8	1	1	0.0	cc-only	3.0	ok	2	1
 native	src/native/Json.java	Json::quote( String text)	7	16	4	4	4	10	1	2	0.0	cc-only	4.0	ok	4	1
 native	src/native/Json.java	Json::parseOr( String text , int fallback)	18	24	2	2	2	7	2	1	0.0	cc-only	2.0	ok	1	1
 native	src/native/Json.java	Json::kind( List<Object> values)	26	35	3	2	2	10	1	1	0.0	cc-only	2.0	ok	1	1
-native	src/native/Legacy.m	sum:( NSArray < NSNumber * > * ) skipNegative:( BOOL )	9	19	4	4	4	11	0	3	0.0	cc-only	4.0	ok	4	1
-native	src/native/Parser.swift	classify _ token : Token?	7	21	5	3	3	15	1	3	0.0	cc-only	3.0	ok	2	1
-native	src/native/Parser.swift	longWords _ words : [ String ] , min : Int	23	25	2	2	2	3	2	1	0.0	cc-only	2.0	ok	1	1
-native	src/native/engine.cpp	Engine::load( std :: string && name , bool warm)	7	14	4	4	4	8	2	3	0.0	cc-only	4.0	ok	3	1
+native	src/native/Legacy.m	sum:( NSArray < NSNumber * > * ) skipNegative:( BOOL )	9	19	4	4	4	11	2	2	0.0	cc-only	4.0	ok	4	1
+native	src/native/Parser.swift	classify _ token : Token?	7	21	5	3	3	15	1	1	0.0	cc-only	3.0	ok	2	1
+native	src/native/Parser.swift	longWords _ words : [ String ] , min : Int	23	25	2	2	2	3	2	0	0.0	cc-only	2.0	ok	1	1
+native	src/native/engine.cpp	Engine::load( std :: string && name , bool warm)	7	14	4	4	4	8	2	1	0.0	cc-only	4.0	ok	3	1
 native	src/native/engine.cpp	Engine::clampTo( T value , T low , T high) const	17	23	3	3	3	7	3	1	0.0	cc-only	3.0	ok	2	1
 native	src/native/ifdef.c	open_log( const char * path , int append)	6	15	3	3	3	10	2	1	0.0	cc-only	3.0	ok	2	1
-native	src/native/ifdef.c	open_log( const char * path , int append)	17	23	4	4	4	7	2	2	0.0	cc-only	4.0	ok	3	1
-native	src/native/ifdef.c	classify( int code)	26	39	5	2	2	14	1	3	0.0	cc-only	2.0	ok	1	1
-native	src/native/legacy.cxx	legacy_score( int hits , int misses , bool strict)	2	11	4	4	4	10	3	2	0.0	cc-only	4.0	ok	3	1
+native	src/native/ifdef.c	open_log( const char * path , int append)	17	23	4	4	4	7	2	1	0.0	cc-only	4.0	ok	3	1
+native	src/native/ifdef.c	classify( int code)	26	39	5	2	2	14	1	1	0.0	cc-only	2.0	ok	1	1
+native	src/native/legacy.cxx	legacy_score( int hits , int misses , bool strict)	2	11	4	4	4	10	3	1	0.0	cc-only	4.0	ok	3	1
 native	src/native/list.zig	sumPositive values : [ ] const i32	4	13	3	3	3	10	1	2	0.0	cc-only	3.0	ok	3	1
-native	src/native/list.zig	grade score : u8	15	22	4	2	2	8	1	0	0.0	cc-only	2.0	ok	1	1
-native	src/native/matcher.rs	weight kind : & str	2	12	7	7	7	11	1	0	0.0	cc-only	7.0	decompose	1	1
+native	src/native/list.zig	grade score : u8	15	22	4	2	2	8	1	1	0.0	cc-only	2.0	ok	1	1
+native	src/native/matcher.rs	weight kind : & str	2	12	7	7	7	11	1	1	0.0	cc-only	7.0	decompose	1	1
 native	src/native/matcher.rs	first_even values : & [ i64 ]	14	23	4	4	4	10	1	3	0.0	cc-only	4.0	ok	6	1
-native	src/native/router.go	(r Route)Matches method , path string	9	14	4	4	4	6	2	2	0.0	cc-only	4.0	ok	3	1
+native	src/native/router.go	(r Route)Matches method , path string	9	14	4	4	4	6	2	1	0.0	cc-only	4.0	ok	3	1
 native	src/native/router.go	Describe v interface { }	16	28	4	3	3	13	1	2	0.0	cc-only	3.0	ok	3	1
-native	src/native/shapes.cc	area_sum( const std :: vector<int> & widths , const std :: vector<int> & heights)	4	11	4	4	4	8	2	3	0.0	cc-only	4.0	ok	4	1
+native	src/native/shapes.cc	area_sum( const std :: vector<int> & widths , const std :: vector<int> & heights)	4	11	4	4	4	8	2	2	0.0	cc-only	4.0	ok	4	1
 native	src/native/shapes.cc	count_if_positive( const std :: vector<int> & values)	13	23	3	3	3	11	1	2	0.0	cc-only	3.0	ok	3	1
 native	src/native/util.h	clamp_int( int value , int low , int high)	5	14	3	3	3	10	3	1	0.0	cc-only	3.0	ok	2	1
 native	src/native/vec.hpp	Vec2::dominant() const	9	15	2	2	2	7	0	1	0.0	cc-only	2.0	ok	1	1
@@ -48,7 +48,7 @@ py	src/py/grades.py	weighted( values , weights , cap )	35	43	4	4	4	9	3	2	1.0	mea
 py	src/py/grades.py	pick( a , b )	46	46	3	3	3	1	2	0	0.0	untested	12.0	split-lines	2	1
 py	src/py/grades.py	spread( values )	49	52	2	2	2	4	1	1	0.5	measured	2.5	ok	1	1
 py	src/py/hash#tag.py	tagged( tags , wanted )	4	10	4	4	4	7	2	2	0.6666666666666666	measured	4.592592592592593	ok	4	1
-py	src/py/matching.py	describe( value )	4	15	7	3	3	12	1	0	0.5	measured	4.125	ok	1	1
+py	src/py/matching.py	describe( value )	4	15	7	3	3	12	1	1	0.5	measured	4.125	ok	3	1
 py	src/py/nested.py	outer( rows , limit )	4	20	3	3	3	8	2	2	1.0	measured	3.0	ok	3	1
 py	src/py/nested.py	outer.middle( row )	5	14	3	3	3	5	1	1	0.5	measured	4.125	ok	2	1
 py	src/py/nested.py	outer.middle.inner( cell )	6	11	3	3	3	6	1	1	1.0	measured	3.0	ok	2	1
@@ -73,84 +73,85 @@ py	src/py/twins.py	helper( values )	27	30	2	2	2	4	1	1	0.5	measured	2.5	ok	1	1
 py	src/py/untested.py	orphan( a , b , c )	4	11	4	4	4	8	3	1	0.0	measured	20.0	add-tests	3	1
 py	src/py/untested.py	lonely( x )	14	15	1	1	1	2	1	0	0.0	measured	2.0	ok	0	1
 py	src/py/with space.py	spaced( a , b )	4	7	4	4	4	4	2	1	0.5	measured	6.0	ok	3	1
-scripts	src/scripts/Params.psm1	Invoke-Build	2	17	5	6	5	16	0	3	0.0	cc-only	5.0	ok	6	1
-scripts	src/scripts/cp1252.ps1	Get-Café	2	8	2	2	2	7	0	1	0.0	cc-only	2.0	ok	1	1
-scripts	src/scripts/deep.sh	deep()	4	14	5	5	5	11	0	3	0.0	cc-only	5.0	ok	10	1
-scripts	src/scripts/deep.sh	check_all()	16	20	4	4	4	5	0	2	0.0	cc-only	4.0	ok	3	1
-scripts	src/scripts/lib.bash	pick_color()	4	10	4	4	4	7	0	0	0.0	cc-only	4.0	ok	1	1
+scripts	src/scripts/Params.psm1	Invoke-Build	2	17	5	5	5	16	3	2	0.0	cc-only	5.0	ok	5	1
+scripts	src/scripts/cp1252.ps1	Get-Café	2	8	2	2	2	7	1	1	0.0	cc-only	2.0	ok	1	1
+scripts	src/scripts/deep.sh	deep()	4	14	5	5	5	11	0	4	0.0	cc-only	5.0	ok	10	1
+scripts	src/scripts/deep.sh	check_all()	16	20	4	4	4	5	0	1	0.0	cc-only	4.0	ok	3	1
+scripts	src/scripts/lib.bash	pick_color()	4	10	4	4	4	7	0	1	0.0	cc-only	4.0	ok	1	1
 scripts	src/scripts/lib.bash	count_lines()	12	20	4	4	4	9	0	2	0.0	cc-only	4.0	ok	4	1
-scripts	src/scripts/switch.ps1	Get-Size	2	10	7	8	7	9	0	0	0.0	cc-only	7.0	ok	1	1
-scripts	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	12	17	3	4	3	6	2	2	0.0	cc-only	3.0	ok	4	1
-vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	AFStringFromNetworkReachabilityStatus( AFNetworkReachabilityStatus status)	37	49	5	2	2	13	1	3	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	AFNetworkReachabilityStatusForFlags( SCNetworkReachabilityFlags flags)	51	72	8	8	8	18	1	5	0.0	cc-only	8.0	ok	7	1
+scripts	src/scripts/switch.ps1	Get-Size	2	10	4	4	4	9	1	1	0.0	cc-only	4.0	ok	1	1
+scripts	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	12	17	3	3	3	6	2	1	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	AFStringFromNetworkReachabilityStatus( AFNetworkReachabilityStatus status)	37	49	5	2	2	13	1	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	AFNetworkReachabilityStatusForFlags( SCNetworkReachabilityFlags flags)	51	72	8	8	8	18	1	1	0.0	cc-only	8.0	ok	7	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	AFPostReachabilityStatusChange( SCNetworkReachabilityFlags flags , AFNetworkReachabilityStatusCallback block)	82	93	2	2	2	12	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	AFNetworkReachabilityCallback( SCNetworkReachabilityRef __unused target , SCNetworkReachabilityFlags flags , * info)	95	97	1	1	1	3	3	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	AFNetworkReachabilityRetainCallback( const * info)	100	102	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	AFNetworkReachabilityReleaseCallback( const * info)	104	108	2	2	2	5	1	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	sharedManager	118	126	1	1	1	8	0	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForDomain:( NSString * )	128	136	1	1	1	6	0	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForAddress:( const void * )	138	145	1	1	1	6	0	0	0.0	cc-only	1.0	ok	0	1
+vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForDomain:( NSString * )	128	136	1	1	1	6	1	0	0.0	cc-only	1.0	ok	0	1
+vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForAddress:( const void * )	138	145	1	1	1	6	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	manager	147	161	2	2	2	12	0	0	0.0	cc-only	2.0	ok	0	1
-vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	initWithReachability:( SCNetworkReachabilityRef )	163	173	2	2	2	9	0	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	initWithReachability:( SCNetworkReachabilityRef )	163	173	2	2	2	9	1	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	init	175	181	1	1	1	7	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	dealloc	183	189	2	2	2	6	0	1	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	isReachable	193	195	2	2	2	3	0	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	isReachable	193	195	2	2	2	3	0	0	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	isReachableViaWWAN	197	199	1	1	1	3	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	isReachableViaWiFi	201	203	1	1	1	3	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	startMonitoring	207	236	4	4	4	24	0	1	0.0	cc-only	4.0	ok	3	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	stopMonitoring	238	244	2	2	2	6	0	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	localizedNetworkReachabilityStatusString	248	250	1	1	1	3	0	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	setReachabilityStatusChangeBlock:( void ( ^ ) ( AFNetworkReachabilityStatus status ) )	254	256	1	1	1	3	0	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:( NSString * )	260	266	4	4	4	6	0	2	0.0	cc-only	4.0	ok	3	1
+vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	setReachabilityStatusChangeBlock:( void ( ^ ) ( AFNetworkReachabilityStatus status ) )	254	256	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
+vendor	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:( NSString * )	260	266	4	4	4	6	1	1	0.0	cc-only	4.0	ok	2	1
+vendor	vendor/alamofire/Validation.swift	init _ string : String	41	55	4	4	4	13	1	1	0.0	cc-only	4.0	ok	2	1
 vendor	vendor/alamofire/Validation.swift	matches _ mime : MIMEType	57	64	2	2	2	8	1	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/alamofire/Validation.swift	validate statusCode acceptableStatusCodes : S , response : HTTPURLResponse	81	91	2	2	2	11	2	1	0.0	cc-only	2.0	ok	2	1
-vendor	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse , isEmpty : Bool	95	103	2	2	2	8	3	0	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse	105	141	6	6	6	31	2	2	0.0	cc-only	6.0	ok	9	1
+vendor	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse , isEmpty : Bool	95	103	2	2	2	8	3	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse	105	141	6	6	6	31	2	3	0.0	cc-only	6.0	ok	9	1
 vendor	vendor/alamofire/Validation.swift	validate statusCode acceptableStatusCodes : S	160	164	1	1	1	5	1	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S	175	179	2	2	2	5	1	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S	175	179	3	3	3	5	1	0	0.0	cc-only	3.0	ok	1	1
 vendor	vendor/alamofire/Validation.swift	validate	188	193	1	1	1	6	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/alamofire/Validation.swift	validate statusCode acceptableStatusCodes : S	210	214	1	1	1	5	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S	225	229	1	1	1	5	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/alamofire/Validation.swift	validate	238	243	1	1	1	6	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/alamofire/Validation.swift	validate statusCode acceptableStatusCodes : S	265	269	1	1	1	5	1	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S	280	293	3	3	3	13	1	1	0.0	cc-only	3.0	ok	4	1
+vendor	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S	280	293	4	4	4	13	1	1	0.0	cc-only	4.0	ok	2	1
 vendor	vendor/alamofire/Validation.swift	validate	302	307	1	1	1	6	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_strdup( const unsigned char * const string)	66	80	2	2	2	13	1	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/cjson/cJSON_Utils.c	compare_strings( const unsigned char * string1 , const unsigned char * string2 , const cJSON_bool case_sensitive)	83	109	7	7	7	23	3	2	0.0	cc-only	7.0	ok	7	1
 vendor	vendor/cjson/cJSON_Utils.c	compare_double( double a , double b)	112	116	2	2	2	5	2	1	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/cjson/cJSON_Utils.c	compare_pointers( const unsigned char * name , const unsigned char * pointer , const cJSON_bool case_sensitive)	120	154	17	17	17	30	3	8	0.0	cc-only	17.0	decompose	19	1
-vendor	vendor/cjson/cJSON_Utils.c	pointer_encoded_length( const unsigned char * string)	157	170	4	4	4	12	1	3	0.0	cc-only	4.0	ok	4	1
+vendor	vendor/cjson/cJSON_Utils.c	compare_pointers( const unsigned char * name , const unsigned char * pointer , const cJSON_bool case_sensitive)	120	154	17	17	17	30	3	3	0.0	cc-only	17.0	decompose	19	1
+vendor	vendor/cjson/cJSON_Utils.c	pointer_encoded_length( const unsigned char * string)	157	170	4	4	4	12	1	2	0.0	cc-only	4.0	ok	4	1
 vendor	vendor/cjson/cJSON_Utils.c	encode_string_as_pointer( unsigned char * destination , const unsigned char * source)	173	196	4	4	4	23	2	2	0.0	cc-only	4.0	ok	5	1
-vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_FindPointerFromObjectTo( const cJSON * const object , const cJSON * const target)	198	259	9	9	9	45	2	2	0.0	cc-only	9.0	ok	17	1
-vendor	vendor/cjson/cJSON_Utils.c	get_array_item( const cJSON * array , size_t item)	262	272	4	4	4	10	2	3	0.0	cc-only	4.0	ok	3	1
-vendor	vendor/cjson/cJSON_Utils.c	decode_array_index_from_pointer( const unsigned char * const pointer , size_t * const index)	274	299	8	8	8	19	2	4	0.0	cc-only	8.0	ok	6	1
-vendor	vendor/cjson/cJSON_Utils.c	get_item_from_pointer( cJSON * const object , const char * pointer , const cJSON_bool case_sensitive)	301	346	11	11	11	38	3	2	0.0	cc-only	11.0	ok	11	1
+vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_FindPointerFromObjectTo( const cJSON * const object , const cJSON * const target)	198	259	9	9	9	45	2	4	0.0	cc-only	9.0	ok	17	1
+vendor	vendor/cjson/cJSON_Utils.c	get_array_item( const cJSON * array , size_t item)	262	272	4	4	4	10	2	1	0.0	cc-only	4.0	ok	3	1
+vendor	vendor/cjson/cJSON_Utils.c	decode_array_index_from_pointer( const unsigned char * const pointer , size_t * const index)	274	299	8	8	8	19	2	1	0.0	cc-only	8.0	ok	6	1
+vendor	vendor/cjson/cJSON_Utils.c	get_item_from_pointer( cJSON * const object , const char * pointer , const cJSON_bool case_sensitive)	301	346	11	11	11	38	3	3	0.0	cc-only	11.0	ok	17	1
 vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_GetPointer( cJSON * const object , const char * pointer)	348	351	1	1	1	4	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_GetPointerCaseSensitive( cJSON * const object , const char * pointer)	353	356	1	1	1	4	2	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/cjson/cJSON_Utils.c	decode_pointer_inplace( unsigned char * string)	359	390	6	6	6	27	1	2	0.0	cc-only	6.0	ok	9	1
-vendor	vendor/cjson/cJSON_Utils.c	detach_item_from_array( cJSON * array , size_t which)	393	427	8	8	8	31	2	2	0.0	cc-only	8.0	ok	7	1
-vendor	vendor/cjson/cJSON_Utils.c	detach_path( cJSON * object , const unsigned char * path , const cJSON_bool case_sensitive)	430	481	7	7	7	43	3	1	0.0	cc-only	7.0	ok	12	1
-vendor	vendor/cjson/cJSON_Utils.c	sort_list( cJSON * list , const cJSON_bool case_sensitive)	484	593	21	21	21	88	2	4	0.0	cc-only	21.0	decompose	28	1
+vendor	vendor/cjson/cJSON_Utils.c	decode_pointer_inplace( unsigned char * string)	359	390	6	6	6	27	1	3	0.0	cc-only	6.0	ok	9	1
+vendor	vendor/cjson/cJSON_Utils.c	detach_item_from_array( cJSON * array , size_t which)	393	427	8	8	8	31	2	1	0.0	cc-only	8.0	ok	7	1
+vendor	vendor/cjson/cJSON_Utils.c	detach_path( cJSON * object , const unsigned char * path , const cJSON_bool case_sensitive)	430	481	7	7	7	43	3	2	0.0	cc-only	7.0	ok	12	1
+vendor	vendor/cjson/cJSON_Utils.c	sort_list( cJSON * list , const cJSON_bool case_sensitive)	484	593	21	21	21	88	2	2	0.0	cc-only	21.0	decompose	29	1
 vendor	vendor/cjson/cJSON_Utils.c	sort_object( cJSON * const object , const cJSON_bool case_sensitive)	595	602	2	2	2	8	2	1	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/cjson/cJSON_Utils.c	compare_json( cJSON * a , cJSON * b , const cJSON_bool case_sensitive)	604	690	22	19	19	72	3	7	0.0	cc-only	19.0	decompose	34	1
-vendor	vendor/cjson/cJSON_Utils.c	insert_item_in_array( cJSON * array , size_t which , cJSON * newitem)	693	728	6	6	6	30	3	2	0.0	cc-only	6.0	ok	6	1
+vendor	vendor/cjson/cJSON_Utils.c	compare_json( cJSON * a , cJSON * b , const cJSON_bool case_sensitive)	604	690	22	19	19	72	3	3	0.0	cc-only	19.0	decompose	34	1
+vendor	vendor/cjson/cJSON_Utils.c	insert_item_in_array( cJSON * array , size_t which , cJSON * newitem)	693	728	6	6	6	30	3	1	0.0	cc-only	6.0	ok	6	1
 vendor	vendor/cjson/cJSON_Utils.c	get_object_item( const cJSON * const object , const char * name , const cJSON_bool case_sensitive)	730	738	2	2	2	8	3	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/cjson/cJSON_Utils.c	decode_patch_operation( const cJSON * const patch , const cJSON_bool case_sensitive)	742	781	8	8	8	33	2	1	0.0	cc-only	8.0	ok	7	1
 vendor	vendor/cjson/cJSON_Utils.c	overwrite_item( cJSON * const root , const cJSON replacement)	784	805	5	5	5	20	2	1	0.0	cc-only	5.0	ok	4	1
-vendor	vendor/cjson/cJSON_Utils.c	apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)	807	1036	37	37	37	190	3	2	0.0	cc-only	37.0	decompose	82	1
-vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatches( cJSON * const object , const cJSON * const patches)	1038	1065	5	5	5	23	2	1	0.0	cc-only	5.0	ok	3	1
-vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatchesCaseSensitive( cJSON * const object , const cJSON * const patches)	1067	1094	5	5	5	23	2	1	0.0	cc-only	5.0	ok	3	1
-vendor	vendor/cjson/cJSON_Utils.c	compose_patch( cJSON * const patches , const unsigned char * const operation , const unsigned char * const path , const unsigned char * suffix , const cJSON * const value)	1096	1134	7	7	7	33	5	3	0.0	cc-only	7.0	ok	6	1
+vendor	vendor/cjson/cJSON_Utils.c	apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)	807	1036	37	37	37	190	3	3	0.0	cc-only	37.0	decompose	82	1
+vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatches( cJSON * const object , const cJSON * const patches)	1038	1065	5	5	5	23	2	2	0.0	cc-only	5.0	ok	5	1
+vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatchesCaseSensitive( cJSON * const object , const cJSON * const patches)	1067	1094	5	5	5	23	2	2	0.0	cc-only	5.0	ok	5	1
+vendor	vendor/cjson/cJSON_Utils.c	compose_patch( cJSON * const patches , const unsigned char * const operation , const unsigned char * const path , const unsigned char * suffix , const cJSON * const value)	1096	1134	7	7	7	33	5	1	0.0	cc-only	7.0	ok	6	1
 vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_AddPatchToArray( cJSON * const array , const char * const operation , const char * const path , const cJSON * const value)	1136	1139	1	1	1	4	4	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/cjson/cJSON_Utils.c	create_patches( cJSON * const patches , const unsigned char * const path , cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)	1141	1279	23	20	20	110	5	4	0.0	cc-only	20.0	decompose	36	1
-vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatches( cJSON * const from , cJSON * const to)	1281	1294	3	3	3	11	2	2	0.0	cc-only	3.0	ok	2	1
-vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatchesCaseSensitive( cJSON * const from , cJSON * const to)	1296	1309	3	3	3	11	2	2	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/cjson/cJSON_Utils.c	create_patches( cJSON * const patches , const unsigned char * const path , cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)	1141	1279	23	20	20	110	5	3	0.0	cc-only	20.0	decompose	36	1
+vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatches( cJSON * const from , cJSON * const to)	1281	1294	3	3	3	11	2	1	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatchesCaseSensitive( cJSON * const from , cJSON * const to)	1296	1309	3	3	3	11	2	1	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_SortObject( cJSON * const object)	1311	1314	1	1	1	4	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_SortObjectCaseSensitive( cJSON * const object)	1316	1319	1	1	1	4	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/cjson/cJSON_Utils.c	merge_patch( cJSON * target , const cJSON * const patch , const cJSON_bool case_sensitive)	1321	1379	8	8	8	51	3	3	0.0	cc-only	8.0	ok	18	1
 vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_MergePatch( cJSON * target , const cJSON * const patch)	1381	1384	1	1	1	4	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_MergePatchCaseSensitive( cJSON * target , const cJSON * const patch)	1386	1389	1	1	1	4	2	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/cjson/cJSON_Utils.c	generate_merge_patch( cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)	1391	1471	13	13	13	67	3	3	0.0	cc-only	13.0	ok	16	1
+vendor	vendor/cjson/cJSON_Utils.c	generate_merge_patch( cJSON * const from , cJSON * const to , const cJSON_bool case_sensitive)	1391	1471	13	13	13	67	3	3	0.0	cc-only	13.0	ok	21	1
 vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_GenerateMergePatch( cJSON * const from , cJSON * const to)	1473	1476	1	1	1	4	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/cjson/cJSON_Utils.c	cJSONUtils_GenerateMergePatchCaseSensitive( cJSON * const from , cJSON * const to)	1478	1481	1	1	1	4	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/click/parser.py	_unpack_args( args : cabc . Sequence [ str ] , nargs_spec : cabc . Sequence [ int ] )	51	108	10	10	10	30	2	3	0.0	cc-only	10.0	ok	18	1
@@ -171,10 +172,10 @@ vendor	vendor/click/parser.py	_process_args_for_args( self , state : _ParsingSta
 vendor	vendor/click/parser.py	_process_args_for_options( self , state : _ParsingState )	327	341	6	6	6	13	2	2	0.0	cc-only	6.0	ok	7	1
 vendor	vendor/click/parser.py	_match_long_opt( self , opt : str , explicit_value : str | None , state : _ParsingState )	363	388	5	5	5	17	4	2	0.0	cc-only	5.0	ok	6	1
 vendor	vendor/click/parser.py	_match_short_opt( self , arg : str , state : _ParsingState )	390	428	9	9	9	26	3	3	0.0	cc-only	9.0	ok	16	1
-vendor	vendor/click/parser.py	_get_value_from_state( self , option_name : str , option : _Option , state : _ParsingState )	430	468	8	8	8	32	4	2	0.0	cc-only	8.0	ok	12	1
+vendor	vendor/click/parser.py	_get_value_from_state( self , option_name : str , option : _Option , state : _ParsingState )	430	468	8	8	8	32	4	2	0.0	cc-only	8.0	ok	10	1
 vendor	vendor/click/parser.py	_process_opts( self , arg : str , state : _ParsingState )	470	500	5	5	5	16	3	2	0.0	cc-only	5.0	ok	7	1
 vendor	vendor/click/parser.py	__getattr__( name : str )	503	533	3	3	3	27	1	1	0.0	cc-only	3.0	ok	2	1
-vendor	vendor/cobra/args.go	legacyArgs cmd * Command , args [ ] string	28	39	4	4	4	9	2	2	0.0	cc-only	4.0	ok	3	1
+vendor	vendor/cobra/args.go	legacyArgs cmd * Command , args [ ] string	28	39	4	4	4	9	2	1	0.0	cc-only	4.0	ok	3	1
 vendor	vendor/cobra/args.go	NoArgs cmd * Command , args [ ] string	42	47	2	2	2	6	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/cobra/args.go	OnlyValidArgs cmd * Command , args [ ] string	51	66	5	5	5	14	2	3	0.0	cc-only	5.0	ok	8	1
 vendor	vendor/cobra/args.go	ArbitraryArgs cmd * Command , args [ ] string	69	71	1	1	1	3	2	0	0.0	cc-only	1.0	ok	0	1
@@ -185,7 +186,7 @@ vendor	vendor/cobra/args.go	 cmd * Command , args [ ] string	85	90	2	2	2	6	2	1	0
 vendor	vendor/cobra/args.go	ExactArgs n int	94	101	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/cobra/args.go	 cmd * Command , args [ ] string	95	100	2	2	2	6	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/cobra/args.go	RangeArgs min int , max int	104	111	1	1	1	3	2	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/cobra/args.go	 cmd * Command , args [ ] string	105	110	3	3	3	6	2	2	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/cobra/args.go	 cmd * Command , args [ ] string	105	110	3	3	3	6	2	1	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/cobra/args.go	MatchAll pargs ... PositionalArgs	114	123	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/cobra/args.go	 cmd * Command , args [ ] string	115	122	3	3	3	8	2	2	0.0	cc-only	3.0	ok	3	1
 vendor	vendor/cobra/args.go	ExactValidArgs n int	129	131	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
@@ -194,103 +195,103 @@ vendor	vendor/express/utils.js	(anonymous)	29	29	1	1	1	1	0	0	0.0	cc-only	1.0	ok	
 vendor	vendor/express/utils.js	exports.normalizeType ( type )	61	64	2	2	2	4	1	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/express/utils.js	exports.normalizeTypes ( types )	75	77	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/express/utils.js	acceptParams ( str )	89	120	7	7	7	25	1	2	0.0	cc-only	7.0	ok	11	1
-vendor	vendor/express/utils.js	exports.compileETag ( val )	130	152	6	3	3	20	1	4	0.0	cc-only	3.0	ok	2	1
-vendor	vendor/express/utils.js	compileQueryParser ( val )	162	184	6	3	3	20	1	4	0.0	cc-only	3.0	ok	2	1
-vendor	vendor/express/utils.js	exports.compileTrust ( val )	194	214	6	6	6	14	1	2	0.0	cc-only	6.0	ok	5	1
+vendor	vendor/express/utils.js	exports.compileETag ( val )	130	152	6	3	3	20	1	1	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/express/utils.js	compileQueryParser ( val )	162	184	6	3	3	20	1	1	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/express/utils.js	exports.compileTrust ( val )	194	214	6	6	6	14	1	1	0.0	cc-only	6.0	ok	5	1
 vendor	vendor/express/utils.js	(anonymous) ( )	199	199	1	1	1	1	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/express/utils.js	(anonymous) ( a , i )	204	204	1	1	1	1	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/express/utils.js	(anonymous) ( v )	210	210	1	1	1	1	1	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/express/utils.js	setCharset ( type , charset )	225	238	3	3	3	8	2	2	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/express/utils.js	setCharset ( type , charset )	225	238	3	3	3	8	2	1	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/express/utils.js	createETagGenerator ( options )	249	257	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/express/utils.js	generateETag ( body , encoding )	250	256	2	2	2	6	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/express/utils.js	parseExtendedQueryString ( str )	267	271	1	1	1	5	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/fmt/os.cc	convert_rwcount( size_t count)	71	73	2	2	2	3	1	1	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/fmt/os.cc	system_message::is_whitespace( wchar_t c)	82	84	5	5	5	3	1	4	0.0	cc-only	5.0	ok	1	1
-vendor	vendor/fmt/os.cc	system_message::system_message( unsigned long error_code)	87	99	4	4	4	13	1	3	0.0	cc-only	4.0	ok	4	1
+vendor	vendor/fmt/os.cc	system_message::is_whitespace( wchar_t c)	82	84	5	5	5	3	1	0	0.0	cc-only	5.0	ok	1	1
+vendor	vendor/fmt/os.cc	system_message::system_message( unsigned long error_code)	87	99	4	4	4	13	1	2	0.0	cc-only	4.0	ok	4	1
 vendor	vendor/fmt/os.cc	system_message::~system_message()	100	100	1	1	1	1	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/fmt/os.cc	system_message::operator bool() const	101	101	1	1	1	1	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/fmt/os.cc	system_message::operator fmt :: basic_string_view < wchar_t >() const	102	104	1	1	1	3	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/fmt/os.cc	utf8_system_category::name() const	109	109	1	1	1	1	0	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/fmt/os.cc	utf8_system_category::message( int error_code) const	110	119	3	3	3	10	1	3	0.0	cc-only	3.0	ok	4	1
+vendor	vendor/fmt/os.cc	utf8_system_category::message( int error_code) const	110	119	3	3	3	10	1	2	0.0	cc-only	3.0	ok	3	1
 vendor	vendor/fmt/os.cc	convert_rwcount( size_t count)	127	127	1	1	1	1	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/fmt/os.cc	system_category()	136	139	1	1	1	4	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/fmt/os.cc	vwindows_error( int err_code , string_view format_str , format_args args)	141	145	1	1	1	5	3	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/fmt/os.cc	detail::format_windows_error( detail :: buffer<char> & out , int error_code , const char * message)	147	162	3	3	3	16	3	2	0.0	cc-only	3.0	ok	4	1
+vendor	vendor/fmt/os.cc	detail::format_windows_error( detail :: buffer<char> & out , int error_code , const char * message)	147	162	3	3	3	16	3	2	0.0	cc-only	3.0	ok	3	1
 vendor	vendor/fmt/os.cc	report_windows_error( int error_code , const char * message)	164	166	1	1	1	3	2	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/fmt/os.cc	buffered_file::~buffered_file()	170	173	3	3	3	4	0	2	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/fmt/os.cc	buffered_file::~buffered_file()	170	173	3	3	3	4	0	1	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/fmt/os.cc	buffered_file::buffered_file( cstring_view filename , cstring_view mode)	175	181	2	2	2	7	2	1	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/fmt/os.cc	buffered_file::close()	183	189	3	3	3	7	0	2	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/fmt/os.cc	buffered_file::close()	183	189	3	3	3	7	0	1	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/fmt/os.cc	buffered_file::descriptor() const	191	206	5	5	5	8	0	1	0.0	cc-only	5.0	ok	1	1
-vendor	vendor/fmt/os.cc	file::file( cstring_view path , int oflag)	216	227	3	3	3	9	2	1	0.0	cc-only	3.0	ok	2	1
-vendor	vendor/fmt/os.cc	file::~file()	229	234	3	3	3	4	0	2	0.0	cc-only	3.0	ok	2	1
-vendor	vendor/fmt/os.cc	file::close()	236	244	3	3	3	7	0	2	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/fmt/os.cc	file::file( cstring_view path , int oflag)	216	227	3	3	3	9	2	1	0.0	cc-only	3.0	ok	1	1
+vendor	vendor/fmt/os.cc	file::~file()	229	234	3	3	3	4	0	1	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/fmt/os.cc	file::close()	236	244	3	3	3	7	0	1	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/fmt/os.cc	file::size() const	246	270	5	5	5	19	0	2	0.0	cc-only	5.0	ok	4	1
 vendor	vendor/fmt/os.cc	file::read( * buffer , size_t count)	272	278	2	2	2	7	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/fmt/os.cc	file::write( const * buffer , size_t count)	280	286	2	2	2	7	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/fmt/os.cc	file::dup( int fd)	288	296	2	2	2	7	1	1	0.0	cc-only	2.0	ok	2	1
 vendor	vendor/fmt/os.cc	file::dup2( int fd)	298	306	2	2	2	9	1	1	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/fmt/os.cc	file::dup2( int fd , std :: error_code & ec)	308	312	2	2	2	5	2	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/fmt/os.cc	file::dup2( int fd , std :: error_code & ec)	308	312	2	2	2	5	2	1	0.0	cc-only	2.0	ok	2	1
 vendor	vendor/fmt/os.cc	file::fdopen( const char * mode)	314	328	3	3	3	11	1	1	0.0	cc-only	3.0	ok	1	1
-vendor	vendor/fmt/os.cc	file::open_windows_file( wcstring_view path , int oflag)	331	339	2	2	2	9	2	1	0.0	cc-only	2.0	ok	2	1
-vendor	vendor/fmt/os.cc	pipe::pipe()	342	358	3	3	3	10	0	1	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/fmt/os.cc	file::open_windows_file( wcstring_view path , int oflag)	331	339	2	2	2	9	2	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/fmt/os.cc	pipe::pipe()	342	358	3	3	3	10	0	1	0.0	cc-only	3.0	ok	1	1
 vendor	vendor/fmt/os.cc	getpagesize()	361	377	4	4	4	10	0	1	0.0	cc-only	4.0	ok	2	1
-vendor	vendor/fmt/os.cc	ostream::grow( buffer<char> & buf , size_t)	380	382	2	2	2	3	2	1	0.0	cc-only	2.0	ok	2	1
+vendor	vendor/fmt/os.cc	ostream::grow( buffer<char> & buf , size_t)	380	382	2	2	2	3	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/fmt/os.cc	ostream::ostream( cstring_view path , const detail :: ostream_params & params)	384	387	1	1	1	4	2	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/fmt/os.cc	ostream::ostream( ostream && other)	389	394	1	1	1	6	1	1	0.0	cc-only	1.0	ok	0	1
+vendor	vendor/fmt/os.cc	ostream::ostream( ostream && other)	389	394	1	1	1	6	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/fmt/os.cc	ostream::~ostream()	396	399	1	1	1	4	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::ISO8601Utils()	40	40	1	1	1	1	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::format( Date date)	68	70	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::format( Date date , boolean millis)	79	81	1	1	1	3	2	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::format( Date date , boolean millis , TimeZone tz)	91	130	6	6	6	35	3	3	0.0	cc-only	6.0	ok	7	1
-vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::parse( String date , ParsePosition pos)	147	309	30	29	29	117	2	3	0.0	cc-only	29.0	decompose	51	1
-vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::checkOffset( String value , int offset , char expected)	319	321	2	2	2	3	3	1	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::parseInt( String value , int beginIndex , int endIndex)	332	357	8	8	8	25	3	3	0.0	cc-only	8.0	ok	6	1
+vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::format( Date date , boolean millis , TimeZone tz)	91	130	6	6	6	35	3	2	0.0	cc-only	6.0	ok	7	1
+vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::parse( String date , ParsePosition pos)	147	309	30	29	29	117	2	5	0.0	cc-only	29.0	decompose	51	1
+vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::checkOffset( String value , int offset , char expected)	319	321	2	2	2	3	3	0	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::parseInt( String value , int beginIndex , int endIndex)	332	357	8	8	8	25	3	2	0.0	cc-only	8.0	ok	8	1
 vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::padInt( StringBuilder buffer , int value , int length)	366	372	2	2	2	7	3	1	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::indexOfNonDigit( String string , int offset)	377	385	4	4	4	9	2	3	0.0	cc-only	4.0	ok	4	1
+vendor	vendor/gson/ISO8601Utils.java	ISO8601Utils::indexOfNonDigit( String string , int offset)	377	385	4	4	4	9	2	2	0.0	cc-only	4.0	ok	4	1
 vendor	vendor/ky/merge.ts	getReplaceState ( value T )	18	18	1	1	1	2	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/ky/merge.ts	replaceOption ( value T )	49	52	1	1	1	4	1	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/ky/merge.ts	validateAndMerge ( sources Array )	54	62	5	5	5	8	1	4	0.0	cc-only	5.0	ok	5	1
-vendor	vendor/ky/merge.ts	mergeHeaders ( source1 KyHeadersInit , source2 KyHeadersInit )	64	78	5	5	5	13	2	3	0.0	cc-only	5.0	ok	6	1
-vendor	vendor/ky/merge.ts	isPlainObject ( value )	80	87	4	4	4	7	1	2	0.0	cc-only	4.0	ok	3	1
+vendor	vendor/ky/merge.ts	validateAndMerge ( sources Array )	54	62	5	5	5	8	1	2	0.0	cc-only	5.0	ok	5	1
+vendor	vendor/ky/merge.ts	mergeHeaders ( source1 KyHeadersInit , source2 KyHeadersInit )	64	78	5	5	5	13	2	2	0.0	cc-only	5.0	ok	6	1
+vendor	vendor/ky/merge.ts	isPlainObject ( value )	80	87	4	4	4	7	1	1	0.0	cc-only	4.0	ok	3	1
 vendor	vendor/ky/merge.ts	cloneShallow ( value T )	89	115	7	7	7	21	1	2	0.0	cc-only	7.0	ok	6	1
 vendor	vendor/ky/merge.ts	normalizeHeaderObject ( headers Record )	117	117	1	1	1	2	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/ky/merge.ts	(anonymous)	119	119	1	1	1	1	0	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/ky/merge.ts	mergeHeaderContainers ( source1 KyHeadersInit , source2 KyHeadersInit )	122	128	3	3	3	6	2	2	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/ky/merge.ts	mergeHeaderContainers ( source1 KyHeadersInit , source2 KyHeadersInit )	122	128	3	3	3	6	2	1	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/ky/merge.ts	mergeHooks ( original Hooks , incoming Hooks )	136	144	1	1	1	9	2	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/ky/merge.ts	appendSearchParameters ( target , source )	148	204	17	17	17	50	2	3	0.0	cc-only	17.0	decompose	38	1
-vendor	vendor/ky/merge.ts	deepMergeInternal ( isRoot , sources Array )	207	326	38	38	38	84	2	7	0.0	cc-only	38.0	decompose	82	1
+vendor	vendor/ky/merge.ts	appendSearchParameters ( target , source )	148	204	17	17	17	50	2	4	0.0	cc-only	17.0	decompose	38	1
+vendor	vendor/ky/merge.ts	deepMergeInternal ( isRoot , sources Array )	207	326	38	38	38	84	2	6	0.0	cc-only	38.0	decompose	82	1
 vendor	vendor/ky/merge.ts	deepMerge ( sources Array )	328	328	1	1	1	2	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/nvm/install.sh	nvm_has()	5	7	1	1	1	3	0	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/nvm/install.sh	nvm_has_executable()	11	19	3	3	3	7	0	1	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/nvm/install.sh	nvm_has_executable()	11	19	3	3	3	7	0	0	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/nvm/install.sh	nvm_echo()	21	23	1	1	1	3	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/nvm/install.sh	nvm_grep()	31	33	1	1	1	3	0	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/nvm/install.sh	nvm_default_install_dir()	35	37	3	3	3	3	0	2	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/nvm/install.sh	nvm_default_install_dir()	35	37	3	3	3	3	0	0	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/nvm/install.sh	nvm_install_dir()	39	45	2	2	2	7	0	1	0.0	cc-only	2.0	ok	2	1
 vendor	vendor/nvm/install.sh	nvm_latest_version()	47	49	1	1	1	3	0	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/nvm/install.sh	nvm_profile_is_bash_or_zsh()	51	62	3	3	3	12	0	0	0.0	cc-only	3.0	ok	1	1
-vendor	vendor/nvm/install.sh	nvm_source()	71	110	8	8	8	28	0	5	0.0	cc-only	8.0	ok	9	1
+vendor	vendor/nvm/install.sh	nvm_profile_is_bash_or_zsh()	51	62	3	3	3	12	0	1	0.0	cc-only	3.0	ok	1	1
+vendor	vendor/nvm/install.sh	nvm_source()	71	110	8	8	8	28	0	2	0.0	cc-only	8.0	ok	9	1
 vendor	vendor/nvm/install.sh	nvm_node_version()	115	117	1	1	1	3	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/nvm/install.sh	nvm_download()	119	150	15	15	15	31	0	3	0.0	cc-only	15.0	ok	10	1
-vendor	vendor/nvm/install.sh	install_nvm_from_git()	152	230	18	18	18	70	0	5	0.0	cc-only	18.0	decompose	22	1
+vendor	vendor/nvm/install.sh	install_nvm_from_git()	152	230	18	18	18	70	0	2	0.0	cc-only	18.0	decompose	22	1
 vendor	vendor/nvm/install.sh	nvm_install_node()	235	253	3	3	3	16	0	1	0.0	cc-only	3.0	ok	3	1
-vendor	vendor/nvm/install.sh	install_nvm_as_script()	255	295	9	9	9	39	0	3	0.0	cc-only	9.0	ok	9	1
-vendor	vendor/nvm/install.sh	nvm_try_profile()	297	302	3	3	3	6	0	2	0.0	cc-only	3.0	ok	2	1
-vendor	vendor/nvm/install.sh	nvm_detect_profile()	310	350	14	14	14	35	0	12	0.0	cc-only	14.0	ok	18	1
-vendor	vendor/nvm/install.sh	nvm_check_global_modules()	356	399	6	6	6	34	0	5	0.0	cc-only	6.0	ok	4	1
-vendor	vendor/nvm/install.sh	nvm_do_install()	401	518	29	29	29	98	0	20	0.0	cc-only	29.0	decompose	54	1
+vendor	vendor/nvm/install.sh	install_nvm_as_script()	255	295	9	9	9	39	0	1	0.0	cc-only	9.0	ok	9	1
+vendor	vendor/nvm/install.sh	nvm_try_profile()	297	302	3	3	3	6	0	1	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/nvm/install.sh	nvm_detect_profile()	310	350	14	14	14	35	0	3	0.0	cc-only	14.0	ok	18	1
+vendor	vendor/nvm/install.sh	nvm_check_global_modules()	356	399	6	6	6	34	0	1	0.0	cc-only	6.0	ok	4	1
+vendor	vendor/nvm/install.sh	nvm_do_install()	401	518	29	29	29	98	0	2	0.0	cc-only	29.0	decompose	42	1
 vendor	vendor/nvm/install.sh	nvm_reset()	524	529	1	1	1	6	0	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/posh-git/Utils.ps1	Invoke-NullCoalescing	12	24	4	4	4	13	0	2	0.0	cc-only	4.0	ok	6	1
 vendor	vendor/posh-git/Utils.ps1	Invoke-Utf8ConsoleCommand [ ScriptBlock ] $cmd	28	52	5	5	5	20	1	2	0.0	cc-only	5.0	ok	5	1
-vendor	vendor/posh-git/Utils.ps1	Test-Administrator	54	64	3	3	3	7	0	2	0.0	cc-only	3.0	ok	2	1
-vendor	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	99	217	29	32	29	97	0	8	0.0	cc-only	29.0	decompose	46	1
-vendor	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	249	332	18	20	18	69	0	3	0.0	cc-only	18.0	decompose	35	1
-vendor	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	351	369	3	4	3	17	1	1	0.0	cc-only	3.0	ok	4	1
-vendor	vendor/posh-git/Utils.ps1	Get-PathStringComparison	383	391	3	3	3	8	0	2	0.0	cc-only	3.0	ok	3	1
-vendor	vendor/posh-git/Utils.ps1	Get-PromptPath	393	429	12	12	12	24	0	5	0.0	cc-only	12.0	ok	14	1
-vendor	vendor/posh-git/Utils.ps1	Get-PromptConnectionInfo $Format = '[{1}@{0}]: '	442	448	3	3	3	7	1	2	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/posh-git/Utils.ps1	Test-Administrator	54	64	3	3	3	7	0	1	0.0	cc-only	3.0	ok	2	1
+vendor	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	99	217	29	29	29	97	4	3	0.0	cc-only	29.0	decompose	43	1
+vendor	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	249	332	18	18	18	69	3	3	0.0	cc-only	18.0	decompose	33	1
+vendor	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	351	369	8	8	8	17	1	1	0.0	cc-only	8.0	ok	4	1
+vendor	vendor/posh-git/Utils.ps1	Get-PathStringComparison	383	391	3	3	3	8	0	1	0.0	cc-only	3.0	ok	3	1
+vendor	vendor/posh-git/Utils.ps1	Get-PromptPath	393	429	12	12	12	24	0	2	0.0	cc-only	12.0	ok	14	1
+vendor	vendor/posh-git/Utils.ps1	Get-PromptConnectionInfo $Format = '[{1}@{0}]: '	442	448	3	3	3	7	1	1	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/posh-git/Utils.ps1	Get-PSModulePath	450	453	1	1	1	4	0	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/posh-git/Utils.ps1	Test-InPSModulePath	455	477	4	4	4	19	0	2	0.0	cc-only	4.0	ok	3	1
-vendor	vendor/posh-git/Utils.ps1	Test-PoshGitImportedInScript	479	493	4	4	4	13	0	2	0.0	cc-only	4.0	ok	3	1
+vendor	vendor/posh-git/Utils.ps1	Test-InPSModulePath	455	477	4	4	4	19	1	1	0.0	cc-only	4.0	ok	3	1
+vendor	vendor/posh-git/Utils.ps1	Test-PoshGitImportedInScript	479	493	4	4	4	13	1	1	0.0	cc-only	4.0	ok	3	1
 vendor	vendor/posh-git/Utils.ps1	dbg $Message , [ Diagnostics . Stopwatch ] $Stopwatch	495	499	2	2	2	5	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/requests/cookies.py	__init__( self , request : PreparedRequest )	45	49	1	1	1	5	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/requests/cookies.py	get_type( self )	51	52	1	1	1	2	1	0	0.0	cc-only	1.0	ok	0	1
@@ -308,7 +309,7 @@ vendor	vendor/requests/cookies.py	origin_req_host( self )	106	107	1	1	1	2	1	0	0.
 vendor	vendor/requests/cookies.py	host( self )	110	111	1	1	1	2	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/requests/cookies.py	__init__( self , headers : Any )	121	126	1	1	1	2	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/requests/cookies.py	info( self )	128	129	1	1	1	2	1	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/requests/cookies.py	getheaders( self , name : str )	131	132	1	1	1	2	2	0	0.0	cc-only	1.0	ok	1	1
+vendor	vendor/requests/cookies.py	getheaders( self , name : str )	131	132	1	1	1	2	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/requests/cookies.py	extract_cookies_to_jar( jar : CookieJar , request : PreparedRequest , response : Any )	135	150	3	3	3	8	3	1	0.0	cc-only	3.0	ok	2	1
 vendor	vendor/requests/cookies.py	get_cookie_header( jar : CookieJar , request : PreparedRequest )	153	161	1	1	1	4	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/requests/cookies.py	remove_cookie_by_name( cookiejar : CookieJar , name : str , domain : str | None = None , path : str | None = None )	164	182	8	8	8	14	4	2	0.0	cc-only	8.0	ok	10	1
@@ -324,13 +325,13 @@ vendor	vendor/requests/cookies.py	list_domains( self )	302	308	3	3	3	6	1	2	0.0	c
 vendor	vendor/requests/cookies.py	list_paths( self )	310	316	3	3	3	6	1	2	0.0	cc-only	3.0	ok	3	1
 vendor	vendor/requests/cookies.py	multiple_domains( self )	318	329	4	4	4	7	1	2	0.0	cc-only	4.0	ok	4	1
 vendor	vendor/requests/cookies.py	get_dict( self , domain : str | None = None , path : str | None = None )	331	346	6	6	6	10	3	2	0.0	cc-only	6.0	ok	6	1
-vendor	vendor/requests/cookies.py	__iter__( self )	348	350	1	1	1	2	1	0	0.0	cc-only	1.0	ok	1	1
-vendor	vendor/requests/cookies.py	__contains__( self , name : object )	352	356	2	2	2	5	2	1	0.0	cc-only	2.0	ok	2	1
+vendor	vendor/requests/cookies.py	__iter__( self )	348	350	1	1	1	2	1	0	0.0	cc-only	1.0	ok	0	1
+vendor	vendor/requests/cookies.py	__contains__( self , name : object )	352	356	2	2	2	5	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/requests/cookies.py	__getitem__( self , name : str )	358	365	1	1	1	2	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/requests/cookies.py	__setitem__( self , name : str , value : str | Morsel [ dict [ str , str ] ] | None )	367	374	1	1	1	4	3	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/requests/cookies.py	__delitem__( self , name : str )	376	380	1	1	1	2	2	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/requests/cookies.py	set_cookie( self , cookie : Cookie , * args : Any , ** kwargs : Any )	382	389	4	4	4	8	4	1	0.0	cc-only	4.0	ok	4	1
-vendor	vendor/requests/cookies.py	update( self , other : CookieJar | SupportsKeysAndGetItem [ str , str ] )	391	399	3	3	3	8	2	2	0.0	cc-only	3.0	ok	5	1
+vendor	vendor/requests/cookies.py	set_cookie( self , cookie : Cookie , * args : Any , ** kwargs : Any )	382	389	4	4	4	8	4	1	0.0	cc-only	4.0	ok	2	1
+vendor	vendor/requests/cookies.py	update( self , other : CookieJar | SupportsKeysAndGetItem [ str , str ] )	391	399	3	3	3	8	2	2	0.0	cc-only	3.0	ok	4	1
 vendor	vendor/requests/cookies.py	_find( self , name : str , domain : str | None = None , path : str | None = None )	401	421	7	7	7	9	4	4	0.0	cc-only	7.0	ok	12	1
 vendor	vendor/requests/cookies.py	_find_no_duplicates( self , name : str , domain : str | None = None , path : str | None = None )	423	452	9	9	9	16	4	5	0.0	cc-only	9.0	ok	18	1
 vendor	vendor/requests/cookies.py	__getstate__( self )	454	459	1	1	1	4	1	0	0.0	cc-only	1.0	ok	0	1
@@ -347,7 +348,7 @@ vendor	vendor/requests/cookies.py	merge_cookies( cookiejar : CookieJar , cookies
 vendor	vendor/ripgrep/pathutil.rs	file_name path : & Cow < 'a , [ u8 ] >	9	22	5	5	5	14	1	1	0.0	cc-only	5.0	ok	3	1
 vendor	vendor/ripgrep/pathutil.rs	file_name_ext name : & Cow < 'a , [ u8 ] > ,	40	54	6	6	6	15	1	1	0.0	cc-only	6.0	ok	3	1
 vendor	vendor/ripgrep/pathutil.rs	normalize_path path : Cow < '_ , [ u8 ] >	59	62	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/ripgrep/pathutil.rs	normalize_path mut path : Cow < [ u8 ] >	67	77	4	4	4	10	1	3	0.0	cc-only	4.0	ok	4	1
+vendor	vendor/ripgrep/pathutil.rs	normalize_path mut path : Cow < [ u8 ] >	67	77	4	4	4	10	1	2	0.0	cc-only	4.0	ok	4	1
 vendor	vendor/shadcn-ui/pagination.tsx	Pagination ( className , props React ComponentProps )	11	21	1	1	1	11	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/shadcn-ui/pagination.tsx	PaginationContent ( className , props React ComponentProps )	23	34	1	1	1	12	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/shadcn-ui/pagination.tsx	PaginationItem ( props React ComponentProps )	36	38	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
@@ -355,15 +356,15 @@ vendor	vendor/shadcn-ui/pagination.tsx	PaginationLink ( className , isActive , s
 vendor	vendor/shadcn-ui/pagination.tsx	PaginationPrevious ( className , props React ComponentProps )	68	83	1	1	1	16	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/shadcn-ui/pagination.tsx	PaginationNext ( className , props React ComponentProps )	85	100	1	1	1	16	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/shadcn-ui/pagination.tsx	PaginationEllipsis ( className , props React ComponentProps )	102	117	1	1	1	16	2	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	96	101	2	2	2	6	1	0	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/zig-std/ascii.zig	isAlphabetic c : u8	104	109	2	2	2	6	1	0	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	96	101	2	2	2	6	1	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/zig-std/ascii.zig	isAlphabetic c : u8	104	109	2	2	2	6	1	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/zig-std/ascii.zig	isControl c : u8	114	116	2	2	2	3	1	0	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/zig-std/ascii.zig	isDigit c : u8	119	124	2	2	2	6	1	0	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/zig-std/ascii.zig	isLower c : u8	127	132	2	2	2	6	1	0	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/zig-std/ascii.zig	isDigit c : u8	119	124	2	2	2	6	1	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/zig-std/ascii.zig	isLower c : u8	127	132	2	2	2	6	1	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/zig-std/ascii.zig	isPrint c : u8	136	138	2	2	2	3	1	0	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/zig-std/ascii.zig	isWhitespace c : u8	141	146	2	2	2	6	1	0	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/zig-std/ascii.zig	isUpper c : u8	164	169	2	2	2	6	1	0	0.0	cc-only	2.0	ok	1	1
-vendor	vendor/zig-std/ascii.zig	isHex c : u8	172	177	2	2	2	6	1	0	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/zig-std/ascii.zig	isWhitespace c : u8	141	146	2	2	2	6	1	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/zig-std/ascii.zig	isUpper c : u8	164	169	2	2	2	6	1	1	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/zig-std/ascii.zig	isHex c : u8	172	177	2	2	2	6	1	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/zig-std/ascii.zig	isAscii c : u8	180	182	1	1	1	3	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/zig-std/ascii.zig	toUpper c : u8	185	188	1	1	1	4	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/zig-std/ascii.zig	toLower c : u8	191	194	1	1	1	4	1	0	0.0	cc-only	1.0	ok	0	1
@@ -371,30 +372,30 @@ vendor	vendor/zig-std/ascii.zig	lowerString output : [ ] u8 , ascii_string : [ ]
 vendor	vendor/zig-std/ascii.zig	allocLowerString allocator : std . mem . Allocator , ascii_string : [ ] const u8	287	290	2	2	2	4	2	0	0.0	cc-only	2.0	ok	0	1
 vendor	vendor/zig-std/ascii.zig	upperString output : [ ] u8 , ascii_string : [ ] const u8	300	306	2	2	2	7	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/zig-std/ascii.zig	allocUpperString allocator : std . mem . Allocator , ascii_string : [ ] const u8	316	319	2	2	2	4	2	0	0.0	cc-only	2.0	ok	0	1
-vendor	vendor/zig-std/ascii.zig	eqlIgnoreCase a : [ ] const u8 , b : [ ] const u8	328	334	4	4	4	7	2	3	0.0	cc-only	4.0	ok	4	1
+vendor	vendor/zig-std/ascii.zig	eqlIgnoreCase a : [ ] const u8 , b : [ ] const u8	328	334	4	4	4	7	2	2	0.0	cc-only	4.0	ok	4	1
 vendor	vendor/zig-std/ascii.zig	startsWithIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	342	344	2	2	2	3	2	1	0.0	cc-only	2.0	ok	2	1
 vendor	vendor/zig-std/ascii.zig	endsWithIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	351	353	2	2	2	3	2	1	0.0	cc-only	2.0	ok	2	1
 vendor	vendor/zig-std/ascii.zig	indexOfIgnoreCase haystack : [ ] const u8 , needle : [ ] const u8	361	363	1	1	1	3	2	0	0.0	cc-only	1.0	ok	0	1
-vendor	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	367	384	7	7	7	14	3	5	0.0	cc-only	7.0	ok	7	1
+vendor	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	367	384	7	7	7	14	3	2	0.0	cc-only	7.0	ok	7	1
 vendor	vendor/zig-std/ascii.zig	indexOfIgnoreCasePosLinear haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	388	395	3	3	3	8	3	2	0.0	cc-only	3.0	ok	3	1
 vendor	vendor/zig-std/ascii.zig	boyerMooreHorspoolPreprocessIgnoreCase pattern : [ ] const u8 , table : * [ 256 ] usize	397	408	3	3	3	9	2	1	0.0	cc-only	3.0	ok	2	1
-vendor	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	422	433	5	3	3	12	2	1	0.0	cc-only	3.0	ok	4	1
+vendor	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	422	433	5	3	3	12	2	2	0.0	cc-only	3.0	ok	3	1
 vendor	vendor/zig-std/ascii.zig	lessThanIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	436	438	1	1	1	3	2	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/zig-std/ascii.zig	format se : HexEscape , w : * std . io . Writer	447	463	5	5	5	15	2	2	0.0	cc-only	5.0	ok	4	1
-vendor	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	467	472	3	2	2	6	2	0	0.0	cc-only	2.0	ok	1	1
+vendor	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	467	472	3	2	2	6	2	1	0.0	cc-only	2.0	ok	1	1
 vendor	vendor/zod/regexes.ts	nanoidOfLength ( length )	14	19	1	1	1	4	1	0	0.0	cc-only	1.0	ok	0	1
 vendor	vendor/zod/regexes.ts	uuid ( version undefined )	32	38	2	2	2	7	1	1	0.0	cc-only	2.0	ok	1	1
 web	src/web/Counter.vue	tone ( count )	2	10	3	3	3	9	1	1	0.25	measured	6.796875	add-tests	2	1
-web	src/web/Counter.vue	caption ( count , limit )	12	14	2	2	2	3	2	1	0.25	measured	3.6875	ok	1	1
+web	src/web/Counter.vue	caption ( count , limit )	12	14	2	2	2	3	2	0	0.25	measured	3.6875	ok	1	1
 web	src/web/Counter.vue	data ( )	17	19	1	1	1	3	0	0	0.5	measured	1.125	ok	0	1
 web	src/web/Counter.vue	bump ( )	21	25	2	2	2	5	0	1	0.0	measured	6.0	ok	1	1
 web	src/web/arrows.js	(anonymous)	3	3	2	2	2	1	0	1	0.5	measured	2.5	ok	1	1
 web	src/web/arrows.js	(anonymous)	4	4	2	2	2	1	0	1	0.0	measured	6.0	ok	1	1
 web	src/web/arrows.js	up ( x )	7	7	3	3	3	1	1	2	0.0	untested	12.0	split-lines	2	1
 web	src/web/arrows.js	down ( x )	7	7	3	3	3	1	1	2	0.0	untested	12.0	split-lines	2	2
-web	src/web/arrows.js	dispatch ( event )	9	17	5	5	5	9	1	2	0.5	measured	8.125	add-tests	4	1
-web	src/web/button.jsx	h ( tag , props , children )	3	5	2	2	2	3	3	1	0.5	measured	2.5	ok	1	1
-web	src/web/button.jsx	Button ( kind , disabled , label )	7	13	3	3	3	7	3	2	0.5	measured	4.125	ok	2	1
+web	src/web/arrows.js	dispatch ( event )	9	17	5	5	5	9	1	1	0.5	measured	8.125	add-tests	4	1
+web	src/web/button.jsx	h ( tag , props , children )	3	5	2	2	2	3	3	0	0.5	measured	2.5	ok	1	1
+web	src/web/button.jsx	Button ( kind , disabled , label )	7	13	3	3	3	7	3	1	0.5	measured	4.125	ok	2	1
 web	src/web/common.cjs	pad ( text , width , fill )	2	7	3	3	3	6	3	1	0.5	measured	4.125	ok	2	1
 web	src/web/common.cjs	table ( rows )	9	11	1	1	1	3	1	0	0.0	measured	2.0	ok	0	1
 web	src/web/common.cjs	(anonymous)	10	10	1	1	1	1	0	0	0.0	untested	2.0	ok	0	1
@@ -402,14 +403,14 @@ web	src/web/common.cjs	(anonymous)	10	10	1	1	1	1	0	0	0.0	untested	2.0	ok	0	2
 web	src/web/esm.mjs	parseFlags ( argv )	2	12	4	4	4	11	1	2	1.0	measured	4.0	ok	5	1
 web	src/web/esm.mjs	retry ( fn , times )	14	24	3	3	3	11	2	2	0.0	measured	12.0	add-tests	3	1
 web	src/web/generic.ts	(anonymous)	11	11	1	1	1	1	0	0	0.0	measured	2.0	ok	0	1
-web	src/web/generic.ts	label ( user name )	22	26	3	3	3	4	1	2	1.0	measured	3.0	ok	2	1
+web	src/web/generic.ts	label ( user name )	22	26	3	3	3	4	1	0	1.0	measured	3.0	ok	0	1
 web	src/web/generic.ts	naïveSum ( values )	26	34	3	3	3	9	1	2	1.0	measured	3.0	ok	3	1
-web	src/web/nullish.ts	withDefaults ( options port host null )	2	8	5	5	5	6	1	4	0.5	measured	8.125	add-tests	4	1
-web	src/web/nullish.ts	firstSet ( a , b , c )	8	10	7	7	7	3	3	6	0.5	measured	13.125	decompose	6	1
+web	src/web/nullish.ts	withDefaults ( options port host null )	2	8	5	5	5	6	1	0	0.5	measured	8.125	add-tests	0	1
+web	src/web/nullish.ts	firstSet ( a , b , c )	8	10	7	7	7	3	3	0	0.5	measured	13.125	decompose	0	1
 web	src/web/templates.ts	banner ( user name admin , count )	3	11	2	2	2	8	2	1	0.5	measured	2.5	ok	1	1
 web	src/web/templates.ts	stripTicks ( text )	11	28	2	2	2	17	1	1	0.5	measured	2.5	ok	1	1
 web	src/web/templates.ts	(anonymous)	20	20	1	1	1	1	0	0	1.0	measured	1.0	ok	0	1
-web	src/web/widget.tsx	h ( tag , props Record null , children )	3	5	3	3	3	3	3	2	0.5	measured	4.125	ok	2	1
+web	src/web/widget.tsx	h ( tag , props Record null , children )	3	5	3	3	3	3	3	0	0.5	measured	4.125	ok	0	1
 web	src/web/widget.tsx	Badge ( props count max )	7	13	3	3	3	7	1	1	0.5	measured	4.125	ok	2	1
 web	src/web/widget.tsx	Toolbar ( props items compact )	15	21	1	1	1	7	1	0	0.0	measured	2.0	ok	0	1
 web	src/web/widget.tsx	(anonymous)	18	18	2	2	2	1	0	1	0.0	measured	6.0	ok	1	1

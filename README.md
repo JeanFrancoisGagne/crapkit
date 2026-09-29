@@ -196,9 +196,9 @@ where the flag goes.
 
 Keep the CLI and plugin versions aligned, measure fresh coverage after upgrading,
 and review any ratchet identity refusal before reseeding. The current reader is
-analysis version 12. It moves Rust, Go, Zig and shell numbers, puts JavaScript,
-TypeScript and nested Python coverage on the function that owns it, and computes CRAP
-alike on every platform; `crapkit ratchet prune` drops the marks left under old names.
+analysis version 13. It moves numbers in every language but Python and some of
+Python's `cognitive` and `nesting`, puts JavaScript, TypeScript and nested Python
+coverage on the function that owns it, and computes CRAP alike on every platform; `crapkit ratchet prune` drops the marks left under old names.
 Older JavaScript and TypeScript callback marks can require a reviewed mapping.
 Follow the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
 for saved state, portable records and Windows launcher locks.

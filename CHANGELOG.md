@@ -2,12 +2,26 @@
 
 ## 0.8.1 — unreleased
 
-### Analysis version 12
+### Analysis version 13
 
-- This release raises the analysis version from 11 to 12, so every marks file re-seeds
+- This release raises the analysis version from 11 to 13, so every marks file re-seeds
   once: `crapkit coverage`, `crapkit ratchet prune`, then `crapkit ratchet seed`. The
-  [upgrade guide](docs/upgrading.md#analysis-version-12) lists what moves. (accuracy
-  change C2)
+  [upgrade guide](docs/upgrading.md#analysis-version-13) lists what moves. (accuracy
+  changes C2 and C7)
+- `nesting` reads crapkit's cognitive pass in every language, as Python's has since
+  0.5.0, where the other languages read lizard's ND column, and `cognitive` reads each
+  language's own rules: recursion is a call that reaches the function, and a body with
+  no braces pays the nesting it sits in.
+- C, C++, Objective-C, Java and Swift list the functions lizard's readers hid, invented
+  or misnamed, count every parameter a function declares, and read a C++ reference's
+  `&&`, a Swift optional mark, `??` and a string's `\( )` the way the language does. A
+  Rust `#` keeps the rest of its line.
+- Shell reads the depth of its blocks, the commands inside its strings and a function's
+  whole name. PowerShell reads keywords in any case, the expression inside a quoted
+  subexpression, and the functions and parameters it lost.
+- `duplication` and brief's twins shingle each function from its own lines and read a
+  comment line the way its language writes one; no score moves with them. (accuracy
+  change C8)
 - Go and Zig functions are read to where their signature ends, and no Go type switch,
   comment or Zig multiline string ends one early. A `//` comment ends at its line in
   every language but C, C++ and Objective-C. A Zig switch and a Go `select` count as the
@@ -763,12 +777,6 @@ lane commands the way the shell that runs them does:
   ccn 5 at none both score 30, but the floats read 29.999999999999996 and 30.0, so
   `next-item` handed out the function in the quieter file first and a bare twin name
   picked the later twin.
-## Unreleased
-
-C, C++, Objective-C and Java rows move, so the release that ships this raises the
-analysis version and every repo with those languages re-seeds its marks once (`crapkit
-coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
-
 ### The C family counts every parameter a function declares
 
 - `params` counts each declaration in the parameter list. lizard named a parameter
@@ -940,8 +948,6 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   level too deep, and the `&&` had hidden that by flipping the counter's state. The
   function now reads what the same body reads with `T` for `T&&`.
 
-## Unreleased
-
 ### Swift functions the reader hid get their rows
 
 - Swift files go through crapkit's own reader, built on lizard 1.24.0's. lizard's reader
@@ -965,8 +971,7 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
 - A function that swallowed its neighbours shrinks, and its ccn and cognitive fall
   with them; a function that had no row is listed, and the gate reads it the next time
   its file changes. A function lizard already read whole keeps its long name, so its
-  mark keeps its key. The change needs an analysis-version bump, which makes each marks
-  file re-seed once.
+  mark keeps its key.
 
 ### Swift decisions count the way the McCabe text counts them
 
@@ -995,7 +1000,6 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   column is in the score. On Alamofire 5, params falls on 28
   functions and nesting on 179, and cognitive falls on 81 with the labels and optional
   marks.
-- The same analysis-version bump covers these.
 
 ### A Swift interpolation reads as code
 
@@ -1009,7 +1013,7 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
 - Every `\( )`, and `\#( )` in a raw string, now reads as code, and the text around it
   reads as a string that keeps its lines. On Alamofire 5's 101 Swift files, ccn rises by
   1 or 2 on 13 of 1,993 functions, each for a `??` inside `\( )`; no row appears, goes or
-  moves. The same analysis-version bump covers this.
+  moves.
 
 ### A Rust `#` keeps the rest of its line
 
@@ -1021,15 +1025,11 @@ coverage`, `crapkit ratchet prune`, `crapkit ratchet seed`).
   now one token each, and the rest of the line reads as code. A raw string in Swift or
   Rust ends where as many hashes as opened it close it, however many. ripgrep's 13
   files in the accuracy corpus hold no such line and read the same; a repo that writes
-  `#[test] fn t() {` gains a row per such function. The same analysis-version bump
-  covers this.
-
-## Unreleased
+  `#[test] fn t() {` gains a row per such function.
 
 ### Shell reads the depth of its blocks and the commands inside its strings
 
-The shell changes below need an analysis-version bump, which makes each marks file
-re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-shell-and-powershell-rows)).
+[Upgrading](docs/upgrading.md#shell-and-powershell-rows) says what moves.
 
 - A shell function's `nesting` is how deep its blocks go. lizard's ND column closed a
   level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
@@ -1104,10 +1104,7 @@ next time its file changes.
   `"$(f (g (h ($a -and $b))))"` counts its `-and` and `"$(f (g (h ("x{"))))"` hides
   no function. On a large consumer repo 6 of 339 PowerShell functions rise by 1 in
   ccn and by 1 or 2 in cognitive (an `else` costs 1 too), one reads a level deeper
-  in `nesting`, and no span moves. It shares the shell changes' analysis-version
-  bump.
-
-## Unreleased
+  in `nesting`, and no span moves.
 
 ### Cognitive complexity reads each language's own rules
 
@@ -1210,15 +1207,11 @@ name, as an `__init__` calls `super().__init__()` or a `close` calls
 288, and C and C++ 49 of 1,344; every other language moves fewer than 25. Python `nesting`
 comes from this pass and moves in 69 rows, 68 of them through the comprehension and
 continuation-line rules; a `match` statement and a loop after a dict literal now open
-a level. The other languages read `nesting` from lizard, so theirs does not move, and
-no `ccn` value moves.
+a level. The next section moves every other language's `nesting`. No `ccn` value moves.
 
 `cognitive` and `nesting` are reported and never gated, and neither `ccn` nor coverage
-moves, so no CRAP score, gate verdict or mark value moves. The change still needs an
-analysis-version bump, so each marks file re-seeds once
-([upgrading](docs/upgrading.md#next-analysis-version-cognitive-complexity-per-language)).
-
-## Unreleased
+moves, so no CRAP score, gate verdict or mark value moves
+([upgrading](docs/upgrading.md#cognitive-complexity-per-language)).
 
 ### Nesting reads block depth in every language
 
@@ -1310,15 +1303,9 @@ analysis-version bump, so each marks file re-seeds once
   `cognitive`: 264 up from the header literals above and 7 down from `do` and
   `while`.
 - `nesting` and `cognitive` are reported and never gated, so no gate verdict moves
-  with them. The change needs an analysis-version bump, which makes each marks file
-  re-seed once ([upgrading](docs/upgrading.md#next-analysis-version-nesting-in-every-language)).
-
-## Unreleased
+  with them ([upgrading](docs/upgrading.md#nesting-in-every-language)).
 
 ### PowerShell reads keywords in any case and counts PowerShell 7's operators
-
-These change PowerShell scores, so they need an analysis-version bump, which makes
-each marks file re-seed once.
 
 - A keyword that starts a statement counts in any case, as PowerShell reads it: `IF`,
   `ForEach`, `ElseIf`, `Default`, `Function`. A capitalized `if` used to count
@@ -1416,8 +1403,6 @@ each marks file re-seed once.
   `git switch main` read `ccn_mod` 2.
 - Rows are renamed, so upgrade in the same order as for PowerShell: `crapkit coverage`,
   `crapkit ratchet prune`, `crapkit ratchet seed`.
-
-## Unreleased
 
 ### Near-duplicate functions
 

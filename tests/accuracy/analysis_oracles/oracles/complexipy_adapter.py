@@ -15,6 +15,8 @@ own, each a rulings.tsv row with a hand case (test_cognitive_oracles):
 - AO-CXP-CONDITION, AO-CXP-LAMBDA, AO-CXP-TERNARY: a comprehension in an if's
   condition sits at the if's level, and a lambda and a conditional expression
   raise the level (the paper's reading; crapkit's documented readings differ).
+- AO-CXP-GUARD: a match case's guard adds nothing of its own, as the paper
+  reads it (crapkit's documented reading charges it as an if; AO-COG-GUARD).
 
 Two more are places complexipy reads nothing or reads another level, so a
 function holding them is left out of the comparison and counted, never

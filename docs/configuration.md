@@ -323,7 +323,7 @@ rows after an attribute, `int run(int a) __attribute__((cold))`, a macro,
 `STRINGLIB(find)(const char *s)`, or a return type, `int (*get(int k))(int)`, and it
 counted neither an unnamed parameter, `f(int*, char)`, nor an array, `f(int a[4])`.
 crapkit lists, names and counts them. The
-[upgrading notes](upgrading.md#next-analysis-version-c-c-objective-c-and-java-rows) list
+[upgrading notes](upgrading.md#c-c-objective-c-and-java-rows) list
 every row that moved.
 
 **`swift` runs on crapkit's own reader too.** lizard's Swift reader took `super.init(...)`,

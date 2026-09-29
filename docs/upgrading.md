@@ -16,9 +16,9 @@ MCP server before upgrading on Windows; see [launcher locks](#windows-launcher-l
 
 ## Measure before changing marks
 
-The release after 0.8.0 moves the reader to analysis version 12, and 0.8.0 moved it
+The release after 0.8.0 moves the reader to analysis version 13, and 0.8.0 moved it
 to 11, so a marks file stamped under an older version needs one re-seed; [analysis
-version 12](#analysis-version-12) and [analysis version 11](#analysis-version-11) say
+version 13](#analysis-version-13) and [analysis version 11](#analysis-version-11) say
 what moved.
 The package upgrade rebuilds the versioned analysis cache automatically, and the
 first `inventory` or `coverage` after it analyzes every file again. That run's
@@ -46,9 +46,9 @@ any mark changes.
 | Coverage or JUnit producer | Run a fresh lane and resolve [artifact admission errors](lanes.md#a-junit-that-says-the-run-did-not-finish). |
 | Shared exports or portable baselines | Upgrade readers before writing [encoded records](portable-records.md) for them. |
 
-### Analysis version 12
+### Analysis version 13
 
-The release after 0.8.0 raises the analysis version to 12. Scores move on functions
+The release after 0.8.0 raises the analysis version to 13. Scores move on functions
 nobody edited, so every marks file re-seeds once, with the same three commands as
 [version 11](#analysis-version-11): `crapkit coverage`, `crapkit ratchet prune`, then
 `crapkit ratchet seed`. Prune drops the marks of rows that go away or change key, and
@@ -198,11 +198,7 @@ some JavaScript and TypeScript coverage move:
   `verify` checks a diff against move for JavaScript and TypeScript functions in such
   files. A function that reads less covered now can go over its ceiling.
 
-### Next analysis version: C, C++, Objective-C and Java rows
-
-The release after 0.8.0 reads the functions and parameters of the C family and Java in
-new ways, so it raises the analysis version and every marks file re-seeds once, with the
-same three commands as version 11 below.
+#### C, C++, Objective-C and Java rows
 
 - `params` counts each declaration in a C, C++, Objective-C or Java parameter list,
   named or not: `f(int*, char)` reads 2, `f(const int arr[4])` and Java's
@@ -276,12 +272,7 @@ same three commands as version 11 below.
   B(b)... {`, counts its body's decisions, where it read `ccn` 1, which can put it
   over its ceiling and fail the gate the next time its file changes.
 
-### Unreleased: the Swift and Rust readers
-
-The next release reads Swift and Rust in new ways and moves to the next analysis
-version, so every marks file re-seeds once, with the same three commands as
-[version 11](#analysis-version-11): `crapkit coverage`, `crapkit ratchet prune`,
-`crapkit ratchet seed`.
+#### The Swift and Rust readers
 
 Swift:
 
@@ -313,12 +304,10 @@ Rust:
   listed; it had no row. A decision or a brace after a raw string (`r#"..."#`), a raw
   identifier (`r#type`) or an attribute on the same line now counts.
 
-### Next analysis version: shell and PowerShell rows
+#### Shell and PowerShell rows
 
-The release after 0.8.0 moves shell's and PowerShell's numbers and names, so it raises
-the analysis version and every marks file re-seeds once, with the same three commands
-as version 11 below. Prune matters here: some rows are renamed and some phantom rows
-go, and their marks are left under names the run no longer has.
+Prune matters here: some rows are renamed and some phantom rows go, and their marks
+are left under names the run no longer has.
 
 - A shell function's `nesting` reads how deep its blocks go. lizard's ND column closed
   a level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
@@ -389,14 +378,10 @@ go, and their marks are left under names the run no longer has.
 See [the per-language gotchas](configuration.md#per-language-gotchas) for what each
 reader counts.
 
-### Next analysis version: cognitive complexity per language
+#### Cognitive complexity per language
 
-The release after 0.8.0 reads `cognitive` by each language's own rules, so it raises
-the analysis version and every marks file re-seeds once, with the same three commands
-as [version 11](#analysis-version-11): `crapkit coverage`, `crapkit ratchet prune`,
-then `crapkit ratchet seed`. `ccn`, coverage and every function's name stay as they
-were, so this change moves no mark and no gate verdict: the re-seed only stamps the
-marks with the new version. Commit the marks file.
+`cognitive` reads each language's own rules. `ccn`, coverage and every function's name
+stay as they were, so this moves no mark and no gate verdict.
 
 Expect the `cognitive` column to change in `next-item --json`, `brief`, exports and
 the MCP tools on the first run after upgrading, most often by 1:
@@ -430,11 +415,9 @@ Over 12,432 functions in 20 open-source projects, 1,082 move `cognitive`, 851 of
 them by 1 and 1,014 by 3 or less, and 69 Python rows move `nesting`. The
 [changelog](../CHANGELOG.md) lists every rule with an example.
 
-### Next analysis version: nesting in every language
+#### Nesting in every language
 
-The release after 0.8.0 moves `nesting` outside Python, and `cognitive` in a few
-functions in every language, so it raises the analysis version and every marks file
-re-seeds once, with the same three commands as version 11 below.
+`nesting` moves outside Python, and `cognitive` in a few functions in every language.
 
 - A function's `nesting` in C, C++, Objective-C, Java, JavaScript, TypeScript, Go,
   Rust, Swift, Zig, PowerShell and shell reads the depth crapkit's cognitive pass

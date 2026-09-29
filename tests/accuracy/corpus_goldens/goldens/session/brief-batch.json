@@ -196,7 +196,7 @@
     "end": 326,
     "flag": "cc-only",
     "long_name": "deepMergeInternal ( isRoot , sources Array )",
-    "nesting": 7,
+    "nesting": 6,
     "nloc": 84,
     "occurrence": 1,
     "params": 2,
@@ -211,7 +211,7 @@
    "uncovered_lines": null,
    "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/ky/merge.ts",
    "versions": {
-    "analysis_version": 12,
+    "analysis_version": 13,
     "crapkit": "<crapkit>",
     "lizard": "1.24.0",
     "python": "<python>"
@@ -641,7 +641,7 @@
     "end": 1036,
     "flag": "cc-only",
     "long_name": "apply_patch( cJSON * object , const cJSON * patch , const cJSON_bool case_sensitive)",
-    "nesting": 2,
+    "nesting": 3,
     "nloc": 190,
     "occurrence": 1,
     "params": 3,
@@ -656,7 +656,7 @@
    "uncovered_lines": null,
    "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/cjson/cJSON_Utils.c",
    "versions": {
-    "analysis_version": 12,
+    "analysis_version": 13,
     "crapkit": "<crapkit>",
     "lizard": "1.24.0",
     "python": "<python>"
@@ -806,7 +806,7 @@
     28
    ],
    "versions": {
-    "analysis_version": 12,
+    "analysis_version": 13,
     "crapkit": "<crapkit>",
     "lizard": "1.24.0",
     "python": "<python>"

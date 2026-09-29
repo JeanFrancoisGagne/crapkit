@@ -31,9 +31,11 @@ the venv's interpreter directly, with the worktree as its argument.
 The verdict is strict. Before counts as red only when the check fails on an
 AssertionError (a pin_ruling mismatch is one): the check saw the wrong value.
 An item pytest reports as a declared xfail (an open defect a rulings row pins)
-counts as neither a pass nor a failure. Any other failure (DriveUnsupported, a refused config, an ImportError, a
-KeyError on an older schema) is `not replayable`, and the row needs an API
-probe; its ledger note says so. A check that passes on its before commit
+counts as neither a pass nor a failure, and an item a python marker keeps for a
+newer Python than the replay's is dropped, since it cannot run there. Any other
+failure (DriveUnsupported, a refused config, an ImportError, a KeyError on an
+older schema) is `not replayable`, and the row needs an API probe; its ledger
+note says so. A check that passes on its before commit
 catches nothing and is refused. The fix commit must pass. `run --record` keeps a
 refused row pending, with the refusal and its date in the note, since a refused
 replay is no evidence.
@@ -249,6 +251,24 @@ def contradiction(recorded: dict, before: Outcome, fix: Outcome) -> str:
 # --- the pytest plugin that records each item's exception ------------------------------------------
 
 _RAISED: dict[tuple[str, str], dict] = {}  # (nodeid, phase): the record, until pytest reports it
+
+
+def pytest_collection_modifyitems(config, items):
+    """Loaded with `-p retro`: COLLECT_ALL_ENV keeps every item, python markers
+    included, so an item marked for a newer Python than the one running would run
+    and fail on a grammar this Python lacks. The replay drops it: it cannot run
+    here, so its failure says nothing about the commit."""
+    dropped = _too_new(items) if os.environ.get(OUTCOMES_ENV) else []
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+        items[:] = [item for item in items if item not in dropped]
+
+
+def _too_new(items: list) -> list:
+    """The items a python marker keeps for a newer Python than this one."""
+    from accuracy.kit import tiers
+    return [item for item in items
+            if not tiers.runs_on_python(tuple(mark.args) for mark in item.iter_markers("python"))]
 
 
 def pytest_runtest_makereport(item, call):

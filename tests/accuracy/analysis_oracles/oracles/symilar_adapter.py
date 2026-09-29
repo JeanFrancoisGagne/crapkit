@@ -56,8 +56,13 @@ def normalized(lines: list[str], start: int, end: int,
     """Lines start..end (1-based, inclusive) as the scheme reads them, less the
     line numbers in `taken`."""
     kept = (raw for number, raw in enumerate(lines[start - 1:end], start)
-            if number not in taken and raw.strip() and not raw.strip().startswith(LEFT_OUT))
+            if _kept(number, raw, taken))
     return ["".join(raw.split()) for raw in kept]
+
+
+def _kept(number: int, raw: str, taken: frozenset[int]) -> bool:
+    """A line the scheme reads: no nested function's, not blank, not left out."""
+    return number not in taken and bool(raw.strip()) and not raw.strip().startswith(LEFT_OUT)
 
 
 def _nested_in(inner: dict, outer: dict) -> bool:

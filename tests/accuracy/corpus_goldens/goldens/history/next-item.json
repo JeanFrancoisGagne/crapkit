@@ -15,7 +15,7 @@
   "flag": "cc-only",
   "function": "deepMergeInternal ( isRoot , sources Array )",
   "handle": "deepMergeInternal",
-  "nesting": 7,
+  "nesting": 6,
   "nloc": 84,
   "occurrence": 1,
   "path": "vendor/ky/merge.ts",

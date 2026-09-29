@@ -70,13 +70,13 @@ fails while either is out of date.
 | Shell reader | `analysis_oracles` | `test_hand_probes.py::test_crapkit_matches_the_hand_value` | 2 | 0 | 1 |
 | PowerShell reader | `analysis_oracles` | `test_powershell_oracles.py::test_powershell_matches_parser_ast` | 5 | 0 | 3 |
 | ccn_std, ccn_mod and gated ccn | `analysis_oracles` | `test_complexity_oracles.py::test_python_ccn_matches_radon_and_mccabe` | 44 | 11 | 24 |
-| Cognitive complexity | `analysis_oracles` | `test_cognitive_oracles.py::test_python_cognitive_matches_the_sonar_counter` | 56 | 2 | 51 |
+| Cognitive complexity | `analysis_oracles` | `test_cognitive_oracles.py::test_python_cognitive_matches_the_sonar_counter` | 57 | 2 | 51 |
 | Nesting depth | `analysis_oracles` | `test_nesting_oracles.py::test_python_depth_matches_model` | 26 | 0 | 51 |
 | nloc | `analysis_oracles` | `test_nloc_params.py::test_python_nloc_matches_tokenize` | 7 | 5 | 1 |
 | Parameter list (params, packet.params) | `analysis_oracles` | `test_nloc_params.py::test_python_params_match_ast` | 5 | 12 | 10 |
 | Unanalyzable files and twin-name notes | `analysis_oracles` | `test_notes.py::test_a_truncated_signature_refuses_its_file_and_nothing_else` | 0 | 0 | 1 |
 | Analysis cache and stat index | `analysis_oracles` | `test_cache_identity.py::test_warm_equals_cold_after_every_step` | 0 | 0 | 0 |
-| Near-duplicate functions | `analysis_oracles` | `test_duplicates.py::test_copies_with_comments_blanks_and_spacing_pair_at_seven_of_eight` | 7 | 2 | 0 |
+| Near-duplicate functions | `analysis_oracles` | `test_duplicates.py::test_copies_with_comments_blanks_and_spacing_pair_at_seven_of_eight` | 6 | 0 | 3 |
 | init scaffolding | `analysis_oracles` | `test_init_scaffold.py::test_scopes_follow_top_level_dirs_and_parsers` | 1 | 0 | 0 |
 | Watch change detection | `analysis_oracles` | `test_watch.py::test_a_touch_names_the_file_once_and_moves_no_number` | 0 | 0 | 0 |
 | Inventory rows and TSV exports | `analysis_oracles` | `test_inventory_rows.py::test_every_row_is_marked_exactly_when_the_document_says` | 0 | 0 | 0 |
@@ -300,7 +300,7 @@ what either side says fails, whichever side moved.
 <!-- generated:rulings -->
 | Packet | Definitions | Open defects | Fixed |
 |---|---:|---:|---:|
-| `analysis_oracles` | 162 | 56 | 173 |
+| `analysis_oracles` | 162 | 54 | 176 |
 | `corpus_goldens` | 0 | 1 | 4 |
 | `coverage_oracles` | 12 | 2 | 4 |
 | `definitions` | 0 | 1 | 1 |
@@ -310,7 +310,7 @@ what either side says fails, whichever side moved.
 | `suite_strength` | 0 | 17 | 6 |
 | `verdict_model` | 7 | 0 | 14 |
 
-<details><summary><code>analysis_oracles</code>: 391 rows</summary>
+<details><summary><code>analysis_oracles</code>: 392 rows</summary>
 
 | Row | Calculation | Construct | crapkit | Oracle | Oracle's value | Ruling | Support |
 |---|---|---|---|---|---|---|---|
@@ -392,6 +392,7 @@ what either side says fails, whichever side moved.
 | AO-CXP-COMP-FILTER | Cognitive complexity | a comprehension's if: complexipy +1 flat, crapkit +2 as an if inside the loop (hand case AO-CXP-COMP-FILTER) | 3 | complexipy 8.0.1 | 2 | definition | paper: Sonar Cognitive Complexity v1.7 App. B2 and B3 (an if nested in a loop) |
 | AO-CXP-LOOP-ELSE | Cognitive complexity | a loop's else: complexipy adds nothing, crapkit +1 (oracle side set aside from the comparison) (hand case AO-CXP-LOOP-ELSE) | 2 | complexipy 8.0.1 | 1 | definition | paper: Sonar Cognitive Complexity v1.7 App. B1 (else is an increment) |
 | AO-CXP-RECURSION-NAME | Cognitive complexity | a call through a parameter named like the def: complexipy +1 as recursion (it reads any call spelled like the def, a method's call to the module function of its name too), crapkit 0 since the call never reaches the def (hand case AO-CXP-RECURSION-NAME) | 0 | complexipy 8.0.1 | 1 | definition | paper: Sonar Cognitive Complexity v1.7 Recursion |
+| AO-CXP-GUARD | Cognitive complexity | a match case guard: complexipy adds nothing for it, as the paper names no guard; crapkit charges it as an if one level inside the match, +2 at the top of a function (hand case AO-CXP-GUARD) | 3 | complexipy 8.0.1 | 1 | definition | docs/configuration.md#per-language-gotchas |
 | AO-CXP-SKIPS | Cognitive complexity | a conditional expression inside a binary operator: complexipy reads nothing there (an oracle bug; such defs are set aside) (hand case AO-CXP-SKIPS) | 1 | complexipy 8.0.1 | 0 | definition | paper: Sonar Cognitive Complexity v1.7 App. B1 (the ternary operator is an increment) |
 | AO-CXP-NESTED-DEF | Cognitive complexity | a nested def's if: complexipy charges it to the enclosing def, crapkit to the nested def's own row (such defs are set aside) (hand case AO-CXP-NESTED-DEF) | 0 | complexipy 8.0.1 | 1 | definition | docs/agent-json.md#item-fields |
 | AO-N-PYLINT-TRY | Nesting depth | an if inside a try body: pylint opens a level for the try, crapkit does not (hand case AO-N-PYLINT-TRY) | 1 | pylint 4.0.9 R1702 | 2 | definition | paper: Sonar Cognitive Complexity v1.7 App. B2 (try adds no nesting) |
@@ -474,7 +475,7 @@ what either side says fails, whichever side moved.
 | AO-RS-LOOP-COG | Cognitive complexity | a loop holding an if (probe rs r-spin) | 3 | hand: Sonar paper | 3 | fixed | paper: Sonar Cognitive Complexity v1.7 App. B1 |
 | AO-RS-LOOP-ND | Nesting depth | a loop holding an if (probe rs r-spin) | 2 | hand: Sonar paper | 2 | fixed | paper: Sonar Cognitive Complexity v1.7 App. B2 |
 | AO-RS-WHERE | ccn_std, ccn_mod and gated ccn | a where clause (probe rs r-where) | 1 | hand: NIST SP 500-235 sec. 4.1 | 1 | fixed | paper: NIST SP 500-235 sec. 4.1 |
-| AO-COG-GUARD | Cognitive complexity | a match arm guard reads as an if (+1 and the nesting level); the paper names no guard (probe rs r-guard) | 3 | hand: Sonar paper | 1 | definition | convention_only |
+| AO-COG-GUARD | Cognitive complexity | a match arm guard, or a Python case guard, reads as an if (+1 and the nesting level); the paper names no guard (probe rs r-guard; hand case AO-CXP-GUARD for Python) | 3 | hand: Sonar paper | 1 | definition | convention_only |
 | AO-RS-LETELSE-COG | Cognitive complexity | a let-else inside a loop: crapkit charges its else +1 flat, the counter charges it as an if let, +1 and the nesting level (probe rs r-nested-let-else) | 2 | hand: Sonar paper | 3 | definition | convention_only |
 | AO-N-CLOSURE | Nesting depth | a closure: lizard's ND counts no closure (probe rs r-closure-depth) | 0 | hand: Sonar paper | 1 | definition | https://github.com/terryyin/lizard/blob/1.24.0/lizard_ext/lizardnd.py#L32 |
 | AO-LOOP-NO-CONDITION | ccn_std, ccn_mod and gated ccn | a loop with no condition (Go `for {}`) counts as a decision: lizard counts the keyword (probe go g-spin) | 3 | hand: NIST SP 500-235 sec. 4.1 | 2 | definition | convention_only |
@@ -510,8 +511,8 @@ what either side says fails, whichever side moved.
 | AO-N-CLOSURE-IF | Nesting depth | an if inside a closure, lambda or block literal: lizard's ND raises no level for the closure, so the if reads one level (probes rs r-closure-if, java j-closure-if, cpp c-closure-if, swift s-closure-if, objc o-block) | 1 | hand: Sonar paper | 2 | definition | https://github.com/terryyin/lizard/blob/1.24.0/lizard_ext/lizardnd.py#L32 |
 | AO-ND-TERNARY-PAIR | Nesting depth | two conditional expressions side by side, neither inside the other (probe c c-two-ternaries) | 1 | hand: Sonar paper | 1 | fixed | paper: Sonar Cognitive Complexity v1.7 App. B2 |
 | AO-REFUSED-SAME-BYTES | Unanalyzable files and twin-name notes | two refused files with identical bytes (count on stderr) | 2 | hand: CONTEXT.md Unanalyzable file | 2 | fixed | CONTEXT.md#unanalyzable-file |
-| AO-DUP-CONTAINED | Near-duplicate functions | a twin in another file holding every shingle of the target (brief duplication_twins contained) | false | docs: agent-json.md:490 | true | definition | docs/agent-json.md#duplication-twins (:1175 reads contained as nested spans; :490 wording is the gap) |
-| AO-DUP-ENCLOSING-UNDER-MIN | Near-duplicate functions | a 3-line factory pairs, through its 10-line closure, with each of the 3 functions the closure pairs with | 3 | hand: README duplication --min-lines 8 | 0 | defect | README.md#commands (duplication row: --min-lines 8, a function and its nested closure never pair) |
+| AO-DUP-CONTAINED | Near-duplicate functions | a twin in another file holding every shingle of the target (brief duplication_twins contained; outer.copy_a for copy_a) | false | docs: agent-json.md:490 | false | fixed | docs/agent-json.md#duplication-twins (:490 and :1175 read contained as nested spans) |
+| AO-DUP-ENCLOSING-UNDER-MIN | Near-duplicate functions | a 3-line factory pairs, through its 10-line closure, with each of the 3 functions the closure pairs with | 0 | hand: README duplication --min-lines 8 | 0 | fixed | README.md#commands (duplication row: --min-lines 8, a function and its nested closure never pair) |
 | AO-INIT-JEST-NO-JUNIT | init scaffolding | a jest repo without jest-junit in devDependencies: results_artifact on the lane init writes | absent | docs: agent-json.md:1017 | present | definition | docs/lanes.md#jest (:495 says to drop the reporter flags and results_artifact without jest-junit) |
 | AO-PKT-TYPE-SPACING | Parameter list (params, packet.params) | a subscripted annotation b: list[int] (m.py typed) | list [ int ] | hand: ast.unparse (Python reference 8.7) | list[int] | definition | docs/agent-json.md#item-fields |
 | AO-PKT-TS-REST | Parameter list (params, packet.params) | a rest parameter ...rest (t.ts withRest) | a,rest | TypeScript 6.0.2 compiler ParameterDeclaration | a,...rest | definition | convention_only |
@@ -694,7 +695,7 @@ what either side says fails, whichever side moved.
 | AO-ESLINT-PATTERN-DEFAULTS | ccn_std, ccn_mod and gated ccn | a default value inside a destructured parameter, { orientation = "vertical" }: ESLint adds 1 (AssignmentPattern), crapkit adds nothing, as for a parameter's own default (hand case cases/pattern_defaults.ts) | 1 | ESLint 10.11.0 complexity | 2 | definition | convention_only |
 | AO-N-PYLINT-ASYNC | Nesting depth | oracle bug: pylint's refactoring checker emits a def's left-over block stack in leave_functiondef and has no leave_asyncfunctiondef, so an async def's last group of nested blocks is never reported (an async def holding one if reads 0) and its stack leaks into the next def; crapkit reads 1; async defs are set aside from the pylint comparison (hand case AO-N-PYLINT-ASYNC; 18 defs in cpython-3.13/Lib/asyncio) | 1 | pylint 4.0.9 R1702 | 0 | definition | https://docs.python.org/3/reference/compound_stmts.html#coroutine-function-definition (an async def is a function definition); paper: Sonar Cognitive Complexity v1.7 App. B2 (if increases the nesting level); pylint 4.0.9 pylint/checkers/refactoring/refactoring_checker.py leave_functiondef |
 | AO-N-PYLINT-WITH | Nesting depth | oracle bug: pylint stacks no with, so for an if, for, while or try right in the body of a with that sits inside another block, _check_nested_blocks finds no parent on its stack, pops every level and restarts the block at 1; the paper and crapkit keep the outer levels (if, with, if reads 2); defs holding such a with are set aside from the pylint comparison (hand case AO-N-PYLINT-WITH; 3 defs in cpython-3.13/Lib) | 2 | pylint 4.0.9 R1702 | 1 | definition | paper: Sonar Cognitive Complexity v1.7 App. B2 (nested if, loops and catch increase the nesting level; with is not in the list); pylint 4.0.9 pylint/checkers/refactoring/refactoring_checker.py _check_nested_blocks |
-| AO-DUP-STAR-LINE | Near-duplicate functions | a Python `**spread(items),` argument line, the one line two 12-line functions differ in (star_a, star_b; hand containment 5/10) | 0.8889 | hand: the stated line scheme (comment lines left out) | none | defect | https://docs.python.org/3/reference/lexical_analysis.html#comments |
+| AO-DUP-STAR-LINE | Near-duplicate functions | a Python `**spread(items),` argument line, the one line two 12-line functions differ in (star_a, star_b; hand containment 5/10) | none | hand: the stated line scheme (comment lines left out) | none | fixed | https://docs.python.org/3/reference/lexical_analysis.html#comments |
 | AO-DUP-DOCSTRING-LINES | Near-duplicate functions | a one-line Python docstring, the one line besides the def line two functions differ in (doc_a, doc_b); a line starting with three quotes is left out | 0.875 | hand: the line scheme keeping string literals | 0.7778 | definition | convention_only |
 | AO-SYMILAR-SCHEME | Near-duplicate functions | symilar strips only a line's two ends and keeps comment lines, so the adapter feeds it each function's scheme lines, every whitespace character removed and comment lines left out (hand case AO-SYMILAR-SCHEME: a copy with comment lines, blank lines and wider spacing; pairs found) | 1 | pylint 4.0.9 symilar | 0 | definition | https://github.com/pylint-dev/pylint/blob/v4.0.9/pylint/checkers/symilar.py (stripped_lines: line.strip()) |
 | AO-SYMILAR-ONE-FILE | Near-duplicate functions | symilar compares each file with every other file and never with itself, so the adapter writes each function's lines to a file of its own (hand case AO-SYMILAR-ONE-FILE: two copies in one file; pairs found) | 1 | pylint 4.0.9 symilar | 0 | definition | https://github.com/pylint-dev/pylint/blob/v4.0.9/pylint/checkers/symilar.py (_iter_sims: linesets[idx + 1:]) |
@@ -916,7 +917,9 @@ at the fix. Name it in the row's `probe` cell.
 The replayed check runs with `CRAPKIT_ACCURACY_PYTHON` set to the commit's venv,
 that commit's crapkit (and nothing else from its venv) first on PYTHONPATH, and
 `CRAPKIT_ACCURACY_CHECKOUT` naming the commit's checkout, where a check finds the
-files a wheel does not carry, such as `action.yml`. A row's `env` cell may set
+files a wheel does not carry, such as `action.yml`. Every tier's items run, but an
+item a `python` marker keeps for a newer Python than the replay's is left out, since
+it cannot run there. A row's `env` cell may set
 `CRAPKIT_ACCURACY_LANGUAGES` and `CRAPKIT_ACCURACY_ROOT_PATHS` for a commit that
 read fewer languages or refused a root scope of `.`. `CRAPKIT_RETRO_WORK` moves
 the worktrees and venvs (default `.crapkit/accuracy/retro`), and rows R01 to R12

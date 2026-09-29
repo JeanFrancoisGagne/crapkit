@@ -1,0 +1,685 @@
+golden	path	handle	column	old	new	oracle	oracle_value	ruling
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/Bridge.mm	longestOf:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/Legacy.m	sum:	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/Legacy.m	sum:	params	0	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/Parser.swift	classify _ token : Token?	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/Parser.swift	longWords _ words : [ String ] , min : Int	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/engine.cpp	Engine::load	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/ifdef.c	classify	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/ifdef.c	open_log#2	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/legacy.cxx	legacy_score	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/list.zig	grade score : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/matcher.rs	weight kind : & str	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/router.go	(anonymous)#1	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/native/shapes.cc	area_sum	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/py/matching.py	describe	cognitive	1	3	complexipy	1	AO-CXP-GUARD
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/py/matching.py	describe	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/Params.psm1	Invoke-Build	ccn_mod	6	5			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/Params.psm1	Invoke-Build	cognitive	6	5			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/Params.psm1	Invoke-Build	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/Params.psm1	Invoke-Build	params	0	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/cp1252.ps1	Get-Café	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/deep.sh	check_all	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/deep.sh	deep	nesting	3	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/lib.bash	pick_color	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/switch.ps1	Get-Size	ccn	7	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/switch.ps1	Get-Size	ccn_mod	8	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/switch.ps1	Get-Size	ccn_std	7	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/switch.ps1	Get-Size	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/switch.ps1	Get-Size	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	ccn_mod	4	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	cognitive	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/Counter.vue	caption	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/arrows.js	dispatch	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/button.jsx	Button	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/button.jsx	h	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/generic.ts	label	cognitive	2	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/generic.ts	label	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/nullish.ts	firstSet	cognitive	6	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/nullish.ts	firstSet	nesting	6	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/nullish.ts	withDefaults	cognitive	4	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/nullish.ts	withDefaults	nesting	4	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/widget.tsx	h	cognitive	2	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	src/web/widget.tsx	h	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	AFNetworkReachabilityStatusForFlags	nesting	5	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	AFStringFromNetworkReachabilityStatus	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	initWithReachability:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	isReachable	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	cognitive	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForAddress:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForDomain:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	setReachabilityStatusChangeBlock:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	init _ string : String	row	absent	present			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn	2	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn_mod	2	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn_std	2	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn	3	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn_mod	3	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn_std	3	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	cognitive	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse , isEmpty : Bool	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	apply_patch	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatches	cognitive	3	5			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatches	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatchesCaseSensitive	cognitive	3	5			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatchesCaseSensitive	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_FindPointerFromObjectTo	nesting	2	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatches	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatchesCaseSensitive	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	compare_json	nesting	7	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	compare_pointers	nesting	8	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	compose_patch	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	create_patches	nesting	4	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	decode_array_index_from_pointer	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	decode_pointer_inplace	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	detach_item_from_array	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	detach_path	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	generate_merge_patch	cognitive	16	21			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	get_array_item	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	get_item_from_pointer	cognitive	11	17			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	get_item_from_pointer	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	insert_item_in_array	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	pointer_encoded_length	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	sort_list	cognitive	28	29			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cjson/cJSON_Utils.c	sort_list	nesting	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/click/parser.py	_get_value_from_state	cognitive	12	10	complexipy	10	
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cobra/args.go	cmd * Command , args [ ] string#4	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/cobra/args.go	legacyArgs cmd * Command , args [ ] string	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/express/utils.js	compileQueryParser	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/express/utils.js	exports.compileETag	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/express/utils.js	exports.compileTrust	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/express/utils.js	setCharset	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	buffered_file::close	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	buffered_file::~buffered_file	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	detail::format_windows_error	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	file::close	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	file::dup2#2	cognitive	1	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	file::file	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	file::open_windows_file	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	file::~file	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	ostream::grow	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	ostream::ostream#2	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	pipe::pipe	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	system_message::is_whitespace	nesting	4	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	system_message::system_message	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	utf8_system_category::message	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/fmt/os.cc	utf8_system_category::message	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::checkOffset	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::format#3	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::indexOfNonDigit	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parse	nesting	3	5			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parseInt	cognitive	6	8			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parseInt	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/ky/merge.ts	appendSearchParameters	nesting	3	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/ky/merge.ts	deepMergeInternal	nesting	7	6			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/ky/merge.ts	isPlainObject	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/ky/merge.ts	mergeHeaderContainers	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/ky/merge.ts	mergeHeaders	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/ky/merge.ts	validateAndMerge	nesting	4	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	install_nvm_as_script	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	install_nvm_from_git	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	nvm_check_global_modules	nesting	5	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	nvm_default_install_dir	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	nvm_detect_profile	nesting	12	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	nvm_do_install	cognitive	54	42			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	nvm_do_install	nesting	20	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	nvm_has_executable	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	nvm_profile_is_bash_or_zsh	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	nvm_source	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/nvm/install.sh	nvm_try_profile	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	ccn_mod	32	29			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	cognitive	46	43			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	nesting	8	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	params	0	4			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn	3	8			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn_mod	4	8			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn_std	3	8			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Get-PathStringComparison	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Get-PromptConnectionInfo $Format = '[{1}@{0}]: '	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Get-PromptPath	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	ccn_mod	20	18			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	cognitive	35	33			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	params	0	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Test-Administrator	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Test-InPSModulePath	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Test-InPSModulePath	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Test-PoshGitImportedInScript	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/posh-git/Utils.ps1	Test-PoshGitImportedInScript	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/requests/cookies.py	__contains__	cognitive	2	1	complexipy	1	
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/requests/cookies.py	__iter__	cognitive	1	0	complexipy	0	
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/requests/cookies.py	getheaders	cognitive	1	0	complexipy	0	
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/requests/cookies.py	set_cookie	cognitive	4	2	complexipy	2	
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/requests/cookies.py	update	cognitive	5	4	complexipy	4	
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/ripgrep/pathutil.rs	normalize_path mut path : Cow < [ u8 ] >	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	eqlIgnoreCase a : [ ] const u8 , b : [ ] const u8	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isHex c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isLower c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/history/inventory.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/Bridge.mm	longestOf:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/Legacy.m	sum:	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/Legacy.m	sum:	params	0	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/Parser.swift	classify _ token : Token?	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/Parser.swift	longWords _ words : [ String ] , min : Int	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/engine.cpp	Engine::load	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/ifdef.c	classify	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/ifdef.c	open_log#2	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/legacy.cxx	legacy_score	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/list.zig	grade score : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/matcher.rs	weight kind : & str	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/router.go	(anonymous)#1	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/native/shapes.cc	area_sum	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/py/matching.py	describe	cognitive	1	3	complexipy	1	AO-CXP-GUARD
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/py/matching.py	describe	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/Params.psm1	Invoke-Build	ccn_mod	6	5			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/Params.psm1	Invoke-Build	cognitive	6	5			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/Params.psm1	Invoke-Build	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/Params.psm1	Invoke-Build	params	0	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/cp1252.ps1	Get-Café	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/deep.sh	check_all	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/deep.sh	deep	nesting	3	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/lib.bash	pick_color	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/switch.ps1	Get-Size	ccn	7	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/switch.ps1	Get-Size	ccn_mod	8	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/switch.ps1	Get-Size	ccn_std	7	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/switch.ps1	Get-Size	crap	7.0	4.0	kit.exact	4.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/switch.ps1	Get-Size	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/switch.ps1	Get-Size	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	ccn_mod	4	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	cognitive	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/Counter.vue	caption	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/arrows.js	dispatch	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/button.jsx	Button	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/button.jsx	h	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/generic.ts	label	cognitive	2	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/generic.ts	label	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/nullish.ts	firstSet	cognitive	6	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/nullish.ts	firstSet	nesting	6	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/nullish.ts	withDefaults	cognitive	4	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/nullish.ts	withDefaults	nesting	4	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/widget.tsx	h	cognitive	2	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	src/web/widget.tsx	h	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	AFNetworkReachabilityStatusForFlags	nesting	5	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	AFStringFromNetworkReachabilityStatus	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	initWithReachability:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	isReachable	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	cognitive	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForAddress:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForDomain:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	setReachabilityStatusChangeBlock:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	init _ string : String	row	absent	present			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn	2	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn_mod	2	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn_std	2	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	crap	2.0	3.0	kit.exact	3.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn	3	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn_mod	3	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn_std	3	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	cognitive	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	crap	3.0	4.0	kit.exact	4.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse , isEmpty : Bool	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	apply_patch	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatches	cognitive	3	5			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatches	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatchesCaseSensitive	cognitive	3	5			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatchesCaseSensitive	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_FindPointerFromObjectTo	nesting	2	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatches	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatchesCaseSensitive	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	compare_json	nesting	7	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	compare_pointers	nesting	8	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	compose_patch	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	create_patches	nesting	4	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	decode_array_index_from_pointer	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	decode_pointer_inplace	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	detach_item_from_array	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	detach_path	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	generate_merge_patch	cognitive	16	21			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	get_array_item	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	get_item_from_pointer	cognitive	11	17			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	get_item_from_pointer	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	insert_item_in_array	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	pointer_encoded_length	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	sort_list	cognitive	28	29			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cjson/cJSON_Utils.c	sort_list	nesting	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/click/parser.py	_get_value_from_state	cognitive	12	10	complexipy	10	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cobra/args.go	cmd * Command , args [ ] string#4	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/cobra/args.go	legacyArgs cmd * Command , args [ ] string	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/express/utils.js	compileQueryParser	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/express/utils.js	exports.compileETag	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/express/utils.js	exports.compileTrust	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/express/utils.js	setCharset	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	buffered_file::close	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	buffered_file::~buffered_file	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	detail::format_windows_error	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	file::close	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	file::dup2#2	cognitive	1	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	file::file	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	file::open_windows_file	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	file::~file	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	ostream::grow	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	ostream::ostream#2	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	pipe::pipe	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	system_message::is_whitespace	nesting	4	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	system_message::system_message	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	utf8_system_category::message	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/fmt/os.cc	utf8_system_category::message	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::checkOffset	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::format#3	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::indexOfNonDigit	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parse	nesting	3	5			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parseInt	cognitive	6	8			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parseInt	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/ky/merge.ts	appendSearchParameters	nesting	3	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/ky/merge.ts	deepMergeInternal	nesting	7	6			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/ky/merge.ts	isPlainObject	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/ky/merge.ts	mergeHeaderContainers	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/ky/merge.ts	mergeHeaders	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/ky/merge.ts	validateAndMerge	nesting	4	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	install_nvm_as_script	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	install_nvm_from_git	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	nvm_check_global_modules	nesting	5	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	nvm_default_install_dir	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	nvm_detect_profile	nesting	12	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	nvm_do_install	cognitive	54	42			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	nvm_do_install	nesting	20	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	nvm_has_executable	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	nvm_profile_is_bash_or_zsh	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	nvm_source	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/nvm/install.sh	nvm_try_profile	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	ccn_mod	32	29			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	cognitive	46	43			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	nesting	8	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	params	0	4			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn	3	8			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn_mod	4	8			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn_std	3	8			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	crap	3.0	8.0	kit.exact	8.0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Get-PathStringComparison	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Get-PromptConnectionInfo $Format = '[{1}@{0}]: '	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Get-PromptPath	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	ccn_mod	20	18			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	cognitive	35	33			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	params	0	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Test-Administrator	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Test-InPSModulePath	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Test-InPSModulePath	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Test-PoshGitImportedInScript	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/posh-git/Utils.ps1	Test-PoshGitImportedInScript	params	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/requests/cookies.py	__contains__	cognitive	2	1	complexipy	1	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/requests/cookies.py	__iter__	cognitive	1	0	complexipy	0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/requests/cookies.py	getheaders	cognitive	1	0	complexipy	0	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/requests/cookies.py	set_cookie	cognitive	4	2	complexipy	2	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/requests/cookies.py	update	cognitive	5	4	complexipy	4	
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/ripgrep/pathutil.rs	normalize_path mut path : Cow < [ u8 ] >	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	eqlIgnoreCase a : [ ] const u8 , b : [ ] const u8	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/history/scored.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/Bridge.mm	longestOf:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/Legacy.m	sum:	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/Legacy.m	sum:	params	0	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/Parser.swift	classify _ token : Token?	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/Parser.swift	longWords _ words : [ String ] , min : Int	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/engine.cpp	Engine::load	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/ifdef.c	classify	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/ifdef.c	open_log#2	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/legacy.cxx	legacy_score	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/list.zig	grade score : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/matcher.rs	weight kind : & str	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/router.go	(anonymous)#1	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/native/shapes.cc	area_sum	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/py/matching.py	describe	cognitive	1	3	complexipy	1	AO-CXP-GUARD
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/py/matching.py	describe	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/Params.psm1	Invoke-Build	ccn_mod	6	5			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/Params.psm1	Invoke-Build	cognitive	6	5			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/Params.psm1	Invoke-Build	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/Params.psm1	Invoke-Build	params	0	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/cp1252.ps1	Get-Café	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/deep.sh	check_all	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/deep.sh	deep	nesting	3	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/lib.bash	pick_color	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/switch.ps1	Get-Size	ccn	7	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/switch.ps1	Get-Size	ccn_mod	8	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/switch.ps1	Get-Size	ccn_std	7	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/switch.ps1	Get-Size	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/switch.ps1	Get-Size	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	ccn_mod	4	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	cognitive	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/Counter.vue	caption	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/arrows.js	dispatch	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/button.jsx	Button	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/button.jsx	h	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/generic.ts	label	cognitive	2	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/generic.ts	label	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/nullish.ts	firstSet	cognitive	6	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/nullish.ts	firstSet	nesting	6	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/nullish.ts	withDefaults	cognitive	4	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/nullish.ts	withDefaults	nesting	4	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/widget.tsx	h	cognitive	2	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	src/web/widget.tsx	h	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	AFNetworkReachabilityStatusForFlags	nesting	5	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	AFStringFromNetworkReachabilityStatus	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	initWithReachability:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	isReachable	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	cognitive	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForAddress:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForDomain:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	setReachabilityStatusChangeBlock:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	init _ string : String	row	absent	present			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn	2	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn_mod	2	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn_std	2	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn	3	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn_mod	3	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn_std	3	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	cognitive	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse , isEmpty : Bool	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	apply_patch	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatches	cognitive	3	5			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatches	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatchesCaseSensitive	cognitive	3	5			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatchesCaseSensitive	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_FindPointerFromObjectTo	nesting	2	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatches	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatchesCaseSensitive	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	compare_json	nesting	7	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	compare_pointers	nesting	8	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	compose_patch	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	create_patches	nesting	4	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	decode_array_index_from_pointer	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	decode_pointer_inplace	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	detach_item_from_array	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	detach_path	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	generate_merge_patch	cognitive	16	21			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	get_array_item	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	get_item_from_pointer	cognitive	11	17			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	get_item_from_pointer	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	insert_item_in_array	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	pointer_encoded_length	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	sort_list	cognitive	28	29			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cjson/cJSON_Utils.c	sort_list	nesting	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/click/parser.py	_get_value_from_state	cognitive	12	10	complexipy	10	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cobra/args.go	cmd * Command , args [ ] string#4	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/cobra/args.go	legacyArgs cmd * Command , args [ ] string	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/express/utils.js	compileQueryParser	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/express/utils.js	exports.compileETag	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/express/utils.js	exports.compileTrust	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/express/utils.js	setCharset	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	buffered_file::close	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	buffered_file::~buffered_file	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	detail::format_windows_error	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	file::close	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	file::dup2#2	cognitive	1	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	file::file	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	file::open_windows_file	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	file::~file	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	ostream::grow	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	ostream::ostream#2	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	pipe::pipe	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	system_message::is_whitespace	nesting	4	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	system_message::system_message	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	utf8_system_category::message	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/fmt/os.cc	utf8_system_category::message	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::checkOffset	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::format#3	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::indexOfNonDigit	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parse	nesting	3	5			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parseInt	cognitive	6	8			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parseInt	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/ky/merge.ts	appendSearchParameters	nesting	3	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/ky/merge.ts	deepMergeInternal	nesting	7	6			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/ky/merge.ts	isPlainObject	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/ky/merge.ts	mergeHeaderContainers	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/ky/merge.ts	mergeHeaders	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/ky/merge.ts	validateAndMerge	nesting	4	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	install_nvm_as_script	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	install_nvm_from_git	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	nvm_check_global_modules	nesting	5	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	nvm_default_install_dir	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	nvm_detect_profile	nesting	12	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	nvm_do_install	cognitive	54	42			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	nvm_do_install	nesting	20	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	nvm_has_executable	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	nvm_profile_is_bash_or_zsh	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	nvm_source	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/nvm/install.sh	nvm_try_profile	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	ccn_mod	32	29			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	cognitive	46	43			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	nesting	8	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	params	0	4			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn	3	8			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn_mod	4	8			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn_std	3	8			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Get-PathStringComparison	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Get-PromptConnectionInfo $Format = '[{1}@{0}]: '	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Get-PromptPath	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	ccn_mod	20	18			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	cognitive	35	33			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	params	0	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Test-Administrator	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Test-InPSModulePath	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Test-InPSModulePath	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Test-PoshGitImportedInScript	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/posh-git/Utils.ps1	Test-PoshGitImportedInScript	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/requests/cookies.py	__contains__	cognitive	2	1	complexipy	1	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/requests/cookies.py	__iter__	cognitive	1	0	complexipy	0	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/requests/cookies.py	getheaders	cognitive	1	0	complexipy	0	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/requests/cookies.py	set_cookie	cognitive	4	2	complexipy	2	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/requests/cookies.py	update	cognitive	5	4	complexipy	4	
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/ripgrep/pathutil.rs	normalize_path mut path : Cow < [ u8 ] >	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	eqlIgnoreCase a : [ ] const u8 , b : [ ] const u8	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isHex c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isLower c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/small/inventory.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/Bridge.mm	longestOf:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/Legacy.m	sum:	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/Legacy.m	sum:	params	0	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/Parser.swift	classify _ token : Token?	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/Parser.swift	longWords _ words : [ String ] , min : Int	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/engine.cpp	Engine::load	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/ifdef.c	classify	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/ifdef.c	open_log#2	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/legacy.cxx	legacy_score	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/list.zig	grade score : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/matcher.rs	weight kind : & str	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/router.go	(anonymous)#1	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/native/shapes.cc	area_sum	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/py/matching.py	describe	cognitive	1	3	complexipy	1	AO-CXP-GUARD
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/py/matching.py	describe	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/Params.psm1	Invoke-Build	ccn_mod	6	5			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/Params.psm1	Invoke-Build	cognitive	6	5			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/Params.psm1	Invoke-Build	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/Params.psm1	Invoke-Build	params	0	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/cp1252.ps1	Get-Café	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/deep.sh	check_all	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/deep.sh	deep	nesting	3	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/lib.bash	pick_color	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/switch.ps1	Get-Size	ccn	7	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/switch.ps1	Get-Size	ccn_mod	8	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/switch.ps1	Get-Size	ccn_std	7	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/switch.ps1	Get-Size	crap	7.0	4.0	kit.exact	4.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/switch.ps1	Get-Size	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/switch.ps1	Get-Size	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	ccn_mod	4	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	cognitive	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/scripts/switch.ps1	Test-Flag [ string ] $Name , [ switch ] $Strict	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/Counter.vue	caption	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/arrows.js	dispatch	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/button.jsx	Button	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/button.jsx	h	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/generic.ts	label	cognitive	2	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/generic.ts	label	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/nullish.ts	firstSet	cognitive	6	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/nullish.ts	firstSet	nesting	6	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/nullish.ts	withDefaults	cognitive	4	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/nullish.ts	withDefaults	nesting	4	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/widget.tsx	h	cognitive	2	0	sonarjs	0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	src/web/widget.tsx	h	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	AFNetworkReachabilityStatusForFlags	nesting	5	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	AFStringFromNetworkReachabilityStatus	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	initWithReachability:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	isReachable	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	cognitive	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	keyPathsForValuesAffectingValueForKey:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForAddress:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	managerForDomain:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/afnetworking/AFNetworkReachabilityManager.m	setReachabilityStatusChangeBlock:	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	init _ string : String	row	absent	present			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn	2	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn_mod	2	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	ccn_std	2	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	crap	2.0	3.0	kit.exact	3.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#1	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn	3	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn_mod	3	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	ccn_std	3	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	cognitive	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S#3	crap	3.0	4.0	kit.exact	4.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/alamofire/Validation.swift	validate contentType acceptableContentTypes : S , response : HTTPURLResponse , isEmpty : Bool	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	apply_patch	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatches	cognitive	3	5			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatches	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatchesCaseSensitive	cognitive	3	5			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_ApplyPatchesCaseSensitive	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_FindPointerFromObjectTo	nesting	2	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatches	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	cJSONUtils_GeneratePatchesCaseSensitive	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	compare_json	nesting	7	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	compare_pointers	nesting	8	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	compose_patch	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	create_patches	nesting	4	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	decode_array_index_from_pointer	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	decode_pointer_inplace	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	detach_item_from_array	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	detach_path	nesting	1	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	generate_merge_patch	cognitive	16	21			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	get_array_item	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	get_item_from_pointer	cognitive	11	17			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	get_item_from_pointer	nesting	2	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	insert_item_in_array	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	pointer_encoded_length	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	sort_list	cognitive	28	29			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cjson/cJSON_Utils.c	sort_list	nesting	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/click/parser.py	_get_value_from_state	cognitive	12	10	complexipy	10	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cobra/args.go	cmd * Command , args [ ] string#4	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/cobra/args.go	legacyArgs cmd * Command , args [ ] string	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/express/utils.js	compileQueryParser	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/express/utils.js	exports.compileETag	nesting	4	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/express/utils.js	exports.compileTrust	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/express/utils.js	setCharset	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	buffered_file::close	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	buffered_file::~buffered_file	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	detail::format_windows_error	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	file::close	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	file::dup2#2	cognitive	1	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	file::file	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	file::open_windows_file	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	file::~file	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	ostream::grow	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	ostream::ostream#2	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	pipe::pipe	cognitive	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	system_message::is_whitespace	nesting	4	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	system_message::system_message	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	utf8_system_category::message	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/fmt/os.cc	utf8_system_category::message	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::checkOffset	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::format#3	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::indexOfNonDigit	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parse	nesting	3	5			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parseInt	cognitive	6	8			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/gson/ISO8601Utils.java	ISO8601Utils::parseInt	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/ky/merge.ts	appendSearchParameters	nesting	3	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/ky/merge.ts	deepMergeInternal	nesting	7	6			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/ky/merge.ts	isPlainObject	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/ky/merge.ts	mergeHeaderContainers	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/ky/merge.ts	mergeHeaders	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/ky/merge.ts	validateAndMerge	nesting	4	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	install_nvm_as_script	nesting	3	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	install_nvm_from_git	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	nvm_check_global_modules	nesting	5	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	nvm_default_install_dir	nesting	2	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	nvm_detect_profile	nesting	12	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	nvm_do_install	cognitive	54	42			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	nvm_do_install	nesting	20	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	nvm_has_executable	nesting	1	0			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	nvm_profile_is_bash_or_zsh	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	nvm_source	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/nvm/install.sh	nvm_try_profile	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	ccn_mod	32	29			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	cognitive	46	43			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	nesting	8	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Add-PoshGitToProfile	params	0	4			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn	3	8			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn_mod	4	8			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	ccn_std	3	8			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Get-FileEncoding $Path	crap	3.0	8.0	kit.exact	8.0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Get-PathStringComparison	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Get-PromptConnectionInfo $Format = '[{1}@{0}]: '	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Get-PromptPath	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	ccn_mod	20	18			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	cognitive	35	33			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Remove-PoshGitFromProfile	params	0	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Test-Administrator	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Test-InPSModulePath	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Test-InPSModulePath	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Test-PoshGitImportedInScript	nesting	2	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/posh-git/Utils.ps1	Test-PoshGitImportedInScript	params	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/requests/cookies.py	__contains__	cognitive	2	1	complexipy	1	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/requests/cookies.py	__iter__	cognitive	1	0	complexipy	0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/requests/cookies.py	getheaders	cognitive	1	0	complexipy	0	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/requests/cookies.py	set_cookie	cognitive	4	2	complexipy	2	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/requests/cookies.py	update	cognitive	5	4	complexipy	4	
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/ripgrep/pathutil.rs	normalize_path mut path : Cow < [ u8 ] >	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	eqlIgnoreCase a : [ ] const u8 , b : [ ] const u8	nesting	3	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	hexEscape bytes : [ ] const u8 , case : std . fmt . Case	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	indexOfIgnoreCasePos haystack : [ ] const u8 , start_index : usize , needle : [ ] const u8	nesting	5	2			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphabetic c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isAlphanumeric c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isDigit c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isHex c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isLower c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isUpper c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	isWhitespace c : u8	nesting	0	1			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	cognitive	4	3			
+tests/accuracy/corpus_goldens/goldens/small/scored.tsv	vendor/zig-std/ascii.zig	orderIgnoreCase lhs : [ ] const u8 , rhs : [ ] const u8	nesting	1	2			

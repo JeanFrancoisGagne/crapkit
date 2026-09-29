@@ -113,7 +113,7 @@ def test_complexipy_agrees_with_the_counter_on_the_stdlib(stdlib_unparsed, oracl
     assert problems == []
 
 
-# complexipy's raw value against crapkit's for one def each. The first nine
+# complexipy's raw value against crapkit's for one def each. The first ten
 # are conventions (the counter reproduces complexipy under COMPLEXIPY); the
 # last two are places complexipy reads nothing or another level, so a def
 # holding them is set aside from the complexipy comparison.
@@ -127,6 +127,8 @@ COMPLEXIPY_CASES = {
     "AO-CXP-COMP-FILTER": "def f(x):\n    return [a for a in x if a]\n",
     "AO-CXP-LOOP-ELSE": "def f(a):\n    for x in a:\n        a.pop()\n    else:\n        return 1\n",
     "AO-CXP-RECURSION-NAME": "def f(a, f):\n    return f(a)\n",
+    "AO-CXP-GUARD": ("def f(v):\n    match v:\n        case int() if v < 0:\n            return 1\n"
+                     "        case _:\n            return 0\n"),
     "AO-CXP-SKIPS": "def f(a, b):\n    return 1 + (a if b else 2)\n",
     "AO-CXP-NESTED-DEF": ("def f(a):\n    def g(b):\n        if b:\n            return 1\n"
                           "        return 0\n    return g(a)\n"),

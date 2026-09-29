@@ -145,6 +145,40 @@ def test_a_phase_makereport_never_saw_writes_nothing(tmp_path, monkeypatch):
     assert not outcomes.exists()
 
 
+def _marked(*pythons: tuple) -> SimpleNamespace:
+    """An item with one python marker per (major, minor) in `pythons`."""
+    marks = [SimpleNamespace(args=version) for version in pythons]
+    return SimpleNamespace(iter_markers=lambda name: marks if name == "python" else [])
+
+
+def _collected(monkeypatch, items: list, replay: bool) -> tuple[list, list]:
+    """What the plugin leaves collected and what it reports deselected."""
+    if replay:
+        monkeypatch.setenv(retro.OUTCOMES_ENV, "outcomes.jsonl")
+    else:
+        monkeypatch.delenv(retro.OUTCOMES_ENV, raising=False)
+    deselected = []
+    hook = SimpleNamespace(pytest_deselected=lambda items: deselected.extend(items))
+    config = SimpleNamespace(hook=hook)
+    retro.pytest_collection_modifyitems(config, items)
+    return items, deselected
+
+
+def test_a_replay_drops_an_item_marked_for_a_newer_python(monkeypatch):
+    """The replay runs with CRAPKIT_ACCURACY_COLLECT_ALL, which keeps every item, so a
+    shape marked python(3, 14) ran on 3.12 and failed on a KeyError: no evidence about
+    the commit, yet it failed R43's fix. The replay drops such an item instead."""
+    plain, old, new = _marked(), _marked((3, 0)), _marked((3, 0), (99, 0))
+
+    assert _collected(monkeypatch, [plain, old, new], replay=True) == ([plain, old], [new])
+
+
+def test_outside_a_replay_the_plugin_drops_nothing(monkeypatch):
+    new = _marked((99, 0))
+
+    assert _collected(monkeypatch, [new], replay=False) == ([new], [])
+
+
 XFAIL_CHECK = """\
 import pytest
 
@@ -152,6 +186,11 @@ import pytest
 @pytest.mark.xfail(strict=True, raises=AssertionError, reason="an open defect")
 def test_open_defect():
     assert 1 == 2
+
+
+@pytest.mark.python(99, 0)
+def test_too_new_for_this_python():
+    assert 1 == 4
 
 
 def test_right():
