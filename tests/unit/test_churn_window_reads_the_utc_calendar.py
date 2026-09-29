@@ -11,8 +11,10 @@ that day counted as churn on one machine and not on the other, so a CI runner
 and a laptop ranked the same repo differently.
 
 The cutoff is now counted on the UTC calendar with git's own month arithmetic,
-whatever TZ says. "Now" is pinned with GIT_TEST_DATE_NOW, the variable git's
-date code reads, which the window's clock reads too.
+whatever TZ says, back from HEAD's commit date (test_churn_window_anchor keeps
+the wall clock out of it). Each case dates HEAD at its pinned instant, and
+GIT_TEST_DATE_NOW, the variable git's date code reads, pins git's clock there
+too.
 """
 from __future__ import annotations
 
@@ -74,7 +76,7 @@ def in_zone(monkeypatch, zone: str | None, now: int) -> None:
     else:
         monkeypatch.setenv("TZ", zone)
     monkeypatch.setenv("GIT_TEST_DATE_NOW", str(now))
-    churn_log._cutoff_at.cache_clear()
+    churn_log._commit_date.cache_clear()
 
 
 @pytest.fixture()
@@ -83,12 +85,18 @@ def bare_repo(tmp_path) -> Path:
     return tmp_path
 
 
+def _stamp(now: int) -> str:
+    return datetime.fromtimestamp(now, timezone.utc).isoformat()
+
+
 @pytest.mark.parametrize("zone", ZONES, ids=lambda zone: zone or "TZ-unset")
 @pytest.mark.parametrize("case", CASES.values(), ids=CASES.keys())
 def test_the_cutoff_is_one_instant_in_every_zone(bare_repo, monkeypatch, case, zone):
+    (bare_repo / "head.txt").write_text("head\n", encoding="utf-8", newline="\n")
+    _commit(bare_repo, "head", _stamp(case.now))
     in_zone(monkeypatch, zone, case.now)
 
-    assert churn_log._window_cutoff(bare_repo, case.months) == case.cutoff
+    assert churn_log.window_cutoff(bare_repo, case.months, None) == case.cutoff
 
 
 # --- git's month arithmetic, on the UTC calendar ------------------------------
@@ -103,15 +111,16 @@ def test_the_cutoff_is_one_instant_in_every_zone(bare_repo, monkeypatch, case, z
     ("2027-03-31T00:00:00+00:00", 25, "2025-03-03T00:00:00+00:00"),
 ])
 def test_months_count_back_on_the_utc_calendar(now, months, cutoff):
-    assert churn_log._months_before(epoch(now), months) == epoch(cutoff)
+    assert churn_log.months_before(epoch(now), months) == epoch(cutoff)
 
 
 def test_a_window_reaching_past_1970_starts_there():
-    """git reads a negative --max-age as the far future and walks nothing."""
+    """git reads a negative --max-age as the far future and walks nothing.
+    test_churn_window_anchor pins the instant such a window starts at."""
     now = epoch("2026-09-30T12:00:00+00:00")
 
-    assert churn_log._months_before(now, 24300) == epoch("1970-01-30T12:00:00+00:00")
-    assert churn_log._months_before(now, 10 ** 9) >= 0
+    assert churn_log.months_before(now, 24300) >= 0
+    assert churn_log.months_before(now, 10 ** 9) >= 0
 
 
 def git_cutoffs(root: Path, now: int, windows: tuple[int, ...]) -> list[int]:
@@ -138,7 +147,7 @@ WINDOWS = (1, 6, 12, 13, 25)
                          ids=lambda t: datetime.fromtimestamp(t, timezone.utc).strftime("%Y%m%dT%H%M%S"))
 def test_the_count_matches_git_reading_the_utc_calendar(bare_repo, now):
     """The oracle is git itself with TZ=UTC0: on the UTC calendar the two agree."""
-    assert [churn_log._months_before(now, months) for months in WINDOWS] == \
+    assert [churn_log.months_before(now, months) for months in WINDOWS] == \
         git_cutoffs(bare_repo, now, WINDOWS)
 
 
@@ -160,7 +169,8 @@ def _append(path: Path, line: str) -> None:
 @pytest.fixture(scope="module", params=CASES.keys())
 def dated_repo(request, tmp_path_factory) -> tuple[Case, Path]:
     """The unit suite's two-scope repo with a history dated around one case's
-    cutoff, scored once so each zone's brief has a run to read."""
+    cutoff and HEAD at its pinned instant, scored once so each zone's brief has
+    a run to read."""
     case = CASES[request.param]
     root = tmp_path_factory.mktemp("dated")
     (root / "src").mkdir()
@@ -177,6 +187,8 @@ def dated_repo(request, tmp_path_factory) -> tuple[Case, Path]:
     _commit(root, "edge", case.edge)
     _append(root / "src" / "app.ts", "// recent")
     _commit(root, "recent", case.recent)
+    (root / "head.txt").write_text("head\n", encoding="utf-8", newline="\n")
+    _commit(root, "head", _stamp(case.now))
     seed_artifacts(root)
     assert main(["coverage", "--reuse-artifacts", "--repo", str(root)]) == 0
     return case, root

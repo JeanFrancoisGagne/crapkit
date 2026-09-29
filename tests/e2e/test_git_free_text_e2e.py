@@ -78,8 +78,10 @@ CHURN_ROWS = [
     _churn_row("author-utf8-bom", commits=[dict(author=b"\xef\xbb\xbfRene")]),
     _churn_row("committer-invalid-utf8", commits=[dict(committer=b"Ren\xe9")]),
     _churn_row("subject-invalid-utf8", commits=[dict(message=b"caf\xe9 fix", author=b"Ren")]),
+    # The window ends at HEAD's commit date: today's commit leaves the two
+    # three years back outside it, so only HEAD counts.
     _churn_row("author-invalid-outside-window", base_age=THREE_YEARS,
-               commits=[dict(author=b"Ren\xe9", age_days=THREE_YEARS)], churn=None),
+               commits=[dict(author=b"Ren\xe9", age_days=THREE_YEARS), dict(author=b"Ren")], churn=(1, 1)),
     _churn_row("path-valid-accent-deleted", base_files={"src/café.py".encode(): APP},
                commits=[dict(author=b"Ren", deletes=("src/café.py".encode(),))]),
 ]

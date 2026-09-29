@@ -171,7 +171,7 @@ def fake(monkeypatch) -> FakeHistory:
     history = FakeHistory()
     monkeypatch.setattr(churn_log, "_window_log", history.window)
     monkeypatch.setattr(churn_log, "_range_log", lambda root, base, head: iter(()))
-    monkeypatch.setattr(churn_log, "_window_cutoff", lambda root, months: 999999999)
+    monkeypatch.setattr(churn_log, "window_cutoff", lambda root, months, head: 999999999)
     monkeypatch.setattr(churn_log, "is_ancestor", lambda root, commit, other: True)
     monkeypatch.setattr(churn_log, "head_commit", lambda root: HEAD)
     monkeypatch.setattr(churn_log, "history_depth", lambda root: history.depth)
