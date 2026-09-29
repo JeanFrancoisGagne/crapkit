@@ -20,8 +20,19 @@ python tools/release/release.py run accuracy VERSION
 python tools/release/release.py run stage2b VERSION
 python tools/release/release.py run registry VERSION
 python tools/release/release.py run glama VERSION
-python tools/release/release.py verify VERSION
+python tools/release/release.py run surfaces VERSION
 ```
+
+`run surfaces` reads every surface back (`release.py verify VERSION`) and then
+dispatches deploy.yml's published cadence, which installs vVERSION from PyPI, the
+tag, pre-commit and the MCP registry the way a user does. The dispatch returns at
+once: find the run with `gh run list --workflow deploy.yml --limit 1` and wait on it
+with `gh run watch RUN_ID --exit-status`. A red run fails the release.
+
+Preview the GitHub release body with `python tools/release/release.py notes VERSION > notes.md`.
+It prints the changelog section as UTF-8 whatever the console's code page, and it is the
+text stage 2b hands `gh release create`. GitHub refuses a body over 125,000 characters,
+so `check` refuses a longer section before stage 1 bumps anything.
 
 Keep `run verify` in its own background process when the calling tool has a shorter deadline than the suite. `plan` and `run --dry-run` print commands without changing files or contacting publication services.
 
@@ -86,8 +97,8 @@ Every fault in the 0.7.2 release fired after PyPI and the GitHub release were
 already public, because nothing checked the machine first.
 
 `check VERSION` is stage 1's first command, so the chain stops before it builds or
-pushes anything. Besides the version surfaces and the changelog heading, it reads
-the two rows marked `check` below. Confirm the three rows marked `you` yourself:
+pushes anything. Besides the version surfaces, the changelog heading and the size of
+that section, it reads the two rows marked `check` below. Confirm the three rows marked `you` yourself:
 `check` never looks at PATH, at `gh` or at the accuracy corpus.
 Each takes seconds. A missing credential or gh login shows up only after the push;
 a wrong PATH python or a missing build or twine stops the release before it.
@@ -222,7 +233,8 @@ The Codex marketplace is pinned to a release tag, and a marketplace added at a t
 stays there: `codex plugin marketplace upgrade` keeps it at that tag. Removing it and
 adding it at the new tag moves the marketplace, and `codex plugin add` then installs the
 new copy. Stage 1 rewrites the `--ref` in README.md, docs/adoption.md,
-docs/upgrading.md and docs/handbook.html with the other version surfaces.
+docs/upgrading.md, docs/handbook.html, plugin/skills/crapkit-onboard/SKILL.md and
+docs/agent-json.md with the other version surfaces.
 Use the supported managers to refresh installations; do not edit their caches.
 Check that the registered source is the canonical repository and that its current
 revision and installed version match the release. Run `crapkit doctor --plugin-root PATH`

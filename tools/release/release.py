@@ -72,6 +72,10 @@ READBACK_ATTEMPTS = 12
 # Stands in a command for the `gh auth token` value. The command echo prints this
 # text; only the argv handed to the process carries the token.
 GH_TOKEN_ARG = "$(gh auth token)"
+# GitHub refuses a release body longer than this many characters. Stage 2b
+# creates the release after the tag, the push and PyPI, so `check` refuses a
+# changelog section over it before stage 1 bumps anything.
+GITHUB_BODY_LIMIT = 125_000
 # This repository's py lane runs both unit and E2E suites. A verdict only
 # compares failures with a baseline; publication also requires passing tests.
 RELEASE_TEST_LANES = frozenset({"py"})
@@ -177,10 +181,16 @@ def _surface_problems(root: Path, current: str) -> list:
 
 
 def _changelog_problems(root: Path, new: str) -> list:
+    """The unreleased heading once, then a section GitHub takes as a release body.
+    The size is read only past the heading: `notes` raises on a missing section."""
     found = _read(root, "CHANGELOG.md").count(_heading(new, "unreleased") + NL)
-    if found == 1:
+    if found != 1:
+        return [f"CHANGELOG.md: {_heading(new, 'unreleased')!r} x{found} (expected 1)"]
+    size = len(notes(root, new))
+    if size <= GITHUB_BODY_LIMIT:
         return []
-    return [f"CHANGELOG.md: {_heading(new, 'unreleased')!r} x{found} (expected 1)"]
+    return [f"CHANGELOG.md: the {new} section is {size} characters; a GitHub release body "
+            f"takes at most {GITHUB_BODY_LIMIT}"]
 
 
 def check(root: Path, new: str, current: str | None = None) -> CheckReport:
@@ -1659,6 +1669,10 @@ def _cmd_bump(root: Path, version: str, args: argparse.Namespace) -> int:
 
 
 def _cmd_notes(root: Path, version: str, args: argparse.Namespace) -> int:
+    """The release body, as UTF-8 whatever the console's code page: under a
+    cp1252 stdout the first CJK character in a section ended the preview with
+    UnicodeEncodeError and an empty file. Stage 2b writes its notes file as UTF-8."""
+    sys.stdout.reconfigure(encoding="utf-8")
     print(notes(root, version), end="")
     return 0
 
