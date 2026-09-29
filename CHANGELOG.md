@@ -1165,6 +1165,8 @@ and missed some that were. Each rule now reads the language it is in:
   top of a function reads 3 where it read 1, as a Rust match with a guard reads.
 - A `while` right after a `}` is a do-while's tail only when a `do` (Swift: `repeat`)
   opened that block. A loop after an `if` block or a Python dict literal cost nothing.
+  A do-while without braces, `do a--; while (a > 0);`, is one loop too, where it cost
+  2, and the loop or `if` around it keeps its body to the `;` after the condition.
 - A `break` or `continue` costs +1 only with a label as the language spells one:
   `'outer` in Rust, `:blk` in Zig, a count in shell, a name elsewhere. A Rust arm's
   `Err(_) => continue,`, a Zig prong's `.eq => continue,`, a TypeScript key

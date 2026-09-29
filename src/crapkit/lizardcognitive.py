@@ -476,7 +476,7 @@ class _FnState:
                  "bool_op", "fn", "own", "recursed", "body_started", "signature_depth",
                  "prev", "prev2", "label_check", "dialect", "call_pending", "call",
                  "messages", "runs", "run_break", "word_op", "braces", "closed_do",
-                 "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies",
+                 "guard_else", "match_indent", "else_payload", "bracket_depth", "bodies", "do_tail",
                  "ended", "brace_base", "scopes", "home", "bare_call", "shadowed", "importing",
                  "after_group")
 
@@ -498,7 +498,7 @@ class _FnState:
         self.at_line_start = True
         self.pending = False     # a counting structure awaits its '{' (braced languages)
         self.bracket_depth = 0   # brackets of every kind open; see _body_token
-        self.bodies = []          # [bracket depth, phase, is an if's] per body; see _open_body
+        self.bodies = []          # [bracket depth, phase, structure] per body; see _open_body
         self.ended = None         # the depth a statement just ended at; see _end_statement
         self.else_pending = False
         self.else_payload = False  # Zig: inside an else's `|err|`; see _resolve_else
@@ -520,6 +520,7 @@ class _FnState:
         self.word_op = None       # `and`/`or` just seen; a `:` next makes it a selector part
         self.braces = []          # per open `{`: whether a `do` opened it; see _loop_tail
         self.closed_do = False    # the last `}` closed a `do`'s block
+        self.do_tail = False      # a braceless `do`'s statement just ended; see _loop_tail
         self.guard_else = False   # Swift: a guard awaits its else; see _guard
         self.match_indent = None  # Python: a line starting with `match`; see _python_match
 
@@ -862,9 +863,10 @@ def _else_body(state: _FnState, token: str) -> None:
     default prong, which has no body of an else."""
     if not state.dialect.braceless:
         state.pending = True
+    elif token == "if":
+        state.bodies.append([state.bracket_depth, _FRESH, "if"])
     elif token != "=>":
-        state.bodies.append([state.bracket_depth, _FRESH if token == "if" else _AWAITING,
-                             token == "if"])
+        state.bodies.append([state.bracket_depth, _AWAITING, "else"])
 
 
 def _resolve_words(state: _FnState, token: str) -> None:
@@ -1329,10 +1331,15 @@ def _loop_tail(state: _FnState, token: str) -> bool:
     `do` already paid for.
 
     Only the `while` right after the `}` that closes a block a `do` opened
-    (see _open_brace). Reading every `while` after a `}` as a tail made the
-    loop after an `if` block, or after a Python dict, cost nothing.
+    (see _open_brace), or after the statement a braceless `do` holds, `do
+    a--; while (a > 0);` (see _end_statement). Reading every `while` after a
+    `}` as a tail made the loop after an `if` block, or after a Python dict,
+    cost nothing.
     """
-    return token == "while" and state.prev == "}" and state.closed_do
+    if token != "while":
+        return False
+    tail, state.do_tail = state.do_tail, False
+    return tail or (state.prev == "}" and state.closed_do)
 
 
 def _guard(state: _FnState, is_python: bool) -> None:
@@ -1661,7 +1668,7 @@ def _open_body(state: _FnState, token: str) -> None:
     """A structure's body, waiting for its header, or for a `do`, for its
     first token."""
     phase = _AWAITING if token in state.dialect.do_loops else _FRESH
-    state.bodies.append([state.bracket_depth, phase, token == "if"])
+    state.bodies.append([state.bracket_depth, phase, token])
 
 
 def _body_token(state: _FnState, token: str) -> None:
@@ -1708,10 +1715,27 @@ def _operator(token: str) -> bool:
 
 def _end_statement(state: _FnState, token: str) -> None:
     """The token after a statement's end closes the bodies at its depth,
-    unless it goes on with the statement (see _STATEMENT_GOES_ON)."""
+    unless it goes on with the statement (see _STATEMENT_GOES_ON). A `while`
+    after the statement a `do` holds goes on with the do-while, which ends at
+    the `;` after its condition: it closes the do's body and those inside it,
+    and keeps the bodies around the do-while."""
     depth, state.ended = state.ended, None
+    if token == "while" and _ends_do(state, depth):
+        return
     if token not in _STATEMENT_GOES_ON:
         _close_bodies(state, depth)
+
+
+def _ends_do(state: _FnState, depth: int) -> bool:
+    """Close the bodies through the innermost `do`'s at `depth` or deeper, if
+    one is open, and say so; see _loop_tail."""
+    held = [body[2] for body in state.bodies if body[0] >= depth]
+    if not set(held) & state.dialect.do_loops:
+        return False
+    while state.bodies.pop()[2] not in state.dialect.do_loops:
+        pass
+    state.do_tail = True
+    return True
 
 
 def _advance_body(state: _FnState, token: str) -> None:
@@ -1800,7 +1824,7 @@ def _else_ends_body(state: _FnState, _token: str) -> None:
     `if (a) x(); else y();` once the `;` has ended the statement."""
     depth = state.bracket_depth
     while state.bodies and state.bodies[-1][0] >= depth:
-        if state.bodies.pop()[2]:
+        if state.bodies.pop()[2] == "if":
             return
 
 
