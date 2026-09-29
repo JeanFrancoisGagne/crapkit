@@ -174,20 +174,22 @@ GOLDEN_CORPUS = {
 }
 
 # Measured under CPython 3.11.2, 3.11.16, 3.12.14, 3.13.15 and 3.14.7 with
-# lizard 1.24.0 at analysis version 12: the same tuples on all five, and the
-# same ones analysis version 11 gave. A bump of ANALYSIS_VERSION re-measures
+# lizard 1.24.0 at analysis version 13: the same tuples on all five. Against
+# version 12 one value moved: calc.cpp's nesting reads 2 where lizard's ND
+# column read 3, since the cognitive pass opens a level for the for's body and
+# the if's body and none for `&&`. A bump of ANALYSIS_VERSION re-measures
 # this table on every Python the CI runs and moves GOLDEN_ANALYSIS_VERSION with
 # it; until then the test below it fails, so a bump cannot leave the golden
 # skipped. A row that moves on one Python only means the fingerprint needs the
 # Python version.
-GOLDEN_ANALYSIS_VERSION = 12
+GOLDEN_ANALYSIS_VERSION = 13
 GOLDEN_LIZARD_VERSION = '1.24.0'
 GOLDEN_RECORDS = [
     ('app.py', 'pick( kind , n )', 1, 7, 5, 5, 5, 7, 2, 2, 5, 1, 0),
     ('app.py', 'open( self , x )', 11, 12, 2, 2, 2, 2, 2, 0, 1, 1, 0),
     ('app.ts', 'dispatch ( kind )', 1, 9, 3, 2, 2, 8, 1, 1, 1, 1, 0),
     ('app.ts', 'twice ( n )', 9, 9, 2, 2, 2, 1, 1, 1, 1, 1, 0),
-    ('calc.cpp', 'total( int * xs , int n)', 1, 7, 4, 4, 4, 7, 2, 3, 4, 1, 0),
+    ('calc.cpp', 'total( int * xs , int n)', 1, 7, 4, 4, 4, 7, 2, 2, 4, 1, 0),
     ('lib.rs', 'sign n : i32', 1, 7, 4, 4, 4, 7, 1, 1, 3, 1, 0),
     ('main.go', 'clamp n int', 3, 10, 3, 3, 3, 8, 1, 1, 2, 1, 0),
 ]

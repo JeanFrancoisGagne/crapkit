@@ -81,9 +81,11 @@ def test_marks_stamped_by_0_8_0_are_refused_until_one_reseed():
     own region; it reads a UTF-16 source that 0.8.0 scored as empty, and keys
     an identifier holding one of the five bytes cp1252 leaves undefined by its
     name, where it read `U+FFFD( x )` or C's `if( x)` at ccn 1 took the
-    function's place. So a marks file stamped under 0.8.0's version 11 is not
-    comparable and re-seeds once. Kept at 11, verify compared the new scores
-    against the old numbers."""
+    function's place, and its nesting column reads the cognitive pass in every
+    language. So a marks file stamped under 0.8.0's version 11 is not
+    comparable and re-seeds once. 0.8.1's one bump lands on 13 (12 was an
+    unreleased step). Kept at 11, verify compared the new scores against the
+    old numbers."""
     import lizard
 
     from crapkit.analyze import ANALYSIS_VERSION
@@ -91,5 +93,5 @@ def test_marks_stamped_by_0_8_0_are_refused_until_one_reseed():
 
     refusal = stamp_conflict(stamp_text(11, lizard.version), metric_version())
 
-    assert ANALYSIS_VERSION == 12
+    assert ANALYSIS_VERSION == 13
     assert refusal is not None and "ratchet seed" in refusal, refusal
