@@ -1,4 +1,7 @@
 """A kernel-confirmed empty process group needs no system-wide membership scan."""
+import os
+import subprocess
+import sys
 from types import SimpleNamespace
 from unittest.mock import Mock, call
 
@@ -35,8 +38,27 @@ def test_a_group_that_still_exists_keeps_the_zombie_aware_scan(monkeypatch):
     pause.assert_called_once_with(.01)
 
 
-def test_a_probe_permission_failure_cannot_confirm_cleanup(monkeypatch):
-    _, scan = group_adapter(monkeypatch, PermissionError('group probe denied'))
-    with pytest.raises(PermissionError, match='group probe denied'):
-        owner._ProcessGroup(731).stop()
-    scan.assert_not_called()
+def test_a_refused_probe_leaves_cleanup_to_the_zombie_aware_scan(monkeypatch):
+    """Darwin refuses the probe with EPERM when the group's only member is an
+    exited, unreaped leader: XNU's killpg1 skips zombies and answers EPERM when
+    it found no one. The group still exists, so the scan decides, and the
+    refusal alone never confirms cleanup (#78)."""
+    probe, scan = group_adapter(monkeypatch, PermissionError(1, 'Operation not permitted'))
+    scan.side_effect = [True, False]
+    monkeypatch.setattr(owner, 'time', SimpleNamespace(sleep=Mock()))
+    assert owner._group_exists(731) is True
+    owner._ProcessGroup(731).stop()
+    assert probe.call_args_list == [call(731, 0)] * 3
+    assert scan.call_args_list == [call(731), call(731)]
+
+
+@pytest.mark.skipif(not hasattr(os, 'waitid'), reason='no os.waitid: Windows, or macOS before 3.13')
+def test_a_group_left_with_only_its_unreaped_leader_stops_on_the_real_kernel():
+    """The state a lane leaves: procs waits with WNOWAIT, so the leader stays a
+    zombie until the owner confirms the group stopped (#78)."""
+    leader = subprocess.Popen([sys.executable, '-c', ''], start_new_session=True)
+    try:
+        os.waitid(os.P_PID, leader.pid, os.WEXITED | os.WNOWAIT)
+        owner._ProcessGroup(leader.pid).stop()
+    finally:
+        leader.wait()

@@ -320,10 +320,16 @@ def _family(path):
 
 
 def _group_exists(pid: int) -> bool:
+    """Whether the kernel still knows the group. Only ESRCH says it is gone:
+    Darwin answers EPERM when the only member left is the unreaped leader, and
+    a member owned by another user answers EPERM everywhere, so _group_active
+    decides both."""
     try:
         os.killpg(pid, 0)
     except ProcessLookupError:
         return False
+    except PermissionError:
+        pass
     return True
 
 
