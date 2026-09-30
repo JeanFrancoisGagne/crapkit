@@ -1,4 +1,6 @@
 """Rulings rows: what a packet may write, and what pin_ruling asserts."""
+import re
+
 import pytest
 
 from accuracy.kit import rulings
@@ -119,3 +121,33 @@ def test_an_unknown_row_is_refused(rows):
 def test_the_repo_rulings_load():
     """Every packet's rulings.tsv parses and passes the row checks."""
     rulings.load()
+
+
+# Citation addresses that answer 404 (curl -L, 2026-09), each with the form that
+# resolves: the JSX spec left facebook.github.io for facebook/jsx's spec.emu; the
+# istanbuljs monorepo tags a release `<package>-v<version>`, never `<package>@<version>`;
+# nyc tags `nyc-v<version>`; crap-typescript lives at github.com/fabian-barney.
+MOVED = (
+    (re.compile(r"facebook\.github\.io/jsx"), "github.com/facebook/jsx/blob/<commit>/spec.emu#L<n>"),
+    (re.compile(r"istanbuljs/istanbuljs/blob/istanbul-lib-[a-z-]+(%40|@)"),
+     "istanbuljs/istanbuljs/blob/istanbul-lib-<package>-v<version>"),
+    (re.compile(r"istanbuljs/nyc/blob/v\d"), "istanbuljs/nyc/blob/nyc-v<version>"),
+    (re.compile(r"github\.com/barney-media/"), "github.com/fabian-barney/"),
+)
+
+
+def dead_citations(rows: dict) -> list[str]:
+    """`<id>: <live form>` for each row whose outside support cites a moved address."""
+    return [f"{key}: {live}" for key, row in sorted(rows.items())
+            for pattern, live in MOVED if pattern.search(row.outside_support)]
+
+
+def test_a_citation_of_a_moved_address_is_named_with_its_live_form(tmp_path):
+    _write(tmp_path, "a", DEFINITION.replace("https://docs.python.org/3/library/functions.html#round",
+                                             "https://github.com/istanbuljs/nyc/blob/v18.0.0/README.md"))
+
+    assert dead_citations(rulings.load(tmp_path)) == ["D5: istanbuljs/nyc/blob/nyc-v<version>"]
+
+
+def test_no_repo_ruling_cites_an_address_that_answers_404():
+    assert dead_citations(rulings.load()) == []
