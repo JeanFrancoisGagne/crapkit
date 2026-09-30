@@ -222,10 +222,12 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                               'description': 'reruns after a timeout or '
                                                                              'missing artifact'},
                                                   'retest_command': {'type': 'string',
-                                                                     'description': '{tests} template '
-                                                                                    'rerunning just the '
-                                                                                    'newly-failed ids '
-                                                                                    'before exit 8'}}}},
+                                                                     'description': 'rerun template for '
+                                                                                    'newly failed tests '
+                                                                                    'before exit 8: '
+                                                                                    '{tests} (ids), '
+                                                                                    '{files} (vitest), '
+                                                                                    '{names} (pytest -k)'}}}},
                 'exclude': {'type': 'object',
                             'additionalProperties': False,
                             'properties': {'globs': {'type': 'array', 'items': {'type': 'string'}},

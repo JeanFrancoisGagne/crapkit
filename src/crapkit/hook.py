@@ -52,6 +52,11 @@ class Violation(NamedTuple):
     # the ordinal counts every function of that name in the file, and a gate
     # handed only the breaching ones would number the second twin as the first.
     key_name: str = ""
+    # The ceiling the function was judged against: its scope's, which a scope
+    # `target` can set below the repo's. The refusal printed the repo target, so
+    # a ccn-6 breach of a target-5 scope read "exceed the complexity ceiling of
+    # 6". None only on a Violation built by hand with no scope behind it.
+    ceiling: int | None = None
 
 
 class StagedGate(NamedTuple):
@@ -124,7 +129,7 @@ def _file_violations(rel: str, records: list, ranges, ceiling: int) -> list[Viol
     subset alone cannot say which twin a record is.
     """
     keys = key_names(records)
-    return [Violation(rel, rec.long_name, rec.start, rec.ccn, key_of(keys, rec)[1])
+    return [Violation(rel, rec.long_name, rec.start, rec.ccn, key_of(keys, rec)[1], ceiling)
             for rec in records if rec.ccn > ceiling and _touches(rec, ranges)]
 
 

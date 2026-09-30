@@ -46,6 +46,41 @@ def mark_events(patches: list[tuple[int, str]]) -> list[tuple]:
             for event in _commit_events(ts, *_commit_delta(patch))]
 
 
+def held_history(patches: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """The history a missing or blank marks file reports from: each commit up
+    to the newest one whose file held more than blank lines, and every later
+    commit as a clock tick that changes no mark.
+
+    verify judges such a file against the newest committed marks, so they are
+    the open ones here too. Replayed as written, the commit that deleted or
+    emptied the file dropped every mark, the burn-down counted each one as
+    repaid, and `--enforce` passed a repayment quota the restored file fails.
+    """
+    last = _last_held(patches)
+    return patches[:last + 1] + [(ts, "") for ts, _ in patches[last + 1:]]
+
+
+def _last_held(patches: list[tuple[int, str]]) -> int:
+    """The index of the newest commit after which the file held a line that is
+    not blank, or -1. Each patch carries every line its commit added or
+    removed, so a running count of those lines is the file's own."""
+    held, last = 0, -1
+    for index, (_, patch) in enumerate(patches):
+        held += sum(_line_sign(line) for line in record_lines(patch))
+        if held > 0:
+            last = index
+    return last
+
+
+def _line_sign(line: str) -> int:
+    """1 for a line a patch adds, -1 for one it removes; 0 for a blank line,
+    a file header or anything else a patch prints."""
+    body = line[1:]
+    if not body.strip() or body.startswith(("++ ", "-- ")):
+        return 0
+    return {"+": 1, "-": -1}.get(line[:1], 0)
+
+
 def _commit_events(ts: int, added: dict, removed: dict) -> list[tuple]:
     events = [(ts, key, "updated" if key in removed else "added", added[key])
               for key in sorted(added)]

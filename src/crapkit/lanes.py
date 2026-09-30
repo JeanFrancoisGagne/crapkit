@@ -259,6 +259,12 @@ def _pytest_cov_home(root: Path, lane: Lane) -> str:
             f"(`{pip_install(resolved, 'pytest-cov', install_python(word, spec))}`)")
 
 
+# pytest's usage error naming a --cov flag among the arguments it rejected.
+# `--cov` anywhere in the tail matched the lane's own command line, which the
+# log echoes first, so any unknown flag drew the pytest-cov hint.
+_COV_REJECTED = re.compile(r"unrecognized arguments:[^\n]*(?<!\S)--cov")
+
+
 def _missing_plugin_hint(tail: str, root: Path, lane: Lane) -> str:
     """The one failure signature a new user cannot decode: pytest rejecting
     --cov points at crapkit's config when the real gap is the pytest-cov package.
@@ -266,7 +272,7 @@ def _missing_plugin_hint(tail: str, root: Path, lane: Lane) -> str:
     Which environment it is missing from is the other half of the hint, and it
     used to name none.
     """
-    if "unrecognized arguments" not in tail or "--cov" not in tail:
+    if not _COV_REJECTED.search(tail):
         return ""
     return (f" - the --cov flags come from the pytest-cov package, which has to be "
             f"installed in {_pytest_cov_home(root, lane)}, not in the shell's active venv")

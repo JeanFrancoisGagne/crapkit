@@ -437,6 +437,19 @@ def _require_override_reason(reason: str | None) -> None:
         raise ConfigError("an override requires a non-empty reason")
 
 
+def _require_override_alert(reason: str | None, cfg) -> None:
+    """Refuse an override no alert could carry, before any lane runs or any
+    run is stored.
+
+    The audit refused it too, but only after verify had run every lane and
+    stored a run with no verdict, and after the hook had stored a run of its
+    own; the pages promise the refusal comes before anything happens."""
+    from ..override import _require_auditable_override
+
+    if reason is not None:
+        _require_auditable_override(reason, cfg.alert_command)
+
+
 def _refuse_override(verdict, reason: str | None) -> None:
     """One stderr line when a reason was given and something disqualified it.
 
@@ -993,6 +1006,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     _require_override_reason(args.override)
     root = _command_root(args.repo)
     cfg = _load_repo_config(root)
+    _require_override_alert(args.override, cfg)
     _refuse_lane_less_verify(cfg)
     _refuse_unwritable_outputs(root, {"--sarif": args.sarif, "--emit-baseline": args.emit_baseline})
     store = _verify_store(root, args.baseline_tsv)
@@ -1315,6 +1329,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
     from ..verify import GateViolation
     from ._shared import _check_ratchet_identity
 
+    _require_override_alert(reason, cfg)
     db_path = root / ".crapkit" / "crap.sqlite"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = SnapshotStore(db_path)
@@ -1545,16 +1560,32 @@ def _print_staged_violations(root: Path, cfg, gate, violations: list, shown: str
 
 
 def _print_breaches(violations: list, target: int, shown: str, judged: str) -> None:
-    print(f"crapkit gate: {len(violations)} {judged} function(s) exceed the complexity ceiling of {target}:")
-    for v in violations:
-        print(f"  ccn {v.ccn:>3}  {shown}{v.path}:{v.start}  {v.long_name}")
+    """The refusal's head line names the ceiling the breaches were judged
+    against, a scope's own `target` included. Breaches under scopes with
+    different ceilings each name theirs on the row, `ccn   6 > 5`. `target`
+    stands in for a violation built without a ceiling."""
+    ceilings = [_judged_ceiling(v, target) for v in violations]
+    shared = len(set(ceilings)) == 1
+    head = f"of {ceilings[0]}" if shared else "of their scope"
+    print(f"crapkit gate: {len(violations)} {judged} function(s) exceed the complexity ceiling {head}:")
+    for v, ceiling in zip(violations, ceilings):
+        over = "" if shared else f" > {ceiling}"
+        print(f"  ccn {v.ccn:>3}{over}  {shown}{v.path}:{v.start}  {v.long_name}")
+
+
+def _judged_ceiling(violation, target: int) -> int:
+    return target if violation.ceiling is None else violation.ceiling
 
 
 def _refuse_tracked() -> int:
     """No commit to refuse or grant: the breach is already committed, and on a
-    first hand run it is the debt the repo adopts through `ratchet seed`."""
+    first hand run it is the debt the repo adopts through `ratchet seed`.
+
+    Seed marks what the stored run scored, so a function committed after the
+    last `coverage` got no mark from seed alone and the hook refused again;
+    the refusal names the run that seed reads first."""
     print("decompose them and commit the split (coverage cannot save a function above the target), "
-          f"or record existing debt with `{_self()} ratchet seed`.")
+          f"or record existing debt with `{_self()} coverage`, then `{_self()} ratchet seed`.")
     return 6
 
 
