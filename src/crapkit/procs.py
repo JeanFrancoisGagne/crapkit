@@ -299,6 +299,8 @@ _OWNED_LAUNCH = """import json, os, sys
 if sys.stdin.buffer.readline() != b'go\\n':
     raise SystemExit(1)
 command, error_descriptor, merge = json.loads(sys.argv[1])
+if isinstance(command, str):
+    command = ['/bin/sh', '-c', command]
 if error_descriptor is None:
     error_fd = os.dup(2)
 else:
@@ -310,11 +312,10 @@ with os.fdopen(error_fd, 'w', encoding='utf-8') as errors:
     try:
         with open(os.devnull, 'rb') as source:
             os.dup2(source.fileno(), 0)
-        if isinstance(command, str):
-            os.execl('/bin/sh', '/bin/sh', '-c', command)
         os.execvp(command[0], command)
     except OSError as error:
-        json.dump([error.errno, error.strerror, error.filename, None, error.filename2], errors)
+        # os.execv's error names no file; subprocess names the command it could not start.
+        json.dump([error.errno, error.strerror, error.filename or command[0], None, error.filename2], errors)
 raise SystemExit(1)
 """
 

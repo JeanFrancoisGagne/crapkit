@@ -60,9 +60,16 @@ def test_owned_command_keeps_shell_operators_and_an_explicit_deadline(tmp_path):
 
 
 def test_owned_argv_preserves_real_launch_errors(tmp_path):
+    """The POSIX launcher execs the command itself, and os.execv's error names
+    no file, where subprocess names the command it could not start."""
     missing = str(tmp_path / 'missing-command')
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(FileNotFoundError) as native:
+        subprocess.run([missing])
+    with pytest.raises(FileNotFoundError) as owned:
         procs.run_owned([missing], capture_output=True)
+    fields = ('errno', 'strerror', 'filename', 'filename2', 'winerror')
+    assert [getattr(owned.value, name, None) for name in fields] == [
+        getattr(native.value, name, None) for name in fields]
 
 
 @pytest.mark.skipif(not hasattr(os, 'fork'), reason='fork inheritance is POSIX-only')
