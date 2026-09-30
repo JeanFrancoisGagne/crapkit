@@ -217,6 +217,8 @@ paths_to_mutate = [
     "src/crapkit/keys.py",
     "src/crapkit/lane_changes.py",
     "src/crapkit/lane_command.py",
+    "src/crapkit/lane_freshness.py",
+    "src/crapkit/lane_results.py",
     "src/crapkit/lanes.py",
     "src/crapkit/lizardclike.py",
     "src/crapkit/lizardcognitive.py",
