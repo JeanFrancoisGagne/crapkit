@@ -99,11 +99,31 @@ def test_expected_value_files_name_no_crapkit_source_path():
 
 # --- module names ---------------------------------------------------------------------------
 
-def test_every_test_module_basename_is_unique():
-    names = Counter(path.name for path in _python_files(TESTS)
-                    if path.name not in ("conftest.py", "__init__.py"))
+def _modules(root: Path) -> list[Path]:
+    return [path for path in _python_files(root) if path.name not in ("conftest.py", "__init__.py")]
 
-    assert sorted(name for name, count in names.items() if count > 1) == []
+
+def import_name(path: Path) -> str:
+    """The name pytest's default import mode loads a file under: its stem, behind
+    every enclosing directory that holds an __init__.py."""
+    parts = [path.stem]
+    while (path.parent / "__init__.py").is_file():
+        path = path.parent
+        parts.insert(0, path.name)
+    return ".".join(parts)
+
+
+def repeated(names) -> list[str]:
+    return sorted(name for name, count in Counter(names).items() if count > 1)
+
+
+def test_every_test_module_name_is_unique():
+    """Within the accuracy suite a basename names one file. Across tests/ two
+    files pytest loads under one module name fail collection with "import file
+    mismatch"; tests/accuracy is a package and tests/deploy is not, so
+    tests/deploy/repos.py loads as `repos` and kit/repos.py as `accuracy.kit.repos`."""
+    assert repeated(path.name for path in _modules(ACCURACY)) == []
+    assert repeated(map(import_name, _modules(TESTS))) == []
 
 
 def _absolute_from(node) -> bool:
