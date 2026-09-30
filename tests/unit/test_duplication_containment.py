@@ -73,7 +73,7 @@ def test_two_clones_in_one_file_with_separate_spans_are_not_contained():
 
 # --- the standalone report: nesting is dropped, not ranked --------------------
 #
-# Issue #1, measured on the Nera-CodingGraph pilot: 43 of 43 reported pairs were
+# Issue #1, measured on an adopter's repository: 43 of 43 reported pairs were
 # same-file and span-contained, and the closure-factory idiom produced every one
 # of them. The shapes below are that repo's, spans included.
 
@@ -102,7 +102,7 @@ def test_a_factory_paired_with_its_own_closure_is_not_reported():
 
 
 def test_the_factory_keeps_only_its_own_four_lines_and_is_no_twin_of_its_closure():
-    """The 1.0 that topped the pilot's report came from the factory carrying
+    """The 1.0 that topped that repository's report came from the factory carrying
     its closure's lines. Its own four are under --min-lines, so neither one
     names the other."""
     assert find_twins(FACTORY_ROWS[1], FACTORY_ROWS, {MCP: FACTORY}) == []

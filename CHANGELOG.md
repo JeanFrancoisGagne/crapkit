@@ -2537,11 +2537,11 @@ a number edited by hand fails the suite.
 ## 0.4.7 — 2026-08-31
 
 One contributed capability and three fixes. The capability is the per-edit advisory,
-which now hears writes that arrive through a shell: PR #45, from @nicolaschapados. The
-three fixes are #42, #43 and #44, filed off the review of PR #41, the incident report of
-his that became 0.4.6. They are a lane refusal that named the wrong cause, a cause line
-hoisted out of a superseded retry attempt, and a commented `init` template that handed
-back the environment bug the live lane no longer has. Nothing here is required of a
+which now hears writes that arrive through a shell: PR #45. The three fixes are #42,
+#43 and #44, filed off the review of PR #41, the incident report that became 0.4.6. They
+are a lane refusal that named the wrong cause, a cause line hoisted out of a superseded
+retry attempt, and a commented `init` template that handed back the environment bug the
+live lane no longer has. Nothing here is required of a
 consumer on upgrade; [Upgrading from 0.4.6](#upgrading-from-046) at the end of this
 section has the one thing you may want to choose.
 
@@ -2655,11 +2655,11 @@ start.
 
 ## 0.4.6 — 2026-08-31
 
-Three findings from @nicolaschapados, out of one incident on a real pytest/uv project
-checked out twice through git worktrees. The incident was not a crapkit bug: the shell
-held checkout B's venv while crapkit ran in checkout A, and B's editable install pointed
-pytest at B's sources. What crapkit owns is that it made the cause hard to find, and was
-one step away from reporting a confident wrong answer instead.
+Three findings out of one incident on a real pytest/uv project checked out twice through
+git worktrees. The incident was not a crapkit bug: the shell held checkout B's venv while
+crapkit ran in checkout A, and B's editable install pointed pytest at B's sources. What
+crapkit owns is that it made the cause hard to find, and was one step away from reporting
+a confident wrong answer instead.
 
 ### Reading a failed lane
 Every no-artifact refusal now carries `full log: <path>` before the tail it quotes, the
@@ -2780,11 +2780,11 @@ lines too; [docs/lanes.md](docs/lanes.md) has the section.
 
 A fix release with no new capability: an audit of 0.4.4 through six lenses, with every
 finding reproduced twice; a benchmark of every subsystem at consumer scale; and the
-field reports from the CodingGraph pilot. The audit filed issues #24 and #25; the pilot
-filed #26 through #31 and #37 and sent the pull requests that closed them, #32 through
-#40 (PR #23, from @nicolaschapados, was 0.4.4, not this release). After upgrading, run
-`crapkit ratchet seed` once, then read [Upgrading from 0.4.4](#upgrading-from-044) at
-the end of this section for the five other things that change.
+field reports from a pilot. The audit filed issues #24 and #25; the pilot filed #26
+through #31 and #37 and sent the pull requests that closed them, #32 through #40 (PR #23
+was 0.4.4, not this release). After upgrading, run `crapkit ratchet seed` once, then read
+[Upgrading from 0.4.4](#upgrading-from-044) at the end of this section for the five other
+things that change.
 
 ### Windows and lane commands
 0.4.4 taught the lane guard cmd.exe's quoting, with two gaps: a quote that opens
@@ -3002,7 +3002,7 @@ skill routes the pytest half of "no coverage provider" to the pytest docs.
 
 ## 0.4.4 — 2026-08-29
 
-Three field fixes from @nicolaschapados (PR #23) against a real pytest/uv project,
+Three field fixes (PR #23) against a real pytest/uv project,
 plus the Windows half of the first one. No new capability.
 
 ### The lane guard reads a command line like the shell does
