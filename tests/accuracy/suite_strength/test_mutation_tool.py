@@ -695,6 +695,18 @@ def test_every_copy_bound_test_exists_and_says_why_the_copy_fails_it():
     assert [node for node, why in mutation.COPY_BOUND.items() if len(why.split()) < 8] == []
 
 
+def test_the_calc_stage_leaves_out_the_differential_that_analyzes_every_module_of_the_copy():
+    """The one-pass differential analyzes every module under src/crapkit twice,
+    and in mutmut's copy each mutated module holds every mutant's body. Its time
+    in the stats run grew with the modules a run mutates, from 46 s to 366 s over
+    three weekly shards. With every weekly module mutated it ran past pytest's
+    10-minute traceback dump, mutmut died with exit -11, and no mutant was judged."""
+    node = ("tests/unit/test_analyze_one_pass.py::"
+            "test_the_single_pass_reproduces_the_two_pass_record_for_every_committed_source")
+
+    assert node in mutation.stage_deselected()
+
+
 def test_the_calc_stage_leaves_out_the_copy_bound_tests_and_the_open_defects_tests(monkeypatch):
     monkeypatch.setattr(mutation, "open_failures", lambda: ["tests/a.py::test_open"])
 

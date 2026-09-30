@@ -1045,6 +1045,11 @@ COPY_BOUND = {
     "test_no_literal_crapkit_prints_is_typed_with_a_non_ascii_character":
         "reads every module as text and looks up each literal's source, and in the copy a "
         "module holds every mutant's body, so the lookups ran past pytest's 10-minute dump",
+    "tests/unit/test_analyze_one_pass.py::"
+    "test_the_single_pass_reproduces_the_two_pass_record_for_every_committed_source":
+        "analyzes every module of the copy twice, and each mutated module there holds every "
+        "mutant's body: up to 6 minutes in one weekly shard's stats run, and with every weekly "
+        "module mutated it ran past pytest's 10-minute dump, which crashed mutmut",
     "tests/unit/test_invariants.py::test_no_variable_or_flag_turns_the_checks_off":
         "reads invariants.py as text, and the copy's text holds mutmut's trampolines",
     "tests/unit/test_invariants.py::test_every_run_crapkit_stores_passes_the_row_check_first":
