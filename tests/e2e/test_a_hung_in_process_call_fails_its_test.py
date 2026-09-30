@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from cli_in_process import STAGE_HANGS_ENV
+
 E2E = Path(__file__).resolve().parent
 
 SPINS = '''import time
@@ -55,12 +57,40 @@ def test_stuck(tmp_path, monkeypatch):
     run_cli(tmp_path, "worklist", timeout=1)
 '''
 
+# Stuck in C code past its bound and its grace, as a SQLite commit waiting on a
+# saturated disk's journal was, and then back.
+STUCK_THEN_BACK = '''import time
 
-def _session(tmp_path: Path, name: str, source: str, *options: str) -> subprocess.CompletedProcess:
+import cli_in_process
+import crapkit.cli
+from conftest import run_cli
+
+
+def test_stuck(tmp_path, monkeypatch):
+    def sleeps_in_c(argv):
+        time.sleep(3)
+        return 0
+
+    monkeypatch.setattr(cli_in_process, "GRACE_SECONDS", 1)
+    monkeypatch.setattr(crapkit.cli, "main", sleeps_in_c)
+    run_cli(tmp_path, "worklist", timeout=1)
+
+
+def test_the_next_test_runs(tmp_path):
+    assert run_cli(tmp_path, "--version").returncode == 0
+'''
+
+
+def _session(tmp_path: Path, name: str, source: str, *options: str,
+             stage_hangs: Path | None = None) -> subprocess.CompletedProcess:
     """A pytest session over one file that loads tests/e2e/conftest.py as a
-    plugin, so its tests call the suite's own run_cli."""
+    plugin, so its tests call the suite's own run_cli. `stage_hangs` is the file
+    a mutation stage names; a stage running this test names none to the child."""
     (tmp_path / name).write_text(source, encoding="utf-8")
-    env = {key: value for key, value in os.environ.items() if not key.startswith("PYTEST_")}
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith("PYTEST_") and key != STAGE_HANGS_ENV}
+    if stage_hangs is not None:
+        env[STAGE_HANGS_ENV] = str(stage_hangs)
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(E2E), str(E2E.parent),
                                                       os.environ.get("PYTHONPATH"))))
     return subprocess.run([sys.executable, "-m", "pytest", name, "-p", "conftest",
@@ -109,3 +139,23 @@ def test_a_call_stuck_in_c_code_ends_the_worker_and_leaves_its_stack_in_basetemp
     assert "test_stuck.py::test_stuck" in log
     assert "'-m', 'crapkit', 'worklist'] past its 1 s bound" in log
     assert "in sleeps_in_c" in log
+
+
+def test_a_call_stuck_in_c_code_inside_a_mutation_stage_fails_its_test_and_the_process_lives(
+        tmp_path):
+    """mutmut runs its stats pass in its own process, so a worker that ended
+    there ended the whole mutation run: on a saturated disk a SQLite commit
+    held a call 150 s, and two weekly shards stopped with every mutant `not
+    checked` and nothing on their output. In a stage the stacks go to the file
+    the stage names, and the call fails its test once it returns."""
+    hangs = tmp_path / "stage" / "in-process-hangs.log"
+    hangs.parent.mkdir()
+
+    done = _session(tmp_path, "test_stuck.py", STUCK_THEN_BACK, "-n", "0", stage_hangs=hangs)
+    report = done.stdout + done.stderr
+
+    assert "1 failed, 1 passed" in report, report
+    assert "'-m', 'crapkit', 'worklist'] finish within 1 s" in report
+    log = hangs.read_text(encoding="utf-8")
+    assert "test_stuck.py::test_stuck" in log and "in sleeps_in_c" in log
+    assert (tmp_path / "basetemp" / "in-process-hangs.log").read_text(encoding="utf-8") == ""

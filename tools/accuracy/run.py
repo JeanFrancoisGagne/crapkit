@@ -335,6 +335,16 @@ def _broken(code: int, outcome: str) -> str:
     return "fail" if code not in (0, 1, 5) and outcome in ("pass", "empty") else outcome
 
 
+INTERRUPTED = 2  # pytest's exit for a session that stopped before its end
+
+
+def _session_code(code: int, cases: list[Case]) -> int:
+    """pytest's exit, or INTERRUPTED for exit 1 with no failed case in the report:
+    a crapkit call stuck in C code ends a serial session with exit 1 before pytest
+    writes its report (tests/e2e/cli_in_process.py), so no check ran to its end."""
+    return INTERRUPTED if code == 1 and not any(case.failed for case in cases) else code
+
+
 def _record(check: Check, seconds: float, outcome: str, tests: int | None) -> dict:
     return {"key": check.key, "name": check.name, "shard": check.shard,
             "declared": check.seconds, "seconds": round(seconds, 3), "outcome": outcome,
@@ -393,6 +403,7 @@ def _pytest_records(checks: list[Check], env: dict, scratch: Path, workers: int,
     targets = _present(checks, _missing(checks))
     code, cases, root = _session(targets, env, scratch / "junit.xml", workers, seed)
     infra = _infra_keys(runlog.read(Path(env[runlog.LOG_ENV])), root)
+    code = _session_code(code, cases)
     return [_pytest_record(check, cases, infra, code) for check in checks]
 
 

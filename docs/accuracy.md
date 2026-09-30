@@ -243,8 +243,9 @@ never `pass`.
 Both commands check out HEAD under `.crapkit/accuracy/mutation/calc-stage` and
 run `tests/unit` and the accuracy tests at the push tier against mutmut's copy
 of the code in its `mutants/` folder. mutmut first runs that suite once to learn
-which tests reach which function, and when one test fails there it judges no
-mutant at all, so every test must pass inside the copy. The copy's `src/` is
+which tests reach which function. A test that fails there fails whatever the
+mutant, so the stage's launcher leaves it out of every mutant's tests and the run
+prints it and keeps it in its receipt under `stats_failures`. The copy's `src/` is
 rewritten with trampolines, so the checks that read crapkit's own source as
 data read the stage's `src/crapkit` instead, which the tool names in
 `CRAPKIT_ACCURACY_SOURCE`. A test that cannot pass inside the copy whatever
@@ -252,6 +253,20 @@ mutant is active (it reads a module as text, times a call, or starts an
 interpreter on the copy) goes in `COPY_BOUND` in `tools/accuracy/mutation.py`
 with its reason, and the stage leaves it out, as it leaves out the tests an open
 defect ruling names. CI still runs it on the tree.
+
+A run that mutmut ends before it judged its mutants proves nothing: a failed stats
+run, a crash, a signal. The command then writes no receipt, prints how mutmut
+ended and each in-process crapkit call the test kit logged as stuck past its
+bound, and exits 4. Exit 1 stays a check that failed, and exit 3 a receipt missing
+on this machine. `covered` refuses a weekly receipt that holds a mutant its run
+never judged, and a diff receipt that holds one covers no function.
+
+mutmut runs its stats pass in its own process, so inside a stage the test kit
+never ends the process when a call is stuck in C code. It writes every thread's
+stack to the stage's `in-process-hangs.log` each time the grace runs out, and the
+call fails its test once it returns. Give the run a RAM disk (`--tmpfs /tmp`
+with the checkout under `/tmp`) when other jobs share the disk: a SQLite commit
+inside one test once waited 150 s on a busy disk's journal.
 
 ### Release
 
@@ -282,6 +297,7 @@ inside the process, stuck in C code past its bound
 (`tests/e2e/cli_in_process.py`). It ends on purpose, after writing every
 thread's stack to `in-process-hangs.log` under pytest's basetemp
 (`pytest-of-<user>/pytest-<n>/`, or its `popen-gw<N>` folder under xdist).
+Inside a mutation stage the process lives instead (see [Weekly](#weekly)).
 
 ## Rulings
 

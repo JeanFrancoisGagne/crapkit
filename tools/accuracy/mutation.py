@@ -31,6 +31,13 @@ a test that fails there fails whatever the mutant, so it is left out of every
 mutant's tests and named in the stage's stats-failures.txt, which the run prints
 and its receipt keeps under `stats_failures`.
 
+A run mutmut ends with anything but 0 (a failed stats run, a crash, a signal)
+judged nothing: the command writes no receipt, names how mutmut ended and each
+in-process call the test kit logged as stuck in the stage's in-process-hangs.log,
+and exits 4. mutmut runs its stats pass in its own process, so every run names
+that file to the kit (HANGS_ENV), and the kit then never ends the process on a
+stuck call. `covered` refuses a receipt holding a mutant its run never judged.
+
 The gate is a survivor set, not a rate. A survivor is keyed by (module,
 function, sha256 of its mutant diff with line numbers and mutmut's numbering
 removed), so a mutant keeps its key when lines above it move or mutmut numbers
@@ -76,6 +83,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -122,6 +130,15 @@ class MutationError(ValueError):
 
 class MissingReceipts(MutationError):
     """The receipts a release row reads are not on this machine: an infra miss, exit 3."""
+
+
+class RunDied(MutationError):
+    """mutmut ended before it judged the run's mutants: the run proves nothing and
+    writes no receipt, exit 4."""
+
+
+# Exit 1 is a check that failed; these name a run that measured nothing.
+EXIT_BY_REFUSAL = {MissingReceipts: 3, RunDied: 4}
 
 
 def _read(path: Path) -> str:
@@ -532,8 +549,19 @@ def shard(modules: list[str], number: int, of: int) -> list[str]:
     return sorted(modules)[number - 1::of]
 
 
+def receipt_problem(receipt: dict) -> str:
+    """Why a receipt proves nothing, or "": a mutant its run never judged, as every
+    mutant of a run whose stats pass died is. Receipts written before a dead run
+    raised RunDied hold such rows."""
+    return unjudged_problem([Result(**row) for row in receipt.get("results", [])])
+
+
+def _covers(diff: dict) -> bool:
+    return diff["complete"] and not receipt_problem(diff)
+
+
 def _covered_pairs(diffs: list[dict]) -> set[tuple]:
-    complete = [receipt for receipt in diffs if receipt["complete"]]
+    complete = [receipt for receipt in diffs if _covers(receipt)]
     return {tuple(pair) for receipt in complete for pair in receipt["functions"]}
 
 
@@ -564,7 +592,15 @@ def weekly_head(weeklies: list[dict]) -> str:
     missing = _missing_shards(weeklies)
     if missing:
         raise MutationError(f"weekly shards {missing} have no receipt")
+    _refuse_unjudged(weeklies)
     return heads[0]
+
+
+def _refuse_unjudged(weeklies: list[dict]) -> None:
+    for receipt in weeklies:
+        problem = receipt_problem(receipt)
+        if problem:
+            raise MutationError(f"weekly shard {receipt['shard']}'s receipt proves nothing: {problem}")
 
 
 def uncovered(changed: list[tuple[str, str]], diffs: list[dict]) -> list[str]:
@@ -618,13 +654,48 @@ LAUNCHER_FILE = "mutmut_launch.py"
 LAUNCH = (LAUNCHER_FILE,)
 
 
+# The file each mutmut run names to the test kit (tests/e2e/cli_in_process.py,
+# STAGE_HANGS_ENV): an in-process CLI call stuck in C code past its bound leaves
+# its stacks there and the process lives, since mutmut's stats run is mutmut's
+# own process and it times each mutant's child itself.
+HANGS_ENV = "CRAPKIT_IN_PROCESS_HANGS"
+HANGS_FILE = "in-process-hangs.log"
+
+
 def _run_mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple = LAUNCH,
             env: dict | None = None) -> int:
     argv = [sys.executable, *mutmut, *args]
+    env = {**(os.environ if env is None else env), HANGS_ENV: str(Path(repo).resolve() / HANGS_FILE)}
     try:
         return subprocess.run(argv, cwd=repo, timeout=budget, env=env).returncode
     except subprocess.TimeoutExpired:
         return -1
+
+
+def died(repo: Path, code: int) -> str:
+    """Why mutmut's run in `repo` proves nothing, or "". mutmut ends a run it
+    finished with 0, and -1 is the budget stopping it; any other end (a failed
+    stats run, a crash, a signal) leaves its mutants unjudged."""
+    if code in (0, -1):
+        return ""
+    return (f"mutmut's run in {repo} ended with {_ending(code)} before it judged its mutants, "
+            f"so the run proves nothing and writes no receipt{_stuck_calls(repo)}")
+
+
+def _ending(code: int) -> str:
+    if code > 0:
+        return f"exit {code}"
+    try:
+        return f"signal {signal.Signals(-code).name}"
+    except ValueError:
+        return f"signal {-code}"
+
+
+def _stuck_calls(repo: Path) -> str:
+    """The in-process calls the kit logged as stuck past their bound in this run."""
+    log = Path(repo) / HANGS_FILE
+    stuck = [line for line in _read(log).splitlines() if "past its" in line] if log.is_file() else []
+    return "".join(f"\n  stuck: {line}" for line in stuck)
 
 
 def _meta_statuses(repo: Path) -> dict[str, str]:
@@ -1100,9 +1171,14 @@ def staged_run(where: Path, targets: dict, globs: list[str], env: dict, children
                budget: float | None = None, deselect: tuple = ()) -> tuple[list[Result], bool]:
     """mutmut over `globs` in a stage whose [tool.mutmut] names `targets` and leaves
     out the `deselect` tests: the results, and whether the run finished inside
-    `budget` seconds (a capped run reruns nothing)."""
+    `budget` seconds (a capped run reruns nothing). RunDied when mutmut ended
+    before it judged them."""
     stage = _prepare_stage(targets, where, tuple(deselect))
+    (stage / HANGS_FILE).unlink(missing_ok=True)
     code = _run_mutmut(stage, ["run", "--max-children", str(children), *globs], budget, env=env)
+    problem = died(stage, code)
+    if problem:
+        raise RunDied(problem)
     rows = collect(stage, globs)
     if code == -1:
         return rows, False
@@ -1314,7 +1390,7 @@ def main(argv: list[str] | None = None) -> int:
         return COMMANDS[args.command](args)
     except MutationError as refused:
         print(f"mutation.py: {refused}", file=sys.stderr)
-        return 3 if isinstance(refused, MissingReceipts) else 1
+        return EXIT_BY_REFUSAL.get(type(refused), 1)
 
 
 if __name__ == "__main__":

@@ -1322,8 +1322,9 @@ def test_a_check_in_this_tree_runs_from_its_root_and_one_elsewhere_from_its_fold
     assert retro._rootdir(f"{outside.as_posix()}::t[a/b]") == outside.parent.resolve()
 
 
-def _child(monkeypatch, written: bytes) -> dict:
-    """Stand in for the pytest child: record what it was handed, write `written` as its outcomes."""
+def _child(monkeypatch, written: bytes, code: int = 1) -> dict:
+    """Stand in for the pytest child: record what it was handed, write `written` as
+    its outcomes and end with `code`."""
     seen = {}
 
     def run(argv, cwd=None, env=None):
@@ -1332,7 +1333,7 @@ def _child(monkeypatch, written: bytes) -> dict:
                     touched=outcomes.is_file())
         with open(outcomes, "ab") as handle:
             handle.write(written)
-        return SimpleNamespace(returncode=1)
+        return SimpleNamespace(returncode=code)
 
     monkeypatch.setattr(retro, "_run", run)
     monkeypatch.setattr(retro, "crapkit_root", lambda interpreter: f"root-of-{interpreter}")
@@ -1356,10 +1357,29 @@ def test_a_replayed_node_runs_pytest_with_the_plugin_and_reads_what_it_wrote(mon
                         "assertion": False, "message": "k é"}]
 
 
-def test_a_child_that_recorded_nothing_leaves_no_record(monkeypatch):
-    _child(monkeypatch, b"")
+def test_a_child_that_collected_nothing_leaves_no_record(monkeypatch):
+    _child(monkeypatch, b"", code=5)
 
     assert retro.replay_node(NODE, Path("venv-python")) == []
+
+
+PASSED_SETUP = b'{"nodeid": "t::a", "outcome": "passed", "exc_type": "", "assertion": false, "message": ""}\n'
+
+
+@pytest.mark.parametrize("code, ending", [(1, "exit 1"), (-11, "signal 11"), (2, "exit 2")])
+def test_a_child_that_ended_before_it_reported_every_item_fails_the_replay(monkeypatch, code,
+                                                                        ending):
+    """A crapkit call stuck in C code ends the child with exit 1 mid-item
+    (tests/e2e/cli_in_process.py), and a crash ends it by a signal: the item's
+    passing setup was its only record, and the replay read as a pass."""
+    _child(monkeypatch, PASSED_SETUP, code)
+
+    records = retro.replay_node(NODE, Path("venv-python"))
+
+    assert retro.classify_fix(records).verdict == "fail"
+    assert retro.classify_before(records).verdict == "not replayable"
+    assert f"pytest ended with {ending} before it reported every item" in (
+        retro.classify_fix(records).evidence)
 
 
 class _Report:

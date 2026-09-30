@@ -1102,6 +1102,31 @@ def test_the_covered_command_passes_when_every_change_was_mutated(tmp_path, monk
     assert mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "r", weekly))]) == 0
 
 
+UNJUDGED = mutation.Result("crapkit.score.x_crap__mutmut_1", "src/crapkit/score.py", "crap",
+                           "not checked").__dict__
+
+
+def test_the_covered_command_refuses_a_weekly_shard_whose_receipt_judged_nothing(
+        tmp_path, monkeypatch, capsys):
+    """A receipt from a run whose stats pass died holds every mutant `not
+    checked`: it says the shard ran, and the run proved nothing."""
+    weekly = [{"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 2, "results": []},
+              {"kind": "weekly", "head": HEAD_A, "shard": 2, "of": 2, "results": [UNJUDGED]}]
+    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [])
+
+    assert mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "r", *weekly))]) == 1
+    said = capsys.readouterr().err
+    assert "weekly shard 2's receipt proves nothing: 1 mutant was never judged" in said
+
+
+def test_a_diff_receipt_holding_a_mutant_mutmut_never_judged_covers_no_function():
+    diffs = [{"complete": True, "functions": [["src/crapkit/score.py", "crap"]],
+              "results": [UNJUDGED]}]
+
+    assert mutation.uncovered([("src/crapkit/score.py", "crap")], diffs) == [
+        "src/crapkit/score.py:crap"]
+
+
 # --- what changed since the weekly run, on a dated repo ------------------------------------------
 
 def _dated_repo(tmp_path: Path, commits: list[tuple[str, str]]) -> Path:
@@ -1643,7 +1668,15 @@ STAGE_LAUNCHER = FAKE_LAUNCHER.replace(
     'if sys.argv[1:2] == ["diffs"]:',
     'if sys.argv[1:2] == ["run"] and "--sleep" in open("mode.txt").read():\n'
     '    import time; time.sleep(5)\n'
-    'if sys.argv[1:2] == ["diffs"]:', 1)
+    'if sys.argv[1:2] == ["run"] and "--die" in open("mode.txt").read():\n'
+    '    with open(os.environ["CRAPKIT_IN_PROCESS_HANGS"], "a", encoding="utf-8") as hangs:\n'
+    '        hangs.write(STUCK + "\\n  File store.py, line 691 in _prepare\\n")\n'
+    '    sys.exit(1)\n'
+    'if sys.argv[1:2] == ["diffs"]:', 1).replace(
+    "import json, os, pathlib, sys\n",
+    "import json, os, pathlib, sys\n"
+    "STUCK = \"tests/t.py::test_slow (call): ['crapkit', 'coverage'] past its 120 s bound. Stopping it\"\n",
+    1)
 
 
 def _fake_stage(tmp_path: Path, monkeypatch, mode: str = "") -> tuple[Path, list]:
@@ -1679,6 +1712,65 @@ def test_a_run_its_budget_stopped_is_incomplete_and_reruns_nothing(tmp_path, mon
     assert not complete
     assert [call[0] for call in _calls(stage)] == ["run", "diffs"]
     assert {row.name: row.status for row in rows}["crapkit.score.x_crap__mutmut_4"] == "timeout"
+
+
+# Two weekly shards on a saturated disk ended inside mutmut's stats run: an
+# in-process CLI call sat 150 s in a SQLite commit, the test kit's hang guard
+# ended the process, and mutmut, which runs its stats pass in its own process,
+# ended with it. Every mutant stayed `not checked`, and the run still wrote its
+# receipt and printed its floors as if it had measured them.
+
+@pytest.mark.nightly
+def test_a_run_mutmut_ended_before_judging_raises_with_its_exit_and_the_stuck_call(
+        tmp_path, monkeypatch):
+    stage, _ = _fake_stage(tmp_path, monkeypatch, "--die")
+    (stage / mutation.HANGS_FILE).write_text("the last run's call past its 9 s bound\n",
+                                              encoding="utf-8")
+
+    with pytest.raises(mutation.RunDied) as died:
+        mutation.staged_run(Path("w"), {}, ["crapkit.score.*"], dict(mutation.os.environ), 2)
+
+    said = str(died.value)
+    assert "ended with exit 1 before it judged its mutants" in said
+    assert "tests/t.py::test_slow (call): ['crapkit', 'coverage'] past its 120 s bound" in said
+    assert "9 s bound" not in said, "a hang the last run logged is not this run's"
+    assert [call[0] for call in _calls(stage)] == ["run"]
+
+
+def test_every_mutmut_run_names_its_hang_file_in_the_variable_the_test_kit_reads():
+    from accuracy.kit import drive
+
+    assert mutation.HANGS_ENV == drive._in_process_runner().STAGE_HANGS_ENV
+
+
+def test_a_run_a_signal_ended_is_named_by_its_signal(tmp_path, monkeypatch):
+    _fake_stage(tmp_path, monkeypatch)
+    monkeypatch.setattr(mutation, "_run_mutmut", lambda *args, **kwargs: -11)
+
+    with pytest.raises(mutation.RunDied, match="ended with signal SIGSEGV before it judged"):
+        mutation.staged_run(Path("w"), {}, ["crapkit.score.*"], {}, 2)
+
+
+@pytest.mark.parametrize("argv", [["weekly", "--shard", "1", "--of", "1"], ["tools"],
+                                  ["diff", "--base", "b" * 40]])
+def test_a_command_whose_run_died_writes_no_receipt_and_exits_4(tmp_path, monkeypatch, capsys,
+                                                                argv):
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
+    monkeypatch.setattr(mutation, "changed_functions",
+                        lambda repo, base, modules: [("src/crapkit/score.py", "crap")])
+    monkeypatch.setattr(mutation, "present", lambda wanted: {"tools/accuracy/retro.py": ("t",)})
+    _commands_on(tmp_path, monkeypatch, [])
+
+    def dies(*args, **kwargs):
+        raise mutation.RunDied(mutation.died(Path("stage"), 1))
+
+    monkeypatch.setattr(mutation, "staged_run", dies)
+
+    assert mutation.main(argv) == 4
+    assert not (mutation.REPO / mutation.RECEIPTS).exists()
+    said = capsys.readouterr()
+    assert "ended with exit 1 before it judged its mutants" in said.err
+    assert "writes no receipt" in said.err and "floor" not in said.out
 
 
 # --- the stage itself -----------------------------------------------------------------------------
