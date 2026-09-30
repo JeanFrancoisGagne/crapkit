@@ -2,6 +2,11 @@
  "baseline_commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
  "baseline_run": 3,
  "changed_files": 3,
+ "changed_paths": [
+  "crapkit.toml",
+  "src/py/fresh.py",
+  "src/py/grades.py"
+ ],
  "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
  "committed_findings": 0,
  "diff_uncovered": [
@@ -87,12 +92,17 @@
    "start": 8
   }
  ],
+ "lanes_without_baseline_results": [],
+ "lanes_without_results": [],
  "new_failures": [],
  "ok": false,
  "overridden": [],
  "ratchet_changes": null,
  "ratchet_regressions": [],
  "ratchet_sha256": "9f8cc9e3b7d16f351205ca68b100a97c4f7e4a191e6c145a5a3c2e4ea4bff552",
+ "ratchet_source": "tree",
+ "ratchet_source_commit": null,
+ "ratchet_source_sha256": "9f8cc9e3b7d16f351205ca68b100a97c4f7e4a191e6c145a5a3c2e4ea4bff552",
  "retried_passes": [],
  "run_id": 4,
  "schema": 1,
@@ -101,5 +111,8 @@
   "crapkit": "<crapkit>",
   "lizard": "1.24.0"
  },
- "unmarked_over_target": 2
+ "unmarked_over_target": 2,
+ "unread_files": [],
+ "unreadable_names": [],
+ "untracked_in_scope": []
 }

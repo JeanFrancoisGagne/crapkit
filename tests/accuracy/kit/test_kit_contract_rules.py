@@ -81,6 +81,21 @@ def test_a_parametrized_node_id_counts_by_its_base_name():
     assert not contract._is_collected("tests/accuracy/a/test_x.py::test_w", collected)
 
 
+def test_two_modules_pytest_loads_under_one_name_are_found(tmp_path):
+    """Two plain directories clash on a basename; a package's file does not
+    clash with a plain directory's file of the same basename."""
+    plain_a = _file(tmp_path, "unit/repos.py", "")
+    plain_b = _file(tmp_path, "deploy/repos.py", "")
+    _file(tmp_path, "accuracy/__init__.py", "")
+    _file(tmp_path, "accuracy/kit/__init__.py", "")
+    packaged = _file(tmp_path, "accuracy/kit/repos.py", "")
+
+    assert contract.import_name(packaged) == "accuracy.kit.repos"
+    assert contract.import_name(plain_b) == "repos"
+    assert contract.repeated(map(contract.import_name, [plain_b, packaged])) == []
+    assert contract.repeated(map(contract.import_name, [plain_a, plain_b, packaged])) == ["repos"]
+
+
 def test_a_calc_function_outside_its_modules_or_missing_is_found():
     row = calcs.Calc("score_model", "CRAP score", "t::x", ("src/crapkit/score.py",),
                      ("src/crapkit/score.py:crap",))

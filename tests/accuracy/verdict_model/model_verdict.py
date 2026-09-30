@@ -5,31 +5,31 @@ sha256, so a docs edit that moves or rewrites one fails the kit contract until
 this model is read against the new text again. No crapkit import: the tests
 compare what crapkit prints with what these functions say it should print.
 
-doc: README.md:918-976 sha256=1e711df8b2917237faf8b8733526e1eb1e18f3921e89ffd7b246677e6119784d
-doc: README.md:978-1005 sha256=5bb793ccc1837443b0f3e03ac1eb394e4f6270075d37bfb010dcf1588b874c2d
-doc: README.md:833-833 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
-doc: CONTEXT.md:26-33 sha256=f7baa578e3f82045a5588991a9c2a408ee7995faa7f12e682342b60295ef2987
-doc: CONTEXT.md:58-113 sha256=6201311b450224dbd1988161248f567e6bebe17dc8ba767ef6600a1c04f2c9d3
-doc: docs/ratchet.md:20-59 sha256=c4f3567b5ac978215891ccf668bc655bd3f25938532e6126b3b739eb17092a33
-doc: docs/ratchet.md:88-112 sha256=db1ea102ffed676e6466cd9b27ec3bb913919b502b87613ea06d284af02536d9
-doc: docs/ratchet.md:157-213 sha256=589d1d1b2f0e3e41e3aaf1f8f98a80f549fac26b44c3c8fea0518e2acd4ed78b
-doc: docs/ratchet.md:297-332 sha256=fa4437223445559ec9104f7516ce66295f9924389029beb4321809fbb8ba02b8
-doc: docs/ratchet.md:406-425 sha256=ba19474ea6c621b62c620d46c5d5813683a1fb0432ad7454a9de9a199f218cbe
-doc: docs/ratchet.md:486-538 sha256=29905e13557ab764061536c724a34ee9373587253d4ded117f612c33d7c9c8d0
-doc: docs/ratchet.md:627-714 sha256=b66be4b259912c338e9bbabc0fe06c76610ac13ae3c92430899001eccf99ba82
-doc: docs/ratchet.md:716-776 sha256=d80dce38a923b4bd4d1fb02bb8436588645d1ba671554250d9a0c3a44802e9b9
-doc: docs/ratchet.md:813-815 sha256=0b0353f91de49806c816e6fbb56a8ce38494cd5d093a357a4feb9420e0c9250e
-doc: docs/agent-json.md:236-254 sha256=184d66636aa2e0f750b4372ca14c787c9f83f6d817dc4abb18dd669c4f95b683
-doc: docs/agent-json.md:807-824 sha256=ff22f69752a742f839d4e2edf54e985f3eab9cf30fce8a3ffd1b44978c1f7118
-doc: docs/configuration.md:104-104 sha256=e6dc43339c7ab96208524957553d2995e11fc3bd1349d4f7d3b7aa6647f33d5f
-doc: docs/lanes.md:1310-1345 sha256=54a0b640914153ce29428d4cd0cad50290962be3cb820f307713cc760688a978
-doc: docs/lanes.md:1460-1473 sha256=16be62f9ef850d1a1a56d4146b97b184f327b4800e25ff968caf555aeef2c13f
-doc: docs/ratchet.md:833-837 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
-doc: docs/agent-json.md:499-519 sha256=64d6cb9b71322533826e0516f0eb3a3646b001c9636575730dc41313cfd76acf
-doc: docs/lanes.md:1071-1170 sha256=36500c0de830a94799c272ec8c6b5d670daa947f10d3c34e07276109b302433d
-doc: docs/lanes.md:1172-1205 sha256=962c85888f0e3ea1c87c13cdedc39fabd7a99ddcd3a65bf18e3d1fd8d0e67ef0
-doc: docs/lanes.md:1612-1707 sha256=bc5c956cef7f1a51e1f067320a3f3625987d4696c141f55b46c1e6c843df3db4
-doc: README.md:863-870 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
+doc: README.md:1360-1452 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aacfd8e862acadfae30
+doc: README.md:1454-1481 sha256=7a37f590bc18587751165601e2f687615e9dcc673d6124a14b84c475e05d4599
+doc: README.md:1266-1266 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
+doc: CONTEXT.md:30-37 sha256=f7baa578e3f82045a5588991a9c2a408ee7995faa7f12e682342b60295ef2987
+doc: CONTEXT.md:83-153 sha256=c72a6d9dc6c3315ebd1bdfa4b77b4d5ffca305ed02c38c338667ae4fa7f24827
+doc: docs/ratchet.md:20-89 sha256=c632bda254159ea7a636a8959cac9f4eda6e27f71bb32729d05aefde1eda14c2
+doc: docs/ratchet.md:118-142 sha256=8bc7df912a11fc8893505b9bc766fcbd08a2c4d0cc14f911dafb66bbe139a5cb
+doc: docs/ratchet.md:189-252 sha256=e4ca95739a264be11a9e79d98b2d4b7f8792124bfc6fd2ec223f371b8ec08729
+doc: docs/ratchet.md:337-391 sha256=0fe7978ef8657b578022cfc74b4487a36c4e5650c55ce1809a7bd97899ab8fed
+doc: docs/ratchet.md:481-500 sha256=8962538fcb9660a65b4db6bbabf4066b59d1dca7806438a783db076fc1a7df9b
+doc: docs/ratchet.md:592-682 sha256=89fee71f370788dd83dbf839e0b5dd80a9110c9f544f5bfa3ca3819106e17ac6
+doc: docs/ratchet.md:818-954 sha256=ca036441409030ae6d72f7df033d5b1370f4accb8f55972608128a65d28ccb0c
+doc: docs/ratchet.md:956-1034 sha256=7a31937dfa217b07387c20a6015e185465ff73512772c72686f85b7cefd33871
+doc: docs/ratchet.md:1078-1080 sha256=0b0353f91de49806c816e6fbb56a8ce38494cd5d093a357a4feb9420e0c9250e
+doc: docs/agent-json.md:305-329 sha256=46e36bc36e895f6379112955a0182505cc361f45c214960ea48d2ee35003f40e
+doc: docs/agent-json.md:922-942 sha256=e59cdf4fcab491b306d3a740459ed9a12a11e1b093b51001a0ad42f45c0b1fe1
+doc: docs/configuration.md:220-220 sha256=e6dc43339c7ab96208524957553d2995e11fc3bd1349d4f7d3b7aa6647f33d5f
+doc: docs/lanes.md:1541-1579 sha256=964831502d735a929aaae499fd2404f9f8d39a2827e02cc7ee3ddcca513ca08e
+doc: docs/lanes.md:1715-1728 sha256=18f67a16acde6d7c7475419bba4204632dbf0bbcc8358bf3451383e9a7bb2424
+doc: docs/ratchet.md:1098-1102 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
+doc: docs/agent-json.md:592-612 sha256=64d6cb9b71322533826e0516f0eb3a3646b001c9636575730dc41313cfd76acf
+doc: docs/lanes.md:1208-1365 sha256=96c2599a790a9dda70427465335807613ac4b519ff7bca7b18fde7cb87a98dfc
+doc: docs/lanes.md:1367-1436 sha256=1cd7c9d5d0a82e0a5eb44ccd793e5dabb7bb9cfe5ebd5673f44820337846e78b
+doc: docs/lanes.md:1973-2074 sha256=6fca6cd53571901ccdf05fc157dc2009e27b98d55cd79f1e5142cefd7cd54b19
+doc: README.md:1302-1309 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
 doc: docs/portable-records.md:9-24 sha256=e4e06a93b5a1fd4569a93b1673493be0fcdd6e7eb3b04c0d0bc507b5dd3867c9
 """
 from __future__ import annotations
@@ -96,7 +96,9 @@ def _in_front(runs: list[Run], anchor: Run | None) -> list[Run]:
 
 
 def baseline(runs: list[Run]) -> Run | None:
-    """verify's pick: the newest trusted run in front of any standing failure."""
+    """verify's pick: the newest trusted run in front of any standing failure.
+    Only runs at or behind HEAD compete (README: a run on another branch never
+    serves); callers pass the runs of HEAD's own line."""
     candidates = [run for run in _in_front(runs, standing_failure(runs)) if trusted(run)]
     return candidates[-1] if candidates else None
 
@@ -225,7 +227,9 @@ def _comment(line: str, found: dict) -> None:
 
 def parse_marks(text: str) -> MarksFile:
     """The marks file: stamp comments, a header, one `path, key, crap` row per mark.
-    Physical rows split at LF with one trailing CR removed."""
+    Physical rows split at LF with one trailing CR removed. `text` is the file
+    decoded by docs/ratchet.md's rule: UTF-16 behind a UTF-16 byte-order mark,
+    else UTF-8 with a UTF-8 BOM dropped, U+FFFD for a byte neither fits."""
     found: dict = {"marks": {}}
     for line in (raw.removesuffix("\r") for raw in text.split("\n")):
         _read_line(line, found)
@@ -393,7 +397,8 @@ STAMP_OF_WRITE = {"seed": "run", "prune": "recorded", "move": "recorded", "merge
 
 def stamp_after(write: str, recorded: str | None, running: str, run: str | None = None) -> str:
     """The stamp a write leaves. A file a recorded-stamp write creates takes
-    the running metric."""
+    the running metric. Seed and prune refuse marks a newer crapkit or lizard
+    recorded before they write, so no write here restamps those."""
     source = STAMP_OF_WRITE[write]
     if source == "run":
         return run
@@ -411,7 +416,9 @@ def stamp_refused(recorded: str | None, running: str) -> bool:
 
 def merge(base: dict, ours: dict, theirs: dict) -> dict:
     """Per key, the side that changed wins over the side that did not; when both
-    changed, the lower value wins, because a mark can only fall."""
+    changed, the lower value wins, because a mark can only fall. An add/add
+    merge hands the driver an empty base, and base = {} gives the union the docs
+    name: each mark both sides hold at the lower value."""
     out = {}
     for key in set(base) | set(ours) | set(theirs):
         value = _merged(base.get(key), ours.get(key), theirs.get(key))
@@ -447,7 +454,10 @@ def failures(fresh: dict, baseline_failed: set, baseline_retried: set,
              passed_retry: dict) -> Failures:
     """fresh: {test id: set of lanes that failed it}. A baseline's retried
     passes never count as its failures. A new failure drops out only when every
-    lane that failed it reran it and it passed (passed_retry: {id: lanes})."""
+    lane that failed it reran it and it passed (passed_retry: {id: lanes}).
+    baseline_failed holds each lane's list; for a lane the baseline recorded no
+    list for, the newest trusted run at or behind it that did stands in
+    (CONTEXT.md, Forgiven failure), and the caller resolves that first."""
     base = baseline_failed - baseline_retried
     new = sorted(set(fresh) - base)
     retried = [test for test in new if _passed_everywhere(fresh[test], passed_retry.get(test))]
@@ -478,15 +488,19 @@ def suite_dropped(before: int | None, now: int | None) -> bool:
 
 # `--reuse-unchanged` names the first condition that failed, in the order the
 # docs list them. A lane without `inputs` answers for the whole tree, the
-# config and the inherited environment; a lane with `inputs` answers for its
-# own paths, its own lane table and whether its artifact's commit is still
-# behind HEAD: a commit history rewrote away ("not behind") and a git read of
-# its inputs that failed ("inputs unread") rerun it too.
+# config, the crapkit version and the inherited environment. A lane with
+# `inputs` answers for its own paths, its own lane table and the crapkit
+# version, and compares trees, not history: an amend or a rebase that leaves
+# the inputs alone reuses it, while a stamp commit this clone does not hold
+# ("commit absent") and a git read of its inputs that failed ("inputs unread")
+# rerun it. The docs still list a commit no longer behind HEAD ("not behind"),
+# which neither kind reruns on: HEAD's move comes first for a whole-tree lane.
 REUSE_ORDER = ("no artifact", "wrote none", "no proof", "uncommitted", "head", "crapkit.toml",
-               "lane table", "environment", "inputs", "not behind", "inputs unread", "bytes")
-WITH_INPUTS = frozenset({"no artifact", "wrote none", "no proof", "head", "lane table", "inputs",
-                         "not behind", "inputs unread", "bytes"})
-WHOLE_TREE = frozenset(REUSE_ORDER) - {"inputs", "not behind", "inputs unread"}
+               "lane table", "crapkit version", "environment", "inputs", "not behind",
+               "inputs unread", "commit absent", "bytes")
+WITH_INPUTS = frozenset({"no artifact", "wrote none", "no proof", "lane table", "crapkit version",
+                         "inputs", "inputs unread", "commit absent", "bytes"})
+WHOLE_TREE = frozenset(REUSE_ORDER) - {"inputs", "not behind", "inputs unread", "commit absent"}
 
 
 def rerun_condition(failed: set, with_inputs: bool = False) -> str | None:
@@ -500,11 +514,12 @@ def _under(path: str, prefix: str) -> bool:
     return path == prefix or path.startswith(prefix + "/")
 
 
-def lines_stale(scope_paths: tuple, changed: set) -> bool:
-    """A lane's dark lines go null once a file under its scopes changed since
-    its artifact was written, uncommitted edits included; a change anywhere
-    else leaves them (docs/lanes.md:1168-1170, agent-json.md, uncovered_lines)."""
-    return reaches(changed, scope_paths)
+def lines_stale(path: str, scope_paths: tuple, changed: set) -> bool:
+    """A file's dark lines go null once that file, under the lane's scopes,
+    holds other content than the lane's run left it with, uncommitted edits
+    included; every other file keeps its lines (docs/lanes.md, Reusing
+    artifacts: "Moved" is about content)."""
+    return path in changed and reaches([path], scope_paths)
 
 
 def reaches(paths, scope_paths: tuple) -> bool:
@@ -513,7 +528,9 @@ def reaches(paths, scope_paths: tuple) -> bool:
 
 
 def reach_verdict(paths: list[str], root: str, scope_paths: tuple) -> str:
-    """What a lane whose artifact names `paths` gets (docs/lanes.md:1612-1707):
+    """What a coveragepy lane whose artifact names `paths` gets (docs/lanes.md,
+    An artifact that measured a different tree; an istanbul reader rebases every
+    path that resolves under the checkout, so it never reads "absolute"):
     "ok" when any path reaches a scope (zero overlap is the whole test);
     otherwise "other tree" when any path is outside the root or climbs out of
     it, "absolute" when every such path is absolute under the root, and "warn"
@@ -537,14 +554,17 @@ def _absolute(path: str) -> bool:
 
 # --- overrides (docs/ratchet.md:716-776, 813-815) --------------------------------------------
 
-def override_refusal(reason: str, alert: bool, regressions: int, new_failures: int) -> str | None:
-    """Why `verify --override` grants nothing, or None when it may grant."""
+def override_refusal(reason: str, alert: bool, regressions: int, new_failures: int,
+                     unread: int = 0) -> str | None:
+    """Why `verify --override` grants nothing, or None when it may grant. A
+    ratchet regression, a new test failure or an unread file in the same run
+    refuses it: none of them is debt a mark can carry."""
     if not reason.strip():
         return "blank reason"
     if not alert:
         return "no alert_command"
-    if regressions or new_failures:
-        return "regression or new failure"
+    if regressions + new_failures + unread:
+        return "regression, new failure or unread file"
     return None
 
 

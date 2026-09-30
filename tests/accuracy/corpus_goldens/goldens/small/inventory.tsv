@@ -25,6 +25,7 @@ native	src/native/shapes.cc	area_sum( const std :: vector<int> & widths , const 
 native	src/native/shapes.cc	count_if_positive( const std :: vector<int> & values)	13	23	3	3	3	11	1	2	3	1
 native	src/native/util.h	clamp_int( int value , int low , int high)	5	14	3	3	3	10	3	1	2	1
 native	src/native/vec.hpp	Vec2::dominant() const	9	15	2	2	2	7	0	1	1	1
+py	src/py/Upper.PY	shout( text )	4	7	2	2	2	4	1	1	1	1
 py	src/py/bom.py	normalize( text , strip )	4	9	3	3	3	6	2	1	2	1
 py	src/py/bom.py	count_words( text )	12	17	3	3	3	6	1	2	3	1
 py	src/py/cr_only.py	normalize( text , strip )	4	9	3	3	3	6	2	1	2	1

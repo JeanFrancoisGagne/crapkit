@@ -14,7 +14,8 @@
    "remedy": "ok",
    "scope": "py",
    "stale_coverage": true,
-   "start": 8
+   "start": 8,
+   "unmeasured": false
   },
   {
    "ccn": 8,
@@ -28,7 +29,8 @@
    "remedy": "decompose",
    "scope": "py",
    "stale_coverage": true,
-   "start": 18
+   "start": 18,
+   "unmeasured": false
   },
   {
    "ccn": 4,
@@ -42,7 +44,8 @@
    "remedy": "ok",
    "scope": "py",
    "stale_coverage": true,
-   "start": 35
+   "start": 35,
+   "unmeasured": false
   },
   {
    "ccn": 3,
@@ -56,7 +59,8 @@
    "remedy": "split-lines",
    "scope": "py",
    "stale_coverage": true,
-   "start": 46
+   "start": 46,
+   "unmeasured": false
   },
   {
    "ccn": 2,
@@ -70,7 +74,8 @@
    "remedy": "ok",
    "scope": "py",
    "stale_coverage": true,
-   "start": 49
+   "start": 49,
+   "unmeasured": false
   }
  ],
  "gate": {
@@ -80,6 +85,7 @@
   },
   "judged": 0,
   "ok": true,
+  "unread_files": [],
   "untracked": []
  },
  "note": "coverage is the baseline run's; complexity is the working tree's. Run verify for the real verdict.",

@@ -99,7 +99,6 @@ ISTANBUL_FILE = ('{"a.js": {"path": "a.js", "fnMap": {"0": {"name": "f", "decl":
 REFUSED = [
     ("truncated", ISTANBUL_FILE.replace("COUNT", "1")[:-2], "unparseable"),
     ("trailing", ISTANBUL_FILE.replace("COUNT", "1") + " {}", "unexpected content"),
-    ("bom", "\ufeff" + ISTANBUL_FILE.replace("COUNT", "1"), "not a JSON object"),
     ("nan", ISTANBUL_FILE.replace("COUNT", "NaN"), "non-finite"),
     ("infinity", ISTANBUL_FILE.replace("COUNT", "Infinity"), "non-finite"),
     ("minus-infinity", ISTANBUL_FILE.replace("COUNT", "-Infinity"), "non-finite"),
@@ -115,6 +114,25 @@ def test_a_malformed_artifact_is_refused(tmp_path, shape, text, said):
 
     with pytest.raises(ERRORS.ToolError, match=said):
         _parse(artifact, coveragepy=False)
+
+
+BRANCHED = {"summary": {"num_statements": 2, "covered_lines": 1, "num_branches": 2,
+                        "covered_branches": 1},
+            "executed_lines": [2], "missing_lines": [3], "start_line": 1}
+
+
+@pytest.mark.parametrize("coveragepy", [False, True], ids=["istanbul", "coveragepy"])
+def test_a_byte_order_mark_is_read_past(tmp_path, coveragepy):
+    """RFC 8259 section 8.1: a parser MAY ignore a byte order mark, and CHANGELOG
+    0.8.1 says both readers read past one, as a copy saved with PowerShell's
+    Out-File -Encoding utf8 has one. The functions read as they do without it."""
+    text = (mini_repo.coveragepy_report({"a.py": {"functions": {"f": BRANCHED}}}) if coveragepy
+            else ISTANBUL_FILE.replace("COUNT", "1").encode("utf-8"))
+    plain, marked = tmp_path / "plain.json", tmp_path / "marked.json"
+    plain.write_bytes(text)
+    marked.write_bytes(b"\xef\xbb\xbf" + text)
+
+    assert _parse(marked, coveragepy)[:2] == _parse(plain, coveragepy)[:2]
 
 
 def test_nonfinite_refuses(tmp_path):
@@ -143,9 +161,14 @@ ADMIT = {type(None): lambda _: True, int: lambda value: value >= 0, float: _inte
 
 
 def _valid(pair) -> bool:
+    """A branch pair a report that measures branches may carry: both counts
+    present (CHANGELOG 0.8.1: a function with no branch counts there, or one
+    count without its partner, is refused), each admitted, covered <= total."""
+    if pair.covered is None or pair.total is None:
+        return False
     if not (_admitted(pair.covered) and _admitted(pair.total)):
         return False
-    return (pair.covered or 0) <= (pair.total or 0)
+    return pair.covered <= pair.total
 
 
 def _summary(pair) -> dict:
@@ -171,8 +194,8 @@ def _read(data: bytes, coveragepy: bool):
 @pure
 def test_impossible_counts_refuse_coveragepy(pair):
     """R28 (coveragepy): a summary count that is not a nonnegative integer, or
-    covered over total, refuses; anything else is read as written. R89: a
-    region with no branch keys reads zero branches."""
+    covered over total, refuses, and so does a branch count left out of a
+    report that measures branches; anything else is read as written."""
     region = {"summary": _summary(pair), "executed_lines": [2], "missing_lines": [3],
               "start_line": 1}
     data = mini_repo.coveragepy_report({"a.py": {"functions": {"f": region}}})

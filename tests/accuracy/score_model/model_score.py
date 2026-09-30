@@ -6,22 +6,22 @@ docs say nothing, the model says what it assumed, and rulings.tsv records the
 gap.
 
 doc: README.md:22-31 sha256=58a8efc378668435998df0eec0fcc96f968802e558c0729fda608abd82ff6346
-doc: README.md:848-884 sha256=4d04351159d77054f876d44a9dca52ec041fe6940869964a8922a43b88e66732
-doc: README.md:885-917 sha256=ed88a1a74cd588bd0c3154aff3a1c7fdf452c0175272fd74b663ba05f722a29b
-doc: README.md:831-831 sha256=f2641c8c17668dbee44078a26ce35b9f5c91431c698439fed9d6e877733c218a
-doc: README.md:835-836 sha256=58c95af3ae9606a57556aea2d9670f97dd6d1cba444b50493d1418c73c6db78c
+doc: README.md:1281-1325 sha256=8802758a84183c6c57ffb274bfadf83e7257c575a0ea88ffad1eaf62fa16d570
+doc: README.md:1326-1359 sha256=78fda9aff23776068eef1c77300abb437b55793cdf69c65629b404cf5abe1239
+doc: README.md:1264-1264 sha256=e5050afda35125a59582ad5e9712e8454587c03709cfa0da2ab1fd82f78b84a7
+doc: README.md:1268-1269 sha256=d30c8f474b32d868dfad0b10b5e633bf1a406effd064b1dc9376cebe8f56bded
 doc: docs/agent-json.md:55-57 sha256=b810777e09330020c2391a09065f5d2f4f61c27f30649680c1731aee97dfa0a5
-doc: docs/agent-json.md:114-138 sha256=8daba4662a4751a80f3e38f1beb056fc8cf99e91fa374350ceb043fabfcffec3
-doc: docs/agent-json.md:197-234 sha256=d36083d295330ee4109e0b2bfc627f8988117f490148d067e5750dc8b1a7c685
-doc: docs/agent-json.md:485-490 sha256=263d2c6d9e4cddf07af5869c4db0f7a8c421ad4b9cb9c4abf1ecbccdba1acb4f
-doc: docs/agent-json.md:625-714 sha256=a2fab3c2de01100cfde062809b6970ca7587cc4f9a793792fe572de115a033c7
-doc: docs/agent-json.md:716-751 sha256=430d45fb0828fae3e18ed80a19403d46e0b916533626241ebe8b54fe60a131de
-doc: docs/agent-json.md:935-944 sha256=c5076f0073e9f3e41c19ac7d08f69d62585c6cb65b9e88f9cc7e963a03a7d62f
-doc: docs/configuration.md:86-86 sha256=34f7afec831b09edb7bd1c92940727005cd92d1d398e9a416999c6965598c567
-doc: docs/configuration.md:161-161 sha256=f4f4b349d64468b5ce2fe66c8f4f3b9a5fcaff4baaa2afc81c11cbfe38597e3c
-doc: docs/configuration.md:490-516 sha256=3bd1b9c043f1537e3fb17a0bb635cb2e32190103047d180b568ed4d3f071848f
-doc: docs/lanes.md:1348-1394 sha256=a3831d3fd0280427081bb8cb07e633fb55695f38d10c1982f44e0a3e816b9e83
-doc: docs/lanes.md:243-284 sha256=9dd23e4fd594b2c521910bc53bee1020cba1606204a15a27adafd9d2d14013f2
+doc: docs/agent-json.md:121-146 sha256=8b3be537999c9de9b4d9b1993cfe689cb4f10015d9e61d3c4d3b4f076999bdec
+doc: docs/agent-json.md:263-303 sha256=777d55b80ac8fc9148e88e96ad878e4b7197d97f77ca9bbb8c0693d34aab96b1
+doc: docs/agent-json.md:578-583 sha256=263d2c6d9e4cddf07af5869c4db0f7a8c421ad4b9cb9c4abf1ecbccdba1acb4f
+doc: docs/agent-json.md:722-817 sha256=3a6a294017b50cb99419dc3de75898d18e5d5ea2f4722926297834bebc452651
+doc: docs/agent-json.md:819-854 sha256=430d45fb0828fae3e18ed80a19403d46e0b916533626241ebe8b54fe60a131de
+doc: docs/agent-json.md:1067-1076 sha256=0346074f384fdf7be6ff57ad1f69cb406df8962cd580b5d87688bba90dded169
+doc: docs/configuration.md:202-202 sha256=34f7afec831b09edb7bd1c92940727005cd92d1d398e9a416999c6965598c567
+doc: docs/configuration.md:277-277 sha256=f4f4b349d64468b5ce2fe66c8f4f3b9a5fcaff4baaa2afc81c11cbfe38597e3c
+doc: docs/configuration.md:656-690 sha256=297f2f22ed9741e471e65a58d40b4ba244b8f61f20c14b43f8c38e8b34bad1b7
+doc: docs/lanes.md:1588-1634 sha256=a3831d3fd0280427081bb8cb07e633fb55695f38d10c1982f44e0a3e816b9e83
+doc: docs/lanes.md:267-330 sha256=e361ccb46c5331552f8723a102f86973a04b54e746fada1ad566e9025fd8aa89
 """
 from __future__ import annotations
 
@@ -120,7 +120,9 @@ def overlay(row: Fresh, rows: list[Fresh], baseline: dict[tuple[str, str], list[
     """Fresh complexity over the baseline's coverage, joined by name: no lane is
     no-lane; a shared span is untested at 0; a name the baseline never measured
     is untested at 0; else the baseline's cov, from the same-name row nearest
-    the fresh start (ASSUMED; rulings SM-OVERLAY-TWIN)."""
+    the fresh start (ASSUMED; rulings SM-OVERLAY-TWIN). README, rescore: the
+    no-lane row and the never-measured name also read `unmeasured: true` in
+    --json and print `-` for their cov."""
     if row.scope not in lane_scopes:
         return 0.0, "no-lane"
     named = baseline.get((row.path, row.name))
@@ -156,8 +158,9 @@ def flag_counts(rows: list[Row]) -> dict[str, int]:
 
 
 def judged(rows: list[Row], unmeasured: set[str]) -> list[Row]:
-    """agent-json.md:936: a partial run leaves its unmeasured scopes out of
-    over_target and the grade."""
+    """agent-json.md, the coverage summary: a partial run leaves its unmeasured
+    scopes out of over_target, the grade and crap_load, and reports their load
+    under by_scope only."""
     return [row for row in rows if row.scope not in unmeasured]
 
 

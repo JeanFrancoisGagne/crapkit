@@ -88,16 +88,16 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # pass read each language's own rules (dialects, recursion by call, bodies),
 # 2,784 once the nesting column read that pass in every language, 2,847 once the
 # PowerShell reader's spelling and parameter passes and the own-lines shingler
-# landed.
+# landed, 3,661 once the program merged into the 0.8.1 release tree.
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 2847
+SRC_DEFS = 3661
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
     """Every def ast finds in crapkit's source and in the shapes is one row
     spanning the def line to its body's last line, and no other row exists:
-    2,847 of 2,847 on crapkit's source."""
+    3,661 of 3,661 on crapkit's source."""
     shapes = analysis_shapes.py_shape_files()
     misses = _differences(src_corpus.files, src_inventory, _spans)
     ast_defs = sum(map(len, map(_ast_rows, src_corpus.files.values())))

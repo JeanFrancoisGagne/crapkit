@@ -1,4 +1,7 @@
 {
+ "commands": {
+  "refresh": "crapkit coverage --reuse-unchanged"
+ },
  "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
  "packets": [
   {
@@ -205,11 +208,14 @@
     "scope": "vendor",
     "start": 207
    },
+   "scored_changes": 0,
+   "shallow": false,
    "source": "const deepMergeInternal = <T>(isRoot: boolean, ...sources: Array<Partial<T> | undefined>): T => {\n\tlet returnValue: any = {};\n\tlet headers: KyHeadersInit = {};\n\tlet hooks = {};\n\tlet searchParameters: any;\n\tconst signals: AbortSignal[] = [];\n\n\tfor (const source of sources) {\n\t\tif (Array.isArray(source)) {\n\t\t\tif (!Array.isArray(returnValue)) {\n\t\t\t\treturnValue = [];\n\t\t\t}\n\n\t\t\treturnValue = [...returnValue, ...source];\n\t\t} else if (isObject(source)) {\n\t\t\tfor (let [key, value] of Object.entries(source)) {\n\t\t\t\tconst replaceState = getReplaceState(value);\n\t\t\t\tconst {isReplace} = replaceState;\n\t\t\t\tvalue = replaceState.value;\n\n\t\t\t\tconst isRootSignal = isRoot && key === 'signal';\n\t\t\t\tif (isRootSignal && (isReplace || value === undefined)) {\n\t\t\t\t\tsignals.length = 0;\n\t\t\t\t}\n\n\t\t\t\t// Special handling for AbortSignal instances at the root options level\n\t\t\t\tif (isRootSignal && value instanceof globalThis.AbortSignal) {\n\t\t\t\t\tsignals.push(value);\n\t\t\t\t\tcontinue;\n\t\t\t\t}\n\n\t\t\t\t// Special handling for context - shallow merge only\n\t\t\t\tif (key === 'context') {\n\t\t\t\t\tif (value !== undefined && value !== null && (!isObject(value) || Array.isArray(value))) {\n\t\t\t\t\t\tthrow new TypeError('The `context` option must be an object');\n\t\t\t\t\t}\n\n\t\t\t\t\t// Shallow merge: always create a new object to prevent mutation bugs\n\t\t\t\t\treturnValue = {\n\t\t\t\t\t\t...returnValue,\n\t\t\t\t\t\tcontext: (value === undefined || value === null)\n\t\t\t\t\t\t\t? {}\n\t\t\t\t\t\t\t: (isReplace\n\t\t\t\t\t\t\t\t? {...value}\n\t\t\t\t\t\t\t\t: {...returnValue.context, ...value}),\n\t\t\t\t\t};\n\t\t\t\t\tcontinue;\n\t\t\t\t}\n\n\t\t\t\t// Special handling for searchParams\n\t\t\t\tif (key === 'searchParams') {\n\t\t\t\t\tif (value === undefined || value === null) {\n\t\t\t\t\t\t// Explicit undefined or null removes searchParams\n\t\t\t\t\t\tsearchParameters = undefined;\n\t\t\t\t\t} else if (isReplace) {\n\t\t\t\t\t\tsearchParameters = value;\n\t\t\t\t\t} else {\n\t\t\t\t\t\t// First source: keep as-is to preserve type (string/object/URLSearchParams)\n\t\t\t\t\t\t// Subsequent sources: merge and convert to URLSearchParams\n\t\t\t\t\t\tsearchParameters = searchParameters === undefined ? value : appendSearchParameters(searchParameters, value);\n\t\t\t\t\t}\n\n\t\t\t\t\tcontinue;\n\t\t\t\t}\n\n\t\t\t\t// `retry` accepts a number as shorthand for `{limit: number}`. Expand it before\n\t\t\t\t// merging so extending a numeric `retry` with an object keeps the limit instead\n\t\t\t\t// of dropping it (e.g. `ky.create({retry: 3}).extend({retry: {methods: ['get']}})`).\n\t\t\t\t// Scoped to the root options level so it never rewrites nested user data that\n\t\t\t\t// happens to contain a `retry` key (e.g. a `json` request body).\n\t\t\t\tif (isRoot && key === 'retry' && isObject(value) && !isReplace && typeof returnValue[key] === 'number') {\n\t\t\t\t\treturnValue = {...returnValue, [key]: {limit: returnValue[key]}};\n\t\t\t\t}\n\n\t\t\t\tif (isObject(value) && !isReplace && key in returnValue) {\n\t\t\t\t\tvalue = deepMergeInternal(false, returnValue[key], value);\n\t\t\t\t}\n\n\t\t\t\treturnValue = {...returnValue, [key]: value};\n\t\t\t}\n\n\t\t\tif (isObject((source as any).hooks)) {\n\t\t\t\tconst {value: hookValue, isReplace} = getReplaceState((source as any).hooks);\n\t\t\t\thooks = isReplace\n\t\t\t\t\t? mergeHooks({}, hookValue)\n\t\t\t\t\t: mergeHooks(hooks, hookValue);\n\n\t\t\t\treturnValue.hooks = hooks;\n\t\t\t}\n\n\t\t\tif (isObject((source as any).headers)) {\n\t\t\t\tconst {value: headerValue, isReplace} = getReplaceState((source as any).headers);\n\t\t\t\theaders = isReplace\n\t\t\t\t\t? cloneShallow(headerValue as KyHeadersInit)\n\t\t\t\t\t: mergeHeaderContainers(headers, headerValue as KyHeadersInit);\n\n\t\t\t\treturnValue.headers = headers;\n\t\t\t}\n\t\t}\n\t}\n\n\tif (searchParameters !== undefined) {\n\t\treturnValue.searchParams = searchParameters;\n\t}\n\n\tif (signals.length > 0) {\n\t\tif (signals.length === 1) {\n\t\t\treturnValue.signal = signals[0];\n\t\t} else if (supportsAbortSignal) {\n\t\t\treturnValue.signal = AbortSignal.any(signals);\n\t\t} else {\n\t\t\t// When AbortSignal.any is not available, use the last signal\n\t\t\t// This maintains the previous behavior before signal merging was added\n\t\t\t// This can be removed when the `supportsAbortSignal` check is removed.\n\t\t\treturnValue.signal = signals.at(-1);\n\t\t}\n\t}\n\n\treturn returnValue;\n};",
    "stale": false,
    "target": 15,
    "uncovered_lines": null,
    "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/ky/merge.ts",
+   "unmeasured": true,
    "versions": {
     "analysis_version": 13,
     "crapkit": "<crapkit>",
@@ -650,11 +656,14 @@
     "scope": "vendor",
     "start": 807
    },
+   "scored_changes": 0,
+   "shallow": false,
    "source": "static int apply_patch(cJSON *object, const cJSON *patch, const cJSON_bool case_sensitive)\n{\n    cJSON *path = NULL;\n    cJSON *value = NULL;\n    cJSON *parent = NULL;\n    enum patch_operation opcode = INVALID;\n    unsigned char *parent_pointer = NULL;\n    unsigned char *child_pointer = NULL;\n    int status = 0;\n\n    path = get_object_item(patch, \"path\", case_sensitive);\n    if (!cJSON_IsString(path))\n    {\n        /* malformed patch. */\n        status = 2;\n        goto cleanup;\n    }\n\n    opcode = decode_patch_operation(patch, case_sensitive);\n    if (opcode == INVALID)\n    {\n        status = 3;\n        goto cleanup;\n    }\n    else if (opcode == TEST)\n    {\n        /* compare value: {...} with the given path */\n        status = !compare_json(get_item_from_pointer(object, path->valuestring, case_sensitive), get_object_item(patch, \"value\", case_sensitive), case_sensitive);\n        goto cleanup;\n    }\n\n    /* special case for replacing the root */\n    if (path->valuestring[0] == '\\0')\n    {\n        if (opcode == REMOVE)\n        {\n            static const cJSON invalid = { NULL, NULL, NULL, cJSON_Invalid, NULL, 0, 0, NULL};\n\n            overwrite_item(object, invalid);\n\n            status = 0;\n            goto cleanup;\n        }\n\n        if ((opcode == REPLACE) || (opcode == ADD))\n        {\n            value = get_object_item(patch, \"value\", case_sensitive);\n            if (value == NULL)\n            {\n                /* missing \"value\" for add/replace. */\n                status = 7;\n                goto cleanup;\n            }\n\n            value = cJSON_Duplicate(value, 1);\n            if (value == NULL)\n            {\n                /* out of memory for add/replace. */\n                status = 8;\n                goto cleanup;\n            }\n\n            overwrite_item(object, *value);\n\n            /* delete the duplicated value */\n            cJSON_free(value);\n            value = NULL;\n\n            /* the string \"value\" isn't needed */\n            if (object->string != NULL)\n            {\n                cJSON_free(object->string);\n                object->string = NULL;\n            }\n\n            status = 0;\n            goto cleanup;\n        }\n    }\n\n    if ((opcode == REMOVE) || (opcode == REPLACE))\n    {\n        /* Get rid of old. */\n        cJSON *old_item = detach_path(object, (unsigned char*)path->valuestring, case_sensitive);\n        if (old_item == NULL)\n        {\n            status = 13;\n            goto cleanup;\n        }\n        cJSON_Delete(old_item);\n        if (opcode == REMOVE)\n        {\n            /* For Remove, this job is done. */\n            status = 0;\n            goto cleanup;\n        }\n    }\n\n    /* Copy/Move uses \"from\". */\n    if ((opcode == MOVE) || (opcode == COPY))\n    {\n        cJSON *from = get_object_item(patch, \"from\", case_sensitive);\n        if (from == NULL)\n        {\n            /* missing \"from\" for copy/move. */\n            status = 4;\n            goto cleanup;\n        }\n\n        if (opcode == MOVE)\n        {\n            value = detach_path(object, (unsigned char*)from->valuestring, case_sensitive);\n        }\n        if (opcode == COPY)\n        {\n            value = get_item_from_pointer(object, from->valuestring, case_sensitive);\n        }\n        if (value == NULL)\n        {\n            /* missing \"from\" for copy/move. */\n            status = 5;\n            goto cleanup;\n        }\n        if (opcode == COPY)\n        {\n            value = cJSON_Duplicate(value, 1);\n        }\n        if (value == NULL)\n        {\n            /* out of memory for copy/move. */\n            status = 6;\n            goto cleanup;\n        }\n    }\n    else /* Add/Replace uses \"value\". */\n    {\n        value = get_object_item(patch, \"value\", case_sensitive);\n        if (value == NULL)\n        {\n            /* missing \"value\" for add/replace. */\n            status = 7;\n            goto cleanup;\n        }\n        value = cJSON_Duplicate(value, 1);\n        if (value == NULL)\n        {\n            /* out of memory for add/replace. */\n            status = 8;\n            goto cleanup;\n        }\n    }\n\n    /* Now, just add \"value\" to \"path\". */\n\n    /* split pointer in parent and child */\n    parent_pointer = cJSONUtils_strdup((unsigned char*)path->valuestring);\n    if (parent_pointer) {\n        child_pointer = (unsigned char*)strrchr((char*)parent_pointer, '/');\n    }\n    if (child_pointer != NULL)\n    {\n        child_pointer[0] = '\\0';\n        child_pointer++;\n    }\n    parent = get_item_from_pointer(object, (char*)parent_pointer, case_sensitive);\n    decode_pointer_inplace(child_pointer);\n\n    /* add, remove, replace, move, copy, test. */\n    if ((parent == NULL) || (child_pointer == NULL))\n    {\n        /* Couldn't find object to add to. */\n        status = 9;\n        goto cleanup;\n    }\n    else if (cJSON_IsArray(parent))\n    {\n        if (strcmp((char*)child_pointer, \"-\") == 0)\n        {\n            cJSON_AddItemToArray(parent, value);\n            value = NULL;\n        }\n        else\n        {\n            size_t index = 0;\n            if (!decode_array_index_from_pointer(child_pointer, &index))\n            {\n                status = 11;\n                goto cleanup;\n            }\n\n            if (!insert_item_in_array(parent, index, value))\n            {\n                status = 10;\n                goto cleanup;\n            }\n            value = NULL;\n        }\n    }\n    else if (cJSON_IsObject(parent))\n    {\n        if (case_sensitive)\n        {\n            cJSON_DeleteItemFromObjectCaseSensitive(parent, (char*)child_pointer);\n        }\n        else\n        {\n            cJSON_DeleteItemFromObject(parent, (char*)child_pointer);\n        }\n        cJSON_AddItemToObject(parent, (char*)child_pointer, value);\n        value = NULL;\n    }\n    else /* parent is not an object */\n    {\n        /* Couldn't find object to add to. */\n        status = 9;\n        goto cleanup;\n    }\n\ncleanup:\n    if (value != NULL)\n    {\n        cJSON_Delete(value);\n    }\n    if (parent_pointer != NULL)\n    {\n        cJSON_free(parent_pointer);\n    }\n\n    return status;\n}",
    "stale": false,
    "target": 15,
    "uncovered_lines": null,
    "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/cjson/cJSON_Utils.c",
+   "unmeasured": true,
    "versions": {
     "analysis_version": 13,
     "crapkit": "<crapkit>",
@@ -795,6 +804,8 @@
     "scope": "py",
     "start": 23
    },
+   "scored_changes": 0,
+   "shallow": false,
    "source": "def unused_branchy(flag, other):\n    if flag and other:\n        return 2\n    if flag or other:\n        return 1\n    return 0",
    "stale": false,
    "target": 6,
@@ -805,6 +816,7 @@
     27,
     28
    ],
+   "unmeasured": false,
    "versions": {
     "analysis_version": 13,
     "crapkit": "<crapkit>",
@@ -815,5 +827,7 @@
  ],
  "run_id": 2,
  "schema": 1,
+ "scored_changes": 0,
+ "shallow": false,
  "stale": false
 }

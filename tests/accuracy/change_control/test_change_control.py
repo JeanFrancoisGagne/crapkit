@@ -10,6 +10,7 @@ and the lockable files wait for the lock.
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import pytest
 
@@ -41,6 +42,25 @@ def test_the_lock_the_changes_the_changelog_and_the_metric_digests_agree():
 
     allowed = [] if KIT_CLOSED or cc._initialized(tree) else _before_the_first_lock(problems)
     assert problems == allowed, _report(problems)
+
+
+def _names_its_release(change: dict, versions: set[str]) -> bool:
+    cell = change.get("changelog", "")
+    return cell == "" if change.get("kind") == "none" else cell in versions
+
+
+def test_each_change_names_the_release_whose_changelog_section_holds_its_line():
+    """A change of a kind other than none names the version of the CHANGELOG.md
+    section its `(accuracy change Cn)` line sits in; kind none needs no line
+    (T4) and names none."""
+    tree = cc.DirTree(REPO)
+    log = (REPO / cc.CHANGELOG).read_bytes().decode("utf-8")
+    versions = set(re.findall(r"^## (\d+\.\d+\.\d+) ", log, re.MULTILINE))
+
+    wrong = {key: change.get("changelog") for key, change in cc.changes_of(tree).items()
+             if not _names_its_release(change, versions)}
+
+    assert wrong == {}
 
 
 T1 = "tests/accuracy/corpus_goldens/test_goldens.py"

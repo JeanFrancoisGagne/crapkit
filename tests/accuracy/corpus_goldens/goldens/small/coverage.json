@@ -13,8 +13,8 @@
    "over_target": 1
   },
   "py": {
-   "crap_load": 284.72,
-   "functions": 48,
+   "crap_load": 290.72,
+   "functions": 49,
    "grade": "F",
    "over_target": 12
   },
@@ -37,7 +37,7 @@
    "over_target": 7
   }
  },
- "cache_hits": 64,
+ "cache_hits": 65,
  "cc_only": 336,
  "ceilings": {
   "default": 6,
@@ -45,11 +45,12 @@
   "vendor": 15
  },
  "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
- "crap_load": 1702.21,
+ "crap_load": 1708.21,
  "db": "<root>/repo/.crapkit/crap.sqlite",
+ "empty_scopes": {},
  "excluded": 1,
- "files": 64,
- "functions": 415,
+ "files": 65,
+ "functions": 416,
  "grade": "C",
  "kind": "coverage",
  "lane_failures": {},
@@ -86,5 +87,6 @@
  "schema": 1,
  "skipped_max_bytes": 0,
  "unmeasured_scopes": [],
- "untested": 9
+ "unreadable_names": [],
+ "untested": 10
 }

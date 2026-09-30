@@ -517,7 +517,8 @@ def _facts(name: str, head: dict) -> list[tuple]:
                                   f"edit the new row in {seeds.CHANGES}")],
         "a fix missing from the changelog": [(
             "T4", "CHANGELOG.md never names change C3",
-            "add a line under ## Unreleased that ends `(accuracy change C3)`")],
+            f"add a line to the newest `## X.Y.Z {chr(0x2014)} unreleased` section of "
+            "CHANGELOG.md that ends `(accuracy change C3)`")],
         "a stale last metric row": _t5(
             head, "the last row has analysis_version 11, the tree gives 12",
             f"the last row has digest {_last_digest(head)}, the tree gives {digest}"),
@@ -597,7 +598,7 @@ def _facts(name: str, head: dict) -> list[tuple]:
             ("B10", "moved calc not declared: CRAP score",
              f'{DECLARE} C3 --kind fix --calcs "CRAP score" --reason "<why>"')],
         "a metric-digests row written twice": _t5(
-            head, f"row 11/1.24.0/{seeds.corpus_digest(head)} appears 2 times"),
+            head, f"row 11/1.24.0/{seeds.corpus_digest(head)}/{digest} appears 2 times"),
     }[name]
 
 
@@ -766,6 +767,8 @@ def test_a_session_file_moves_with_a_small_corpus_row_and_needs_nothing_more():
     (f"{SESSION}/worklist-batches.json", ("Batch split",)),
     (f"{SESSION}/mcp-get_trend.json", ("MCP tool results",)),
     (f"{SESSION}/something-new.bin", ("Inventory rows and TSV exports",)),
+    ("tests/accuracy/corpus_goldens/goldens/printed/posix.tsv", ("Printed commands",)),
+    ("tests/accuracy/corpus_goldens/goldens/printed/win32.tsv", ("Printed commands",)),
 ])
 def test_each_surface_maps_to_its_calc(path, calcs):
     assert cc.surface_calcs(path)[:len(calcs)] == calcs
@@ -1259,6 +1262,62 @@ def test_a_row_that_goes_with_its_def_is_declared_and_passes_the_check(make_repo
     assert {(row["column"], row["oracle"], row["oracle_value"]) for row in moved} == {
         ("row", "ast", "absent")}
     assert code == 0, verdict
+
+
+def _unscored_f11() -> dict:
+    """BASE with f11's def in the corpus and no f11 row in either golden: a file
+    crapkit did not read yet, such as one whose extension is upper case. Its
+    lock and its analysis-11 digest row are this tree's own."""
+    tree = _without_f11(BASE, source=False)
+    kept = "".join(line + "\n" for line in tree[seeds.DIGESTS].splitlines()[:2])
+    tree = seeds.relock({**tree, seeds.DIGESTS: kept}, "C2", seeds.SCORED, seeds.INVENTORY)
+    return seeds.with_digest(tree, "11", "C2")
+
+
+def _scored_f11(tree: dict) -> dict:
+    """crapkit reads the file now: f11's rows appear in both goldens."""
+    return {**tree, seeds.SCORED: BASE[seeds.SCORED], seeds.INVENTORY: BASE[seeds.INVENTORY]}
+
+
+@pytest.mark.process
+def test_a_function_crapkit_starts_to_score_is_declared_under_the_running_version(make_repo):
+    """f11's def was in the corpus all along, and its rows appear in both goldens.
+    That moves no function that was there, so the metric digest takes a second
+    row under analysis 11 with no bump, and the check passes the commit."""
+    base = _unscored_f11()
+    top = _working(make_repo, base, _scored_f11(base))
+
+    text = _declare(top, _request(calcs=(cc.SPAN,)))
+    tree = seeds.with_bug(seeds.changelog({path: (top / path).read_text(encoding="utf-8")
+                                           for path in cc.DirTree(top).paths()}, "C3"))
+    for path in (seeds.BUGS, seeds.RETRO, "CHANGELOG.md"):
+        (top / path).write_bytes(tree[path].encode("utf-8"))
+    repos.git(top, "add", "-A")
+    repos.git(top, "commit", "-q", "-m", "score f11", date=repos.EPOCH + 120)
+
+    code, verdict = cc.check(top, "HEAD~1", "HEAD", lizard=LIZARD)
+    last = cc.rows((top / cc.DIGESTS).read_bytes())[-1]
+    assert ("metric-digests: new row for analysis 11, lizard 1.24.0 (ANALYSIS_VERSION was 11 at "
+            "the base)") in text
+    assert (last["analysis_version"], last["digest"], last["change"]) == (
+        "11", cc.metric_digest(_tree(BASE)), "C3")
+    assert code == 0, verdict
+
+
+def test_a_digest_row_under_the_base_s_version_breaks_b1_unless_rows_only_appear():
+    """A second analysis-11 row is kept for scored rows that appear; one written
+    after f1's CRAP moved asks for the bump, as a declare would."""
+    moved = seeds.with_digest(
+        {**BASE, seeds.SCORED: seeds.scored(seeds.scored_rows(f_crap={1: "1.0"}))}, "11", "C2")
+    base = _unscored_f11()
+    appeared = seeds.with_digest(_scored_f11(base), "11", "C2")
+
+    problems, _ = cc.verdict(_tree(BASE), _tree(moved), cc.running(_tree(moved), LIZARD))
+    assert [(problem.text, problem.fix) for problem in problems if problem.rule == "B1"] == [(
+        f"{seeds.DIGESTS} adds a row under analysis 11, lizard 1.24.0, which the base holds, "
+        "while scored rows that were there moved",
+        "bump ANALYSIS_VERSION in src/crapkit/analyze.py, then declare the move again")]
+    assert not {"B1", "T5"} & pure_rules(base, appeared)
 
 
 @pytest.mark.nightly

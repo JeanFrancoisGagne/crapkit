@@ -1,5 +1,5 @@
-crapkit: src/native/ifdef.c defines open_log( const char * path , int append) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
-crapkit: src/py/twins.py defines helper( values ) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
-crapkit: vendor/alamofire/Validation.swift defines validate statusCode acceptableStatusCodes : S, validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S, validate more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
-crapkit: vendor/cobra/args.go defines  cmd * Command , args [ ] string more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
-crapkit: vendor/fmt/os.cc defines convert_rwcount( size_t count) more than once; each one takes its own ratchet key — the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/native/ifdef.c defines open_log( const char * path , int append) more than once; each one takes its own ratchet key - the first as written, later ones suffixed #2, #3 in file order
+crapkit: src/py/twins.py defines helper( values ) more than once; each one takes its own ratchet key - the first as written, later ones suffixed #2, #3 in file order
+crapkit: vendor/alamofire/Validation.swift defines validate statusCode acceptableStatusCodes : S, validate contentType acceptableContentTypes : @ escaping @ Sendable @ autoclosure -> S, validate more than once; each one takes its own ratchet key - the first as written, later ones suffixed #2, #3 in file order
+crapkit: vendor/cobra/args.go defines  cmd * Command , args [ ] string more than once; each one takes its own ratchet key - the first as written, later ones suffixed #2, #3 in file order
+crapkit: vendor/fmt/os.cc defines convert_rwcount( size_t count) more than once; each one takes its own ratchet key - the first as written, later ones suffixed #2, #3 in file order

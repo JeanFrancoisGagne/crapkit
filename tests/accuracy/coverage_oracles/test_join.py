@@ -5,9 +5,10 @@ coverage.py region, an istanbul fnMap entry) on a scored row by position, with
 json.load and no crapkit:
 
 - a coverage.py region lands on the row of the same bare name that starts on
-  its start_line; a report before coverage.py 7.13.1 has no start_line, so the
-  region lands on the same-named row whose span holds its first line
-  (https://coverage.readthedocs.io/en/7.16.1/changes.html#version-7-13-1);
+  its start_line, else on the same-named row whose span holds its first line; a
+  report before coverage.py 7.13.1 has no start_line
+  (https://coverage.readthedocs.io/en/7.16.1/changes.html#version-7-13-1), and
+  crapkit refuses it, so no such recording reaches the join (ruling CO-B2);
 - an istanbul function lands on the row that starts on its decl.start.line
   (docs/lanes.md#what-the-istanbul-parser-reads).
 
@@ -37,13 +38,11 @@ from accuracy.kit.settings import pure
 
 SCORE = under_test.crapkit("score")
 # Recordings whose join the rulings rows already explain: raw v8-to-istanbul is
-# not the istanbul model (D7, CO4); before 7.13.1 a nested def on its encloser's
-# first body line takes the encloser's region (CO-B2); a TypeScript function
-# whose span runs into the next one's takes that one's counts (CO-B5).
+# not the istanbul model (D7, CO4); a TypeScript function whose span runs into
+# the next one's takes that one's counts (CO-B5).
 RAW_V8 = {"c8-12.0.0", "jest-v8-30.5.2"}
-DEFECTS = {("coveragepy-7.13.0", "call"): "CO-B2", ("coveragepy-7.10.6", "call"): "CO-B2",
-           **{(producer, scenario): "CO-B5" for scenario in probe_repo.SCENARIOS
-              for producer in ("vitest-v8-5.0.1", "vitest-istanbul-5.0.1", "jest-babel-30.5.2")}}
+DEFECTS = {(producer, scenario): "CO-B5" for scenario in probe_repo.SCENARIOS
+           for producer in ("vitest-v8-5.0.1", "vitest-istanbul-5.0.1", "jest-babel-30.5.2")}
 
 
 @dataclass(frozen=True)

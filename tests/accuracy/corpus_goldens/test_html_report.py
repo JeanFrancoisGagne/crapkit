@@ -148,12 +148,19 @@ def test_an_uncommitted_edit_in_a_lane_s_scope_names_that_lane(small, tmp_path):
     assert "HEAD has moved on" not in text
 
 
-def test_an_edit_no_lane_measures_leaves_the_banner_fresh(small, tmp_path):
+def test_an_edit_no_lane_measures_names_no_lane_and_counts_the_scored_file(small, tmp_path):
+    """CHANGELOG 0.8.1: the banner counts the files the run scored that changed
+    since, a scope no lane measures included, and no lane's note speaks for
+    them. src/legacy is scored and no lane lists it."""
     run, _, _ = small
     root = run.private_copy(tmp_path / "repo")
     _append(root, "src/legacy/old.py")
 
-    assert _banner(root, run.date_now)[:2] == ("banner fresh", [])
+    kind, lanes, text = _banner(root, run.date_now)
+
+    assert (kind, lanes) == ("banner stale", [])
+    assert "1 file(s) the run scored changed since" in text
+    assert "HEAD has moved on" not in text
 
 
 def test_a_commit_after_the_run_names_the_lane_and_head(small, tmp_path):

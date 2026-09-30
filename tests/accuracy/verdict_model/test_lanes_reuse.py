@@ -27,12 +27,12 @@ JUnit from a plan, so a test sets what changed and reads what crapkit decided.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
 from dataclasses import replace
 import importlib
 import json
 import os
 import re
+import subprocess
 import sys
 
 import html5lib
@@ -436,34 +436,82 @@ def test_a_git_failure_while_stamping_claims_no_uncommitted_change(make_repo, mo
 FAILED_GIT = ("rev-parse", "--verify", "refs/crapkit/no-such-ref")
 
 
+def _subcommand(args) -> str:
+    """The git subcommand among `args`: the first word that is neither a `-c`
+    pair nor an option."""
+    words = iter(args)
+    for word in words:
+        if word == "-c":
+            next(words, None)
+        elif not word.startswith("-"):
+            return word
+    return ""
+
+
+class _FailingGit:
+    """crapkit.gitio's `subprocess`, with every `git <command>` swapped for
+    FAILED_GIT; `failed` records each swapped argv."""
+
+    def __init__(self, command: str) -> None:
+        self.command, self.failed = command, []
+
+    def __getattr__(self, name: str):
+        return getattr(subprocess, name)
+
+    def _argv(self, argv: list) -> list:
+        if _subcommand(argv[1:]) != self.command:
+            return argv
+        self.failed.append(tuple(argv))
+        return ["git", *FAILED_GIT]
+
+    def run(self, argv, **kwargs):
+        return subprocess.run(self._argv(argv), **kwargs)
+
+    def Popen(self, argv, **kwargs):  # noqa: N802 - subprocess's own name
+        return subprocess.Popen(self._argv(argv), **kwargs)
+
+
 def _fail_reads(monkeypatch, command: str) -> list:
-    """Make every staleness read that runs `git <command>` exit 128, as git
-    does when it cannot read the repository; the list records each."""
-    changes = importlib.import_module("crapkit.lane_changes")
-    original = changes._start
-    failed: list = []
+    """Make every git read crapkit runs as `git <command>` exit 128, as git
+    does when it cannot read the repository; the list records each. The seam
+    is gitio's process boundary, which every staleness read crosses: a stamp's
+    blob record is compared through ls-files and status, and a stamp crapkit
+    0.8.0 wrote is judged by merge-base and diff."""
+    failing = _FailingGit(command)
+    monkeypatch.setattr(importlib.import_module("crapkit.gitio"), "subprocess", failing)
+    return failing.failed
 
-    def start(root, *args):
-        if args[0] != command:
-            return original(root, *args)
-        failed.append(args)
-        return original(root, *FAILED_GIT)
 
-    monkeypatch.setattr(changes, "_start", start)
-    return failed
+def _as_legacy_stamps(sc) -> None:
+    """Drop the blob ids from every stamp, as crapkit 0.8.0 wrote them: such a
+    stamp is judged by git's diff since its commit."""
+    stamps = sc.root / ".crapkit" / "artifacts.json"
+    entries = json.loads(stamps.read_bytes())
+    legacy = {key: {k: v for k, v in entry.items() if k != "blobs"} if isinstance(entry, dict)
+              else entry for key, entry in entries.items()}
+    stamps.write_text(json.dumps(legacy), encoding="utf-8")
+
+
+# The reads behind each stamp's staleness verdict: its blob record's, and a
+# legacy stamp's (lane_freshness.Freshness._record_drift and _commit_drift).
+STALENESS_READS = {"ls-files": False, "status": False, "merge-base": True, "diff": True}
 
 
 @pytest.mark.process
 @rulings.applies("V11")
-@pytest.mark.parametrize("command", ["merge-base", "diff"])
+@pytest.mark.parametrize("command", sorted(STALENESS_READS))
 def test_a_failed_staleness_read_claims_no_changed_file(make_repo, monkeypatch, command):
     """agent-json.md, uncovered_lines_note: the stale-lane note says files in
     the lane's scopes changed since its artifact was written. The git reads
     behind that verdict fail after a commit that touched only notes.txt:
     the lines may go null, since nothing proved them, but the note must not
-    claim a change git status and git diff do not show."""
+    claim a change git status and git diff do not show. A stamp that records
+    blob ids is read through the index and status; a legacy stamp through
+    merge-base and diff."""
     sc = _measured(make_repo)
     _docs_commit(sc)
+    if STALENESS_READS[command]:
+        _as_legacy_stamps(sc)
     failed = _fail_reads(monkeypatch, command)
     item = _app_item(sc.driver)
     monkeypatch.undo()
@@ -474,10 +522,13 @@ def test_a_failed_staleness_read_claims_no_changed_file(make_repo, monkeypatch, 
 
 
 def _note_claim(item: dict) -> str:
+    """What the note claims: "git cannot say which files ... changed since"
+    names the failed read, not a change."""
     if item["uncovered_lines"] is not None:
         return "lines kept"
-    return "null, names changed files" if "changed since" in item["uncovered_lines_note"] \
-        else "null, other cause"
+    note = item["uncovered_lines_note"]
+    names = "changed since" in note and "cannot say" not in note
+    return "null, names changed files" if names else "null, other cause"
 
 
 def _claim(reason: str) -> str:
@@ -645,12 +696,13 @@ def _app_item(driver: drive.Driver) -> dict:
 @pytest.mark.parametrize("change", cadence.tiered(sorted(LINE_CHANGES),
                                                   push=sorted(LINE_CHANGES)[:1]))
 def test_line_freshness_reads_source_changes_only(make_repo, change):
-    """docs/lanes.md: a stale artifact silences the dark-line fields with a
-    note naming the lane; only a change under the lane's scopes makes it stale."""
+    """docs/lanes.md: a stale artifact silences the dark-line fields of the
+    file that moved, with a note naming the lane; a change outside the lane's
+    scopes moves nothing."""
     sc = _measured(make_repo)
     changed = LINE_CHANGES[change](sc)
     item = _app_item(sc.driver)
-    stale = model.lines_stale(SCOPES["a"], changed)
+    stale = model.lines_stale("src/app.py", SCOPES["a"], changed)
     assert (item["uncovered_lines"] is None) == stale, item
     assert ("lane 'a'" in item.get("uncovered_lines_note", "")) == stale, item
 
@@ -675,33 +727,34 @@ def _unstamp_lane_b(sc):
     return restore
 
 
-def _stamp_once_reads_start(monkeypatch, restore) -> list:
-    """Wrap crapkit's lanes.staleness_reads so `restore` runs once its reads
-    have started; the returned list records each time it did."""
-    lanes = importlib.import_module("crapkit.lanes")
-    original, fired = lanes.staleness_reads, []
+def _stamp_once_stamps_read(monkeypatch, restore) -> list:
+    """Wrap the stamp file read lane freshness starts from
+    (crapkit.lane_freshness.read) so `restore` runs once it has read the file;
+    the returned list records each time it did."""
+    freshness = importlib.import_module("crapkit.lane_freshness")
+    original, fired = freshness.read, []
 
-    @contextmanager
     def stamped_meanwhile(*args, **kwargs):
-        with original(*args, **kwargs) as facts:
-            restore()
-            fired.append(True)
-            yield facts
+        stamps = original(*args, **kwargs)
+        restore()
+        fired.append(True)
+        return stamps
 
-    monkeypatch.setattr(lanes, "staleness_reads", stamped_meanwhile)
+    monkeypatch.setattr(freshness, "read", stamped_meanwhile)
     return fired
 
 
 @pytest.mark.process
 def test_unstamped_lane_paths_count_for_staleness(make_repo, monkeypatch):
-    """A lane unstamped when the staleness reads start and stamped before its
-    verdict (a concurrent coverage) is judged on its own scope: an uncommitted
-    edit under lib still makes lane b stale. The stamp lands at the seam where
-    the reads have started (lanes.staleness_reads), in process."""
+    """A lane unstamped when the staleness verdict reads the stamp file and
+    stamped before its verdict (a concurrent coverage) is not read as fresh:
+    an uncommitted edit under lib still withholds lane b's lines. The stamp
+    lands right after the stamp file is read (lane_freshness.read), in
+    process."""
     sc = _measured(make_repo)
     restore = _unstamp_lane_b(sc)
     _append(sc.root / "lib" / "util.py")
-    fired = _stamp_once_reads_start(monkeypatch, restore)
+    fired = _stamp_once_stamps_read(monkeypatch, restore)
     items = drive.Driver(sc.root, date_now=sc.date + vw.DAY).run("next-item", "--top", "50").json()
     lib = next(item for item in items["items"] if item["path"] == "lib/util.py")
     assert fired and lib["uncovered_lines"] is None, lib

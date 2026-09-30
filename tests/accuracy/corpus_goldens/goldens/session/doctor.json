@@ -6,6 +6,7 @@
    "artifact_present": true,
    "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
    "name": "py",
+   "refusal": null,
    "seconds": "<seconds>"
   },
   {
@@ -13,6 +14,7 @@
    "artifact_present": true,
    "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
    "name": "js",
+   "refusal": null,
    "seconds": "<seconds>"
   }
  ],
@@ -22,14 +24,14 @@
   "verdict_ok": null
  },
  "problems": [
-  "scope 'legacy' is in no lane's scopes list — its functions can only score no-lane (declare a lane, or coverage_optional = true)"
+  "scope 'legacy' is in no lane's scopes list - its functions can only score no-lane (declare a lane, or coverage_optional = true)"
  ],
  "resources": "<resources>",
  "schema": 1,
  "store": {
   "path": ".crapkit/crap.sqlite",
   "present": true,
-  "size_bytes": 266240
+  "size_bytes": 282624
  },
  "versions": {
   "crapkit": "<crapkit>",

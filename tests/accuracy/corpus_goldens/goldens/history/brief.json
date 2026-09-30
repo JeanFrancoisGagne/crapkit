@@ -144,6 +144,8 @@
   "scope": "web",
   "start": 9
  },
+ "scored_changes": 0,
+ "shallow": false,
  "source": "export function dispatch(event) {\n  if (!event) {\n    return \"none\";\n  }\n  if (event.ctrl && event.shift) {\n    return \"both\";\n  }\n  return handlers[event.ctrl ? 0 : 1](event);\n}",
  "stale": false,
  "target": 6,
@@ -151,6 +153,7 @@
   11,
   16
  ],
+ "unmeasured": false,
  "versions": {
   "analysis_version": 13,
   "crapkit": "<crapkit>",

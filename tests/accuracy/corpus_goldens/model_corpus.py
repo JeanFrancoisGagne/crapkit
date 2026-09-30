@@ -1,8 +1,8 @@
 """What each small-corpus row should read, written from the README, never from crapkit's code.
 
 doc: README.md:28-31 sha256=d1cf4bd000bc592b220e5b4d2998ba9de806fbbbb80dd95bd94124e5aa86ffdd
-doc: README.md:850-883 sha256=dea4a657a1736db7bf826b3392ab2a372077a72b391273862fcc8a3ce652fae3
-doc: docs/lanes.md:247-262 sha256=56a2ed1b561b572ad71b11219467611fd20e8a4b35da929ad51ecca76ee6b8af
+doc: README.md:1289-1324 sha256=2e527433bace53113884e042e6c4c4f2a594f280e94b683f9916b8ed46894db7
+doc: docs/lanes.md:298-309 sha256=ca69219a6a30caf1a2f2c671db2939c861363d709add27ca24c963aa581fcec6
 
 The inputs are the corpus's crapkit.toml (scopes, lanes, ceilings), the
 counts table the recorded artifacts give (oracles/corpus_counts.py), and each
@@ -21,6 +21,9 @@ row's analysis columns (path, start, end, ccn), which other packets check.
   it, split-lines for a shared line or a one-line Python def, add-tests
   otherwise; cc-only and excluded rows read only ok or decompose.
 - grade: the share of functions over their ceiling, in the README's bands.
+  The README takes it over the scopes the run measured, leaving out a scope
+  whose lane failed or `--lane` skipped; the small corpus run has neither, so
+  every row counts.
 """
 from __future__ import annotations
 

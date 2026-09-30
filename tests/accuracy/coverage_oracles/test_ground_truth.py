@@ -10,7 +10,8 @@ model and the driver's calls, never from a producer's output. Three checks:
    states them too, and equals the committed 7.16.1 recording.
 3. crapkit's scored cov and flag for every function equal the README's term
    over those counts, after the README floor for a Python def-line layout.
-   Where crapkit and the ground truth part, a rulings row says why.
+   Where crapkit and the ground truth part, a rulings row says why. A
+   coverage.py recording with no start_line is refused instead (ruling CO-B2).
 
 Every producer's recording is replayed on push. In the nightly tier
 regenerate.py reruns each producer over the probes and the fresh artifact must
@@ -21,6 +22,7 @@ import dataclasses
 from fractions import Fraction
 import json
 from pathlib import Path
+import re
 import sys
 
 import pytest
@@ -38,8 +40,6 @@ PROBES = {**{name: probes for name, (_, probes) in probe_repo.PRODUCERS.items()}
 KNOWN = {
     ("istanbul", "arrow", "idle"): "CO-B1", ("v8", "arrow", "idle"): "CO-B1",
     ("istanbul", "h", "idle"): "CO-B1", ("v8", "h", "idle"): "CO-B1",
-    ("coveragepy-7.13.0", "outer.inner", "call"): "CO-B2",
-    ("coveragepy-7.10.6", "outer.inner", "call"): "CO-B2",
     ("coveragepy", "excluded", "call"): "CO-B3", ("coveragepy", "excluded", "idle"): "CO-B3",
     ("istanbul", "ignoredIstanbul", "call"): "CO-B4", ("istanbul", "ignoredIstanbul", "idle"): "CO-B4",
     ("v8", "ignoredIstanbul", "call"): "CO-B4", ("v8", "ignoredIstanbul", "idle"): "CO-B4",
@@ -172,8 +172,12 @@ def _param(producer: str, row: ground_table.Truth):
                         id=f"{producer}-{row.scenario}-{row.path}-{row.function}")
 
 
+# The producers crapkit scores: a recording it refuses has no row to compare.
+SCORED = [name for name in [*RECORDED, LIVE] if name not in probe_repo.REFUSED]
+
+
 def _cases():
-    for producer in [*RECORDED, LIVE]:
+    for producer in SCORED:
         for scenario in probe_repo.SCENARIOS:
             for row in ground_table.rows_for(producer, scenario, PROBES[producer]):
                 yield _param(producer, row)
@@ -247,7 +251,9 @@ ONE_LANGUAGE = [
 ]
 
 
-def _one_language_rows(tmp_path, probe: str, recording: str) -> dict[int, probe_repo.Row]:
+def _one_language_run(tmp_path, probe: str, recording: str):
+    """(driver, result) of `crapkit coverage --export scored.tsv` over a repo
+    holding one probe and its recording."""
     suffix = probe.split("/")[0]
     parser = "coveragepy" if suffix == "py" else "istanbul"
     toml = mini_repo.config([mini_repo.scope("s", [suffix], [probe_repo.LANGUAGES["." + suffix]])],
@@ -256,10 +262,37 @@ def _one_language_rows(tmp_path, probe: str, recording: str) -> dict[int, probe_
     driver = mini_repo.build(tmp_path / "repo", {
         "crapkit.toml": toml, probe: (probe_repo.PROBES / probe).read_bytes(),
         "recorded/cov.json": json.dumps(_only(artifact, probe, parser)).encode()})
-    result = driver.run("coverage", "--export", "scored.tsv")
+    return driver, driver.run("coverage", "--export", "scored.tsv")
+
+
+def _one_language_rows(tmp_path, probe: str, recording: str) -> dict[int, probe_repo.Row]:
+    driver, result = _one_language_run(tmp_path, probe, recording)
     assert result.code == 0, result.stderr
     text = (driver.root / "scored.tsv").read_bytes().decode("utf-8")
     return {row.start: row for row in probe_repo.read_scored(text)}
+
+
+NO_START_LINE = re.compile(r"py/shapes\.py: [\w.]+: no start_line; coverage\.py writes it on "
+                           r"every function from 7\.13\.1, so install coverage>=7\.13\.1 and "
+                           r"rerun the lane")
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("producer", probe_repo.REFUSED)
+@rulings.applies("CO-B2")
+def test_a_recording_without_start_line_is_refused_by_name(tmp_path, producer):
+    """coverage.py writes each region's def line as start_line from 7.13.1. Read
+    from its body alone, a nested def on its encloser's first body line took the
+    encloser's region, so a never-called outer.inner scored 0.5. crapkit refuses
+    such a report at exit 5, naming the file, its first function and the coverage
+    to install; the ground truth for outer.inner stays 0.0."""
+    _, result = _one_language_run(tmp_path, "py/shapes.py", producer)
+    truth = {row.function: row for row in ground_table.rows_for(producer, "call",
+                                                                ("py/shapes.py",))}
+
+    assert NO_START_LINE.search(result.stderr), result.stderr
+    rulings.pin_ruling("CO-B2", crapkit=f"exit {result.code}",
+                       oracle=float(ground_table.crapkit_expected(truth["outer.inner"])[0]))
 
 
 def _only(artifact: dict, probe: str, parser: str) -> dict:

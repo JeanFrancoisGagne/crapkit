@@ -24,12 +24,16 @@ NOW = specs.EPOCH + 100 * specs.DAY
 pytestmark = pytest.mark.process
 
 
+# Keys of `ratchet report --json` that are not burn-down numbers: `shallow` is a
+# fact about the clone, checked on its own below.
+NOT_BURN_DOWN = ("schema", "policy_violations", "shallow")
+
+
 def said(root: Path, *flags: str) -> tuple[int, dict]:
     result = drive.Driver(root, date_now=NOW).run("ratchet", "report", "--json", *flags)
     assert result.code in (0, 1), result.stderr
     payload = result.json()
-    return result.code, {key: payload[key] for key in payload
-                         if key not in ("schema", "policy_violations")}
+    return result.code, {key: payload[key] for key in payload if key not in NOT_BURN_DOWN}
 
 
 def _oldest_text(rows: list[dict]) -> str:
@@ -77,6 +81,24 @@ def test_value_changes_move_mark_age(make_repo):
     hand = _hand("BURN_TIGHTEN")
     assert _as_hand(report, hand) == hand
     assert report == marks_history_walk.report(built.root, MARKS)
+
+
+def _depth_one_clone(root: Path, top: Path) -> Path:
+    """A depth-1 clone of `root`'s history: git shortens a clone only over a
+    transport, so the source is named as a file:// URL."""
+    repos.git(top, "clone", "-q", "--depth", "1", root.resolve().as_uri(), "shallow")
+    return top / "shallow"
+
+
+@pytest.mark.parametrize("depth", ["full", "depth-1"])
+def test_shallow_is_what_git_says_of_the_clone(burned, tmp_path, depth):
+    """docs/agent-json.md, ratchet report --json: `shallow` is true in a shallow
+    clone, where every age and repayment counts only the commits it holds."""
+    root = _depth_one_clone(burned.root, tmp_path) if depth == "depth-1" else burned.root
+    result = drive.Driver(root, date_now=NOW).run("ratchet", "report", "--json")
+    assert result.code in (0, 1), result.stderr
+
+    assert result.json()["shallow"] == marks_history_walk.shallow(root) == (depth == "depth-1")
 
 
 _AGE = re.compile(r"^mark (.+) in (\S+) is \d+d old")

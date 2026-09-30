@@ -1,4 +1,7 @@
 {
+ "commands": {
+  "refresh": "crapkit coverage --reuse-unchanged"
+ },
  "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
  "empty": true,
  "reasons": {
@@ -12,6 +15,8 @@
  },
  "run_id": 2,
  "schema": 1,
+ "scored_changes": 0,
+ "shallow": false,
  "skipped_no_lane": 0,
  "stale": false
 }

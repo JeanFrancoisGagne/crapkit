@@ -12,6 +12,8 @@ The files it keeps, under tests/accuracy/change_control/:
 
 - CHANGES.tsv: one row per declared change: id, date, kind (fix, definition,
   feature or none), calcs, analysis_version, lizard_version, changelog, reason.
+  changelog is the version of the CHANGELOG.md section that holds the change's
+  line, empty for kind none.
 - changes/<id>.moved.tsv: each golden cell the change moved (golden, path,
   handle, column, old, new), the outside oracle that judged it, the oracle's
   value, and the ruling that covers a disagreement.
@@ -48,7 +50,9 @@ hold once either side has the first lock (kit-close runs `lock --initial`);
 before it only the in-tree rules do, since no change can be declared yet.
 
 
-- B1 the base's metric-digests.tsv is a prefix of the head's.
+- B1 the base's metric-digests.tsv is a prefix of the head's, and a row the head
+  adds under an analysis and lizard version the base holds comes with scored
+  rows that appear and nothing else.
 - B2 every row of CHANGES.tsv, bugs.tsv, triage.tsv, every retro.tsv and the
   kit's seed-changes.tsv is still there byte for byte, every (id, test) row of
   ledger.tsv is still there (a replay re-records its own row), and no rulings id
@@ -103,7 +107,10 @@ names a rulings row of that calc whose oracle cell names that oracle. A cell no
 oracle here answers (another language, or a start line the oracle finds no
 function at) is recorded with no oracle, and its packet's oracle checks judge it.
 When the metric digest moves, the running ANALYSIS_VERSION must be new to
-metric-digests.tsv (default A1: a move bumps it). A golden a fresh change already
+metric-digests.tsv (default A1: a move bumps it), except when the only scored
+cells that moved are rows that appear: a function crapkit starts to score, in a
+file of a known language it did not read before, moves no function that was
+there, so the digest takes a second row under the running version. A golden a fresh change already
 relocked belongs to that change, so a second declare in the same diff (a kind none
 for a refactor next to a fix) answers only for what is left.
 
@@ -159,6 +166,11 @@ CORPUS_ENV = "CRAPKIT_ACCURACY_CORPUS"
 REGENERATE = "tools/accuracy/regenerate.py"
 ANALYZE = "src/crapkit/analyze.py"
 CHANGELOG = "CHANGELOG.md"
+# The section a declared change's CHANGELOG line goes in: the newest `## X.Y.Z
+# <dash> unreleased` heading, the one tools/release/release.py dates at release time.
+DASH = chr(0x2014)
+UNRELEASED = re.compile(rf"^## (\d+\.\d+\.\d+) {DASH} unreleased$", re.MULTILINE)
+CHANGELOG_SECTION = f"the newest `## X.Y.Z {DASH} unreleased` section of {CHANGELOG}"
 DOCS = ("README.md", "CONTEXT.md", "docs/agent-json.md", "docs/accuracy.md")
 GOLDENS = "tests/accuracy/*/goldens/**"
 LOCKED = (GOLDENS, "tests/accuracy/*/rulings.tsv", "tests/accuracy/*/hand_*.tsv",
@@ -256,6 +268,9 @@ SURFACES = (
     ("refusal-scope.json", ("File universe and scope ownership",)),
     ("rescore.json", ("Rescore overlay",)),
     ("seed.txt", ("Ratchet seed and prune", "Metric stamp guard")),
+    # the printed-commands goldens, one per OS (corpus_goldens/printed_runs.golden_path)
+    ("posix.tsv", ("Printed commands",)),
+    ("win32.tsv", ("Printed commands",)),
     ("verify*", _VERDICT),
 )
 
@@ -1149,7 +1164,7 @@ def changelog_problems(tree) -> list[Problem]:
     text = (tree.read(CHANGELOG) or b"").decode("utf-8", "replace")
     missing = [key for key, change in changes_of(tree).items() if _unlogged(key, change, text)]
     return [Problem("T4", f"CHANGELOG.md never names change {key}",
-                    f"add a line under ## Unreleased that ends `(accuracy change {key})`")
+                    f"add a line to {CHANGELOG_SECTION} that ends `(accuracy change {key})`")
             for key in missing]
 
 
@@ -1215,8 +1230,26 @@ def _digest_key(row: dict) -> tuple:
     return row.get("analysis_version"), row.get("lizard_version"), row.get("corpus")
 
 
+def _digest_row_key(row: dict) -> tuple:
+    return (*_digest_key(row), row.get("digest"))
+
+
+def _row_added(cell: Cell) -> bool:
+    return cell.column == "row" and cell.old == "absent"
+
+
+def only_added_rows(cells: list[Cell], tree) -> bool:
+    """Whether the small corpus's scored golden moved, and only by rows that
+    appear. A function crapkit newly scores, in a file of a known language it did
+    not read before, moves no existing function's number or mark, so the metric
+    digest may take a second row under the running ANALYSIS_VERSION."""
+    where = small_goldens(tree)
+    scored = [cell for cell in cells if where and cell.golden == f"{where}/scored.tsv"]
+    return bool(scored) and all(map(_row_added, scored))
+
+
 def _digest_shape(found: list[dict]) -> list[str]:
-    keys = Counter(map(_digest_key, found))
+    keys = Counter(map(_digest_row_key, found))
     texts = [f"row {'/'.join(key)} appears {count} times" for key, count in keys.items()
              if count > 1]
     orders = [_order(row) for row in found]
@@ -1284,10 +1317,33 @@ class Diff:
 def rule_b1(diff: Diff) -> list[Problem]:
     old, new = lines(diff.base.read(DIGESTS)), lines(diff.head.read(DIGESTS))
     if new[:len(old)] == old:
-        return []
+        return _unbumped(diff)
     return [Problem("B1", f"{DIGESTS} changed a row the base had; rows only append",
                     f"git checkout {diff.base.commit if hasattr(diff.base, 'commit') else 'BASE'} "
                     f"-- {DIGESTS}, then declare the move as a new row")]
+
+
+def moved_under_held_version(old: list[dict], new: list[dict]) -> list[dict]:
+    """The rows `new` appends after `old` under an (analysis, lizard, corpus) an old
+    row holds, with a digest no old row of it has: the metrics moved and the
+    version did not."""
+    held, seen = set(map(_digest_key, old)), set(map(_digest_row_key, old))
+    return [row for row in new[len(old):]
+            if _digest_key(row) in held and _digest_row_key(row) not in seen]
+
+
+def _unbumped(diff: Diff) -> list[Problem]:
+    """A digest row under a version the base holds is kept only for scored rows
+    that appear and nothing else."""
+    found = moved_under_held_version(rows(diff.base.read(DIGESTS)),
+                                     rows(diff.head.read(DIGESTS)))
+    if not found or only_added_rows(diff.cells, diff.head):
+        return []
+    row = found[0]
+    return [Problem("B1", f"{DIGESTS} adds a row under analysis {row['analysis_version']}, "
+                          f"lizard {row['lizard_version']}, which the base holds, while scored "
+                          "rows that were there moved",
+                    f"bump ANALYSIS_VERSION in {ANALYZE}, then declare the move again")]
 
 
 def _kept(path: str, rows_: list[str]) -> list[str]:
@@ -1962,9 +2018,18 @@ def _same_metrics(found: list[dict], row: dict) -> bool:
     return all(last.get(name) == row[name] for name in DIGEST_COLUMNS[:4])
 
 
-def _digest_refusal(found: list[dict], row: dict, now: Running) -> list[str]:
+def _unbumped_move(found: list[dict], row: dict, added: bool) -> bool:
+    """A digest that moved under a version the table holds, by more than scored
+    rows that appear (`added`)."""
+    return _digest_key(row) in set(map(_digest_key, found)) and not added
+
+
+def _digest_refusal(found: list[dict], row: dict, now: Running,
+                    added: bool = False) -> list[str]:
+    """A digest that moved under a version the table holds asks for the bump
+    (A1), unless the move is scored rows that appear and nothing else."""
     last = _last(found)
-    if _digest_key(row) in set(map(_digest_key, found)):
+    if _unbumped_move(found, row, added):
         return [f"the metric digest moved from {last.get('digest')} to {row['digest']} under "
                 f"analysis {now.analysis}, lizard {now.lizard}: bump ANALYSIS_VERSION in "
                 f"{ANALYZE} to {int(now.analysis or 0) + 1} (A1), then rerun this declare"]
@@ -1975,13 +2040,15 @@ def _digest_refusal(found: list[dict], row: dict, now: Running) -> list[str]:
     return []
 
 
-def _digest_row(head, now: Running, change_id: str) -> tuple[dict | None, list[str]]:
-    """(the metric-digests row this declare appends or None, refusals)."""
+def _digest_row(head, now: Running, change_id: str,
+                cells: list[Cell] = ()) -> tuple[dict | None, list[str]]:
+    """(the metric-digests row this declare appends or None, refusals). `cells`
+    are the moves it declares: scored rows that appear alone take no bump."""
     found = rows(head.read(DIGESTS))
     row = _new_digest_row(head, now, change_id)
     if _same_metrics(found, row):
         return None, []
-    return row, _digest_refusal(found, row, now)
+    return row, _digest_refusal(found, row, now, only_added_rows(list(cells), head))
 
 
 @dataclass
@@ -2050,7 +2117,7 @@ def plan_declare(base, head, request: Request, now: Running,
     moves = moves_of(base, head, changed)
     judged, bad = _judged(base, head, moves.cells, request)
     lock, relocked = _relock(head, request.id)
-    digest, stale = _digest_row(head, now, request.id)
+    digest, stale = _digest_row(head, now, request.id, moves.cells)
     refusals += (bad + _declaration_problems(request, head, moves)
                  + _nothing_moved(request, moves) + stale)
     if refusals:
@@ -2086,11 +2153,27 @@ def _write_digest(root: Path, plan: Plan) -> None:
         _append(root / DIGESTS, DIGEST_COLUMNS, [plan.digest[name] for name in DIGEST_COLUMNS])
 
 
+def unreleased_version(text: str) -> str:
+    """The version of the newest `## X.Y.Z <dash> unreleased` heading in
+    CHANGELOG.md's text, or '' when it has none."""
+    found = UNRELEASED.search(text)
+    return found.group(1) if found else ""
+
+
+def changelog_cell(root: Path, kind: str) -> str:
+    """CHANGES.tsv's changelog cell: the release whose CHANGELOG section names the
+    change, and nothing for kind none, which needs no CHANGELOG line (T4)."""
+    path = root / CHANGELOG
+    if kind == "none" or not path.is_file():
+        return ""
+    return unreleased_version(path.read_bytes().decode("utf-8", "replace"))
+
+
 def write_plan(root: Path, plan: Plan, now: Running) -> None:
     request = plan.request
     _append(root / CHANGES, CHANGE_COLUMNS, [request.id, request.today, request.kind,
                                              "; ".join(request.calcs), now.analysis, now.lizard,
-                                             "#unreleased", request.reason])
+                                             changelog_cell(root, request.kind), request.reason])
     (root / LOCK).write_bytes(table_bytes(LOCK_COLUMNS, ((path, *plan.lock[path])
                                                          for path in sorted(plan.lock))))
     _write_moved(root, plan)
@@ -2122,7 +2205,7 @@ def _digest_line(plan: Plan, now: Running) -> list[str]:
 
 
 def _changelog_lines(request: Request) -> list[str]:
-    return [f"add to {CHANGELOG} under ## Unreleased:",
+    return [f"add to {CHANGELOG_SECTION}:",
             f"- {request.reason.rstrip('.')}. (accuracy change {request.id})"
             ] if request.kind != "none" else []
 

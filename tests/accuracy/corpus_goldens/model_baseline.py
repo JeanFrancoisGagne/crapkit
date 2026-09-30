@@ -1,7 +1,7 @@
 """Which stored run `verify` compares against, written from the README, never from crapkit's code.
 
-doc: README.md:918-940 sha256=f26c17ff663bce438970a2c55aac42b832e612ca53d81d4df8635c8dc8358655
-doc: docs/agent-json.md:1185-1185 sha256=7126e96cfb925301765ba840cdf2aa02149184e27bcda7e45955446d71e36f0e
+doc: README.md:1360-1389 sha256=7f5557010eafb657cd12fe9309214b790a9754819cb173db18d7282a8c4f958d
+doc: docs/agent-json.md:1440-1440 sha256=7126e96cfb925301765ba840cdf2aa02149184e27bcda7e45955446d71e36f0e
 
 The input is the store's runs table read with sqlite3: id, kind and
 verdict_ok (1 passed, 0 failed, NULL for a run that renders no verdict).
@@ -14,6 +14,9 @@ verdict_ok (1 passed, 0 failed, NULL for a run that renders no verdict).
   the newest candidate in front of it. The failure that opens the taint is
   the first one after the newest passing verify.
 - Otherwise the baseline is the newest candidate. None when nothing qualifies.
+- Only runs at or behind HEAD compete: a run on another branch never serves.
+  The input carries no commit, because the upgrade scenes and the README
+  example this model judges keep every run on HEAD's own line.
 """
 from __future__ import annotations
 

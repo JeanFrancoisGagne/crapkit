@@ -1,36 +1,36 @@
 next-step	<python> -m crapkit coverage
-report	crapkit explain -- -top.py top
+report	crapkit explain -- "-top.py" top
 report	crapkit explain 'src/a$b%c!d`e.py' expands
-report	crapkit explain 'src/a&b(c)^d.py' operators
-report	crapkit explain src/anon.js '(anonymous)#1'
-report	crapkit explain src/anon.js '(anonymous)#2'
-report	crapkit explain 'src/café.py' 'café'
-report	crapkit explain 'src/it'"'"'s.py' quoted
+report	crapkit explain "src/a&b(c)^d.py" operators
+report	crapkit explain src/anon.js "(anonymous)#1"
+report	crapkit explain src/anon.js "(anonymous)#2"
+report	crapkit explain "src/café.py" "café"
+report	crapkit explain "src/it's.py" quoted
 report	crapkit explain src/twins.py 'run( self , mode = "fast" )'
-report	crapkit explain src/twins.py 'run( self )'
-report	crapkit explain 'src/with space.py' spaced
-report	crapkit explain 'src/x#y.py' hashed
-gate	crapkit rescore --gate -- -top.py
-scoped	crapkit test-scoped -- -top.py
+report	crapkit explain src/twins.py "run( self )"
+report	crapkit explain "src/with space.py" spaced
+report	crapkit explain "src/x#y.py" hashed
+gate	crapkit rescore --gate -- "-top.py"
+scoped	crapkit test-scoped -- "-top.py"
 gate	crapkit rescore 'src/a$b%c!d`e.py' --gate
 scoped	crapkit test-scoped 'src/a$b%c!d`e.py'
-gate	crapkit rescore 'src/a&b(c)^d.py' --gate
-scoped	crapkit test-scoped 'src/a&b(c)^d.py'
+gate	crapkit rescore "src/a&b(c)^d.py" --gate
+scoped	crapkit test-scoped "src/a&b(c)^d.py"
 gate	crapkit rescore src/anon.js --gate
 scoped	crapkit test-scoped src/anon.js
 gate	crapkit rescore src/anon.js --gate
 scoped	crapkit test-scoped src/anon.js
-gate	crapkit rescore 'src/café.py' --gate
-scoped	crapkit test-scoped 'src/café.py'
-gate	crapkit rescore 'src/it'"'"'s.py' --gate
-scoped	crapkit test-scoped 'src/it'"'"'s.py'
+gate	crapkit rescore "src/café.py" --gate
+scoped	crapkit test-scoped "src/café.py"
+gate	crapkit rescore "src/it's.py" --gate
+scoped	crapkit test-scoped "src/it's.py"
 gate	crapkit rescore src/twins.py --gate
 scoped	crapkit test-scoped src/twins.py
 gate	crapkit rescore src/twins.py --gate
 scoped	crapkit test-scoped src/twins.py
-gate	crapkit rescore 'src/with space.py' --gate
-scoped	crapkit test-scoped 'src/with space.py'
-gate	crapkit rescore 'src/x#y.py' --gate
-scoped	crapkit test-scoped 'src/x#y.py'
+gate	crapkit rescore "src/with space.py" --gate
+scoped	crapkit test-scoped "src/with space.py"
+gate	crapkit rescore "src/x#y.py" --gate
+scoped	crapkit test-scoped "src/x#y.py"
 clear	unset CRAPKIT_OVERRIDE_REASON
 pip	pip install "crapkit[py]"

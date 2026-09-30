@@ -60,6 +60,18 @@ def test_empty_override_reason_refuses(make_repo, reason):
     assert (sc.root / ".crapkit" / "lane-a.log").stat().st_mtime_ns == log
 
 
+@pytest.mark.parametrize("cause", ["regressions", "new_failures", "unread"])
+def test_the_model_refuses_an_override_beside_what_no_mark_carries(cause):
+    """docs/ratchet.md, Overrides: a ratchet regression, a new test failure or
+    an unread file in the same run refuses the override; alone, a reason and an
+    alert grant it."""
+    counts = {"regressions": 0, "new_failures": 0, "unread": 0}
+    assert model.override_refusal("hotfix 412", alert=True, **counts) is None
+    assert model.override_refusal("hotfix 412", alert=False, **counts) == "no alert_command"
+    assert model.override_refusal("hotfix 412", alert=True, **{**counts, cause: 1}) == (
+        "regression, new failure or unread file")
+
+
 @pytest.mark.nightly
 @pytest.mark.process
 def test_override_reads_a_marks_file_with_a_bom(make_repo):

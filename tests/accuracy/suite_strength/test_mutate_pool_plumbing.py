@@ -20,6 +20,11 @@ follows from these rules:
   whole-second mtime, so the suite runs with PYTHONDONTWRITEBYTECODE=1 and no
   __pycache__ beside the mutated file; the original file always comes back; one
   thread per tree, and every thread is waited for.
+- docs/lanes.md "A Python child writes its log in UTF-8": every mutate suite
+  run starts with PYTHONIOENCODING=utf-8.
+- docs/configuration.md `mutation_command`: a nonzero exit kills the mutant,
+  except exit 5 (no test ran), which gets no verdict and still counts killed; a
+  timeout is a kill counted apart. The progress line says which.
 - Python docs, os.stat_result.st_file_attributes: a Windows junction reports
   FILE_ATTRIBUTE_REPARSE_POINT and a directory mode, never S_IFLNK.
 - RFC 8259 section 8.1: JSON exchanged between systems is UTF-8.
@@ -46,7 +51,8 @@ from crapkit.errors import ToolError
 from crapkit.locks import exclusive_lock
 from crapkit.mutate import Mutant
 
-DASH = "\u2014"
+KILLED, SURVIVED = mutate_pool.MutantVerdict.KILLED, mutate_pool.MutantVerdict.SURVIVED
+TIMED_OUT, NO_VERDICT = mutate_pool.MutantVerdict.TIMED_OUT, mutate_pool.MutantVerdict.NO_VERDICT
 RUN = "ab" * 16  # a temporary run's directory name: 32 hex digits
 
 
@@ -102,6 +108,10 @@ class Owner:
         self.cancels += 1
         if self.fails:
             raise self.fails
+
+
+def _suite_env() -> dict:
+    return {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"}
 
 
 def _cfg(workers=1, command="python -m pytest -q -x", timeout=41):
@@ -169,7 +179,7 @@ def _run_twice(monkeypatch, root):
 def test_verdicts_keep_mutant_order_and_the_source_tree_is_untouched(monkeypatch, tmp_path):
     root = _repo(tmp_path)
     verdicts, git, _, _ = _run_twice(monkeypatch, root)
-    assert verdicts == [[True, False, True], [True, False, True]]
+    assert verdicts == [[KILLED, SURVIVED, KILLED], [KILLED, SURVIVED, KILLED]]
     assert (root / "src/a.py").read_bytes() == SOURCE
     assert sorted(call[:2] for call in git.calls if call[0] == "add") == [
         ("add", "w0"), ("add", "w1"), ("add", "w2")]
@@ -187,7 +197,7 @@ def test_every_suite_run_gets_the_configured_deadline_and_no_bytecode(monkeypatc
     _, _, suite, _ = _run_twice(monkeypatch, _repo(tmp_path))
     assert len(suite.runs) == 8  # a baseline and three mutants, twice
     assert {run.timeout for run in suite.runs} == {41}
-    assert all(run.env == {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"} for run in suite.runs)
+    assert all(run.env == _suite_env() for run in suite.runs)
 
 
 def test_a_head_that_moves_while_inputs_are_read_refuses(monkeypatch, tmp_path):
@@ -211,13 +221,16 @@ def test_a_head_that_moves_while_workers_are_built_refuses(monkeypatch, tmp_path
 
 # --- the baseline and one mutant -------------------------------------------------------
 
+KILLS_ALL = "on the UNMUTATED tree, so every mutant would read as killed and the score would be 100%"
+
+
 def _refusal(tree, runner, verdict, command):
-    return (f"mutation_command {runner!r} {verdict} on the UNMUTATED tree, so every mutant "
-            f"would read as killed and the score would be 100% {DASH} run `{command}` in "
-            f"{tree} and fix it before scoring")
+    return f"mutation_command {runner!r} {verdict} - run `{command}` in {tree} and fix it before scoring"
 
 
-@pytest.mark.parametrize("code, verdict", [(9009, "exits 9009"), (None, "timed out")])
+@pytest.mark.parametrize("code, verdict", [
+    (9009, f"exits 9009 {KILLS_ALL}"), (None, f"timed out {KILLS_ALL}"),
+    (5, "exits 5 (no test ran) on the UNMUTATED tree, so no mutant would get a verdict")])
 def test_a_baseline_that_fails_is_refused_in_full(monkeypatch, tmp_path, code, verdict):
     monkeypatch.setattr(mutate_pool, "run_bounded", Suite(code))
     with pytest.raises(ToolError) as refused:
@@ -232,7 +245,7 @@ def test_the_baseline_runs_with_the_deadline_owner_and_suite_environment(monkeyp
     [run] = suite.runs
     assert (run.command, run.timeout, run.cwd, run.owner) == ("python -m pytest -q -x", 41,
                                                               tmp_path, owner)
-    assert run.env == {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    assert run.env == _suite_env()
 
 
 @pytest.mark.parametrize("command, word", [('"C:/Py 3/python.exe" -m pytest', "C:/Py 3/python.exe"),
@@ -254,7 +267,7 @@ def test_the_suite_sees_the_mutated_bytes_exactly(monkeypatch, tmp_path):
     before = "s = 'caf\u00e9 \u2192'\nif a < b:\n    pass\n".encode("utf-8")
     tree, suite = _tree(tmp_path, before), Suite(1, look=lambda cwd: (cwd / "src/a.py").read_bytes())
     monkeypatch.setattr(mutate_pool, "run_bounded", suite)
-    assert mutate_pool.run_one(tree, _cfg(), LINE2) is True
+    assert mutate_pool.run_one(tree, _cfg(), LINE2) is KILLED
     assert suite.runs[0].seen == "s = 'caf\u00e9 \u2192'\nif a <= b:\n    pass\n".encode("utf-8")
     assert (tree / "src/a.py").read_bytes() == before
 
@@ -263,7 +276,7 @@ def test_an_undecodable_byte_still_gets_a_verdict_and_comes_back(monkeypatch, tm
     before = b"s = 'caf\xe9'\nif a < b:\n    pass\n"
     tree, suite = _tree(tmp_path, before), Suite(0, look=lambda cwd: (cwd / "src/a.py").read_bytes())
     monkeypatch.setattr(mutate_pool, "run_bounded", suite)
-    assert mutate_pool.run_one(tree, _cfg(), LINE2) is False
+    assert mutate_pool.run_one(tree, _cfg(), LINE2) is SURVIVED
     assert b"if a <= b:\n" in suite.runs[0].seen
     assert (tree / "src/a.py").read_bytes() == before
 
@@ -278,15 +291,16 @@ def test_no_bytecode_cache_is_left_beside_the_mutated_file(monkeypatch, tmp_path
     assert suite.runs[0].seen is False
 
 
-@pytest.mark.parametrize("code, killed", [(0, False), (1, True), (None, True)])
-def test_a_mutant_is_killed_by_any_failure_or_the_deadline(monkeypatch, tmp_path, code, killed):
+@pytest.mark.parametrize("code, verdict", [(0, SURVIVED), (1, KILLED), (9009, KILLED),
+                                           (None, TIMED_OUT), (5, NO_VERDICT)])
+def test_a_mutant_is_killed_by_any_failure_or_the_deadline(monkeypatch, tmp_path, code, verdict):
     suite, owner = Suite(code), Owner()
     monkeypatch.setattr(mutate_pool, "run_bounded", suite)
     tree = _tree(tmp_path, b"x = 1\nif a < b:\n    pass\n")
-    assert mutate_pool.run_one(tree, _cfg(), LINE2, owner=owner) is killed
+    assert mutate_pool.run_one(tree, _cfg(), LINE2, owner=owner) is verdict
     [run] = suite.runs
     assert (run.timeout, run.owner) == (41, owner)
-    assert run.env == {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    assert run.env == _suite_env()
 
 
 # --- shards, threads and cancellation --------------------------------------------------
@@ -358,10 +372,16 @@ def test_each_tree_action_gets_the_owner():
 def test_progress_lines_number_from_one_against_the_total():
     stream = io.StringIO()
     report = mutate_pool.reporter(7, stream)
-    report(2, Mutant("src/a.py", 12, "a < b", "a <= b", "< -> <="), True)
-    report(6, Mutant("src/b.py", 3, "a < b", "a >= b", "< -> >="), False)
-    assert stream.getvalue() == ("  mutant 3/7 src/a.py:12 [< -> <=] killed\n"
-                                 "  mutant 7/7 src/b.py:3 [< -> >=] SURVIVED\n")
+    report(2, Mutant("src/a.py", 12, "a < b", "a <= b", "< -> <="), KILLED)
+    report(6, Mutant("src/b.py", 3, "a < b", "a >= b", "< -> >="), SURVIVED)
+    report(0, Mutant("src/b.py", 4, "a > b", "a >= b", "> -> >="), TIMED_OUT)
+    report(1, Mutant("src/b.py", 5, "a > b", "a < b", "> -> <"), NO_VERDICT)
+    assert stream.getvalue() == (
+        "  mutant 3/7 src/a.py:12 [< -> <=] killed\n"
+        "  mutant 7/7 src/b.py:3 [< -> >=] SURVIVED\n"
+        "  mutant 1/7 src/b.py:4 [> -> >=] timed out, counted killed\n"
+        "  mutant 2/7 src/b.py:5 [> -> <] no verdict: the suite ran no test (exit 5), "
+        "counted killed\n")
 
 
 # --- inputs, links and paths -----------------------------------------------------------

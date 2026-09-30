@@ -35,7 +35,7 @@
    "ratchet_mark": null,
    "ratchet_mark_note": "no ratchet file",
    "tests": null,
-   "tests_note": "no context data — run the py lane with dynamic_context = test_function and a --show-contexts JSON report",
+   "tests_note": "no context data - run the py lane with dynamic_context = test_function and a --show-contexts JSON report",
    "uncovered_lines": [
     22,
     26,
