@@ -8,7 +8,8 @@ list_worklist said it read "the churn cache, not git" and asked git ls-files
 and git status which scored files changed. list_coupled_files said it read git
 log on every call when a warm call reads its cache. The `name` and `path`
 properties named two name forms and forward slashes only, while both tools
-resolve a start line, a twin handle, a backslash path and an absolute one.
+resolve a start line, a twin handle, an absolute path and, on Windows, a
+backslash one; on POSIX a backslash is a literal filename character.
 get_ratchet_report said no marks file means zeros; a deleted marks file reads
 as the marks its history last held.
 
@@ -21,6 +22,7 @@ from __future__ import annotations
 import contextlib
 import io
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -149,16 +151,32 @@ def test_every_name_form_the_description_lists_resolves(scored, exits, tool, nam
     assert "plain ( x )" in reply["content"][0]["text"]
 
 
-def _paths(root: Path) -> list[str]:
-    return ["src\\app.ts", str(root / "src" / "app.ts"), (root / "src" / "app.ts").as_posix()]
+def _paths(root: Path) -> dict[str, str]:
+    return {"backslash": "src\\app.ts", "absolute": str(root / "src" / "app.ts"),
+            "absolute-posix": (root / "src" / "app.ts").as_posix()}
+
+
+ON_POSIX = sys.platform != "win32"
+BACKSLASH_ON_WINDOWS = pytest.param(
+    "backslash", marks=pytest.mark.skipif(ON_POSIX, reason="a backslash is a separator on Windows only"))
 
 
 @pytest.mark.parametrize("tool", ["get_function_brief", "get_function_history"])
-@pytest.mark.parametrize("which", range(3))
-def test_every_path_form_the_description_lists_resolves(scored, exits, tool, which):
-    reply = _call(scored, tool, path=_paths(scored)[which], name="plain")
+@pytest.mark.parametrize("form", [BACKSLASH_ON_WINDOWS, "absolute", "absolute-posix"])
+def test_every_path_form_the_description_lists_resolves(scored, exits, tool, form):
+    reply = _call(scored, tool, path=_paths(scored)[form], name="plain")
 
     assert reply["isError"] is False, reply
+
+
+@pytest.mark.skipif(not ON_POSIX, reason="Windows reads a backslash as a separator")
+@pytest.mark.parametrize("tool", ["get_function_brief", "get_function_history"])
+def test_a_backslash_path_names_a_literal_file_on_posix(scored, exits, tool):
+    """repopath.argument: on POSIX a backslash is a filename character, so
+    src\\app.ts is not src/app.ts, as the description now says."""
+    reply = _call(scored, tool, path="src\\app.ts", name="plain")
+
+    assert reply["isError"] is True, reply
 
 
 @pytest.mark.parametrize("tool", ["get_function_brief", "get_function_history"])
@@ -173,7 +191,7 @@ def test_both_tools_describe_name_and_path_by_one_rule(tool):
         assert form in mcp_server._NAME_DESCRIPTION, form
     assert "next_item printed" not in mcp_server._NAME_DESCRIPTION.replace("get_next_item", "")
     assert mcp_server._PATH_DESCRIPTION == ("source file, repo-relative or absolute inside the "
-                                            "repo; either slash works")
+                                            "repo; a backslash separates folders on Windows only")
 
 
 # --- get_ratchet_report: a deleted marks file is not zeros -----------------------

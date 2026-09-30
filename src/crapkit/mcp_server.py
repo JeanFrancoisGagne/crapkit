@@ -45,9 +45,11 @@ _NAME_DESCRIPTION = ("the long_name get_next_item printed (classify( score , lat
                      "a fragment of either, the line the function starts on, or a handle "
                      "such as NAME#2 for a twin or (anonymous)#2; exact match first")
 
-# Both read PATH through the CLI's path rules (repopath), which fold a
-# backslash and place an absolute path inside the repo.
-_PATH_DESCRIPTION = "source file, repo-relative or absolute inside the repo; either slash works"
+# Both read PATH through the CLI's path rules (repopath.argument), which place an
+# absolute path inside the repo and fold a backslash on Windows only: on POSIX a
+# backslash is a literal filename character.
+_PATH_DESCRIPTION = ("source file, repo-relative or absolute inside the repo; "
+                     "a backslash separates folders on Windows only")
 
 # The partition a large repo needs before `top` means anything: one --scope
 # per element, exact names as declared in crapkit.toml.
