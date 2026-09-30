@@ -14,7 +14,7 @@ does not turn those runs into measurements of the new reader.
 | uvx | `uvx crapkit@latest --version` |
 | pip from the git URL | `python -m pip install --force-reinstall --no-deps git+https://github.com/JeanFrancoisGagne/crapkit.git` |
 | the Copilot CLI plugin | `copilot plugin marketplace update crapkit`, then `copilot plugin update crapkit@crapkit` ([below](#plugin-and-mcp-clients)) |
-| the Docker image | in the crapkit clone it was built from, `git fetch --tags`, then `git checkout v0.8.0`, then `docker build -t crapkit .`, then restart the client |
+| the Docker image | in the crapkit clone it was built from, `git fetch --tags`, then `git checkout vX.Y.Z` for the release you move to, then `docker build -t crapkit .`, then restart the client |
 | the pre-commit framework (Route 3) | `pre-commit autoupdate`, or set `rev` to the new tag |
 | the GitHub Action | move `uses: JeanFrancoisGagne/crapkit@...` to the new tag |
 
@@ -238,8 +238,7 @@ some functions' names or numbers:
   its ceiling fails the gate the next time its file changes. A UTF-8 source keys such a
   name the same in both releases.
 
-The stamp records the rules either way, so every marks file re-seeds once. The first
-`inventory` or `coverage` after the upgrade analyzes every file again.
+The stamp records the rules either way, so every marks file re-seeds once.
 
 Two coverage joins move scores on the same tree and config without moving the stamp. On
 a case-insensitive disk, a coverage.py key in another letter case than the directories
@@ -502,9 +501,9 @@ starts no commit, so 0.8.0 judged an empty diff and passed. 0.8.1 tells a commit
 nothing staged, the hook prints `crapkit gate: nothing is staged and no commit is running,
 so every tracked file was judged` and exits 6 on each function over its ceiling that the
 committed ratchet does not mark. Before you move the `rev` to the 0.8.1 tag, run
-`crapkit hook-precommit` by hand with nothing staged: seed the debt it names with
-`crapkit ratchet seed` and commit the marks, or decompose those functions. A commit still
-judges only what it stages.
+`crapkit hook-precommit` by hand with nothing staged: record the debt it names with
+`crapkit coverage`, then `crapkit ratchet seed`, and commit the marks, or decompose those
+functions. A commit still judges only what it stages.
 
 **A hook at the top of a monorepo.** git runs the hook at the repository's top. With
 `crapkit.toml` only in a directory below, 0.8.0 refused every commit there with exit 3
@@ -572,7 +571,9 @@ These changes move text or JSON a script reads, with no exit code to flag them:
   that. 0.8.0 ended at the
   last row. `worklist --json` prints the map alone, as before.
 - A `worklist` row for a function no lane measures, in a `no-lane` or `cc-only` scope,
-  prints `-` in its cov column (`cov    -`), where 0.8.0 printed `cov   0%`.
+  prints `-` in its cov column (`cov    -`), where 0.8.0 printed `cov   0%`, and
+  `rescore --gate` prints `cov -` on its GATE line. The JSON keeps `cov` and adds
+  `unmeasured: true`.
 - The SARIF log `--sarif` writes names `$schema`
   `https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json`,
   where 0.8.0 named

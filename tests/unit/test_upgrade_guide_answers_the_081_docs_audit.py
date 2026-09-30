@@ -9,7 +9,6 @@ steps at all. Each test pins one finding to the page, and to the code where the
 claim is checkable there.
 """
 import re
-import tomllib
 from functools import lru_cache
 from pathlib import Path
 
@@ -43,10 +42,6 @@ def _headings() -> list[str]:
 
 def _slug(title: str) -> str:
     return re.sub(r"[^\w\- ]", "", title.lower()).replace(" ", "-")
-
-
-def _version() -> str:
-    return tomllib.loads(_doc("pyproject.toml"))["project"]["version"]
 
 
 # --- the order of the page (da-33) -------------------------------------------------
@@ -107,9 +102,11 @@ def test_a_team_commits_every_pin_with_the_re_seed():
 
 
 def test_the_docker_row_builds_the_release_tag():
+    """The row names the tag as vX.Y.Z: no release surface bumps a literal version
+    there, so `v0.8.0` would have told a 0.8.1 reader to build 0.8.0."""
     row = next(line for line in _doc(GUIDE).splitlines() if line.startswith("| the Docker image |"))
 
-    assert f"`git checkout v{_version()}`" in row and "`git fetch --tags`" in row
+    assert "`git fetch --tags`, then `git checkout vX.Y.Z` for the release you move to" in row
     assert "`git pull`" not in row
 
 
