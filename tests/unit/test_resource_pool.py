@@ -38,8 +38,12 @@ def test_serial_request_does_not_create_budget_files():
     assert not Path(resource_status()["budget_directory"]).exists()
 
 
-def test_a_smaller_overlapping_request_uses_remaining_slots():
+def test_a_smaller_overlapping_request_uses_remaining_slots(monkeypatch):
+    """The CPU count caps the budget, so on a three-CPU host the second pool
+    finds one slot and runs serial. The test pins four CPUs to hold four slots."""
+    from crapkit import resources
     from crapkit._analysis_pool import analysis_pool
+    monkeypatch.setattr(resources, "available_cpus", lambda: (4, "cpu_count"))
     with analysis_pool(workers=2, worker_budget=4) as first:
         assert first is not None
         with analysis_pool(workers=2, worker_budget=4) as second:
