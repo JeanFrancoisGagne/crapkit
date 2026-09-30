@@ -612,7 +612,7 @@ full verdict. The preview and hooks differ in what their available evidence can 
 |---|---|---|
 | `crapkit claude-hook` | after an agent's edit lands | **advisory.** Names the breach to the agent: on stderr in Claude Code, as added context in Cursor, Copilot CLI and VS Code. Blocks nothing, because PostToolUse runs after the write |
 | `crapkit rescore FILE --gate` | when you ask, after the first coverage run | **preview.** A stricter preview of the commit gate, sub-second, before you stage: a ratchet mark pardons a function only while its CRAP is at or under the mark. With no run behind it, exit 1 and `no snapshot` |
-| `crapkit hook-precommit` | `git commit`, or by hand | **blocks.** The hook exits 6; git reports 1. Inside a commit it judges the staged blobs only, so it costs the size of the commit and needs no coverage. Run outside a commit with nothing staged, as `pre-commit run --all-files` does, it judges every tracked file and fails on committed debt no ratchet mark covers; `crapkit ratchet seed` records that debt |
+| `crapkit hook-precommit` | `git commit`, or by hand | **blocks.** The hook exits 6; git reports 1. Inside a commit it judges the staged blobs only, so it costs the size of the commit and needs no coverage. Run outside a commit with nothing staged, as `pre-commit run --all-files` does, it judges every tracked file and fails on committed debt no ratchet mark covers; `crapkit coverage`, then `crapkit ratchet seed`, records that debt |
 | `crapkit verify` | before you push, and in CI | **the verdict.** Gate, ratchet, new test failures, diff coverage, against the trusted baseline |
 
 Both hooks pardon a function the committed ratchet already carries a mark for, so touching

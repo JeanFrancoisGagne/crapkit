@@ -67,8 +67,9 @@ Each step links the section that explains it.
    `crapkit ratchet seed --baseline N`.
    [Measure before changing marks](#measure-before-changing-marks),
    [Analysis version 13](#analysis-version-13)
-5. Run `crapkit hook-precommit` with nothing staged, then seed or decompose each function
-   it names. [The commit gate in 0.8.1](#the-commit-gate-in-081)
+5. Run `crapkit hook-precommit` with nothing staged, then record each function it names
+   with `crapkit coverage`, then `crapkit ratchet seed`, or decompose it.
+   [The commit gate in 0.8.1](#the-commit-gate-in-081)
 6. Commit the new marks together with every pin that runs crapkit: the CI install pin,
    the Action's `uses:` pin and the pre-commit `rev`.
    [A team upgrades every reader](#a-team-upgrades-every-reader-before-the-re-seed-lands)
