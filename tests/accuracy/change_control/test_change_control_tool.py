@@ -647,10 +647,13 @@ def test_regenerate_hands_a_full_corpus_at_hand_to_the_regenerator(tmp_path, mon
     (tmp_path / cc.REGENERATE).parent.mkdir(parents=True)
     (tmp_path / cc.REGENERATE).write_text("", encoding="utf-8")
     calls = []
-    monkeypatch.setattr(cc, "_process", lambda label, argv, *rest: calls.append(argv[2:]) or "")
+    monkeypatch.setattr(cc, "_process", lambda label, argv, seconds, *rest: calls.append(
+        (argv[2:], seconds)) or "")
 
     assert (cc.regenerate(tmp_path, tmp_path / "corpus"), cc.regenerate(tmp_path)) == ("", "")
-    assert calls == [["goldens", "--corpus", str(tmp_path / "corpus")], ["goldens"]]
+    # the regenerator measures every corpus, so it gets fifteen git budgets, never no bound
+    assert calls == [(["goldens", "--corpus", str(tmp_path / "corpus")], cc.GIT_SECONDS * 15),
+                     (["goldens"], cc.GIT_SECONDS * 15)]
 
 
 def test_declare_says_whether_it_remeasured_the_full_corpus(tmp_path):

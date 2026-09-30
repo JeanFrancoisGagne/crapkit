@@ -311,8 +311,8 @@ def test_the_changelog_line_keeps_the_reason_s_last_word_whole():
     assert cc._changelog_lines(request)[1] == "- handle LaTeX. (accuracy change C9)"
 
 
-def _plan(calcs=("a", "b")) -> cc.Plan:
-    return cc.Plan(cc.Request("C9", "fix", calcs, "why", today="2026-01-01"), [], {}, [], None, "")
+def _plan(calcs=("a", "b"), kind: str = "fix") -> cc.Plan:
+    return cc.Plan(cc.Request("C9", kind, calcs, "why", today="2026-01-01"), [], {}, [], None, "")
 
 
 def test_the_judged_line_names_every_calc():
@@ -344,10 +344,23 @@ def test_a_written_change_row_joins_its_calcs_and_names_the_unreleased_version(t
     assert row == "C9\t2026-01-01\tfix\ta; b\t7\t1.24.0\t0.9.0\twhy"
 
 
+def test_a_written_kind_none_row_names_no_changelog_version(tmp_path):
+    """A kind none change needs no CHANGELOG line (T4), so its row names no
+    section even when the CHANGELOG has an unreleased one."""
+    (tmp_path / cc.CHANGELOG).write_bytes(UNRELEASED_LOG)
+
+    cc.write_plan(tmp_path, _plan((), "none"), cc.Running("7", "1.24.0"))
+
+    row = (tmp_path / cc.CHANGES).read_bytes().decode("utf-8").splitlines()[-1]
+    assert row == "C9\t2026-01-01\tnone\t\t7\t1.24.0\t\twhy"
+
+
 @pytest.mark.parametrize("kind, log, cell", [
     ("none", UNRELEASED_LOG, ""), ("fix", None, ""),
     ("feature", b"# Changelog\n\n## Unreleased\n", ""),
-    ("definition", UNRELEASED_LOG, "0.9.0")])
+    ("definition", UNRELEASED_LOG, "0.9.0"),
+    # a byte that is not UTF-8 elsewhere in the file leaves the heading readable
+    ("fix", UNRELEASED_LOG + b"- a stray \xff byte\n", "0.9.0")])
 def test_the_changelog_cell_is_empty_for_kind_none_and_with_no_unreleased_heading(
         tmp_path, kind, log, cell):
     if log is not None:
