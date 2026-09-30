@@ -8,6 +8,7 @@ from unittest.mock import Mock, call
 import pytest
 
 from crapkit import _process_owner as owner
+from hang_guard import communicate
 
 
 def group_adapter(monkeypatch, outcome):
@@ -62,3 +63,19 @@ def test_a_group_left_with_only_its_unreaped_leader_stops_on_the_real_kernel():
         owner._ProcessGroup(leader.pid).stop()
     finally:
         leader.wait()
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='Windows stops a lane with a Job, not a process group')
+def test_the_process_table_scan_finds_ps_off_the_callers_path(tmp_path, monkeypatch):
+    """Every macOS lane stop reaches the ps scan, since the kernel refuses the
+    probe on the unreaped leader. doctor's start probe runs crapkit with a PATH
+    of one tool directory, and that PATH holds no ps (#78)."""
+    monkeypatch.setattr(owner, 'sys', SimpleNamespace(platform='darwin'))
+    monkeypatch.setenv('PATH', str(tmp_path))
+    member = subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.read()'],
+                              stdin=subprocess.PIPE, start_new_session=True)
+    try:
+        assert owner._group_active(member.pid) is True
+    finally:
+        communicate(member)
+    assert owner._group_active(member.pid) is False

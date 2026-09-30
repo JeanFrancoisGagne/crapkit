@@ -244,8 +244,8 @@ def _family(path):
 def _group_exists(pid: int) -> bool:
     """Whether the kernel still knows the group. Only ESRCH says it is gone:
     Darwin answers EPERM when the only member left is the unreaped leader, and
-    a member owned by another user answers EPERM everywhere, so _group_active
-    decides both."""
+    a group whose members the caller may not signal answers EPERM everywhere,
+    so _group_active decides both."""
     try:
         os.killpg(pid, 0)
     except ProcessLookupError:
@@ -264,11 +264,13 @@ def _proc_group_member(path: Path, pid: str) -> bool:
 
 
 def _group_active(pid: int) -> bool:
-    """Wait for descriptor closure; zombies cannot keep writing or own locks."""
+    """Wait for descriptor closure; zombies cannot keep writing or own locks.
+    ps is spelled where macOS and the BSDs ship it, since the caller's PATH
+    may hold no ps."""
     if sys.platform.startswith("linux"):
         return any(_proc_group_member(path, str(pid))
                    for path in Path("/proc").glob("[0-9]*/stat"))
-    result = subprocess.run(["ps", "-A", "-o", "pgid=", "-o", "stat="],
+    result = subprocess.run(["/bin/ps", "-A", "-o", "pgid=", "-o", "stat="],
                             capture_output=True, text=True, check=True)
     return any(group == str(pid) and not state.startswith("Z")
                for group, state in (line.split() for line in result.stdout.splitlines()))

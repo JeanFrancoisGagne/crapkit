@@ -55,7 +55,7 @@ def test_other_posix_uses_group_ids_and_ps_states(monkeypatch, listing, expected
     monkeypatch.setattr(owner, 'sys', SimpleNamespace(platform='darwin'))
     monkeypatch.setattr(owner, 'subprocess', SimpleNamespace(run=run))
     assert owner._group_active(71) is expected
-    run.assert_called_once_with(['ps', '-A', '-o', 'pgid=', '-o', 'stat='],
+    run.assert_called_once_with(['/bin/ps', '-A', '-o', 'pgid=', '-o', 'stat='],
                                 capture_output=True, text=True, check=True)
 
 
