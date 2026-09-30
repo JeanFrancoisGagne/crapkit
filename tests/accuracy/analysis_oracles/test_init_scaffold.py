@@ -13,7 +13,10 @@ Expected values come from the docs, never from a crapkit run:
 - README "Quickstart: TypeScript" (README:1168): a vitest repo's .gitignore
   gains `.crapkit/` alone, and doctor's one WARN on the fresh config.
 - docs/lanes.md "The interpreter a lane binds to": the lockfile table, where
-  the first match in table order wins.
+  the first match in table order wins; with no lockfile the lane runs the
+  launcher token `{python}`, or `{python:.venv}` for a venv in the tree.
+- docs/lanes.md "Containers": doctor WARNs on a coverage.py lane without
+  container_ok when /.dockerenv exists or CRAPKIT_INSIDE_CONTAINER=1.
 - docs/configuration.md `scoped_tests` row: `{files}` only where the scope's
   own paths hold a test file; the whole-suite form otherwise, naming the test
   directory unless pytest's testpaths already collects it.
@@ -54,6 +57,10 @@ README_EXCLUDES = ["**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor
 PYTEST_GITIGNORE = [".crapkit/", ".coverage", "__pycache__/"]
 # README:1186, the WARN a vitest scope carries until its scoped_tests line is uncommented.
 VITEST_WARN = "scope 'src' has a lane but no [crapkit.scoped_tests] template"
+# docs/lanes.md#containers: either trigger is enough, and doctor WARNs on a
+# coverage.py lane that does not set container_ok.
+IN_CONTAINER = Path("/.dockerenv").exists() or os.environ.get("CRAPKIT_INSIDE_CONTAINER") == "1"
+CONTAINER_WARN = "lane 'py' runs a coverage.py suite and this is a container"
 SOURCE = {"calc/grade.py": "def grade(score):\n    return score\n"}
 PYPROJECT = {"pyproject.toml": "[project]\nname = \"calc\"\nversion = \"0\"\n"}
 
@@ -90,7 +97,7 @@ def test_a_pytest_marker_writes_a_live_py_lane(marker, text, tmp_path):
     lanes = _config(root)["lane"]
     assert [(lane["name"], lane["parser"], lane["scopes"]) for lane in lanes] == [
         ("py", "coveragepy", ["calc"])]
-    assert lanes[0]["command"].startswith("python -m pytest ")
+    assert lanes[0]["command"].startswith("{python} -m pytest ")
     assert _gitignore(root) == PYTEST_GITIGNORE
 
 
@@ -284,9 +291,11 @@ def _venv_with_pytest(root) -> None:
 
 
 # docs/lanes.md "The interpreter a lane binds to", the lockfile table's row "none,
-# and a venv in the tree": `.venv/bin/python -m pytest …` (`.venv\Scripts\python.exe`
-# on Windows, the path the loader hands back from the doubled TOML spelling).
-VENV_LAUNCHER = ".venv\\Scripts\\python.exe" if os.name == "nt" else ".venv/bin/python"
+# and a venv in the tree": `{python:.venv} -m pytest …`, which runs .venv/bin/python
+# (.venv\Scripts\python.exe on Windows). Before 0.8.1 init wrote that path itself,
+# the spelling R161's fix commit prints; either one binds the lane to the venv.
+VENV_LAUNCHERS = ("{python:.venv}",
+                  ".venv\\Scripts\\python.exe" if os.name == "nt" else ".venv/bin/python")
 
 
 def test_init_binds_the_lane_to_the_repo_venv(tmp_path):
@@ -297,7 +306,8 @@ def test_init_binds_the_lane_to_the_repo_venv(tmp_path):
     done = drive.Driver(root).run("init")
     assert done.code == 0, done.stderr
 
-    assert _config(root)["lane"][0]["command"].startswith(f"{VENV_LAUNCHER} -m pytest ")
+    command = _config(root)["lane"][0]["command"]
+    assert command.startswith(tuple(f"{launcher} -m pytest " for launcher in VENV_LAUNCHERS))
 
 
 def _shim_path(tmp_path, shims: dict[str, str]) -> dict:
@@ -386,7 +396,8 @@ def test_init_refuses_to_clobber_a_config(tmp_path):
 # --- cross-surface: init, then doctor ------------------------------------------------------------
 
 @pytest.mark.parametrize("files, warnings", [
-    ({**PYPROJECT, **SOURCE, "tests/test_grade.py": "def test_grade():\n    pass\n"}, []),
+    ({**PYPROJECT, **SOURCE, "tests/test_grade.py": "def test_grade():\n    pass\n"},
+     [CONTAINER_WARN] if IN_CONTAINER else []),
     ({"cmd/main.go": "package main\n"}, []),
     ({"package.json": json.dumps({"scripts": {"test": "vitest run"},
                                   "devDependencies": {"vitest": "^3.0.0"}}),

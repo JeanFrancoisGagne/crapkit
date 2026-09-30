@@ -172,9 +172,10 @@ def doctored(tmp_path_factory):
 
 
 def _warning(directory: str, functions: int, test: str) -> str:
-    """The WARN line doctor prints for one directory."""
+    """The WARN line doctor prints for one directory, in ASCII as every 0.8.1
+    note is (a hyphen where 0.8.0 printed a dash)."""
     return (f"{directory}: {functions} function(s) all flagged untested while {test} exists "
-            "— tests exist but no lane measures them")
+            "- tests exist but no lane measures them")
 
 
 def _expected(rows: list[dict], tracked: list[str]) -> list[str]:

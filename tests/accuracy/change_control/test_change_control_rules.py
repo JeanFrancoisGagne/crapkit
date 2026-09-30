@@ -767,6 +767,8 @@ def test_a_session_file_moves_with_a_small_corpus_row_and_needs_nothing_more():
     (f"{SESSION}/worklist-batches.json", ("Batch split",)),
     (f"{SESSION}/mcp-get_trend.json", ("MCP tool results",)),
     (f"{SESSION}/something-new.bin", ("Inventory rows and TSV exports",)),
+    ("tests/accuracy/corpus_goldens/goldens/printed/posix.tsv", ("Printed commands",)),
+    ("tests/accuracy/corpus_goldens/goldens/printed/win32.tsv", ("Printed commands",)),
 ])
 def test_each_surface_maps_to_its_calc(path, calcs):
     assert cc.surface_calcs(path)[:len(calcs)] == calcs

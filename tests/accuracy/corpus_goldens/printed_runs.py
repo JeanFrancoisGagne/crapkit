@@ -156,10 +156,13 @@ def python() -> Path:
 
 def refusal_next_step(source: str, interpreter: Path, root: Path) -> list[Printed]:
     """The next step `<interpreter> -m crapkit worklist` names in a repo with no run,
-    or nothing when it names none."""
+    or nothing when it names none. It runs where no `crapkit` command is on PATH,
+    as its reader started crapkit with `python -m crapkit` and installed no
+    console script: crapkit spells itself `crapkit` only when PATH's `crapkit` is
+    the one this interpreter installed."""
     done = subprocess.run([str(interpreter), "-m", "crapkit", "worklist"], cwd=root,
-                          env=drive.child_env(), capture_output=True, text=True,
-                          encoding="utf-8")
+                          env=without_crapkit_command(drive.child_env()), capture_output=True,
+                          text=True, encoding="utf-8")
     text = next_step(done.stderr)
     return [Printed(source, text, ("coverage",))] if text else []
 

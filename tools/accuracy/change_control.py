@@ -268,6 +268,9 @@ SURFACES = (
     ("refusal-scope.json", ("File universe and scope ownership",)),
     ("rescore.json", ("Rescore overlay",)),
     ("seed.txt", ("Ratchet seed and prune", "Metric stamp guard")),
+    # the printed-commands goldens, one per OS (corpus_goldens/printed_runs.golden_path)
+    ("posix.tsv", ("Printed commands",)),
+    ("win32.tsv", ("Printed commands",)),
     ("verify*", _VERDICT),
 )
 
