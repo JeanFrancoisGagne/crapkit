@@ -10,6 +10,8 @@ lines through the reader and reads them from the row.
 """
 from pathlib import Path
 
+import pytest
+
 from crapkit.cli import claude_hook
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,26 +53,32 @@ def test_each_shortened_row_links_its_section():
     assert f"({BLOB}/agent-json.md#next-item)" in rows["next-item"]
 
 
-def test_the_moved_rules_sit_in_their_sections():
-    doctor, mutate, hook, duplication = (_section(name) for name in MOVED)
+# A sentence from each rule a row dropped, keyed by the section that holds it now.
+MOVED_RULES = {
+    "doctor": ("7.13.1", "`container_ok`", "2.1.139", "`crapkit doctor: checking PATH`"),
+    "mutate": ("`n-->0` reads as `n-- > 0`", "`static_cast<T&&>(x)`",
+               "Shell and PowerShell files are refused by name",
+               "`no verdict: N of the K killed ran no test (exit 5), so no test caught them`"),
+    "claude-hook": ("`crapkit advisory: PATH could not be read, so no function in it was judged`",),
+    "duplication": ("`**options`, `*out = x;`", "so a Rust lifetime opens nothing",
+                    "in Rust and Swift too, where block comments nest"),
+}
+NEXT_ITEM_RULES = ("Scores equal at 4 decimal places go to the file with more commits",
+                   "`scored_changes` counts the files whose content differs now",
+                   "`(anonymous)#N`", "`PKG/Legacy` is `pkg/legacy` where the disk ignores case")
 
-    assert "7.13.1" in doctor and "`container_ok`" in doctor and "2.1.139" in doctor
-    assert "`crapkit doctor: checking PATH`" in doctor
-    assert "`n-->0` reads as `n-- > 0`" in mutate and "`static_cast<T&&>(x)`" in mutate
-    assert "Shell and PowerShell files are refused by name" in mutate
-    assert "`no verdict: N of the K killed ran no test (exit 5), so no test caught them`" in mutate
-    assert "`crapkit advisory: PATH could not be read, so no function in it was judged`" in hook
-    assert "`**options`, `*out = x;`" in duplication and "so a Rust lifetime opens nothing" in duplication
-    assert "in Rust and Swift too, where block comments nest" in duplication
+
+@pytest.mark.parametrize("name", MOVED)
+def test_the_moved_rules_sit_in_their_sections(name):
+    section = _section(name)
+
+    assert [rule for rule in MOVED_RULES[name] if rule not in section] == []
 
 
 def test_the_next_item_rules_the_row_dropped_sit_in_agent_json():
-    queue = _section("`next-item`", "agent-json.md")
-    fields = (ROOT / "docs" / "agent-json.md").read_text(encoding="utf-8")
+    page = " ".join((ROOT / "docs" / "agent-json.md").read_text(encoding="utf-8").split())
 
-    assert "Scores equal at 4 decimal places go to the file with more commits" in queue
-    assert "`(anonymous)#N`" in fields and "`PKG/Legacy` is `pkg/legacy` where the disk ignores case" in fields
-    assert "`scored_changes` counts the files whose content differs now" in queue
+    assert [rule for rule in NEXT_ITEM_RULES if rule not in page] == []
 
 
 def test_the_bash_window_the_hook_section_names_is_the_one_the_hook_reads():
