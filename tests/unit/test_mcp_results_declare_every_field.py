@@ -161,7 +161,8 @@ def test_the_changelog_names_the_windows_python_that_read_the_name_as_ufffd():
     every Windows install got `does not exist` names a symptom most never saw."""
     changelog = (Path(__file__).resolve().parents[2] / "CHANGELOG.md").read_text(encoding="utf-8")
     start = changelog.index("\n## 0.8.1 ")
-    release = " ".join(changelog[start:changelog.index("\n## ", start + 1)].split())
+    detail = (Path(__file__).resolve().parents[2] / "docs/releases/0.8.1.md").read_text(encoding="utf-8")
+    release = " ".join((changelog[start:changelog.index("\n## ", start + 1)] + detail).split())
 
     assert "On Windows it answered `isError: true`" not in release
     assert ("Under a uv-built venv on Windows, whose launcher hands the CLI such a name as "

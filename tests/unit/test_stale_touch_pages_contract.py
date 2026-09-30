@@ -44,11 +44,14 @@ def _readme_row(command: str) -> str:
 
 
 def _release(version: str = "0.8.1") -> str:
-    """The CHANGELOG section of one release, heading to the next release."""
+    """What one release says: its CHANGELOG section, heading to the next release,
+    then its detail page, docs/releases/<version>.md, where one exists."""
     text = _page("CHANGELOG.md")
     start = text.index(f"\n## {version} ")
     end = text.find("\n## ", start + 1)
-    return text[start:end if end != -1 else None]
+    detail = f"docs/releases/{version}.md"
+    return text[start:end if end != -1 else None] + (
+        "\n" + _page(detail) if (ROOT / detail).exists() else "")
 
 
 def _git(root: Path, *args: str) -> None:
@@ -270,7 +273,7 @@ def _hook_remembers() -> bool:
 
 
 HOOK_PAGES = ("README.md", "AGENTS.md", "plugin/skills/crapkit-onboard/SKILL.md",
-              "docs/handbook.html", "CHANGELOG.md", "docs/upgrading.md")
+              "docs/handbook.html", "docs/releases/0.8.1.md", "docs/upgrading.md")
 
 
 @pytest.mark.parametrize("page", HOOK_PAGES)
@@ -317,7 +320,7 @@ def test_agents_quotes_the_head_line_of_an_edit_the_hook_could_not_judge(unread)
     assert f"`{head}" in _prose(_page("AGENTS.md"))
 
 
-@pytest.mark.parametrize("page", ["CHANGELOG.md", "plugin/skills/crapkit-onboard/SKILL.md"])
+@pytest.mark.parametrize("page", ["docs/releases/0.8.1.md", "plugin/skills/crapkit-onboard/SKILL.md"])
 def test_the_pages_name_both_unjudged_advisories_as_the_hook_words_them(page):
     text = _prose(_page(page))
     for what, unread in (("PATH could not be read", True),
@@ -1049,8 +1052,8 @@ def test_every_agent_json_table_types_scored_changes_int_or_null():
 # -- the git command the content record runs is the one the pages name ------------
 
 _HASH_OBJECT = re.compile(r"`git hash-object([^`]*)`")
-_CONTENT_PAGES = ("CHANGELOG.md", "AGENTS.md", "README.md", "CONTEXT.md", "docs/lanes.md",
-                  "docs/upgrading.md", "docs/agent-json.md", "docs/configuration.md")
+_CONTENT_PAGES = ("CHANGELOG.md", "docs/releases/0.8.1.md", "AGENTS.md", "README.md", "CONTEXT.md",
+                  "docs/lanes.md", "docs/upgrading.md", "docs/agent-json.md", "docs/configuration.md")
 
 
 def _hash_object_options(root: Path, monkeypatch) -> set[str]:

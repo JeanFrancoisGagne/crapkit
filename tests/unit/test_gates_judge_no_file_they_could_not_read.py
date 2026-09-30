@@ -227,7 +227,7 @@ def test_the_pages_quote_the_override_refusal_an_unread_file_prints():
     quoted = line.split(";")[0]
     root = Path(__file__).resolve().parents[2]
     assert quoted == "override refused: 1 unread file (PATH: REASON) never qualifies for an override"
-    assert f"`{quoted}`" in " ".join((root / "CHANGELOG.md").read_text(encoding="utf-8").split())
+    assert f"`{quoted}`" in " ".join((root / "docs/releases/0.8.1.md").read_text(encoding="utf-8").split())
     ratchet = " ".join((root / "docs" / "ratchet.md").read_text(encoding="utf-8").split())
     assert "a new test failure or an unread file in the same run refuses it" in ratchet
 
