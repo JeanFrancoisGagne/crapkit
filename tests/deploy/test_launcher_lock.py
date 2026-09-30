@@ -22,7 +22,7 @@ from kit.mcp_client import McpClient
 
 PACKET = "deploy-channels"
 GUIDE = "docs/upgrading.md"
-TABLE = "Upgrading Crapkit"
+TABLE = "Upgrading crapkit"
 LOCKS = "Windows launcher locks"
 LOCKED = ("WinError 32", "os error 32", "being used by another process")
 PIP = "python -m pip install --upgrade crapkit"

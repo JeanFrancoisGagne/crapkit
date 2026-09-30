@@ -161,7 +161,7 @@ name, so a pytest-cov lane there fails at exit 5, and the failure line names the
 directory or the host name and the rename ([lanes](lanes.md#a-killed-run-leaves-its-coverage-shards-behind)).
 Rename the directory or the host to UTF-8.
 
-Parsed source diffs use Crapkit's own Git settings. Display preferences, external
+Parsed source diffs use crapkit's own Git settings. Display preferences, external
 diff commands and textconv do not change attribution. History reads do the same:
 `log.showSignature`, `log.follow` and `log.showRoot` change nothing in churn,
 `explain --history` or `ratchet report`, and a signed history walks without a
@@ -215,7 +215,7 @@ says how.
 | `repayment_min_per_30d` | int >= 0 | absent | `ratchet report --enforce` flags a burn-down that repaid fewer marks than this in the last 30 days while debt is open. |
 | `max_parallel_lanes` | int >= 1 | `1` | Lanes running at once. `1` is strictly serial. See [lanes.md](lanes.md#running-lanes-in-parallel). |
 | `analysis_workers` | int >= 0 | `0` | Requested analysis pool ceiling. `0` sizes pools automatically to balance startup cost and available work, within the process-visible CPU limit. Small or cached passes remain serial. Runnable chunks and the shared budget can admit fewer workers. |
-| `analysis_worker_budget` | int >= 0 | `0` | Shared pool slot ceiling for Crapkit processes running as the same user on this host. `0` uses available CPUs. Admission never waits: a busy pool gives up slots, falling back to the calling process when none are free. See [resource policies](resources.md). |
+| `analysis_worker_budget` | int >= 0 | `0` | Shared pool slot ceiling for crapkit processes running as the same user on this host. `0` uses available CPUs. Admission never waits: a busy pool gives up slots, falling back to the calling process when none are free. See [resource policies](resources.md). |
 | `log_max_bytes` | int >= 0 | `16777216` | Maximum bytes in each current and previous lane log, 16 MiB by default. Rotation keeps recent output and preserves no-progress accounting. `0` retains unlimited direct logs. |
 | `tighten_max_jump` | number >= 1 | `2.0` | How far a function's CRAP may move between two runs of the **same commit** and still tighten its mark. Past this factor, `verify` holds the mark and prints one `NO TIGHTEN` line on stderr naming the function and both values. One commit measured twice cannot have improved, so a jump that size is the measurement talking, not the code. See [ratchet.md](ratchet.md#damping-a-measurement-that-bounces). |
 
@@ -228,11 +228,11 @@ flag. Delete them.
 ### Mutation worktrees
 
 Every mutation worker runs in a detached Git worktree, including the default of one.
-Crapkit re-prepares each worker at the current HEAD, then replays dirty, untracked
+crapkit re-prepares each worker at the current HEAD, then replays dirty, untracked
 and deleted inputs before running the unmutated baseline and the mutants.
 
 The kept pool lives at `.crapkit/mutate-pool/w0..wN` and remains between runs.
-On reuse, Crapkit removes surplus worker directories under the pool's exclusive
+On reuse, crapkit removes surplus worker directories under the pool's exclusive
 lease, so reducing `mutation_workers` also reduces retained checkouts.
 `crapkit mutate --drop-pool` removes the kept pool and exits.
 
@@ -357,8 +357,8 @@ a mapping.
 Two more things before you point a scope at C code:
 
 - Both arms of an `#ifdef` fork are textually present, so a platform shim defines the same
-  function twice in one file. Each arm takes its own ratchet key — the first as written,
-  later ones suffixed `#2`, `#3` in file order — so both are marked and both are gated.
+  function twice in one file. Each arm takes its own ratchet key (the first as written,
+  later ones suffixed `#2`, `#3` in file order), so both are marked and both are gated.
   `analyze` prints one stderr line naming any file this happens in. See
   [Twins](ratchet.md#twins-one-name-several-functions).
 - A `&&` before a function's opening brace declares an rvalue reference, not a decision, and

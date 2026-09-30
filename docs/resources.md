@@ -1,6 +1,6 @@
 # Resource use and cleanup
 
-Crapkit starts work on demand. An idle MCP server waits on its input; it does not
+crapkit starts work on demand. An idle MCP server waits on its input; it does not
 scan repositories or run analysis in the background. A client can start one MCP
 session per task, so several processes with live client parents can be expected.
 Count active work, memory and CPU before treating every repeated process name as

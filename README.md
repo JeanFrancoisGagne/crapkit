@@ -30,7 +30,7 @@ lizard pass. `cov` is branch coverage inside the function's span; with no branch
 falls back to statement coverage, and with no statements to invoked-or-not, so a
 half-executed straight-line function never reads as fully covered.
 
-**Above the ceiling, coverage cannot save you. Decompose.** At the default target of 6, a
+**Above the ceiling, coverage cannot save you. Decompose.** At the default ceiling of 6, a
 function at ccn 7 with 100% coverage still scores 7 and still fails the gate. The only
 move that clears it is splitting the function.
 
@@ -272,7 +272,7 @@ still needs the coverage plugin in the environment that runs the suite.
 
 Analysis and scoring run locally and send no telemetry. Configured lane, mutation
 and alert commands run with your permissions and can contact services or change
-files. Review those commands before running Crapkit in a repository you do not trust
+files. Review those commands before running crapkit in a repository you do not trust
 ([SECURITY.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/SECURITY.md)).
 
 ```
@@ -615,12 +615,12 @@ full verdict. The preview and hooks differ in what their available evidence can 
 | `crapkit hook-precommit` | `git commit`, or by hand | **blocks.** The hook exits 6; git reports 1. Inside a commit it judges the staged blobs only, so it costs the size of the commit and needs no coverage. Run outside a commit with nothing staged, as `pre-commit run --all-files` does, it judges every tracked file and fails on committed debt no ratchet mark covers; `crapkit ratchet seed` records that debt |
 | `crapkit verify` | before you push, and in CI | **the verdict.** Gate, ratchet, new test failures, diff coverage, against the trusted baseline |
 
-Both hooks exempt a function the committed ratchet already carries a mark for, so touching
+Both hooks pardon a function the committed ratchet already carries a mark for, so touching
 signed debt never refuses a commit. `verify` is what fails a mark that rises. Since 0.4.5
-its gate exempts a touched function whose fresh CRAP sits **at or under** its mark, the
+its gate pardons a touched function whose fresh CRAP sits **at or under** its mark, the
 rule `rescore --gate` already applied; push it past the mark and the gate fires again. The
-pre-commit hook still exempts on the mark's existence alone, on purpose: a staged blob has
-no coverage, so there is no fresh CRAP to compare against. It reports each exemption count
+pre-commit hook still pardons on the mark's existence alone, on purpose: a staged blob has
+no coverage, so there is no fresh CRAP to compare against. It reports how many it pardoned
 on stderr (`staged function(s) carry a ratchet mark and were not gated`), and says the same
 about a staged file no `[[scope]]` claims, so a new top-level directory cannot go ungated
 in silence.
@@ -633,10 +633,10 @@ body in parentheses or a block. `claude-hook` names the same file after the edit
 override grants nothing while one is in the change. `crapkit coverage` scores such a file
 as zero functions and names it on stderr, and `crapkit doctor` WARNs about each one the
 newest run could not read, so you meet the file before the commit gate refuses it. A file
-the change never touched still passes, so an old unreadable file blocks nothing until
+the change never touched still passes, so an old unanalyzable file blocks nothing until
 someone edits it.
 
-**The Crapkit root can sit below the Git top.** A config in `packages/api` gates
+**The crapkit root can sit below the Git top.** A config in `packages/api` gates
 that package's staged files as project-relative paths such as `app/m.py`. A CI step
 starts at the top, where no `crapkit.toml` is, so Route 4 and
 [the GitHub Action](#the-github-action) take `working-directory: packages/api`. Any
@@ -1277,7 +1277,7 @@ crapkit: error: argument command: invalid choice: '/path/to/repo' (choose from '
 | `claims [list \| release PATH NAME \| release --all] [--json]` | The open claims, and the way to hand one back without waiting for a verify. `release` takes the bare identifier, the whole long name, or the `handle` the claim was taken under, which is the only one that picks out a single `(anonymous)` claim. A claim taken before analysis version 11 on a nested Python def also answers to the name that version gives the def. |
 | `brief FILE NAME [--batch N] [--json]` | The start-editing packet for one function: its own `source` text, every function in the file, the scored row and the scope ceiling, the ratchet mark and what the gate will bind on, uncovered lines, duplication twins, file churn, coupling partners, the config's notes, and the literal commands for the rest of the loop. Plus `handle`, `remedy` and the same `est_splits` / `est_uncovered_paths` the queue prints, and a `commands.refresh` that writes a run (`refresh_writes_run`) rather than re-reading the stale one. `NAME` takes the bare identifier, the long name `next-item` printed, the function's start line, `(anonymous)#N` for a function printed `(anonymous)` counting the file's anonymous functions from the top, or `NAME#2` for the second of several functions a file gives one name to. `--batch N` drops the positionals and emits `packets[]` instead: the top N of the queue, built from one read of the store and one duplication pass over the snapshot for the whole batch (batch of 5: 11.8 s to 5.2 s, output byte-identical to five separate calls). |
 | `explain FILE NAME [--history] [--tests] [--json]` | A function's score across runs plus its mark. `NAME` resolves exact first: a function whose bare identifier or long name is exactly `NAME` wins, and only when nothing matches exactly does it fall back to a prefix match, so `route` explains `route` rather than every `route_*` beside it. It also takes the function's start line, the form `brief` takes, which is how you open one printed `(anonymous)`. `--history` adds the commits that touched it (`git log -L` over the span the run measured, carried through your uncommitted edits onto HEAD's lines), each carrying its message `body` as committed, and says so when the span holds only uncommitted lines or git cannot answer; `--tests` adds the tests that covered it, which needs coverage.py contexts turned on ([recipe](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#test-attribution-for-explain---tests)), and withholds them with the same note whenever the file's dark lines are withheld. `--json` emits the same content as one `schema` 1 object. |
-| `rescore FILE ... [--gate] [--json]` | Fresh complexity for named files over the latest run's stale coverage, joined by name. A function on a line span another one shares, and a Python def whose body starts on the line its signature ends, scores untested, as the coverage run scores it. A function the run holds no row for (added or renamed since) or one in a scope no lane measures prints `-` for its cov and ends `(coverage not measured)`; `--json` marks it `unmeasured: true` and keeps its `cov`, `crap` and `remedy`. Advisory: it writes no run. `--gate` applies the pre-commit hook's policy to the same selection the hook uses (functions the tree changed since HEAD), minus functions whose CRAP sits at or under their ratchet mark, and exits 6. It also exits 6 on a changed file no reader could read, listed under `gate.unread_files` in `--json`. A marked function past its mark is gated; the pre-commit hook exempts on the mark's existence instead, because a staged blob has no coverage to score. |
+| `rescore FILE ... [--gate] [--json]` | Fresh complexity for named files over the latest run's stale coverage, joined by name. A function on a line span another one shares, and a Python def whose body starts on the line its signature ends, scores untested, as the coverage run scores it. A function the run holds no row for (added or renamed since) or one in a scope no lane measures prints `-` for its cov and ends `(coverage not measured)`; `--json` marks it `unmeasured: true` and keeps its `cov`, `crap` and `remedy`. Advisory: it writes no run. `--gate` applies the pre-commit hook's policy to the same selection the hook uses (functions the tree changed since HEAD), minus functions whose CRAP sits at or under their ratchet mark, and exits 6. It also exits 6 on a changed file no reader could read, listed under `gate.unread_files` in `--json`. A marked function past its mark is gated; the pre-commit hook pardons on the mark's existence instead, because a staged blob has no coverage to score. |
 | `ratchet seed \| prune \| merge \| move \| report [--baseline ID] [--enforce] [--json]` | The mark lifecycle: seed new debt, prune gone code (a mark whose file git renamed follows it, and the prune line names up to three renames it followed; when this clone lacks the commit the renames start from and a marked file left before the oldest commit it holds, prune exits 4 and writes nothing), merge as a git driver, move re-paths marks, report reads burn-down from the file's own git history. `seed` ends by naming the commit and `verify` that follow it. `seed` and `prune` take `--baseline ID` to read a named run instead of verify's pick, refused for the reasons `verify --baseline` refuses one. See [docs/ratchet.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md). |
 | `runs [list \| prune [--keep N]] [--json]` | Run history, and retention. `list` marks the run `verify` compares against today `baseline`, and prints `verdict=-` for a run that produces no verdict rather than one that failed. See [The trusted baseline](#the-trusted-baseline). `--keep` (default 5) is a floor on the newest trusted runs, not a cap: the digest pair, every passing verify baseline, every run an override names, and the newest non-hook run are kept too. `prune` VACUUMs afterwards. |
 | `overrides [--json]` | The override audit trail: who granted what, when, and why. |
@@ -1477,7 +1477,7 @@ crapkit: run 3 is an inventory run (no coverage was measured) and cannot serve a
 | 3 | Config error: `crapkit.toml` missing or unparseable, an unknown language or parser, a lane command the shell that runs it reads as a narrowed suite, a ratchet metric-stamp mismatch ([Upgrading](#upgrading)), a `test-scoped` file under no scope or under a scope with no template, a scoped file whose name is not UTF-8 or a path argument naming a file whose name is not UTF-8 (both end `rename it (git mv) to a UTF-8 name`), a root `package.json` that `init` cannot read as one UTF-8 JSON object (`init wrote no file: ...`, before it writes any file), a root on a Windows network share (the line gives the `net use` command that maps it to a drive letter). |
 | 4 | Git error: not a repository, a repository with no commit yet, one git refuses to open (the refusal quotes git's own fix, such as a `safe.directory` exception), a baseline commit rewritten out of the history, made on a branch HEAD does not contain or missing from this clone, a baseline commit or fork point a shallow clone does not hold, `ratchet report --enforce` with a debt key set in a shallow clone (mark ages and repayments need the whole history), a `ratchet prune` that cannot tell whether a marked file was renamed because this clone lacks the commit its renames start from. The shallow refusals end with `set fetch-depth: 0 on the checkout or run git fetch --unshallow`. |
 | 5 | Tool error: lizard not importable, a lane that produced no artifact, one that measured a different tree, one that measured this tree and reported it in absolute paths (the join is root-relative, so those match nothing either; the refusal names the runner's own switch, `relative_files = true` under `[tool.coverage.run]` for a coveragepy lane, the reporter's `cwd`/`root` option for an istanbul one), a lane that timed out past its retries, `verify --reuse-artifacts` over a lane whose declared `results_artifact` is missing or unreadable (it stores no run), an override alert command that failed, a process with no home directory (`USERPROFILE` on Windows or `HOME` on POSIX unset, and the operating system names none; the message names the variable to set). A `timeout_seconds` kills the whole process tree, so no orphan suite keeps running behind the failure. |
-| 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is exempt. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which exempts on the mark's existence instead. All three also refuse a changed file no reader could read (`UNREAD` lines), since they judged none of its functions. |
+| 6 | Gate violation. A function the diff touched is over its ceiling and past any ratchet mark it carries: an edit that leaves a marked function at or under its mark is the debt the repo signed for and is pardoned. Also `rescore --gate`, which applies the same rule, and `hook-precommit`, which pardons on the mark's existence instead. All three also refuse a changed file no reader could read (`UNREAD` lines), since they judged none of its functions. |
 | 7 | Ratchet regression the diff never touched. A marked function scores worse than its recorded high-water mark; a touched one past its mark reports 6. |
 | 8 | New test failures against the baseline run. Failures the baseline already had do not count, against a `--baseline-tsv` file too: its stamp line lists each lane's failures ([portable records](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/portable-records.md#the-portable-baselines-stamp-line)). |
 | 9 | Diff-coverage ceiling breached: `diff_uncovered_max` is set and more changed lines than that never ran. A changed file no lane artifact mentions counts every line of its functions. |
@@ -1534,7 +1534,7 @@ coverage lane from what the repo already has: a pytest marker file (`pyproject.t
 `vitest`/`jest` in `package.json`. A lockfile beside them names the environment: `uv.lock`,
 `poetry.lock`, `pdm.lock` or `Pipfile.lock` makes the lane `uv run python -m pytest …` (and
 the matching `run` for the rest), because a bare `python` binds to whichever venv the shell
-has active rather than the one the repo pins — see
+has active rather than the one the repo pins; see
 [The interpreter a lane binds to](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#the-interpreter-a-lane-binds-to). Whatever
 it detects, it also leaves commented templates for the runners it did not find, and those
 carry the same launcher, so uncommenting one cannot hand the bare `python` back. Every lane

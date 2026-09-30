@@ -613,8 +613,8 @@ run 1 @ 70ac5e065df: 1 functions scored: 1 measured, 1 over ceiling 6, CRAP load
 ```
 
 The junit half is a separate package: `npm i -D jest-junit` first, or jest exits on a
-reporter it cannot resolve. It reads no path off the command line either — package.json,
-the jest config or those two variables are the whole list — so without the `env` block it
+reporter it cannot resolve. It reads no path off the command line either: package.json,
+the jest config or those two variables are the whole list, so without the `env` block it
 drops `junit.xml` at the repo root. Without `jest-junit` at all, drop the reporter flags,
 the `results_artifact` and the `env`, and take the `doctor` WARN: the lane still measures
 coverage, with the crashed-worker check and no-new-failures off.
@@ -699,7 +699,7 @@ crapkit: lane 'py' FAILED: coverage.py report measures branches, but 1 function(
 
 Every function in the model already falls back to statement coverage when it holds no
 branches, so refusing the report blocked arithmetic crapkit performs on every run, and
-`pytest --cov --cov-report=json` is the shape most existing CI artifacts have — which is
+`pytest --cov --cov-report=json` is the shape most existing CI artifacts have, which is
 what `--reuse-artifacts` is for. Add the flag anyway: statement coverage overstates a
 branchy function, and the CRAP number is cubed in `(1 - cov)`.
 
@@ -717,8 +717,8 @@ Exit 5.
 ### A file the report carries no regions for
 
 coverage.py writes the per-file `functions` key once per code-region kind that file's own
-reporter declares, so a file measured by a plugin reporter declaring none — django or jinja
-template coverage — loses the key while every `.py` file in the same report keeps it. That
+reporter declares, so a file measured by a plugin reporter declaring none (django or jinja
+template coverage) loses the key while every `.py` file in the same report keeps it. That
 one entry used to fail the lane and throw away every other file in the report, including
 the ones that were fine. Those files are now skipped and named, and the rest is scored:
 
@@ -774,7 +774,7 @@ advice no test could follow.
 
 This is pytest's `reportOnFailure`, and it is the flag people leave out. pytest raises
 `Interrupted` at the **end of collection** when any test module fails to import, so
-pytest-cov's session finish never runs and **no coverage report is written at all** — even
+pytest-cov's session finish never runs and **no coverage report is written at all**, even
 though every other test file collected fine and would have run. One renamed module, one
 missing optional extra or one stale editable install takes the whole lane down and drops
 every scope it measures to no-lane. Same repo, same command, only that flag toggled:
@@ -799,13 +799,13 @@ collect. Nothing is hidden: the uncollected file's tests are still errors in the
 ### The interpreter a lane binds to
 
 `python -m pytest` is not one command. `python` resolves through the shell's `PATH`, so
-the lane runs under whichever virtualenv the shell happened to have active — which is
+the lane runs under whichever virtualenv the shell happened to have active, which is
 almost always right, and silently wrong in the one case that matters.
 
 Two git worktrees of one repo. Checkout B's venv is active, and it holds an editable
 install pointing at B's `src`. Run `crapkit coverage` in checkout A and the lane's pytest
 imports **B's** sources. When the two checkouts' APIs have diverged, collection dies and
-you get exit 5. When they have not — the ordinary case for two worktrees of one branch —
+you get exit 5. When they have not (the ordinary case for two worktrees of one branch),
 the suite passes, coverage.py measures B's files, the join against A's scoped files finds
 nothing, and crapkit prints a confident `N untested … grade F` that is entirely an
 artifact of the wrong venv.
@@ -856,7 +856,7 @@ uncomment later.
 `init` does not probe a managed lane for `pytest-cov`. `uv run` and its siblings create or
 sync the project environment before running anything, and `init` has no business
 provisioning one to ask a question about it. If the plugin is missing, the lane says so on
-its first run — with the log path. `doctor` holds to the same rule and says so: where a
+its first run, with the log path. `doctor` holds to the same rule and says so: where a
 python-headed lane gets `ok   lane 'py': python -> <path> (pytest X, pytest-cov Y, coverage Z)`,
 a managed one gets a `note` that its interpreter and pytest-cov were not probed, so a lane
 doctor did not ask never reads as one it found healthy. A probed lane whose coverage.py is
@@ -982,7 +982,7 @@ shell's, and [How a lane command is read](#how-a-lane-command-is-read) has the w
 `-m "not live and not perf"` is one marker expression, not four positionals. In
 `crapkit.toml`, a single-quoted TOML string keeps the double quotes unescaped:
 `command = 'python -m pytest -m "not live and not perf" --cov=pylib ...'`. After a flag it
-does not know, a bare word is that flag's value too — only a path or a node id
+does not know, a bare word is that flag's value too; only a path or a node id
 (`pylib/unit`, `tests/test_x.py::test_slow`) outranks the guess and is refused:
 
 ```
@@ -1467,7 +1467,7 @@ $ python -c "import subprocess,sys; subprocess.run([sys.executable, 'tick.py'])"
 ### The kill takes the whole process tree
 
 `command` runs under a shell, so stopping the shell alone can leave the suite running.
-Crapkit registers the command before it runs any code: Windows starts it suspended and
+crapkit registers the command before it runs any code: Windows starts it suspended and
 resumes it once its Job holds it, and POSIX holds a launcher at a start gate that execs
 the command after registration. A separate owner keeps resource locks until command
 cleanup finishes, even if the caller dies.
@@ -1713,7 +1713,7 @@ verify still passes it and lists it under `lanes_without_results`.
 
 ### The test count is the second check
 
-A runner killed from outside — an OOM, a signal — writes no crash into its report at all, and
+A runner killed from outside (an OOM, a signal) writes no crash into its report at all, and
 then the count is the only signature left. `coverage` compares each lane's junit total
 against the last trusted run's and warns past a **10%** drop:
 
@@ -1829,8 +1829,8 @@ the lane is refused. A command that reads its previous report finds no file at t
 while it runs. A file that was never there is not part of that check: it is the
 missing-artifact refusal crapkit already had, and a `results_artifact` that never
 appeared gets its own sentence from the provenance reader.
-Existence used to be the whole test, so a lane failed loud exactly once — on the first run,
-against an empty `.crapkit/` — and scored the previous run's file on every run after that. A
+Existence used to be the whole test, so a lane failed loud exactly once (on the first run,
+against an empty `.crapkit/`) and scored the previous run's file on every run after that. A
 vitest lane without `reportOnFailure` and a pytest run that dies in collection both land
 there, and what came out was a confident grade off a measurement nothing took, stamped with
 the current commit so `--reuse-unchanged` went on trusting it.
@@ -1865,8 +1865,8 @@ Until 0.5.0 reuse was untouched by this rule, and a dead lane's old artifact was
 Every lane refusal carries `lane log: <path>` before the tail it quotes. The tail is 500
 characters cut on line boundaries. The current log and optional `.1` backup retain the
 newest output within `log_max_bytes` per file. When the end of the log is a
-summary block — pytest closes on `ERROR path` lines that say which files broke and never
-why — the message pulls the last few lines that DO name a cause up in front of it, with an
+summary block (pytest closes on `ERROR path` lines that say which files broke and never
+why), the message pulls the last few lines that DO name a cause up in front of it, with an
 ellipsis marking the output skipped between them:
 
 ```
@@ -2010,7 +2010,7 @@ outside it was written somewhere else.
 
 An absolute path that resolves **under** this root is this checkout, measured by a runner
 that was told to report absolute paths. The join is root-relative, so it matches nothing
-either and the lane fails the same way — but the environment is right, and `path_prefix`
+either and the lane fails the same way, but the environment is right, and `path_prefix`
 only ever prepends, so neither sentence above is the fix. This refusal names the runner's
 own switch instead:
 

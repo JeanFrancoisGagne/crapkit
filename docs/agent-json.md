@@ -665,7 +665,7 @@ crapkit: no function named 'nope' in calc/grade.py in the latest scored run - it
 ```
 
 The twin selector picks one of them instead. `NAME#2` is the second function of that name
-in file order, `NAME#3` the third — the same ordinals the ratchet keys their marks on, so
+in file order, `NAME#3` the third, the same ordinals the ratchet keys their marks on, so
 `ratchet_mark` in the packet belongs to the function the packet opened. An ordinal past
 the last twin is exit 1:
 
@@ -930,7 +930,7 @@ $ crapkit verify --json
 | `new_failures` | array of `classname::name` test ids | 8 |
 | `diff_uncovered_count` | int, and `diff_uncovered[]` of `{path, line}` | 9, only when `diff_uncovered_max` is set |
 | `diff_uncovered_max` | int, or `null` when the repo set none | none itself; it is the ceiling `diff_uncovered_count` is judged against, so a reader of exit 9 can name it |
-| `overridden` | gate-violation objects an `--override` exempted | none; the run passes |
+| `overridden` | gate-violation objects an `--override` granted | none; the run passes |
 | `forgiven_failures` | array of test ids the fresh run and the baseline both failed | none; the text form counts them on the OK line as `(N unchanged failures forgiven, first ID)` |
 | `retried_passes` | array of new failures that passed their [flake retry](lanes.md#flake-retest) | none; the text form names them on the OK line as `(N new failures passed on rerun, first ID)` |
 | `lanes_without_results` | array of lane names that declare no `results_artifact`, so they recorded no test results this run and nothing checked their tests for new failures. A lane that declares one and whose junit `--reuse-artifacts` cannot read is not listed: verify exits 5 naming the lane and the junit, and stores no run | none; stderr names a lane with no `results_artifact` whose command exited nonzero (`warning: lane 'x' exited 1 and declares no results_artifact ...`) |
@@ -955,7 +955,7 @@ included. A lane with failures that passed their flake retry also names those id
 `retried_passes`. A later verify that reads this run as its baseline leaves them out, so it
 never forgives them: the baseline did not count them as failing.
 
-Since 0.4.5 the gate exempts a touched function whose fresh CRAP sits at or under its ratchet
+Since 0.4.5 the gate pardons a touched function whose fresh CRAP sits at or under its ratchet
 mark, the rule `rescore --gate` already applied (#29). So a `gate_violations` entry on a
 marked function means the edit pushed it past the mark, and one payload can carry that entry
 and a `ratchet_regressions` entry for the same function. Exit 6 is the verdict there. Exit 7
@@ -1692,7 +1692,7 @@ That diff runs root-relative since 0.4.5, the way every other git spawn crapkit 
 so a `crapkit.toml` below the git top gets advisories on the paths the commit gate will
 judge.
 
-A `Bash` event names no `file_path` — its `tool_input` carries the `command` — so it takes a
+A `Bash` event names no `file_path` (its `tool_input` carries the `command`), so it takes a
 working-tree fallback instead: the `*.py` files git reports dirty or untracked, whose mtime
 falls inside a **12-second** freshness window, at most **25** of them, each judged through
 the same per-file ladder. Each breaching file gets its own advisory block, so one Bash event can print
@@ -1762,7 +1762,7 @@ Silence is the design. PostToolUse renders every nonzero exit but 2 invisible, a
 the edits this was measured against land in repos with no `crapkit.toml`. A hook that fired
 there would be either useless or unbearable.
 
-The mark exemption is existence, not the numeric rule `verify` applies: the store is never
+The hook pardons on a mark's existence, not the numeric rule `verify` applies: the store is never
 opened, so the hook holds no CRAP to compare. Same rule as the commit gate, described in
 [ratchet.md](ratchet.md#the-commit-gate-skips-marked-functions).
 

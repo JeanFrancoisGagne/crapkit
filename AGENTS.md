@@ -101,7 +101,7 @@ do next.
 - the twin selector on a name one file gives to several functions (`"__post_init__#2"`)
 
 Exact first: a NAME that IS a function's long name or bare identifier resolves to that
-function alone, even when other names contain it — `route` is `route`, never
+function alone, even when other names contain it: `route` is `route`, never
 `route_chain`. A NAME that names no function falls back to a substring search, so a
 half-remembered fragment still finds what holds it. `brief` and `explain` run the same
 rule on the same string, and both read a start line or an `(anonymous)#N` handle off the
@@ -129,7 +129,7 @@ One file can also give one name to several NAMED functions: several dataclasses 
 with a `__post_init__`, both arms of an `#ifdef` fork. A bare name resolves to the worst
 of them, which is the one the queue ranks, in `brief`, `explain` and
 `get_function_history` alike. `NAME#2` selects the second in file order and
-`NAME#3` the third — the same ordinals the ratchet keys their marks on, so the mark in a
+`NAME#3` the third, the same ordinals the ratchet keys their marks on, so the mark in a
 packet is the mark on the function that packet opened. An ordinal past the last twin
 exits 1:
 
@@ -183,7 +183,7 @@ Three rules decide what it judges:
   legacy functions in the same file are not judged.
 - **Metric**: ccn against the file's scope ceiling, coverage ignored. Same question the
   pre-commit hook asks.
-- **Exemption**: a function carrying a ratchet mark it has not exceeded passes. Push it
+- **Pardon**: a function carrying a ratchet mark it has not exceeded passes. Push it
   past its mark and it fails here, ahead of verify's exit 6. Verify keeps exit 7 for a
   mark that rose in a function the diff never touched.
   The marks file is read only when a changed function is over its ceiling, so a clean
@@ -996,14 +996,14 @@ runs `python -m crapkit hook-precommit` over the staged blobs:
 Exit 6 blocks the commit. Decompose until every touched function passes. A refusal is
 design feedback, not a threshold to widen.
 
-A function the committed ratchet already carries a mark for is exempt, and the hook
+The hook pardons a function the committed ratchet already carries a mark for, and
 reports the count on stderr. Touching signed debt does not refuse the commit; `crapkit
 verify` is what fails a mark that rises.
 
-Two gates, two exemptions, and the difference is on purpose. The pre-commit hook exempts
+Two gates, two pardons, and the difference is on purpose. The pre-commit hook pardons
 a marked function whatever its fresh score, because it reads staged blobs and a staged
 blob has no coverage behind it: the hook cannot tell a mark that held from one that
-rose. `crapkit rescore --gate` and `crapkit verify` exempt only a touched function whose
+rose. `crapkit rescore --gate` and `crapkit verify` pardon only a touched function whose
 fresh CRAP sits at or under its mark. So an edit that pushes signed debt past its mark
 still commits, and verify then refuses it with exit 6. Exit 7 stays for a mark that rose
 in a function the diff never touched.

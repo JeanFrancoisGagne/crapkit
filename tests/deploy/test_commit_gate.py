@@ -217,7 +217,7 @@ def test_hooks_written_under_0_4_0_gate_with_the_candidate_after_upgrade(box, te
     assert OLD_HOOKS in box.run(["crapkit", "--version"], expect=0).stdout
     base = old_readme(box, OLD_HOOKS)
     routes = [old_adoption(box, templates, base, gitsurf.ROUTE1), old_adoption(box, templates, base, gitsurf.ROUTE2)]
-    box.script(gitsurf.inline(UPGRADE_DOC, "Upgrading Crapkit", "python -m pip install --upgrade crapkit"), expect=0)
+    box.script(gitsurf.inline(UPGRADE_DOC, "Upgrading crapkit", "python -m pip install --upgrade crapkit"), expect=0)
 
     assert candidate.version in box.run(["crapkit", "--version"], expect=0).stdout
     for repo, hook in routes:

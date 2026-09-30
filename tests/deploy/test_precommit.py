@@ -89,7 +89,7 @@ def readme_at(box, version: str) -> Path:
 def upgrade_cli(box, repo: Path) -> None:
     """docs/upgrading.md for a pip install with the coverage extra, then the
     measure-and-reseed block, committed."""
-    box.script(gitsurf.inline(UPGRADE_DOC, "Upgrading Crapkit", 'python -m pip install --upgrade "crapkit[py]"'),
+    box.script(gitsurf.inline(UPGRADE_DOC, "Upgrading crapkit", 'python -m pip install --upgrade "crapkit[py]"'),
                expect=0)
     for line in docsnip.commands(docsnip.fence(UPGRADE_DOC, "Analysis version 11", contains="ratchet prune")):
         box.script(line, cwd=repo, expect=0)

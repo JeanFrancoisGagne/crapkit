@@ -71,7 +71,7 @@ analysis calls. See [resource policies](docs/resources.md) for the locks and log
 run shares with crapkit itself.
 
 `--output DIR` replaces evidence in a caller-managed directory inside `--repo`; relative
-paths resolve from that repository. Crapkit's own lane supplies `--output .crapkit/cov`
+paths resolve from that repository. crapkit's own lane supplies `--output .crapkit/cov`
 while it owns those measurement artifacts, and the CI verdict driver uses that location
 in its private checkout. A direct run should keep the default destination so it cannot
 change an active lane's evidence.
@@ -182,7 +182,7 @@ cancels the run it replaces; every push to main runs to the end.
 | `accuracy-xplat` | `python tools/accuracy/wheel_diff.py xplat` over the two push receipts: the small corpus's exports as Ubuntu and Windows printed them. | An export that differs: ints and labels exactly, four-decimal floats by their text, full-precision floats beyond 2 ulp. |
 | `accuracy-green` | On a push to main only. When `verdict`, `accuracy-push` and `accuracy-xplat` passed, it moves `refs/accuracy/green` to the commit, the base the next change-control run judges against; otherwise it opens or updates the `accuracy-red` issue. | A ref push or an issue write that GitHub refuses. |
 | `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. Then `test_claude_code_loads_the_manifests_doctor_reads` asks that Claude Code whether each manifest encoding loads, under `CRAPKIT_REQUIRE_CLAUDE=1`. | A validation error, or a manifest this Claude Code reads another way than `doctor --plugin-root` does. |
-| `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on Crapkit, with `CRAPKIT_REQUIRE_LOCALES=1` as in `test`. | Action execution errors, a test failure or an event-base complexity breach (`hook-precommit --base "$BASE_REF"`). Its `gate: false` setting leaves score enforcement to `verdict`. |
+| `dogfood` | The repository's composite action runs `coverage`, `verify --json` and `worklist --top 5` on crapkit, with `CRAPKIT_REQUIRE_LOCALES=1` as in `test`. | Action execution errors, a test failure or an event-base complexity breach (`hook-precommit --base "$BASE_REF"`). Its `gate: false` setting leaves score enforcement to `verdict`. |
 | `deploy-linux` | `python tools/deploy/run.py --cadence push --os linux --image core --cache gha -n 4 --shard 1/2`, and `--shard 2/2` on a second runner at the same time, builds `crapkit-deploy:core`, or reuses it from the Actions cache, and runs half of the Linux push cells of `tests/deploy` in it with no network; the two halves run every one. | A cell failure, or a new image whose tools differ from `tools/deploy/pins.toml`. |
 | `deploy-linux-native` | `tools/deploy/toolchain.py`, then `run.py --native --os linux --cadence push --cell lin-native-start` on the bare runner, where the container guard does not apply. | A cell failure. |
 | `deploy-windows` | `tools/deploy/toolchain.py`, then `run.py --native --os windows --cadence push -n 4`: the Windows push cells under cmd.exe, both PowerShells and PortableGit. | A cell failure. |

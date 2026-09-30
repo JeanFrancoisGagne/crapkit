@@ -1,4 +1,4 @@
-# Upgrading Crapkit
+# Upgrading crapkit
 
 Upgrade the CLI with the installer that owns it, then refresh the measurements in
 each repository. Saved runs describe the rules and source they measured; an upgrade
@@ -984,7 +984,7 @@ that lock its own way. Measured on Windows 11 with pip 26.2.1, pipx 1.17.6 and u
 After an exit 0, restart the client or agent session that owns the server; nothing else
 is left to do. After Windows error 32 or error 5:
 
-1. Stop the Crapkit MCP server or the agent session that owns it.
+1. Stop the crapkit MCP server or the agent session that owns it.
 2. Rerun the same upgrade command and require a successful installer result.
 3. Check `crapkit --version`, restart the client, and check plugin compatibility.
 

@@ -51,5 +51,5 @@ backslashes remain literal; decoding `\\n` in an ordinary row would change the
 filename. Encoding preserves fields, but it cannot make a filename valid on a
 filesystem that rejects it.
 
-Older Crapkit versions cannot read encoded rows. Upgrade readers before sharing
+Older crapkit versions cannot read encoded rows. Upgrade readers before sharing
 exports containing these filenames. JSON payloads keep `schema: 1`.

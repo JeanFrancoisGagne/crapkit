@@ -109,7 +109,7 @@ def test_a_branch_stamped_by_0_7_6_is_refused_then_merges_after_its_reseed(box, 
     gitsurf.tighten(box, repo, "test_legacy_one.py", gitsurf.LEGACY_TEST)
     old_stamp = gitsurf.stamp(repo)
     box.run(["git", "checkout", "-q", "main"], cwd=repo, expect=0)
-    box.script(gitsurf.inline(UPGRADE_DOC, "Upgrading Crapkit", 'python -m pip install --upgrade "crapkit[py]"'),
+    box.script(gitsurf.inline(UPGRADE_DOC, "Upgrading crapkit", 'python -m pip install --upgrade "crapkit[py]"'),
                expect=0)
     reseed(box, repo)
 

@@ -7,7 +7,7 @@ question: *has this function got worse than the day we agreed to live with it?*
 it; it fails the build instead. New debt enters only through `ratchet seed` or an audited
 override, both of which are visible in a diff.
 
-The pre-commit gate treats a mark as an exemption; `crapkit verify` fails a mark
+The pre-commit gate pardons any marked function; `crapkit verify` fails a mark
 that rises. See [the commit-gate rule](#the-commit-gate-skips-marked-functions).
 When upgrading, review [function identity](#same-line-function-identity) before
 reseeding marks recorded by an older reader.
@@ -181,7 +181,7 @@ what is left for a function the diff never touched, which is the case further do
 
 The looseness is deliberate. Before it, a comment added inside a marked function refused the
 commit. On a repo carrying 40,303 marks that meant a seeded tree could not be touched, while
-`rescore --gate` on the same tree passed. The advisory hook `crapkit claude-hook` exempts on
+`rescore --gate` on the same tree passed. The advisory hook `crapkit claude-hook` pardons on
 existence too, so a session of green advisories no longer ends at a red commit.
 
 ---
@@ -850,7 +850,7 @@ crapkit-ratchet.tsv` instead of two zero counts.
 
 A run that passed **because of an `--override`** does not tighten anything. The override
 already wrote the debt it granted, and letting the same run also rewrite every other mark
-would mix a granted exemption into a routine tightening.
+would mix a granted override into a routine tightening.
 
 A function scoring worse than its mark is a ratchet regression, whether or not the diff
 touched it. That is the point: coverage rot regresses functions nobody edited.
@@ -941,7 +941,7 @@ commit has nothing to compare against and tightens as it always did. `verify --n
 is the blunt version: the verdict stands and the marks file is not rewritten at all.
 
 **Trusted** is the same word `ratchet seed` uses, and the same test: a failed verify and a
-`partial` run are invisible here too. Both carry numbers no other reader accepts — a failed
+`partial` run are invisible here too. Both carry numbers no other reader accepts: a failed
 verify's can come off a red tree, and a `partial` run measured a fraction of the suite, so
 its coverage is low and its CRAP is high to match. Damping against either would hold a mark
 at a value nothing vouches for.
