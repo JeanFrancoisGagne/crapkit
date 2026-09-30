@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -138,7 +139,21 @@ def test_the_env_override_refuses_the_probe_and_leaves_the_marks_file_alone(stag
     assert staged_names == ["src/a.ts"]
 
 
+ALERT_PY = "import sys\nopen('.crapkit/alerts.log', 'a', encoding='utf-8').write(sys.stdin.read())\n"
+
+
+def alertable(repo: Path) -> None:
+    """An override with no [crapkit] alert_command is refused (exit 3) before any
+    other check, so a test of another refusal names one."""
+    (repo / "alert.py").write_text(ALERT_PY, encoding="utf-8")
+    toml = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    (repo / "crapkit.toml").write_text(toml.replace(
+        "[crapkit]\n", "[crapkit]\nalert_command = '\"" + sys.executable + "\" alert.py'\n", 1),
+        encoding="utf-8")
+
+
 def test_verify_override_refuses_the_probe_and_writes_no_mark(staged):
+    alertable(staged)
     git_commit_all(staged, "the probe")
 
     res = run_cli(staged, "verify", "--override", "ship it", "--json", env_extra=NO_REASON)

@@ -366,9 +366,22 @@ def mark(repo: Path, crap: float) -> None:
           f"# {metric_version()}\npath\tlong_name\tcrap\nsrc/mod.py\talpha( n )\t{crap:.4f}\n")
 
 
+ALERT_PY = "import sys\nopen('.crapkit/alerts.log', 'a', encoding='utf-8').write(sys.stdin.read())\n"
+
+
+def alertable(repo: Path) -> None:
+    """An override with no [crapkit] alert_command is refused (exit 3) before any
+    other check, so a test of another refusal names one."""
+    write(repo, "alert.py", ALERT_PY)
+    toml = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    write(repo, "crapkit.toml", toml.replace(
+        "[crapkit]\n", "[crapkit]\nalert_command = '\"" + PY + "\" alert.py'\n", 1))
+
+
 def test_a_refused_override_says_why_through_the_process_seam(receipt_repo: Path):
     """The refusal as CI reads it off a spawned `python -m crapkit`: exit 7 for
     the regression, one stderr line naming it and the escape, stdout untouched."""
+    alertable(receipt_repo)
     mark(receipt_repo, 0.1)
 
     res = run_cli(receipt_repo, "verify", "--override", "hotfix", spawn=True)
