@@ -141,7 +141,7 @@ cancels the run it replaces; every push to main runs to the end.
 
 | Job | Runs | What fails the job |
 |---|---|---|
-| `test` | Editable dev install, console-script check and `python tools/testing/run.py --suite ...` on Python 3.11, 3.12 and 3.13 on Ubuntu and Windows; Ubuntu/Python 3.12 belongs to `dogfood`. An Ubuntu job runs both suites; each Windows suite is a job of its own. | A test failure. |
+| `test` | Editable dev install, console-script check and `python tools/testing/run.py --suite ...` on Python 3.11, 3.12 and 3.13 on Ubuntu and Windows, and on Python 3.13 on macOS, the first release that ships `os.waitid` there; Ubuntu/Python 3.12 belongs to `dogfood`. An Ubuntu or macOS job runs both suites; each Windows suite is a job of its own. | A test failure. |
 | `verdict-measure` | One job per side: `python tools/testing/ci.py --base "$BASE_REF" --measure base` or `--measure candidate` builds and verifies that side's wheel, measures both suites and uploads the coverage evidence, the wheel and its proof. | A build, install or provenance failure. A failing suite still uploads; the join judges it. |
 | `verdict` | `python tools/testing/ci.py --base "$BASE_REF" --join` checks each uploaded wheel against the bytes and commit its proof records, installs it into a fresh venv, proves its source again, transfers the complete baseline ledger and runs `verify --no-tighten`. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict. |
 | `plugin` | `claude plugin validate plugin --strict` and `claude plugin validate .` check the plugin, hooks, skills and marketplace manifests. | A validation error. |
