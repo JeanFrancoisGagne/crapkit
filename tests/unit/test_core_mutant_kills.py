@@ -150,6 +150,66 @@ def test_the_scoring_read_refuses_a_malformed_statement_by_file_and_field(tmp_pa
     assert str(refused.value) == f"unparseable istanbul artifact {artifact}: a.js: {says}{REGENERATE}"
 
 
+def _istanbul_file(fn_map: dict, branch_map: dict, hits: dict) -> str:
+    source = "C:/repo/src/app.ts"
+    return json.dumps({source: {"path": source, "fnMap": fn_map, "f": dict.fromkeys(fn_map, 1),
+                                "branchMap": branch_map, "b": hits}})
+
+
+FUNCTION = {"name": "f", "decl": {"start": {"line": 1, "column": 9}},
+            "loc": {"start": {"line": 1, "column": 13}, "end": {"line": 4, "column": 1}}}
+BRANCH = {"loc": {"start": {"line": 2, "column": 2}},
+          "locations": [{"start": {"line": 2, "column": 2}}, {"start": {"line": 2, "column": 9}}]}
+REPORTER = "(every istanbul reporter writes one; regenerate the artifact with the runner's reporter)"
+
+
+def _istanbul_refusal(text: str) -> str:
+    from coverage_readers import parse_istanbul
+
+    with pytest.raises(ToolError) as refused:
+        parse_istanbul(text, repo_root="C:/repo")
+    return str(refused.value).split(".json: ", 1)[1]
+
+
+def test_a_branch_s_counts_that_are_no_array_are_refused_by_what_they_hold():
+    text = _istanbul_file({"0": FUNCTION}, {"0": BRANCH}, {"0": "1"})
+
+    assert _istanbul_refusal(text) == (
+        "src/app.ts: `b['0']` holds a string, not an array of branch counts; "
+        "regenerate the artifact with the coverage tool that wrote it")
+
+
+def test_a_branch_that_is_no_object_is_refused_as_a_branch_with_no_line():
+    """istanbul writes each branchMap entry as an object; a number reads no
+    locations to count and no line to sit on."""
+    text = _istanbul_file({"0": FUNCTION}, {"0": BRANCH, "1": 5}, {"0": [1, 0], "1": [0]})
+
+    assert _istanbul_refusal(text) == f"src/app.ts: branchMap['1'] has no loc.start.line and no line {REPORTER}"
+
+
+def test_a_function_with_no_end_line_is_refused_saying_every_reporter_writes_one():
+    function = {"name": "f", "decl": {"start": {"line": 1}}, "loc": {"start": {"line": 1}}}
+
+    assert _istanbul_refusal(_istanbul_file({"0": function}, {}, {})) == (
+        f"src/app.ts: fnMap['0'] has no loc.end.line {REPORTER}")
+
+
+def test_a_branch_start_with_no_column_opens_its_line_ahead_of_a_function_at_column_one():
+    """A start with no column is the line's first column (_position), which
+    comes before g opens at column 1, so the branch is f's, the code around g."""
+    from coverage_readers import parse_istanbul
+
+    inner = {"name": "g", "decl": {"start": {"line": 2, "column": 1}},
+             "loc": {"start": {"line": 2, "column": 1}, "end": {"line": 2, "column": 30}}}
+    branch = {"loc": {"start": {"line": 2}}, "locations": [{"start": {"line": 2}}, {"start": {"line": 2}}]}
+    text = _istanbul_file({"0": FUNCTION, "1": inner}, {"0": branch}, {"0": [1, 0]})
+
+    rows = parse_istanbul(text, repo_root="C:/repo")["src/app.ts"]
+
+    assert [(row.name, row.branches_total, row.branches_covered) for row in rows] == [
+        ("f", 2, 1), ("g", 0, 0)]
+
+
 # --- ratchet ------------------------------------------------------------------------------------
 
 def test_the_upgrade_remedy_names_one_newer_tool_and_says_it():
