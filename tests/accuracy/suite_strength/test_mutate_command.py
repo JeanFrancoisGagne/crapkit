@@ -7,11 +7,12 @@ on a plain directory (no git: `--files` needs none) and replace
 crapkit.mutate_pool.run_mutants with a runner that returns fixed verdicts, so
 every expected value below follows from the fixture and these rules:
 
-- README.md:809 and docs/agent-json.md:1177: `--files` targets whole files; a
-  file outside the scored corpus (a test file) grows no mutants and is listed
-  under `outside_corpus`; `--json` prints {mutants, killed, survived,
-  survivors [{path, line, op, original, mutated}], outside_corpus}, and a
-  survivor is a mutant its suite run did not kill.
+- README.md, Commands, and docs/agent-json.md, `mutate --json`: `--files`
+  targets whole files; a file outside the scored corpus (a test file) grows no
+  mutants and is listed under `outside_corpus`; `--json` prints {mutants,
+  killed, survived, timed_out, no_verdict, survivors [{path, line, op,
+  original, mutated}], outside_corpus}, and a survivor is a mutant its suite
+  run did not kill.
 - crapkit/cli/_shared.py `_stand` (ADR 0002): without `--repo` a relative
   `--files` path is read from where the user stands, below the root the walk
   found.
@@ -35,6 +36,7 @@ import pytest
 
 from crapkit.cli import main
 import crapkit.mutate_pool
+from crapkit.mutate_pool import MutantVerdict
 
 CONFIG = ('[crapkit]\ntarget = 6\nmutation_command = "python -c pass"\n\n'
           '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n\n'
@@ -62,9 +64,10 @@ def runs(monkeypatch):
 
     def run_mutants(root, cfg, mutants, report):
         seen.append((root, [(m.path, m.line, m.op) for m in mutants]))
-        verdicts = [index == 0 for index in range(len(mutants))]
-        for index, (mutant, killed) in enumerate(zip(mutants, verdicts)):
-            report(index, mutant, killed)
+        verdicts = [MutantVerdict.KILLED if index == 0 else MutantVerdict.SURVIVED
+                    for index in range(len(mutants))]
+        for index, (mutant, verdict) in enumerate(zip(mutants, verdicts)):
+            report(index, mutant, verdict)
         return verdicts
 
     monkeypatch.setattr(crapkit.mutate_pool, "run_mutants", run_mutants)
@@ -85,7 +88,7 @@ def test_a_run_from_below_the_root_lists_the_survivor_and_the_test_file(tree, ru
     code, out, err = _main(capsys, "mutate", "--files", "a.py", "big.py", "../tests/test_a.py", "--json")
     assert code == 0, err
     assert json.loads(out) == {
-        "schema": 1, "mutants": 2, "killed": 1, "survived": 1,
+        "schema": 1, "mutants": 2, "killed": 1, "survived": 1, "timed_out": 0, "no_verdict": 0,
         "survivors": [{"path": "src/a.py", "line": 2, "op": "< -> >=",
                        "original": "    return a < b", "mutated": "    return a >= b"}],
         "outside_corpus": ["src/big.py", "tests/test_a.py"]}
@@ -114,7 +117,7 @@ def test_mutate_without_mutation_command_refuses_before_any_run(tree, runs, caps
                                        encoding="utf-8")
     code, out, err = _main(capsys, "mutate", "--repo", str(tree), "--files", "src/a.py")
     assert code == 3
-    refusal = "crapkit: mutate needs [crapkit] mutation_command — the suite run once per mutant"
+    refusal = "crapkit: mutate needs [crapkit] mutation_command - the suite run once per mutant"
     assert refusal in err.splitlines()
     assert runs == []
 
