@@ -695,6 +695,18 @@ def test_every_copy_bound_test_exists_and_says_why_the_copy_fails_it():
     assert [node for node, why in mutation.COPY_BOUND.items() if len(why.split()) < 8] == []
 
 
+def test_the_calc_stage_leaves_out_the_differential_that_analyzes_every_module_of_the_copy():
+    """The one-pass differential analyzes every module under src/crapkit twice,
+    and in mutmut's copy each mutated module holds every mutant's body. Its time
+    in the stats run grew with the modules a run mutates, from 46 s to 366 s over
+    three weekly shards. With every weekly module mutated it ran past pytest's
+    10-minute traceback dump, mutmut died with exit -11, and no mutant was judged."""
+    node = ("tests/unit/test_analyze_one_pass.py::"
+            "test_the_single_pass_reproduces_the_two_pass_record_for_every_committed_source")
+
+    assert node in mutation.stage_deselected()
+
+
 def test_the_calc_stage_leaves_out_the_copy_bound_tests_and_the_open_defects_tests(monkeypatch):
     monkeypatch.setattr(mutation, "open_failures", lambda: ["tests/a.py::test_open"])
 
@@ -768,6 +780,139 @@ def test_the_stats_mode_stays_in_the_launcher_s_process(monkeypatch):
     assert (trampolines._mutant_under_test, "MUTANT_UNDER_TEST" in os.environ) == ("stats", False)
     namespace["set_mutant_under_test"]("crapkit.score.x_crap__mutmut_3")
     assert handed == ["crapkit.score.x_crap__mutmut_3"]
+
+
+# --- the launcher's stats run goes on past a failing test --------------------------------------------
+#
+# mutmut 3.8.0's PytestRunner.run_stats runs the suite with -x through
+# self.execute_pytest(params, plugins=[its stats collector]) and returns pytest's
+# exit code; any code but 0 stops mutmut at `failed to collect stats`. The runner
+# here stands in for it: its execute_pytest hands the reports it is given to the
+# last plugin, as pytest would, and returns the code it is given.
+
+def _report(nodeid: str, failed: bool = True):
+    return types.SimpleNamespace(nodeid=nodeid, failed=failed)
+
+
+class _StatsRunner:
+    def __init__(self, code: int, tests: list = (), collected: list = ()):
+        self.code, self.tests, self.collected, self.handed = code, tests, collected, []
+
+    def execute_pytest(self, params, plugins=(), **kwargs):
+        self.handed.append((params, list(plugins)))
+        for report in self.tests:
+            plugins[-1].pytest_runtest_logreport(report)
+        for report in self.collected:
+            plugins[-1].pytest_collectreport(report)
+        return self.code
+
+
+def _mutmut_stats(self, *, tests):
+    """mutmut's own run_stats, as far as the launcher sees it."""
+    return self.execute_pytest(["-x", "-q", "-p", "no:randomly", *tests], plugins=["stats"])
+
+
+def _stats_launcher(tmp_path: Path, reached: dict) -> dict:
+    namespace: dict = {}
+    exec(compile(mutation.LAUNCHER.split("if __name__")[0], "launcher", "exec"), namespace)
+    state = types.SimpleNamespace(tests_by_mangled_function_name=reached)
+    namespace.update(_run_stats=_mutmut_stats, _state=lambda: state,
+                     FAILURES=tmp_path / mutation.STATS_FAILURES)
+    return namespace
+
+
+def test_the_stats_run_goes_on_past_a_failing_test_and_runs_no_mutant_against_it(tmp_path):
+    """A test red in the accuracy image (test_init_scaffold's lane command) stopped
+    mutmut's stats run, and all 9,627 core and readers mutants stayed `not
+    checked`. It fails with no mutant active, so it fails whatever the mutant."""
+    reached = {"crapkit.score.x_crap": {"t.py::a", "t.py::b"}, "crapkit.keys.x_k": {"t.py::a"}}
+    launcher = _stats_launcher(tmp_path, reached)
+    runner = _StatsRunner(1, [_report("t.py::a"), _report("t.py::b", failed=False)])
+
+    assert launcher["run_stats"](runner, tests=[]) == 0
+
+    ((params, plugins),) = runner.handed
+    assert params == ["-q", "-p", "no:randomly", "--continue-on-collection-errors"]
+    assert plugins[0] == "stats" and isinstance(plugins[1], launcher["Failures"])
+    assert reached == {"crapkit.score.x_crap": {"t.py::b"}, "crapkit.keys.x_k": set()}
+    assert mutation.stats_failures(tmp_path) == ["t.py::a"]
+    assert "execute_pytest" not in vars(runner)
+
+
+def test_a_file_pytest_could_not_collect_is_named_too(tmp_path):
+    launcher = _stats_launcher(tmp_path, {})
+    runner = _StatsRunner(1, collected=[_report("t.py"), _report("u.py", failed=False)])
+
+    assert launcher["run_stats"](runner, tests=[]) == 0
+    assert mutation.stats_failures(tmp_path) == ["t.py"]
+
+
+@pytest.mark.parametrize("code, tests, returned", [
+    (0, [], 0), (2, [_report("t.py::a")], 2), (1, [], 1), (5, [], 5)])
+def test_a_stats_run_that_failed_for_another_reason_still_fails(tmp_path, code, tests, returned):
+    """Only pytest's `tests failed` (1) with each failure noted is forgiven: an
+    interrupted run (2), no test collected (5) or a 1 with nothing noted comes back."""
+    launcher = _stats_launcher(tmp_path, {})
+
+    assert launcher["run_stats"](_StatsRunner(code, tests), tests=[]) == returned
+
+
+def test_a_full_stats_run_rewrites_the_list_and_a_run_of_new_tests_adds_to_it(tmp_path):
+    """mutmut reruns the stats of only the tests it has not seen when it reads its
+    cache; what the full run noted still holds for the tests it did not rerun."""
+    launcher = _stats_launcher(tmp_path, {})
+    (tmp_path / mutation.STATS_FAILURES).write_bytes(b"old.py::x\r\nt.py::p[a b]\r\n")
+
+    launcher["run_stats"](_StatsRunner(1, [_report("t.py::n")]), tests=["t.py::n"])
+    assert mutation.stats_failures(tmp_path) == ["old.py::x", "t.py::n", "t.py::p[a b]"]
+    launcher["run_stats"](_StatsRunner(1, [_report("t.py::z")]), tests=[])
+    assert mutation.stats_failures(tmp_path) == ["t.py::z"]
+
+
+def test_a_stats_run_with_no_failure_leaves_an_empty_list(tmp_path):
+    launcher = _stats_launcher(tmp_path, {"f": {"t.py::a"}})
+
+    assert launcher["run_stats"](_StatsRunner(0, [_report("t.py::a", failed=False)]), tests=[]) == 0
+    assert (tmp_path / mutation.STATS_FAILURES).read_bytes() == b""
+    assert mutation.stats_failures(tmp_path / "nowhere") == []
+
+
+def _fake_mutmut(monkeypatch, seen: dict) -> None:
+    """mutmut's modules as the launcher's main block imports them; `cli` notes
+    what the launcher had put in place by the time mutmut starts."""
+    modules = {name: types.ModuleType(name) for name in (
+        "mutmut", "mutmut.mutation", "mutmut.utils", "mutmut.runners", "mutmut.runners.harness",
+        "mutmut.utils.format_utils", "mutmut.mutation.trampoline", "mutmut.state",
+        "mutmut.__main__")}
+    harness, names = modules["mutmut.runners.harness"], modules["mutmut.utils.format_utils"]
+    harness.PytestRunner = type("PytestRunner", (), {"run_stats": _mutmut_stats})
+    names.strip_prefix = lambda text, *, prefix, strict=False: text
+    modules["mutmut.mutation.trampoline"].set_mutant_under_test = lambda name: None
+    modules["mutmut.state"].state = lambda: None
+    modules["mutmut.__main__"].cli = lambda: seen.update(
+        run_stats=harness.PytestRunner.run_stats, strip=names.strip_prefix)
+    for name, module in modules.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+
+def test_the_launcher_puts_its_stats_run_in_mutmut_s_place_before_mutmut_starts(tmp_path,
+                                                                                monkeypatch):
+    seen: dict = {}
+    _fake_mutmut(monkeypatch, seen)
+    (tmp_path / "pyproject.toml").write_text('[tool.mutmut]\nsource_paths = ["a.py"]\n',
+                                             encoding="utf-8")
+    (tmp_path / mutation.LAUNCHER_FILE).write_bytes(mutation.LAUNCHER.encode())
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", [mutation.LAUNCHER_FILE, "run"])
+    monkeypatch.setattr(importlib.util, "spec_from_file_location",
+                        importlib.util.spec_from_file_location)
+
+    namespace = runpy.run_path(str(tmp_path / mutation.LAUNCHER_FILE), run_name="__main__")
+
+    assert seen["run_stats"] is namespace["run_stats"]
+    assert namespace["_run_stats"] is _mutmut_stats
+    assert seen["strip"] is namespace["strip_prefix"]
+    assert namespace["FAILURES"] == tmp_path.resolve() / mutation.STATS_FAILURES
 
 
 def test_the_launcher_names_a_module_the_way_its_tests_import_it(tmp_path):
@@ -955,6 +1100,31 @@ def test_the_covered_command_passes_when_every_change_was_mutated(tmp_path, monk
     monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [])
 
     assert mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "r", weekly))]) == 0
+
+
+UNJUDGED = mutation.Result("crapkit.score.x_crap__mutmut_1", "src/crapkit/score.py", "crap",
+                           "not checked").__dict__
+
+
+def test_the_covered_command_refuses_a_weekly_shard_whose_receipt_judged_nothing(
+        tmp_path, monkeypatch, capsys):
+    """A receipt from a run whose stats pass died holds every mutant `not
+    checked`: it says the shard ran, and the run proved nothing."""
+    weekly = [{"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 2, "results": []},
+              {"kind": "weekly", "head": HEAD_A, "shard": 2, "of": 2, "results": [UNJUDGED]}]
+    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [])
+
+    assert mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "r", *weekly))]) == 1
+    said = capsys.readouterr().err
+    assert "weekly shard 2's receipt proves nothing: 1 mutant was never judged" in said
+
+
+def test_a_diff_receipt_holding_a_mutant_mutmut_never_judged_covers_no_function():
+    diffs = [{"complete": True, "functions": [["src/crapkit/score.py", "crap"]],
+              "results": [UNJUDGED]}]
+
+    assert mutation.uncovered([("src/crapkit/score.py", "crap")], diffs) == [
+        "src/crapkit/score.py:crap"]
 
 
 # --- what changed since the weekly run, on a dated repo ------------------------------------------
@@ -1297,6 +1467,26 @@ def test_gate_update_rewrites_the_tables_and_a_clean_run_exits_zero(tmp_path, mo
     assert "now dies" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("status", ["not checked", "survived"])
+def test_a_void_run_names_no_row_to_remove_and_update_keeps_the_tables(tmp_path, monkeypatch,
+                                                                       capsys, status):
+    """A core and readers run whose stats run failed printed `now dies: remove its
+    row` for every survivors.tsv row of its modules: mutmut judged no mutant, so
+    none carried a key, and `gate --update` on that receipt emptied the table. A
+    run a surviving canary voids removes nothing either."""
+    listed = {**_row("src/crapkit/score.py", "crap", KEYS[0]), "reason": "r", "added": "d"}
+    _tables(tmp_path, [listed])
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
+    receipt = tmp_path / "r.json"
+    rows = [_crap(KEYS[0], "killed"), _crap(KEYS[1], status)]
+    receipt.write_text(json.dumps({"results": [row.__dict__ for row in rows]}), encoding="utf-8")
+
+    assert mutation.main(["gate", str(receipt), "--update"]) == 1
+    assert mutation.read_table(tmp_path / "survivors.tsv", mutation.SURVIVOR_COLUMNS) == [listed]
+    said = capsys.readouterr().out
+    assert "void: " in said and "now dies" not in said
+
+
 def test_gate_without_no_canary_voids_a_run_that_did_not_mutate_the_canary(tmp_path, monkeypatch,
                                                                              capsys):
     _tables(tmp_path)
@@ -1318,9 +1508,9 @@ class _Recorder:
     def __init__(self, rows, complete=True):
         self.rows, self.complete, self.calls = rows, complete, []
 
-    def __call__(self, where, targets, globs, env, children, budget=None):
+    def __call__(self, where, targets, globs, env, children, budget=None, deselect=()):
         self.calls.append({"where": where, "targets": targets, "globs": globs, "env": env,
-                           "children": children, "budget": budget})
+                           "children": children, "budget": budget, "deselect": list(deselect)})
         return self.rows, self.complete
 
 
@@ -1478,7 +1668,15 @@ STAGE_LAUNCHER = FAKE_LAUNCHER.replace(
     'if sys.argv[1:2] == ["diffs"]:',
     'if sys.argv[1:2] == ["run"] and "--sleep" in open("mode.txt").read():\n'
     '    import time; time.sleep(5)\n'
-    'if sys.argv[1:2] == ["diffs"]:', 1)
+    'if sys.argv[1:2] == ["run"] and "--die" in open("mode.txt").read():\n'
+    '    with open(os.environ["CRAPKIT_IN_PROCESS_HANGS"], "a", encoding="utf-8") as hangs:\n'
+    '        hangs.write(STUCK + "\\n  File store.py, line 691 in _prepare\\n")\n'
+    '    sys.exit(1)\n'
+    'if sys.argv[1:2] == ["diffs"]:', 1).replace(
+    "import json, os, pathlib, sys\n",
+    "import json, os, pathlib, sys\n"
+    "STUCK = \"tests/t.py::test_slow (call): ['crapkit', 'coverage'] past its 120 s bound. Stopping it\"\n",
+    1)
 
 
 def _fake_stage(tmp_path: Path, monkeypatch, mode: str = "") -> tuple[Path, list]:
@@ -1487,7 +1685,7 @@ def _fake_stage(tmp_path: Path, monkeypatch, mode: str = "") -> tuple[Path, list
     (stage / "mode.txt").write_text(mode, encoding="utf-8")
     prepared = []
     monkeypatch.setattr(mutation, "_prepare_stage",
-                        lambda targets, where: prepared.append((targets, where)) or stage)
+                        lambda targets, where, deselect=(): prepared.append((targets, where)) or stage)
     return stage, prepared
 
 
@@ -1514,6 +1712,65 @@ def test_a_run_its_budget_stopped_is_incomplete_and_reruns_nothing(tmp_path, mon
     assert not complete
     assert [call[0] for call in _calls(stage)] == ["run", "diffs"]
     assert {row.name: row.status for row in rows}["crapkit.score.x_crap__mutmut_4"] == "timeout"
+
+
+# Two weekly shards on a saturated disk ended inside mutmut's stats run: an
+# in-process CLI call sat 150 s in a SQLite commit, the test kit's hang guard
+# ended the process, and mutmut, which runs its stats pass in its own process,
+# ended with it. Every mutant stayed `not checked`, and the run still wrote its
+# receipt and printed its floors as if it had measured them.
+
+@pytest.mark.nightly
+def test_a_run_mutmut_ended_before_judging_raises_with_its_exit_and_the_stuck_call(
+        tmp_path, monkeypatch):
+    stage, _ = _fake_stage(tmp_path, monkeypatch, "--die")
+    (stage / mutation.HANGS_FILE).write_text("the last run's call past its 9 s bound\n",
+                                              encoding="utf-8")
+
+    with pytest.raises(mutation.RunDied) as died:
+        mutation.staged_run(Path("w"), {}, ["crapkit.score.*"], dict(mutation.os.environ), 2)
+
+    said = str(died.value)
+    assert "ended with exit 1 before it judged its mutants" in said
+    assert "tests/t.py::test_slow (call): ['crapkit', 'coverage'] past its 120 s bound" in said
+    assert "9 s bound" not in said, "a hang the last run logged is not this run's"
+    assert [call[0] for call in _calls(stage)] == ["run"]
+
+
+def test_every_mutmut_run_names_its_hang_file_in_the_variable_the_test_kit_reads():
+    from accuracy.kit import drive
+
+    assert mutation.HANGS_ENV == drive._in_process_runner().STAGE_HANGS_ENV
+
+
+def test_a_run_a_signal_ended_is_named_by_its_signal(tmp_path, monkeypatch):
+    _fake_stage(tmp_path, monkeypatch)
+    monkeypatch.setattr(mutation, "_run_mutmut", lambda *args, **kwargs: -11)
+
+    with pytest.raises(mutation.RunDied, match="ended with signal SIGSEGV before it judged"):
+        mutation.staged_run(Path("w"), {}, ["crapkit.score.*"], {}, 2)
+
+
+@pytest.mark.parametrize("argv", [["weekly", "--shard", "1", "--of", "1"], ["tools"],
+                                  ["diff", "--base", "b" * 40]])
+def test_a_command_whose_run_died_writes_no_receipt_and_exits_4(tmp_path, monkeypatch, capsys,
+                                                                argv):
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
+    monkeypatch.setattr(mutation, "changed_functions",
+                        lambda repo, base, modules: [("src/crapkit/score.py", "crap")])
+    monkeypatch.setattr(mutation, "present", lambda wanted: {"tools/accuracy/retro.py": ("t",)})
+    _commands_on(tmp_path, monkeypatch, [])
+
+    def dies(*args, **kwargs):
+        raise mutation.RunDied(mutation.died(Path("stage"), 1))
+
+    monkeypatch.setattr(mutation, "staged_run", dies)
+
+    assert mutation.main(argv) == 4
+    assert not (mutation.REPO / mutation.RECEIPTS).exists()
+    said = capsys.readouterr()
+    assert "ended with exit 1 before it judged its mutants" in said.err
+    assert "writes no receipt" in said.err and "floor" not in said.out
 
 
 # --- the stage itself -----------------------------------------------------------------------------
@@ -1990,11 +2247,20 @@ def test_no_open_ruling_deselects_a_test_here():
     assert mutation.open_failures() == []
 
 
-def test_the_deselected_tests_reach_pytest_through_its_addopts():
-    env = mutation.calc_env({"PYTEST_ADDOPTS": "-q"}, ["t.py::a", "t.py::b"])
+def test_the_deselected_tests_reach_mutmut_s_pytest_and_no_pytest_a_test_starts():
+    """The calc stage handed its left-out tests to PYTEST_ADDOPTS, which every pytest
+    a test starts inherits: test_kit_contract's collect-only child then missed the
+    tests the tables name and failed mutmut's stats run in the accuracy image.
+    mutmut's own pytest arguments reach only the pytest mutmut runs."""
+    targets = mutation.calc_targets(["src/crapkit/digest.py"])
 
-    assert env["PYTEST_ADDOPTS"] == "-q --deselect t.py::a --deselect t.py::b"
-    assert mutation.calc_env({})["PYTEST_ADDOPTS"] == ""
+    staged = mutation.stage_config(PYPROJECT, targets, ["src"], ("t.py::a", "t.py::b[1 2]"))
+
+    assert mutation.tomllib.loads(staged)["tool"]["mutmut"]["pytest_add_cli_args"] == [
+        "-p", "no:cacheprovider", "-m", mutation.FLOOR_SUITE,
+        "--deselect", "t.py::a", "--deselect", "t.py::b[1 2]"]
+    assert mutation.calc_env({"PYTEST_ADDOPTS": "-q"})["PYTEST_ADDOPTS"] == "-q"
+    assert "PYTEST_ADDOPTS" not in mutation.calc_env({})
 
 
 def _open_ruling_beside_the_tables(tmp_path: Path, monkeypatch) -> None:
@@ -2010,10 +2276,6 @@ def _open_ruling_beside_the_tables(tmp_path: Path, monkeypatch) -> None:
 LEFT_OUT = sorted(["tests/unit/t.py::f", *mutation.COPY_BOUND])
 
 
-def _addopts_leave_out(env: dict, nodes: list[str]) -> bool:
-    return env["PYTEST_ADDOPTS"].endswith(" ".join(f"--deselect {node}" for node in nodes))
-
-
 def test_a_weekly_shard_deselects_the_open_failures_and_its_receipt_names_them(tmp_path, monkeypatch):
     monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
     recorder = _commands_on(tmp_path, monkeypatch, [_crap(KEYS[0], "killed")])
@@ -2021,8 +2283,44 @@ def test_a_weekly_shard_deselects_the_open_failures_and_its_receipt_names_them(t
 
     assert mutation.main(["weekly", "--shard", "1", "--of", "1"]) == 0
 
-    assert _addopts_leave_out(recorder.calls[0]["env"], LEFT_OUT)
+    assert recorder.calls[0]["deselect"] == LEFT_OUT
+    assert "--deselect" not in recorder.calls[0]["env"].get("PYTEST_ADDOPTS", "")
     assert _saved("weekly-1.json")["deselected"] == LEFT_OUT
+
+
+@pytest.mark.parametrize("argv, where, receipt", [
+    (["weekly", "--shard", "1", "--of", "1"], mutation.CALC_STAGE, "weekly-1.json"),
+    (["diff", "--base", "b" * 40], mutation.CALC_STAGE, f"diff-{HEAD_A[:12]}.json"),
+    (["tools"], mutation.TOOLS_STAGE, "tools.json")])
+def test_each_run_prints_and_keeps_the_tests_its_stats_run_left_out(tmp_path, monkeypatch, capsys,
+                                                                    argv, where, receipt):
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
+    monkeypatch.setattr(mutation, "changed_functions",
+                        lambda repo, base, modules: [("src/crapkit/score.py", "crap")])
+    monkeypatch.setattr(mutation, "present", lambda wanted: {"tools/accuracy/retro.py": ("t",)})
+    _commands_on(tmp_path, monkeypatch, [_crap(KEYS[0], "killed")])
+    stage = mutation.REPO / where
+    stage.mkdir(parents=True)
+    (stage / mutation.STATS_FAILURES).write_bytes(b"tests/unit/t.py::a\ntests/unit/t.py::b[x y]\n")
+
+    mutation.main(argv)
+
+    assert _saved(receipt)["stats_failures"] == ["tests/unit/t.py::a", "tests/unit/t.py::b[x y]"]
+    assert ("mutation: tests/unit/t.py::b[x y] failed with no mutant active, so no mutant was "
+            "run against it\n") in capsys.readouterr().out
+
+
+def test_a_diff_run_with_nothing_changed_names_no_stats_failure(tmp_path, monkeypatch):
+    """No stage ran, so a list an earlier run left there says nothing about this one."""
+    monkeypatch.setattr(mutation, "calc_modules", lambda: [])
+    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [])
+    _commands_on(tmp_path, monkeypatch, [])
+    stage = mutation.REPO / mutation.CALC_STAGE
+    stage.mkdir(parents=True)
+    (stage / mutation.STATS_FAILURES).write_bytes(b"tests/unit/t.py::a\n")
+
+    assert mutation.main(["diff", "--base", "b" * 40]) == 0
+    assert _saved(f"diff-{HEAD_A[:12]}.json")["stats_failures"] == []
 
 
 def test_a_diff_run_deselects_the_open_failures(tmp_path, monkeypatch):
@@ -2034,7 +2332,7 @@ def test_a_diff_run_deselects_the_open_failures(tmp_path, monkeypatch):
 
     assert mutation.main(["diff", "--base", "b" * 40]) == 0
 
-    assert _addopts_leave_out(recorder.calls[0]["env"], LEFT_OUT)
+    assert recorder.calls[0]["deselect"] == LEFT_OUT
 
 
 # --- the calc runs' scope: cli modules at their named functions, tools elsewhere --------------------

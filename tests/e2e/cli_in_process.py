@@ -55,6 +55,13 @@ reaches another Python instruction, so GRACE_SECONDS later faulthandler writes
 every thread's stack to the file `log_hangs_to` named, and the worker exits.
 The suite names a file under the worker's basetemp, because pytest's capture
 owns descriptor 2 during a test and a dump sent there dies with the worker.
+
+A mutation stage (tools/accuracy/mutation.py) names a file of its own in
+STAGE_HANGS_ENV, and there the process is not a worker a session can lose:
+mutmut runs its stats pass in its own process, so an exit there ended the whole
+run, and it times each mutant's child itself. In a stage the stacks go to that
+file every GRACE_SECONDS until the call returns, the process lives, and the
+call fails its test once it is back in Python.
 """
 from __future__ import annotations
 
@@ -81,13 +88,29 @@ _ONE_CALL = threading.Lock()
 
 GRACE_SECONDS = 30
 _HANG_LOG = sys.__stderr__
+STAGE_HANGS_ENV = "CRAPKIT_IN_PROCESS_HANGS"
+# Read once, as the process starts: a call runs under its own os.environ.
+_STAGE_HANGS = os.environ.get(STAGE_HANGS_ENV)
+_STAGE_LOG = None
 
 
 def log_hangs_to(file) -> None:
     """Write the stack of a call stuck past its bound to `file`, an open text
-    file with a descriptor, which the caller keeps open while calls run."""
+    file with a descriptor, which the caller keeps open while calls run. A
+    mutation stage's file (STAGE_HANGS_ENV) comes first."""
     global _HANG_LOG
     _HANG_LOG = file
+
+
+def _hang_log():
+    """Where a stuck call's report goes: the stage's file, opened once and kept
+    open for faulthandler, or the one log_hangs_to named."""
+    global _STAGE_LOG
+    if _STAGE_HANGS is None:
+        return _HANG_LOG
+    if _STAGE_LOG is None:
+        _STAGE_LOG = open(_STAGE_HANGS, "a", encoding="utf-8")
+    return _STAGE_LOG
 
 
 class _PastBound(BaseException):
@@ -378,8 +401,9 @@ class _Watch:
                                         daemon=True)
 
     def start(self) -> None:
-        faulthandler.dump_traceback_later(self._timeout + GRACE_SECONDS, exit=True,
-                                          file=_HANG_LOG)
+        in_stage = _STAGE_HANGS is not None
+        faulthandler.dump_traceback_later(self._timeout + GRACE_SECONDS, repeat=in_stage,
+                                          exit=not in_stage, file=_hang_log())
         self._thread.start()
 
     def _keep(self) -> None:
@@ -391,9 +415,11 @@ class _Watch:
             if self._done:
                 return
             _set_async(self._call, ctypes.py_object(_PastBound))
+        then = ("every thread's stack follows each time until it returns" if _STAGE_HANGS
+                else "every thread's stack follows and the worker exits")
         print(f"{self._test}: {self._argv!r} past its {self._timeout} s bound. Stopping it; "
-              f"if it has not returned {GRACE_SECONDS} s from now, every thread's stack "
-              f"follows and the worker exits.", file=_HANG_LOG, flush=True)
+              f"if it has not returned {GRACE_SECONDS} s from now, {then}.",
+              file=_hang_log(), flush=True)
 
     def stop(self) -> None:
         with self._lock:

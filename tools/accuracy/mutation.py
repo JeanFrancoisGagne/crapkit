@@ -19,11 +19,24 @@ worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose [tool.mutmut]
 names the modules and the suite, tests/unit and tests/accuracy at the push tier
 with the dependent methods deselected, less each test an open defect row of
 rulings.tsv names as failing on a clean tree and each COPY_BOUND test, which
-fails inside mutmut's copy whatever the mutant (mutmut judges no mutant when its
-stats run fails), then write a receipt under .crapkit/accuracy/mutation/ and run
-the gate. The checks that read crapkit's own source as data read the stage's
-src/crapkit, named in CRAPKIT_ACCURACY_SOURCE, since mutmut's copy of it holds
-trampolines.
+fails or runs for hours inside mutmut's copy whatever the mutant, then write a
+receipt under .crapkit/accuracy/mutation/ and run the gate. The checks that read
+crapkit's own source as data read the stage's src/crapkit, named in
+CRAPKIT_ACCURACY_SOURCE, since mutmut's copy of it holds trampolines.
+
+mutmut first runs the whole suite once with no mutant active (its stats run) to
+learn which tests reach which function, stops at the first test that fails, and
+then judges no mutant at all. The stage's launcher runs it to the end instead:
+a test that fails there fails whatever the mutant, so it is left out of every
+mutant's tests and named in the stage's stats-failures.txt, which the run prints
+and its receipt keeps under `stats_failures`.
+
+A run mutmut ends with anything but 0 (a failed stats run, a crash, a signal)
+judged nothing: the command writes no receipt, names how mutmut ended and each
+in-process call the test kit logged as stuck in the stage's in-process-hangs.log,
+and exits 4. mutmut runs its stats pass in its own process, so every run names
+that file to the kit (HANGS_ENV), and the kit then never ends the process on a
+stuck call. `covered` refuses a receipt holding a mutant its run never judged.
 
 The gate is a survivor set, not a rate. A survivor is keyed by (module,
 function, sha256 of its mutant diff with line numbers and mutmut's numbering
@@ -70,6 +83,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -116,6 +130,15 @@ class MutationError(ValueError):
 
 class MissingReceipts(MutationError):
     """The receipts a release row reads are not on this machine: an infra miss, exit 3."""
+
+
+class RunDied(MutationError):
+    """mutmut ended before it judged the run's mutants: the run proves nothing and
+    writes no receipt, exit 4."""
+
+
+# Exit 1 is a check that failed; these name a run that measured nothing.
+EXIT_BY_REFUSAL = {MissingReceipts: 3, RunDied: 4}
 
 
 def _read(path: Path) -> str:
@@ -354,15 +377,19 @@ def _killed(proven: set, every: set, alive: set) -> tuple:
 
 def gate(results: list[Result], survivors: list[dict], equivalents: list[dict],
          canary: bool = True) -> Verdict:
-    """The survivor-set rule over one run's results."""
-    alive, every = _survived(results), {row.ident for row in results}
-    modules = _mutated_modules(results)
+    """The survivor-set rule over one run's results. A void run names no row to
+    remove: a mutant mutmut never judged carries no key, so every listed row of
+    its modules would read as gone, and `gate --update` would empty the tables."""
+    void = unjudged_problem(results) or (canary_problem(results) if canary else "")
+    alive = _survived(results)
+    new = tuple(sorted(alive - _idents(survivors) - _idents(equivalents)))
+    if void:
+        return Verdict(new=new, void=void)
+    every, modules = {row.ident for row in results}, _mutated_modules(results)
     mine = _idents(_in_run(equivalents, modules))
-    return Verdict(new=tuple(sorted(alive - _idents(survivors) - _idents(equivalents))),
-                   gone=_gone(_idents(_in_run(survivors, modules)), alive),
+    return Verdict(new=new, gone=_gone(_idents(_in_run(survivors, modules)), alive),
                    killed_equivalents=_killed(mine, every, alive),
-                   orphan_equivalents=tuple(sorted(mine - every)),
-                   void=unjudged_problem(results) or (canary_problem(results) if canary else ""))
+                   orphan_equivalents=tuple(sorted(mine - every)))
 
 
 def updated_survivors(survivors: list[dict], verdict: Verdict) -> list[dict]:
@@ -522,8 +549,19 @@ def shard(modules: list[str], number: int, of: int) -> list[str]:
     return sorted(modules)[number - 1::of]
 
 
+def receipt_problem(receipt: dict) -> str:
+    """Why a receipt proves nothing, or "": a mutant its run never judged, as every
+    mutant of a run whose stats pass died is. Receipts written before a dead run
+    raised RunDied hold such rows."""
+    return unjudged_problem([Result(**row) for row in receipt.get("results", [])])
+
+
+def _covers(diff: dict) -> bool:
+    return diff["complete"] and not receipt_problem(diff)
+
+
 def _covered_pairs(diffs: list[dict]) -> set[tuple]:
-    complete = [receipt for receipt in diffs if receipt["complete"]]
+    complete = [receipt for receipt in diffs if _covers(receipt)]
     return {tuple(pair) for receipt in complete for pair in receipt["functions"]}
 
 
@@ -554,7 +592,15 @@ def weekly_head(weeklies: list[dict]) -> str:
     missing = _missing_shards(weeklies)
     if missing:
         raise MutationError(f"weekly shards {missing} have no receipt")
+    _refuse_unjudged(weeklies)
     return heads[0]
+
+
+def _refuse_unjudged(weeklies: list[dict]) -> None:
+    for receipt in weeklies:
+        problem = receipt_problem(receipt)
+        if problem:
+            raise MutationError(f"weekly shard {receipt['shard']}'s receipt proves nothing: {problem}")
 
 
 def uncovered(changed: list[tuple[str, str]], diffs: list[dict]) -> list[str]:
@@ -608,13 +654,48 @@ LAUNCHER_FILE = "mutmut_launch.py"
 LAUNCH = (LAUNCHER_FILE,)
 
 
+# The file each mutmut run names to the test kit (tests/e2e/cli_in_process.py,
+# STAGE_HANGS_ENV): an in-process CLI call stuck in C code past its bound leaves
+# its stacks there and the process lives, since mutmut's stats run is mutmut's
+# own process and it times each mutant's child itself.
+HANGS_ENV = "CRAPKIT_IN_PROCESS_HANGS"
+HANGS_FILE = "in-process-hangs.log"
+
+
 def _run_mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple = LAUNCH,
             env: dict | None = None) -> int:
     argv = [sys.executable, *mutmut, *args]
+    env = {**(os.environ if env is None else env), HANGS_ENV: str(Path(repo).resolve() / HANGS_FILE)}
     try:
         return subprocess.run(argv, cwd=repo, timeout=budget, env=env).returncode
     except subprocess.TimeoutExpired:
         return -1
+
+
+def died(repo: Path, code: int) -> str:
+    """Why mutmut's run in `repo` proves nothing, or "". mutmut ends a run it
+    finished with 0, and -1 is the budget stopping it; any other end (a failed
+    stats run, a crash, a signal) leaves its mutants unjudged."""
+    if code in (0, -1):
+        return ""
+    return (f"mutmut's run in {repo} ended with {_ending(code)} before it judged its mutants, "
+            f"so the run proves nothing and writes no receipt{_stuck_calls(repo)}")
+
+
+def _ending(code: int) -> str:
+    if code > 0:
+        return f"exit {code}"
+    try:
+        return f"signal {signal.Signals(-code).name}"
+    except ValueError:
+        return f"signal {-code}"
+
+
+def _stuck_calls(repo: Path) -> str:
+    """The in-process calls the kit logged as stuck past their bound in this run."""
+    log = Path(repo) / HANGS_FILE
+    stuck = [line for line in _read(log).splitlines() if "past its" in line] if log.is_file() else []
+    return "".join(f"\n  stuck: {line}" for line in stuck)
 
 
 def _meta_statuses(repo: Path) -> dict[str, str]:
@@ -824,6 +905,57 @@ def diffs():
             print(f"{name}: {missed!r}", file=sys.stderr)
 
 
+class Failures:
+    """A pytest plugin that notes each test, and each file pytest could not
+    collect, that fails."""
+
+    def __init__(self):
+        self.nodes = set()
+
+    def pytest_runtest_logreport(self, report):
+        if report.failed:
+            self.nodes.add(report.nodeid)
+
+    pytest_collectreport = pytest_runtest_logreport
+
+
+def run_stats(self, *, tests):
+    """mutmut's stats run, except that a failing test stops nothing. The run has no
+    mutant active, so such a test fails whatever the mutant and tells none from the
+    original; mutmut runs it with -x and then judges no mutant at all. Here it is
+    left out of every mutant's tests and named in FAILURES, and the run goes on."""
+    failures, execute = Failures(), self.execute_pytest
+
+    def lenient(params, plugins=(), **kwargs):
+        kept = [param for param in params if param != "-x"]
+        return execute([*kept, "--continue-on-collection-errors"],
+                       plugins=[*plugins, failures], **kwargs)
+
+    self.execute_pytest = lenient
+    try:
+        code = _run_stats(self, tests=tests)
+    finally:
+        del self.execute_pytest
+    forget(failures.nodes)
+    record(failures.nodes, whole=not tests)
+    return 0 if code == 1 and failures.nodes else code
+
+
+def forget(failed):
+    """Leave each failed test out of the tests mutmut runs against any mutant."""
+    for tests in _state().tests_by_mangled_function_name.values():
+        tests.difference_update(failed)
+
+
+def record(failed, whole):
+    """Name the failed tests in FAILURES, one per line: in place of what it held
+    after a full stats run, beside it after a run of the tests mutmut had not seen."""
+    kept = set()
+    if not whole and FAILURES.is_file():
+        kept = set(FAILURES.read_bytes().decode().splitlines())
+    FAILURES.write_bytes("".join(f"{node}\\n" for node in sorted(kept | set(failed))).encode())
+
+
 if __name__ == "__main__":
     import sys
     import mutmut.mutation.trampoline as _trampolines
@@ -832,6 +964,7 @@ if __name__ == "__main__":
     CONFIG = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["mutmut"]
     SOURCES = set(CONFIG["source_paths"])
     MUTANTS = Path("mutants").resolve()
+    FAILURES = Path("stats-failures.txt").resolve()
     _strip, _spec = names.strip_prefix, importlib.util.spec_from_file_location
     _set_mutant = _trampolines.set_mutant_under_test
     names.strip_prefix = strip_prefix
@@ -840,6 +973,9 @@ if __name__ == "__main__":
     if sys.argv[1:2] == ["diffs"]:
         diffs()
     else:
+        from mutmut.runners.harness import PytestRunner
+        from mutmut.state import state as _state
+        _run_stats, PytestRunner.run_stats = PytestRunner.run_stats, run_stats
         from mutmut.__main__ import cli
         cli()
 '''
@@ -850,11 +986,15 @@ def present(targets: dict, repo: Path = REPO) -> dict:
     return {path: tests for path, tests in targets.items() if (repo / path).is_file()}
 
 
-def _stage_keys(targets: dict, copies: list[str]) -> dict:
-    """The [tool.mutmut] keys the stage sets: what mutmut mutates, runs and copies."""
+def _stage_keys(targets: dict, copies: list[str], deselect: tuple = ()) -> dict:
+    """The [tool.mutmut] keys the stage sets: what mutmut mutates, runs, leaves out
+    and copies. A left-out test goes to mutmut's own pytest arguments: in
+    PYTEST_ADDOPTS it reached every pytest a test starts, and the kit contract's
+    collect-only child then missed the tests the tables name."""
     tests = sorted({test for listed in targets.values() for test in listed})
+    left_out = [word for node in deselect for word in ("--deselect", node)]
     return {"source_paths": sorted(targets), "pytest_add_cli_args_test_selection": tests,
-            "pytest_add_cli_args": ["-p", "no:cacheprovider", "-m", FLOOR_SUITE],
+            "pytest_add_cli_args": ["-p", "no:cacheprovider", "-m", FLOOR_SUITE, *left_out],
             "also_copy": copies}
 
 
@@ -865,10 +1005,10 @@ def _stage_rows(ours: dict, kept: dict) -> dict:
 
 
 def _stage_table(targets: dict, copies: list[str], kept: dict | None = None,
-                 written: str = "") -> str:
+                 written: str = "", deselect: tuple = ()) -> str:
     """The table: `written` (the repo table's generated blocks) as it stands, then
     one line per key."""
-    rows = _stage_rows(_stage_keys(targets, copies), kept or {})
+    rows = _stage_rows(_stage_keys(targets, copies, deselect), kept or {})
     lines = [f"{key} = {json.dumps(value)}\n" for key, value in rows.items()]
     return "".join(["[tool.mutmut]\n", written, *lines])
 
@@ -882,16 +1022,17 @@ def generated_blocks(table: str) -> str:
     return "".join(match.group(0) for match in _GENERATED.finditer(table))
 
 
-def stage_config(text: str, targets: dict, copies: list[str]) -> str:
+def stage_config(text: str, targets: dict, copies: list[str], deselect: tuple = ()) -> str:
     """The repo's pyproject.toml with a [tool.mutmut] table for `targets` in place of
-    its own, copying `copies` beside the mutants. The generated blocks of the repo's
-    table stay as written, and the keys they hold are not written twice."""
+    its own, copying `copies` beside the mutants and leaving out the `deselect`
+    tests. The generated blocks of the repo's table stay as written, and the keys
+    they hold are not written twice."""
     head, _, rest = text.partition("[tool.mutmut]")
     body, bracket, after = rest.partition("\n[")
     written = generated_blocks(body)
     kept = {key: value for key, value in tomllib.loads(text).get("tool", {}).get("mutmut", {}).items()
             if key not in tomllib.loads(written)}
-    table = _stage_table(targets, copies, kept, written)
+    table = _stage_table(targets, copies, kept, written, tuple(deselect))
     return f"{head.rstrip()}\n\n{(bracket + after).strip()}\n\n{table}"
 
 
@@ -935,16 +1076,15 @@ def calc_targets(modules: list[str]) -> dict:
     return {module: CALC_TESTS for module in sorted({*modules, CANARY[0]})}
 
 
-def calc_env(environ: dict, deselect: list[str] | tuple = ()) -> dict:
-    """The push tier on this platform, less the `deselect` tests: every tier would
-    bring in tests marked for another platform, and each of those, like a test an
-    open ruling names, fails mutmut's stats run, which then judges no mutant. The
-    src corpus reads the stage's own source (SOURCE_ENV)."""
+def calc_env(environ: dict) -> dict:
+    """The push tier on this platform: every tier would bring in tests marked for
+    another platform, which fail on this one and so judge no mutant. The src
+    corpus reads the stage's own source (SOURCE_ENV). The tests the stage leaves
+    out go to mutmut's own pytest arguments (stage_config), never to
+    PYTEST_ADDOPTS, which every pytest a test starts would inherit."""
     env = {key: value for key, value in environ.items() if key != "CRAPKIT_ACCURACY_COLLECT_ALL"}
-    addopts = [env.get("PYTEST_ADDOPTS", ""), *(f"--deselect {node}" for node in deselect)]
     return {**env, "CRAPKIT_ACCURACY_TIER": "push", "PYTHONDONTWRITEBYTECODE": "1",
-            SOURCE_ENV: str(REPO / CALC_STAGE / "src" / "crapkit"),
-            "PYTEST_ADDOPTS": " ".join(filter(None, addopts))}
+            SOURCE_ENV: str(REPO / CALC_STAGE / "src" / "crapkit")}
 
 
 RULING_COLUMNS = ("id", "calc", "oracle", "construct", "crapkit_value", "oracle_value", "ruling",
@@ -966,11 +1106,21 @@ def open_failures(rulings: Path | None = None) -> list[str]:
     return sorted({node for row in rows for node in _failing_tests(row)})
 
 
-# Tests that fail inside mutmut's copy whatever mutant is active, each for a
-# reason the copy itself brings, so in the calc stage they could only stop the
-# stats run (and no mutant is judged) or fail every mutant alike. The calc stage
-# leaves them out with the open defects' tests; CI runs them on the tree.
+# Tests that fail or run for hours inside mutmut's copy whatever mutant is active,
+# each for a reason the copy itself brings: they could judge no mutant, or would
+# fail every mutant alike. The calc stage leaves them out with the open defects'
+# tests; CI runs them on the tree. A test that fails in the copy for any other
+# reason stops nothing: the launcher's stats run leaves it out (STATS_FAILURES).
 COPY_BOUND = {
+    "tests/unit/test_printed_text_is_ascii.py::"
+    "test_no_literal_crapkit_prints_is_typed_with_a_non_ascii_character":
+        "reads every module as text and looks up each literal's source, and in the copy a "
+        "module holds every mutant's body, so the lookups ran past pytest's 10-minute dump",
+    "tests/unit/test_analyze_one_pass.py::"
+    "test_the_single_pass_reproduces_the_two_pass_record_for_every_committed_source":
+        "analyzes every module of the copy twice, and each mutated module there holds every "
+        "mutant's body: up to 6 minutes in one weekly shard's stats run, and with every weekly "
+        "module mutated it ran past pytest's 10-minute dump, which crashed mutmut",
     "tests/unit/test_invariants.py::test_no_variable_or_flag_turns_the_checks_off":
         "reads invariants.py as text, and the copy's text holds mutmut's trampolines",
     "tests/unit/test_invariants.py::test_every_run_crapkit_stores_passes_the_row_check_first":
@@ -1009,31 +1159,58 @@ def stage_deselected() -> list[str]:
     return sorted({*open_failures(), *COPY_BOUND})
 
 
-def _prepare_stage(targets: dict, where: Path = TOOLS_STAGE) -> Path:
+def _prepare_stage(targets: dict, where: Path = TOOLS_STAGE, deselect: tuple = ()) -> Path:
     stage = _stage(REPO, REPO / where)
     pyproject = stage / "pyproject.toml"
-    _write(pyproject, stage_config(_read(pyproject), targets, stage_copies(stage)))
+    _write(pyproject, stage_config(_read(pyproject), targets, stage_copies(stage), deselect))
     _write(stage / LAUNCHER_FILE, LAUNCHER)
     return stage
 
 
 def staged_run(where: Path, targets: dict, globs: list[str], env: dict, children: int,
-               budget: float | None = None) -> tuple[list[Result], bool]:
-    """mutmut over `globs` in a stage whose [tool.mutmut] names `targets`: the results,
-    and whether the run finished inside `budget` seconds (a capped run reruns nothing)."""
-    stage = _prepare_stage(targets, where)
+               budget: float | None = None, deselect: tuple = ()) -> tuple[list[Result], bool]:
+    """mutmut over `globs` in a stage whose [tool.mutmut] names `targets` and leaves
+    out the `deselect` tests: the results, and whether the run finished inside
+    `budget` seconds (a capped run reruns nothing). RunDied when mutmut ended
+    before it judged them."""
+    stage = _prepare_stage(targets, where, tuple(deselect))
+    (stage / HANGS_FILE).unlink(missing_ok=True)
     code = _run_mutmut(stage, ["run", "--max-children", str(children), *globs], budget, env=env)
+    problem = died(stage, code)
+    if problem:
+        raise RunDied(problem)
     rows = collect(stage, globs)
     if code == -1:
         return rows, False
     return _rerun_timeouts(stage, rows, env=env), True
 
 
+# The launcher's stats run names here, in the stage, each test that failed with
+# no mutant active; no mutant is run against it.
+STATS_FAILURES = "stats-failures.txt"
+
+
+def stats_failures(stage: Path) -> list[str]:
+    """The tests the stage's last stats run left out, one node id per line of
+    STATS_FAILURES; none before a stats run wrote it."""
+    path = stage / STATS_FAILURES
+    return _read(path).splitlines() if path.is_file() else []
+
+
+def _left_out(where: Path) -> list[str]:
+    """Print and return each test the stats run in stage `where` left out."""
+    failed = stats_failures(REPO / where)
+    for node in failed:
+        print(f"mutation: {node} failed with no mutant active, so no mutant was run against it")
+    return failed
+
+
 def _tools(args) -> int:
     targets = present(TOOL_TARGETS)
     rows, _ = staged_run(TOOLS_STAGE, targets, _globs_for(list(targets)),
                          tools_env(dict(os.environ)), args.max_children)
-    receipt = _receipt("tools", modules=sorted(targets), results=[asdict(row) for row in rows])
+    receipt = _receipt("tools", modules=sorted(targets), stats_failures=_left_out(TOOLS_STAGE),
+                       results=[asdict(row) for row in rows])
     _write_receipt(receipt, "tools.json")
     return _judge(rows, update=False, canary=False)
 
@@ -1080,10 +1257,11 @@ def _weekly(args) -> int:
     modules = shard(weekly_modules(), args.shard, args.of)
     globs = calc_globs(modules, calc_functions()) + _canary_globs()
     deselected = stage_deselected()
-    rows, _ = staged_run(CALC_STAGE, calc_targets(modules), globs,
-                         calc_env(dict(os.environ), deselected), args.max_children)
+    rows, _ = staged_run(CALC_STAGE, calc_targets(modules), globs, calc_env(dict(os.environ)),
+                         args.max_children, deselect=deselected)
     receipt = _receipt("weekly", shard=args.shard, of=args.of, modules=modules,
-                       deselected=deselected, results=[asdict(row) for row in rows])
+                       deselected=deselected, stats_failures=_left_out(CALC_STAGE),
+                       results=[asdict(row) for row in rows])
     _write_receipt(receipt, f"weekly-{args.shard}.json")
     return _judge(rows, update=False)
 
@@ -1095,12 +1273,15 @@ def _run_changed(changed: list, budget: float) -> tuple[list[Result], bool]:
         return [], True
     targets = calc_targets([path for path, _ in changed])
     return staged_run(CALC_STAGE, targets, [mutmut_glob(*pair) for pair in changed],
-                      calc_env(dict(os.environ), stage_deselected()), os.cpu_count() or 2, budget)
+                      calc_env(dict(os.environ)), os.cpu_count() or 2, budget,
+                      deselect=stage_deselected())
 
 
 def _diff_receipt(base: str, changed: list, rows: list[Result], complete: bool) -> dict:
+    left_out = _left_out(CALC_STAGE) if changed else []
     return _receipt("diff", base=base, functions=[list(pair) for pair in changed],
-                    complete=complete, results=[asdict(row) for row in rows])
+                    complete=complete, stats_failures=left_out,
+                    results=[asdict(row) for row in rows])
 
 
 def _diff_run(args) -> int:
@@ -1209,7 +1390,7 @@ def main(argv: list[str] | None = None) -> int:
         return COMMANDS[args.command](args)
     except MutationError as refused:
         print(f"mutation.py: {refused}", file=sys.stderr)
-        return 3 if isinstance(refused, MissingReceipts) else 1
+        return EXIT_BY_REFUSAL.get(type(refused), 1)
 
 
 if __name__ == "__main__":

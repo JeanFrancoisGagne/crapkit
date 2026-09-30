@@ -571,14 +571,32 @@ def _rootdir(test: str) -> Path:
 def replay_node(test: str, interpreter: Path, env: str = "", tree: Path | None = None) -> list[dict]:
     """Run one node id of this tree against `interpreter`'s crapkit, under the row's
     env switches, with `tree`, the commit's checkout, named in CHECKOUT_ENV; one
-    record per item."""
+    record per item, and one more when the child ended before it reported them all."""
     with tempfile.TemporaryDirectory(prefix="crapkit-retro-") as scratch:
         outcomes = Path(scratch) / "outcomes.jsonl"
         outcomes.touch()
         argv = [sys.executable, "-m", "pytest", test, "-q", "-p", "no:cacheprovider",
                 "-p", "no:randomly", "-p", "retro", "--rootdir", _rootdir(test)]
-        _run(argv, env=_pytest_env(interpreter, outcomes, import_root(interpreter), env, tree))
-        return item_outcomes(_read(outcomes).splitlines())
+        done = _run(argv, env=_pytest_env(interpreter, outcomes, import_root(interpreter), env, tree))
+        records = item_outcomes(_read(outcomes).splitlines())
+    return records + _died(done.returncode, records)
+
+
+def _unfinished(code: int, records: list[dict]) -> bool:
+    """A child that ended before it reported every item: a signal, an exit no
+    finished session gives, or exit 1 with no item failed."""
+    return code not in (0, 5) and not (code == 1 and _failed(records))
+
+
+def _died(code: int, records: list[dict]) -> list[dict]:
+    """The record of a child that ended mid-item, as a crapkit call stuck in C code
+    ends it with exit 1 (tests/e2e/cli_in_process.py) and a crash by a signal: the
+    item's passing setup was its only record, and the replay read as a pass."""
+    if not _unfinished(code, records):
+        return []
+    ending = f"exit {code}" if code > 0 else f"signal {-code}"
+    return [{"nodeid": "(session)", "outcome": "failed", "exc_type": "SessionDied",
+             "assertion": False, "message": f"pytest ended with {ending} before it reported every item"}]
 
 
 def probe_header(path: Path) -> tuple[list[str], bool]:

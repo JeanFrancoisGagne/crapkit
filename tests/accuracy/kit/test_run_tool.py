@@ -558,6 +558,21 @@ def test_a_session_that_broke_fails_the_checks_it_did_not_run(code, outcome, ver
     assert run_tool._broken(code, outcome) == verdict
 
 
+def test_a_session_that_ended_with_exit_1_before_it_wrote_its_report_fails_every_check(
+        tmp_path, monkeypatch):
+    """A crapkit call stuck in C code ends a serial session on purpose
+    (tests/e2e/cli_in_process.py) with exit 1, before pytest writes junit.xml.
+    With no case to read, every check was `empty` and the tier read as a pass."""
+    here = tmp_path / "test_here.py"
+    here.write_text("def test_ok():\n    pass\n", encoding="utf-8")
+    monkeypatch.setattr(run_tool.subprocess, "run",
+                        lambda argv, **kw: run_tool.subprocess.CompletedProcess(argv, 1))
+
+    records = _records(tmp_path, [run_tool.Check("k", "here", "s", 1, pytest=(here.as_posix(),))])
+
+    assert records == {"here": ("fail", None)}
+
+
 def test_a_record_rounds_its_seconds_to_the_millisecond():
     check = run_tool.Check("k", "n", "s", 3, pytest=("a",))
 
