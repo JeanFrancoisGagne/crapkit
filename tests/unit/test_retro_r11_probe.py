@@ -21,6 +21,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import hang_guard
+
 REPO = Path(__file__).resolve().parents[2]
 PROBE = REPO / "tests" / "accuracy" / "suite_strength" / "retro" / "probes" / "R11.py"
 READER = '''
@@ -57,8 +59,8 @@ def _probe(tmp_path: Path, key: str) -> subprocess.CompletedProcess:
     (package / "__init__.py").write_text("", encoding="utf-8")
     (package / "lizardcognitive.py").write_text(READER.replace("KEY", key), encoding="utf-8")
     env = {**os.environ, "PYTHONPATH": str(package.parent)}
-    return subprocess.run([sys.executable, str(PROBE), str(tmp_path)], cwd=tmp_path, env=env,
-                          capture_output=True, text=True, timeout=60)
+    return hang_guard.run([sys.executable, str(PROBE), str(tmp_path)], cwd=tmp_path, env=env,
+                          text=True)
 
 
 def test_the_probe_fails_a_reader_keyed_by_id_on_an_interpreter_that_never_reuses_one(tmp_path):
