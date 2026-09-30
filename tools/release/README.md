@@ -1,6 +1,6 @@
 # Releasing crapkit
 
-The version is always an explicit argument. Run one stage at a time from the release checkout. Stage 1 requires clean `main` that includes current `origin/main`; local preparation commits may remain unpublished. Stage 2a creates the local tag and runs the contract tests. Publishing requires that tag at the same clean HEAD and a new passing full `verify` row recorded by the verify stage. A zero process exit without that ledger row is refused. Nothing is pushed before that proof passes.
+The version is always an explicit argument. Run one stage at a time from the release checkout. Stage 1 requires clean `main` that includes current `origin/main`; local preparation commits may remain unpublished. Stage 2a creates the local tag and runs the contract tests. Publishing requires that tag at the same clean HEAD, a new passing full `verify` row recorded by the verify stage, and the accuracy and deploy stages' records at that commit. A zero process exit without that ledger row is refused. Nothing is pushed before that proof passes.
 
 Stage 1 regenerates documentation after reinstalling the bumped version. It includes the generated `SECURITY.md` support table in the release commit. It measures nothing: the verify stage runs the one full py lane a release needs. Stage 2a checks generated guidance against the tagged version.
 
@@ -17,11 +17,23 @@ python tools/release/release.py run stage1 VERSION
 python tools/release/release.py run stage2a VERSION
 python tools/release/release.py run verify VERSION
 python tools/release/release.py run accuracy VERSION
+python tools/release/release.py run deploy VERSION
 python tools/release/release.py run stage2b VERSION
 python tools/release/release.py run registry VERSION
 python tools/release/release.py run glama VERSION
-python tools/release/release.py verify VERSION
+python tools/release/release.py run surfaces VERSION
 ```
+
+`run surfaces` reads every surface back (`release.py verify VERSION`) and then
+dispatches deploy.yml's published cadence, which installs vVERSION from PyPI, the
+tag, pre-commit and the MCP registry the way a user does. The dispatch returns at
+once: find the run with `gh run list --workflow deploy.yml --limit 1` and wait on it
+with `gh run watch RUN_ID --exit-status`. A red run fails the release.
+
+Preview the GitHub release body with `python tools/release/release.py notes VERSION > notes.md`.
+It prints the changelog section as UTF-8 whatever the console's code page, and it is the
+text stage 2b hands `gh release create`. GitHub refuses a body over 125,000 characters,
+so `check` refuses a longer section before stage 1 bumps anything.
 
 Keep `run verify` in its own background process when the calling tool has a shorter deadline than the suite. `plan` and `run --dry-run` print commands without changing files or contacting publication services.
 
@@ -80,15 +92,59 @@ tests/accuracy/suite_strength/retro/ledger.tsv hashes to 3f1c09a2b7de here and t
 GitHub holds no successful accuracy.yml run named `accuracy release VERSION` at 8fb7b45c7248; rerun `python tools/release/release.py run accuracy VERSION`
 ```
 
+## The deploy stage
+
+A tree that holds `tools/deploy/candidate.py` publishes only past deploy.yml's release
+cadence at the tag commit: the run that installs the candidate through every channel and
+harness the deploy suite models, fresh and as an upgrade. `run deploy VERSION` comes
+after verify and does two things. Keep it in its own background process: the run can
+take two and a half hours.
+
+1. Here: `python tools/deploy/export.py --repo . --out .crapkit/deploy-record`, then
+   `python tools/deploy/candidate.py --tree .crapkit/deploy-record/tree.tar --out .crapkit/deploy-record/candidate --no-build`.
+   The deploy kit's own commands hash the tag commit's tree into candidate.json's
+   `source_hash`.
+2. On GitHub: it pushes the tag commit to the scratch branch `deploy-release/VERSION`,
+   dispatches deploy.yml with `cadence=release` and `source_hash=` that hash, watches the
+   run for up to 150 minutes, and deletes the branch. The run is named
+   `deploy release SOURCE_HASH`. Its scope job runs the same two commands on the tree it
+   checked out, and when that tree hashes otherwise the run fails before any cell starts.
+
+The stage then writes a deploy record into `.crapkit/release-receipt.json`: the tag
+commit's sha and the source_hash. A rerun reuses a run that passed or is still running,
+so it dispatches nothing new after a timeout.
+
+Stage 2b and the registry stage require the record's sha to be the receipt's head. They
+then read deploy.yml's runs at that commit from GitHub and require one named
+`deploy release SOURCE_HASH` that completed with success. The record proves the suite
+tested the release's source, not the bytes PyPI gets: the deploy kit builds its own wheel
+from that tree. Each refusal ends with the rerun:
+
+```
+deploy gate: the release receipt holds no deploy record; rerun `python tools/release/release.py run deploy VERSION`
+deploy gate: the deploy record was made at 0123456789ab and the release is at 8fb7b45c7248; rerun `python tools/release/release.py run deploy VERSION`
+deploy gate: GitHub holds no successful deploy.yml run named `deploy release SOURCE_HASH` at 8fb7b45c7248; rerun `python tools/release/release.py run deploy VERSION`
+```
+
+`check` reads no deploy.yml run: before the bump there is no tag commit to test. It
+refuses a machine whose gh cannot dispatch and read the run later:
+
+```
+deploy gate: gh is not on PATH, so the deploy stage cannot dispatch deploy.yml or read its runs; install the GitHub CLI and run gh auth login
+deploy gate: gh auth token returned nothing, so the deploy stage cannot dispatch deploy.yml or read its runs; run gh auth login
+```
+
 ## Preflight: prove the environment before anything is pushed
 
 Every fault in the 0.7.2 release fired after PyPI and the GitHub release were
 already public, because nothing checked the machine first.
 
 `check VERSION` is stage 1's first command, so the chain stops before it builds or
-pushes anything. Besides the version surfaces and the changelog heading, it reads
-the two rows marked `check` below. Confirm the three rows marked `you` yourself:
-`check` never looks at PATH, at `gh` or at the accuracy corpus.
+pushes anything. Besides the version surfaces, the changelog heading and the size of
+that section, it reads the two rows marked `check` below, and it asks whether `gh` is on
+PATH and hands out a token (the deploy stage's two lines above). Confirm the three rows
+marked `you` yourself: `check` never looks at the PATH `python`, at what gh's login may
+reach or at the accuracy corpus.
 Each takes seconds. A missing credential or gh login shows up only after the push;
 a wrong PATH python or a missing build or twine stops the release before it.
 
@@ -222,7 +278,8 @@ The Codex marketplace is pinned to a release tag, and a marketplace added at a t
 stays there: `codex plugin marketplace upgrade` keeps it at that tag. Removing it and
 adding it at the new tag moves the marketplace, and `codex plugin add` then installs the
 new copy. Stage 1 rewrites the `--ref` in README.md, docs/adoption.md,
-docs/upgrading.md and docs/handbook.html with the other version surfaces.
+docs/upgrading.md, docs/handbook.html, plugin/skills/crapkit-onboard/SKILL.md and
+docs/agent-json.md with the other version surfaces.
 Use the supported managers to refresh installations; do not edit their caches.
 Check that the registered source is the canonical repository and that its current
 revision and installed version match the release. Run `crapkit doctor --plugin-root PATH`

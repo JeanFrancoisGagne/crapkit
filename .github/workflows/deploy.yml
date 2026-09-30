@@ -7,7 +7,9 @@
 #              cells that need the network, the harnesses at their newest
 #              release, harness calibration
 #   release    push, nightly, weekly and the network cells together, on the
-#              release commit; `release.py check` wants this run green
+#              tag commit: `release.py run deploy` dispatches it on a scratch
+#              branch with the source_hash candidate.py computed for that tree,
+#              and stage 2b wants this run green
 #   published  after a version is on PyPI: the real surfaces at that version
 #
 # The scope job turns the event into one cadence and schedules the entries of
@@ -16,9 +18,10 @@
 # release set when it carries the deploy-full label; any other pull request
 # runs the scope job alone. Every other job reads the scope job's output.
 name: deploy
-# The title gh lists for each run, "deploy release" for a dispatched release
-# cadence: tools/release/release.py check reads the cadence from it.
-run-name: deploy ${{ inputs.cadence || github.event_name }}
+# The title GitHub lists for each run: "deploy release <source_hash>" for the
+# release cadence `release.py run deploy` dispatches. Stage 2b finds the run at
+# the tag commit by that name.
+run-name: deploy ${{ inputs.cadence || github.event_name }} ${{ inputs.source_hash }}
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
@@ -34,6 +37,10 @@ on:
         default: nightly
       ref:
         description: the commit or tag to test (default, the ref this run was dispatched on)
+        type: string
+        default: ""
+      source_hash:
+        description: candidate.json's source_hash for the tree under test; the scope job fails when the tree hashes otherwise
         type: string
         default: ""
   push:
@@ -70,6 +77,15 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
+      # The release's deploy record is keyed on this hash: the run tests the
+      # source release.py hashed, or no cell runs.
+      - name: hash the tree as candidate.py does and match the release's source_hash
+        if: inputs.source_hash != ''
+        env:
+          SOURCE_HASH: ${{ inputs.source_hash }}
+        run: |
+          python tools/deploy/export.py --repo . --out "$RUNNER_TEMP/deploy-record"
+          python tools/deploy/candidate.py --tree "$RUNNER_TEMP/deploy-record/tree.tar" --out "$RUNNER_TEMP/deploy-record/candidate" --no-build --source-hash "$SOURCE_HASH"
       - id: plan
         name: choose the cadence and the jobs it runs
         shell: python

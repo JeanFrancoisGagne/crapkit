@@ -72,6 +72,10 @@ READBACK_ATTEMPTS = 12
 # Stands in a command for the `gh auth token` value. The command echo prints this
 # text; only the argv handed to the process carries the token.
 GH_TOKEN_ARG = "$(gh auth token)"
+# GitHub refuses a release body longer than this many characters. Stage 2b
+# creates the release after the tag, the push and PyPI, so `check` refuses a
+# changelog section over it before stage 1 bumps anything.
+GITHUB_BODY_LIMIT = 125_000
 # This repository's py lane runs both unit and E2E suites. A verdict only
 # compares failures with a baseline; publication also requires passing tests.
 RELEASE_TEST_LANES = frozenset({"py"})
@@ -110,8 +114,9 @@ SURFACES = (
 
 # The deploy suite (.github/workflows/deploy.yml) installs the candidate the way
 # users do, through every channel and harness it models. A release waits for a
-# green run of its release cadence at the commit being released; the published
-# cadence then repeats the install from the real surfaces once they hold it.
+# green run of its release cadence at the tag commit, keyed on the source_hash
+# the deploy kit's candidate.py computes for that tree; the published cadence
+# then repeats the install from the real surfaces once they hold it.
 DEPLOY_WORKFLOW = "deploy.yml"
 DEPLOY_RELEASE_CADENCE = "release"
 DEPLOY_PUBLISHED_CADENCE = "published"
@@ -177,10 +182,16 @@ def _surface_problems(root: Path, current: str) -> list:
 
 
 def _changelog_problems(root: Path, new: str) -> list:
+    """The unreleased heading once, then a section GitHub takes as a release body.
+    The size is read only past the heading: `notes` raises on a missing section."""
     found = _read(root, "CHANGELOG.md").count(_heading(new, "unreleased") + NL)
-    if found == 1:
+    if found != 1:
+        return [f"CHANGELOG.md: {_heading(new, 'unreleased')!r} x{found} (expected 1)"]
+    size = len(notes(root, new))
+    if size <= GITHUB_BODY_LIMIT:
         return []
-    return [f"CHANGELOG.md: {_heading(new, 'unreleased')!r} x{found} (expected 1)"]
+    return [f"CHANGELOG.md: the {new} section is {size} characters; a GitHub release body "
+            f"takes at most {GITHUB_BODY_LIMIT}"]
 
 
 def check(root: Path, new: str, current: str | None = None) -> CheckReport:
@@ -252,68 +263,41 @@ def preflight(*, locate: Callable | None = None,
             + _credential_problems(credential or _twine_credential))
 
 
-# --- the deploy gate ---------------------------------------------------------------
+# --- the deploy preflight ------------------------------------------------------------
 
-def _gh() -> str:
-    """gh's path. A bare "gh" that is missing fails on Windows with a WinError
-    that names no program, so the gate names it first."""
-    found = shutil.which("gh")
-    if found is None:
-        raise ReleaseError("gh is not on PATH, so no run of deploy.yml can be read; install the "
-                           "GitHub CLI and run gh auth login")
-    return found
+DEPLOY_KIT = "tools/deploy/candidate.py"
 
 
-def _deploy_runs(root: Path, head: str) -> list:
-    """deploy.yml's runs at `head`, as gh lists them."""
-    done = subprocess.run([_gh(), "run", "list", "--repo", GITHUB_REPO, "--workflow", DEPLOY_WORKFLOW,
-                           "--commit", head, "--json", "conclusion,displayTitle,event,url",
-                           "--limit", "100"], cwd=root, capture_output=True, text=True,
-                          timeout=READ_TIMEOUT)
-    if done.returncode:
-        raise ReleaseError(f"gh run list failed: {_first_line(done)}")
-    return json.loads(done.stdout or "[]")
+def gates_deploy(root: Path) -> bool:
+    """A tree that carries the deploy kit is released only past its release cadence."""
+    return (root / DEPLOY_KIT).is_file()
 
 
-def _release_cadence(run: dict) -> bool:
-    """A run of deploy.yml that workflow_dispatch started with the release
-    cadence. The workflow's run-name puts the cadence in the title gh lists."""
-    return (run.get("event") == "workflow_dispatch"
-            and DEPLOY_RELEASE_CADENCE in str(run.get("displayTitle", "")).split())
+def deploy_preflight(root: Path, *, which: Callable | None = None,
+                     token: Callable | None = None) -> list[str]:
+    """check's deploy line: what stage 1 can know before there is a commit to test.
+
+    `check` once demanded a green release-cadence run at the pre-bump HEAD, a
+    commit the release never tags, so that run proved nothing about the release.
+    The deploy stage now runs the cadence on the tag commit. It dispatches and
+    watches the run through gh, and stage 2b reads the run back with gh's token,
+    so a gh that is missing or logged out stops the release here, before the bump.
+    A bare "gh" that is missing fails on Windows with a WinError that names no
+    program, so the line names it."""
+    if not gates_deploy(root):
+        return []
+    problem = _gh_problem(which or shutil.which, token or _gh_token)
+    return [f"deploy gate: {problem}"] if problem else []
 
 
-def _release_runs(root: Path, runs: Callable) -> tuple[str, list]:
-    head = _git(root, "rev-parse", "HEAD")
-    return head, [run for run in runs(root, head) if _release_cadence(run)]
-
-
-def _green(found: list) -> bool:
-    return any(run.get("conclusion") == "success" for run in found)
-
-
-def _run_label(run: dict) -> str:
-    return f"{run.get('conclusion') or 'not finished'} {run.get('url', '')}".rstrip()
-
-
-def _deploy_refusal(head: str, found: list) -> str:
-    seen = f" (release runs at this commit: {', '.join(map(_run_label, found))})" if found else ""
-    return (f"deploy gate: no green {DEPLOY_RELEASE_CADENCE}-cadence run of {DEPLOY_WORKFLOW} at "
-            f"{head[:12]}{seen}; push HEAD, run `gh workflow run {DEPLOY_WORKFLOW} --ref main "
-            f"-f cadence={DEPLOY_RELEASE_CADENCE}`, wait for it to pass, then rerun check")
-
-
-def deploy_gate(root: Path, *, runs: Callable | None = None) -> list[str]:
-    """One problem unless deploy.yml ran its release cadence green at HEAD.
-
-    `check` is stage 1's first command, so a candidate the deploy suite never
-    installed through pip, uv, the plugin marketplaces and the hook routes stops
-    here, before anything is bumped. A gh that is missing, logged out or
-    offline is a problem too: the gate cannot say the run passed."""
-    try:
-        head, found = _release_runs(root, runs or _deploy_runs)
-    except (ReleaseError, OSError, ValueError, subprocess.SubprocessError) as exc:
-        return [f"deploy gate: {exc}"]
-    return [] if _green(found) else [_deploy_refusal(head, found)]
+def _gh_problem(which: Callable, token: Callable) -> str | None:
+    if which("gh") is None:
+        return (f"gh is not on PATH, so the deploy stage cannot dispatch {DEPLOY_WORKFLOW} or read "
+                "its runs; install the GitHub CLI and run gh auth login")
+    if not token():
+        return (f"gh auth token returned nothing, so the deploy stage cannot dispatch "
+                f"{DEPLOY_WORKFLOW} or read its runs; run gh auth login")
+    return None
 
 
 # --- bump ------------------------------------------------------------------------
@@ -643,9 +627,10 @@ def _accuracy_step(version: str) -> Step:
 def plan(version: str) -> list:
     """The chain as a list a person reads before running it. Order is what the
     contracts require: the tag before the contract files (two of them read the
-    newest tag), verify before anything leaves the machine, PyPI before the
-    registry (the registry validates the README PyPI serves). Stage 1 measures
-    nothing: seed and prune run after the verify, against its run."""
+    newest tag), verify before anything leaves the machine, the accuracy and
+    deploy stages on the tag commit before stage 2b publishes it, PyPI before
+    the registry (the registry validates the README PyPI serves). Stage 1
+    measures nothing: seed and prune run after the verify, against its run."""
     _parse(version)
     tool = (PY, "tools/release/release.py")
     contracts = (PY, "-m", "pytest", "-q", "-n", "0", "-p", "no:randomly", *CONTRACT_FILES)
@@ -668,6 +653,7 @@ def plan(version: str) -> list:
                   f"to {RATCHET_FILE} stops the release; the committed file goes back and the "
                   "computed one is saved under .crapkit/"),
         _accuracy_step(version),
+        _deploy_step(version),
         Step("artifacts", "stage2b", ((PY, "-m", "build", "-q", "--outdir", RELEASE_DIST),
                                       (PY, "-m", "twine", "check", f"{RELEASE_DIST}/*")),
              note="build once, record wheel and sdist digests; retries verify and reuse these bytes"),
@@ -883,14 +869,17 @@ def _guard_verified(root: Path, version: str) -> dict:
 
 
 def _guard_publish(root: Path, version: str) -> dict:
+    """One record per required check: the verify run, then the
+    accuracy and deploy records, each at the tag commit."""
     receipt = _guard_verified(root, version)
     accuracy_gate(root, version, receipt["head"])
+    deploy_gate(root, version, receipt)
     return receipt
 
 
 def _preflight(stage: str, root: Path, version: str) -> dict:
     guards = {"stage1": _guard_bump, "stage2a": _guard_contracts,
-              "verify": _guard_receipt, "accuracy": _guard_verified,
+              "verify": _guard_receipt, "accuracy": _guard_verified, "deploy": _guard_verified,
               "stage2b": _guard_publish, "registry": _guard_publish}
     return guards[stage](root, version) if stage in guards else {}
 
@@ -912,6 +901,16 @@ ACCURACY_WATCH_SECONDS = 90 * 60
 ACCURACY_RUN_ARG = "$(the dispatched accuracy run)"
 
 
+class Watched(NamedTuple):
+    """A workflow a release stage runs at the tag commit and watches to its end."""
+    workflow: str
+    stage: str      # the stage a rerun names
+    seconds: int    # how long the watch waits
+
+
+ACCURACY_WATCH = Watched(ACCURACY_WORKFLOW, "accuracy", ACCURACY_WATCH_SECONDS)
+
+
 def accuracy_receipt(version: str) -> str:
     return f".crapkit/release-accuracy-{version}.json"
 
@@ -927,8 +926,8 @@ def accuracy_branch(version: str) -> str:
     return f"accuracy-release/{version}"
 
 
-def _rerun(version: str) -> str:
-    return f"rerun `python tools/release/release.py run accuracy {version}`"
+def _rerun(version: str, stage: str = "accuracy") -> str:
+    return f"rerun `python tools/release/release.py run {stage} {version}`"
 
 
 def gates_accuracy(root: Path) -> bool:
@@ -1067,44 +1066,47 @@ def _local_accuracy(step: Step, root: Path, version: str, head: str) -> None:
         raise ReleaseError(NL.join(problems) or f"the release tier failed: {failure}")
 
 
-def _in_flight(runs: list, version: str, head: str) -> dict | None:
-    return next((run for run in release_runs(runs, version, head)
-                 if run.get("status") != "completed"), None)
+def _unfinished(runs: list) -> dict | None:
+    return next((run for run in runs if run.get("status") != "completed"), None)
 
 
-def _dispatched(version: str, head: str, known: set, pause: Callable = time.sleep) -> dict:
-    """The run a dispatch just created: GitHub lists it within seconds."""
+def _dispatched(listed: Callable, known: set, missing: str, pause: Callable = time.sleep) -> dict:
+    """The run a dispatch just created: GitHub lists it within seconds. `listed`
+    reads the stage's release runs at the tag commit; `missing` is the refusal
+    when none appears."""
     for attempt in range(READBACK_ATTEMPTS):
-        fresh = [run for run in release_runs(_accuracy_runs(head), version, head)
-                 if run.get("id") not in known]
+        fresh = [run for run in listed() if run.get("id") not in known]
         if fresh:
             return fresh[0]
         pause(READBACK_PAUSE)
-    raise ReleaseError(f"accuracy.yml was dispatched but no run named `{accuracy_title(version)}` "
-                       f"appeared at {head[:12]}; {_rerun(version)}")
+    raise ReleaseError(missing)
 
 
-def _watch(run: dict, root: Path, version: str) -> None:
+def _watch(run: dict, root: Path, version: str, watched: Watched = ACCURACY_WATCH) -> None:
     argv = [_executable("gh"), "run", "watch", str(run["id"]), "--repo", GITHUB_REPO,
             "--exit-status", "--interval", "60"]
     page = f"https://{GITHUB_REPO}/actions/runs/{run['id']}"
+    rerun = _rerun(version, watched.stage)
     try:
-        done = subprocess.run(argv, cwd=root, timeout=ACCURACY_WATCH_SECONDS)
+        done = subprocess.run(argv, cwd=root, timeout=watched.seconds)
     except subprocess.TimeoutExpired as exc:
-        raise ReleaseError(f"{page} still runs after 90 minutes; {_rerun(version)} to keep "
-                           "waiting on it, which dispatches nothing new") from exc
+        raise ReleaseError(f"{page} still runs after {watched.seconds // 60} minutes; {rerun} to "
+                           "keep waiting on it, which dispatches nothing new") from exc
     if done.returncode:
-        raise ReleaseError(f"the release run of accuracy.yml failed: {page}; fix it, then "
-                           f"{_rerun(version)}")
+        raise ReleaseError(f"the release run of {watched.workflow} failed: {page}; fix it, then "
+                           f"{rerun}")
 
 
 def _run_to_watch(step: Step, root: Path, version: str, head: str, runs: list) -> dict:
     """A release run already going at the tag commit, else a new dispatch's run."""
-    run = _in_flight(runs, version, head)
+    run = _unfinished(release_runs(runs, version, head))
     if run is not None:
         return run
     _run_or_untag(step._replace(commands=step.commands[1:3]), root, version, False)
-    return _dispatched(version, head, {old.get("id") for old in runs})
+    return _dispatched(lambda: release_runs(_accuracy_runs(head), version, head),
+                       {old.get("id") for old in runs},
+                       f"accuracy.yml was dispatched but no run named `{accuracy_title(version)}` "
+                       f"appeared at {head[:12]}; {_rerun(version)}")
 
 
 def _remote_accuracy(step: Step, root: Path, version: str, head: str) -> None:
@@ -1121,6 +1123,185 @@ def _run_accuracy(step: Step, root: Path, version: str, receipt: dict) -> None:
     _local_accuracy(step, root, version, receipt["head"])
     _remote_accuracy(step, root, version, receipt["head"])
     accuracy_gate(root, version, receipt["head"])
+
+
+# --- the deploy record -------------------------------------------------------------------------
+#
+# The deploy stage runs deploy.yml's release cadence on the tag commit through a
+# scratch branch, as the accuracy stage runs accuracy.yml. Its record in the
+# release receipt is keyed on that commit's sha and on candidate.json's
+# source_hash: the stage hashes the tagged tree with the deploy kit's own
+# export.py and candidate.py, dispatches the run with that hash, and the
+# workflow's scope job refuses a tree that hashes otherwise, so the run's name
+# carries the hash of the source it tested. Stage 2b checks the record's sha
+# against the receipt's head and reads the run back from GitHub. This proves the
+# suite tested the release's source, not the bytes PyPI gets: the deploy kit
+# builds its own wheel from the tree.
+
+DEPLOY_RECORD_DIR = ".crapkit/deploy-record"
+DEPLOY_CANDIDATE = f"{DEPLOY_RECORD_DIR}/candidate/candidate.json"
+SOURCE_HASH_ARG = "source_hash=$(the tagged tree's candidate.json source_hash)"
+DEPLOY_RUN_ARG = "$(the dispatched deploy run)"
+# The longest release-cadence entry in tests/deploy/MAP.toml has a 100-minute
+# timeout, and every entry starts once the 5-minute scope job ends. The rest is
+# room for a runner queue.
+DEPLOY_WATCH = Watched(DEPLOY_WORKFLOW, "deploy", 150 * 60)
+
+
+def deploy_title(source_hash: str) -> str:
+    """deploy.yml's run-name for a release dispatch: `deploy release <source_hash>`."""
+    return f"deploy {DEPLOY_RELEASE_CADENCE} {source_hash}"
+
+
+def deploy_branch(version: str) -> str:
+    """The scratch branch that carries the tag commit to GitHub before stage 2b
+    pushes the tag: a dispatched run needs its commit on the remote."""
+    return f"deploy-release/{version}"
+
+
+def _deploy_step(version: str) -> Step:
+    branch = deploy_branch(version)
+    return Step("deploy", "deploy", (
+        (PY, "tools/deploy/export.py", "--repo", ".", "--out", DEPLOY_RECORD_DIR),
+        (PY, DEPLOY_KIT, "--tree", f"{DEPLOY_RECORD_DIR}/tree.tar",
+         "--out", f"{DEPLOY_RECORD_DIR}/candidate", "--no-build"),
+        ("git", "push", "-q", "origin", f"v{version}^{{commit}}:refs/heads/{branch}"),
+        ("gh", "workflow", "run", DEPLOY_WORKFLOW, "--repo", GITHUB_REPO, "--ref", branch,
+         "-f", f"cadence={DEPLOY_RELEASE_CADENCE}", "-f", SOURCE_HASH_ARG),
+        ("gh", "run", "watch", DEPLOY_RUN_ARG, "--repo", GITHUB_REPO, "--exit-status"),
+        ("git", "push", "-q", "origin", "--delete", branch)), background=True,
+        note="hashes the tag commit's tree with the deploy kit's export.py and candidate.py, then "
+             "runs deploy.yml's release cadence on that commit through a scratch branch (up to "
+             "150 min); its scope job refuses a tree that hashes otherwise. The receipt keeps the "
+             "record, keyed on the commit and the source_hash; a rerun reuses a run already "
+             "passed or running")
+
+
+def _is_sha256(value) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def source_hash(root: Path) -> str:
+    """candidate.json's source_hash for the tree the deploy stage hashed."""
+    try:
+        value = json.loads((root / DEPLOY_CANDIDATE).read_text(encoding="utf-8")).get("source_hash")
+    except (OSError, ValueError, AttributeError) as exc:
+        raise ReleaseError(f"{DEPLOY_CANDIDATE} is unreadable: {exc}") from exc
+    if not _is_sha256(value):
+        raise ReleaseError(f"{DEPLOY_CANDIDATE} names no source_hash: {value!r}")
+    return value
+
+
+def _deploy_runs(head: str) -> list:
+    """deploy.yml's dispatched runs at `head`, as GitHub reports them. The same
+    query as `_accuracy_runs`, which the accuracy calc owns and mutates."""
+    url = (f"{GITHUB_API}repos/{REPO_SLUG}/actions/workflows/{DEPLOY_WORKFLOW}/runs"
+           f"?head_sha={head}&event=workflow_dispatch&per_page=100")
+    runs = _remote_json(url).get("workflow_runs")
+    if not isinstance(runs, list):
+        raise ReleaseError(f"cannot read {DEPLOY_WORKFLOW} runs at {head[:12]}: no workflow_runs list")
+    return [run for run in runs if isinstance(run, dict)]
+
+
+def _record_runs(runs: list, record: dict) -> list:
+    """The release-cadence runs at the record's commit named for its source_hash."""
+    wanted = (deploy_title(record["source_hash"]), record["sha"])
+    return [run for run in runs if (run.get("display_title"), run.get("head_sha")) == wanted]
+
+
+def _green(found: list) -> bool:
+    return any(run.get("conclusion") == "success" for run in found)
+
+
+def _run_label(run: dict) -> str:
+    return f"{run.get('conclusion') or 'not finished'} {run.get('html_url', '')}".rstrip()
+
+
+def _record_problems(record, head: str, version: str) -> list:
+    redo = _rerun(version, "deploy")
+    if not isinstance(record, dict):
+        return [f"deploy gate: the release receipt holds no deploy record; {redo}"]
+    made = str(record.get("sha"))
+    if made != head:
+        return [f"deploy gate: the deploy record was made at {made[:12]} and the release is at "
+                f"{head[:12]}; {redo}"]
+    if not _is_sha256(record.get("source_hash")):
+        return [f"deploy gate: the deploy record names no candidate.json source_hash; {redo}"]
+    return []
+
+
+def _run_problems(record: dict, version: str) -> list:
+    found = _record_runs(_deploy_runs(record["sha"]), record)
+    if _green(found):
+        return []
+    seen = f" (runs by that name: {', '.join(map(_run_label, found))})" if found else ""
+    return [f"deploy gate: GitHub holds no successful {DEPLOY_WORKFLOW} run named "
+            f"`{deploy_title(record['source_hash'])}` at {record['sha'][:12]}{seen}; "
+            f"{_rerun(version, 'deploy')}"]
+
+
+def deploy_problems(version: str, receipt: dict) -> list:
+    """Every reason the receipt's deploy record cannot vouch for this release."""
+    problems = _record_problems(receipt.get("deploy"), receipt["head"], version)
+    if problems:
+        return problems
+    try:
+        return _run_problems(receipt["deploy"], version)
+    except ReleaseError as exc:
+        return [f"deploy gate: {exc}"]
+
+
+def deploy_gate(root: Path, version: str, receipt: dict) -> None:
+    """Stage 2b's refusal beside the accuracy gate: the receipt's deploy record
+    names the release commit, and GitHub holds a green release-cadence run of
+    deploy.yml at that commit, named for the record's source_hash. A tree
+    without the deploy kit is not gated."""
+    problems = deploy_problems(version, receipt) if gates_deploy(root) else []
+    if problems:
+        raise ReleaseError(NL.join(problems))
+
+
+def _hash_tree(step: Step, root: Path, version: str) -> str:
+    """Hash the tag commit's tree the way deploy.yml's scope job does. An earlier
+    attempt's output goes first: candidate.py refuses a staged/ that exists."""
+    target = _inside(root, DEPLOY_RECORD_DIR)
+    if target.exists():
+        shutil.rmtree(target)
+    _run_or_untag(step._replace(commands=step.commands[:2]), root, version, False)
+    return source_hash(root)
+
+
+def _deploy_to_watch(step: Step, root: Path, version: str, record: dict, runs: list) -> dict:
+    """A release run already going for this record, else a new dispatch's run."""
+    run = _unfinished(runs)
+    if run is not None:
+        return run
+    _run_or_untag(step._replace(commands=step.commands[2:4]), root, version, False)
+    return _dispatched(lambda: _record_runs(_deploy_runs(record["sha"]), record),
+                       {old.get("id") for old in runs},
+                       f"{DEPLOY_WORKFLOW} was dispatched but no run named "
+                       f"`{deploy_title(record['source_hash'])}` appeared at {record['sha'][:12]}; "
+                       f"{_rerun(version, 'deploy')}")
+
+
+def _remote_deploy(step: Step, root: Path, version: str, record: dict) -> None:
+    """Watch the record's release run to its end, dispatching one only when none
+    passed or is running. The scratch branch goes afterwards, whichever attempt
+    pushed it; a branch already gone is fine."""
+    runs = _record_runs(_deploy_runs(record["sha"]), record)
+    if not _green(runs):
+        _watch(_deploy_to_watch(step, root, version, record, runs), root, version, DEPLOY_WATCH)
+    _attempt(root, step.commands[-1])
+
+
+def _run_deploy(step: Step, root: Path, version: str, receipt: dict) -> None:
+    """Hash the tagged tree, run the release cadence on it, and keep the record
+    stage 2b reads, keyed on the commit and the source_hash."""
+    record = {"sha": receipt["head"], "source_hash": _hash_tree(step, root, version)}
+    _remote_deploy(step, root, version, record)
+    receipt["deploy"] = record
+    deploy_gate(root, version, receipt)
+    _write_receipt(root, receipt)
 
 
 def _write_receipt(root: Path, receipt: dict) -> None:
@@ -1169,6 +1350,8 @@ def _expanded(arg: str, root: Path) -> list[str]:
         return _release_files(root)
     if arg == GH_TOKEN_ARG:
         return [_login_token()]
+    if arg == SOURCE_HASH_ARG:
+        return [f"source_hash={source_hash(root)}"]
     return [arg]
 
 
@@ -1181,11 +1364,17 @@ def _login_token() -> str:
     return token
 
 
-def _release_dist(root: Path) -> Path:
-    expected = root.resolve() / RELEASE_DIST
+def _inside(root: Path, rel: str) -> Path:
+    """`rel` under the release repository, never through a link that leads out
+    of it: the stages delete these directories before they rebuild them."""
+    expected = root.resolve() / rel
     if expected.resolve() != expected:
-        raise ReleaseError("release-dist must be a directory inside the release repository")
+        raise ReleaseError(f"{rel} must be a directory inside the release repository")
     return expected
+
+
+def _release_dist(root: Path) -> Path:
+    return _inside(root, RELEASE_DIST)
 
 
 def _release_files(root: Path) -> list[str]:
@@ -1568,6 +1757,8 @@ def _stage_step(step: Step, root: Path, version: str, receipt: dict, before: int
         _publish_step(step, root, receipt)
     elif step.name == "accuracy":
         _run_accuracy(step, root, version, receipt)
+    elif step.name == "deploy":
+        _run_deploy(step, root, version, receipt)
     elif step.name == "ratchet":
         _check_ratchet(step, root, receipt, before, marks)
     else:
@@ -1648,7 +1839,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def _cmd_check(root: Path, version: str, args: argparse.Namespace) -> int:
     report = check(root, version)
-    problems = report.problems + preflight() + deploy_gate(root)
+    problems = report.problems + preflight() + deploy_preflight(root)
     print(NL.join(problems) or f"ok: every surface at {report.current}, {version} next")
     return 1 if problems else 0
 
@@ -1659,6 +1850,10 @@ def _cmd_bump(root: Path, version: str, args: argparse.Namespace) -> int:
 
 
 def _cmd_notes(root: Path, version: str, args: argparse.Namespace) -> int:
+    """The release body, as UTF-8 whatever the console's code page: under a
+    cp1252 stdout the first CJK character in a section ended the preview with
+    UnicodeEncodeError and an empty file. Stage 2b writes its notes file as UTF-8."""
+    sys.stdout.reconfigure(encoding="utf-8")
     print(notes(root, version), end="")
     return 0
 

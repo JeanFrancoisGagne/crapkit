@@ -8,6 +8,7 @@ reads every surface through its live API rather than a cached page.
 """
 import json
 import os
+import subprocess
 import sys
 from types import SimpleNamespace
 from pathlib import Path
@@ -105,6 +106,57 @@ def test_check_refuses_a_changelog_with_no_unreleased_heading_for_the_version(tm
     report = release.check(root, "0.5.2")
 
     assert any("CHANGELOG.md" in p and "0.5.2" in p for p in report.problems), report.problems
+
+
+def _section_of(root: Path, size: int) -> None:
+    """A 0.5.2 section whose release body, as `notes` returns it, is `size`
+    characters: one line of text and the newline `notes` ends the body with."""
+    (root / "CHANGELOG.md").write_text(
+        f"# Changelog{NL}{NL}## 0.5.2 {DASH} unreleased{NL}{NL}{'x' * (size - 1)}{NL}{NL}"
+        f"## 0.5.1 {DASH} 2026-09-05{NL}{NL}Older.{NL}", encoding="utf-8")
+
+
+@pytest.mark.parametrize("size, refused", [(125_000, False), (125_001, True)])
+def test_check_refuses_a_section_github_refuses_as_a_release_body(tmp_path, size, refused):
+    """GitHub refuses a release body over 125,000 characters, and that refusal
+    comes after the tag, the push and PyPI. The 0.8.1 section ran to 241,619
+    characters and check passed it."""
+    root = _tree(tmp_path)
+    _section_of(root, size)
+
+    problems = release.check(root, "0.5.2").problems
+
+    assert len(release.notes(root, "0.5.2")) == size
+    assert problems == ([f"CHANGELOG.md: the 0.5.2 section is {size} characters; a GitHub "
+                         "release body takes at most 125000"] if refused else [])
+
+
+def test_check_counts_no_body_when_the_heading_is_missing(tmp_path):
+    """`notes` raises on a missing section, so the size is read only once the
+    heading is found; the heading's own refusal is the one line."""
+    root = _tree(tmp_path, heading="0.6.0")
+
+    assert release.check(root, "0.5.2").problems == [
+        f"CHANGELOG.md: '## 0.5.2 {DASH} unreleased' x0 (expected 1)"]
+
+
+def test_notes_writes_utf8_through_a_legacy_code_page_stdout(tmp_path):
+    """`notes VERSION > notes.md` previews the release body. Under a Windows
+    console or redirect, stdout was cp1252: the first CJK character in the
+    0.8.1 section ended the command with UnicodeEncodeError, exit 1, and an
+    empty file."""
+    root = _tree(tmp_path)
+    changelog = root / "CHANGELOG.md"
+    changelog.write_text(changelog.read_text(encoding="utf-8").replace("Text.", "上 and é"),
+                         encoding="utf-8")
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"}
+
+    done = subprocess.run([sys.executable, str(ROOT / "tools" / "release" / "release.py"), "notes",
+                           "0.5.2", "--repo", str(root)], capture_output=True, env=env)
+
+    assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
+    printed = done.stdout.decode("utf-8").replace("\r\n", NL)  # a Windows stdout writes CRLF
+    assert printed == release.notes(root, "0.5.2")
 
 
 # --- bump ----------------------------------------------------------------------
