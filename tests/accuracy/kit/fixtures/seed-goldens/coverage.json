@@ -21,6 +21,7 @@
  "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
  "crap_load": 32.51,
  "db": "<root>/repo/.crapkit/crap.sqlite",
+ "empty_scopes": {},
  "excluded": 0,
  "files": 3,
  "functions": 9,
@@ -56,5 +57,6 @@
  "schema": 1,
  "skipped_max_bytes": 0,
  "unmeasured_scopes": [],
+ "unreadable_names": [],
  "untested": 1
 }

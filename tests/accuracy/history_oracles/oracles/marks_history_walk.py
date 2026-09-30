@@ -25,6 +25,9 @@ The report (docs/ratchet.md#reporting-the-burn-down, docs/agent-json.md
 - The debt policy (docs/ratchet.md#the-debt-policy): a mark older than
   debt_max_age_months counted at 30 days a month; repayment stalled when fewer
   than repayment_min_per_30d marks were repaid in 30 days while debt is open.
+- shallow is whether the checkout is a shallow clone, which holds only part of
+  the history every age and repayment counts; git says so itself
+  (`rev-parse --is-shallow-repository`).
 """
 from __future__ import annotations
 
@@ -32,7 +35,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
 
-from .history_git import git
+from .history_git import git, text
 
 DAY = 86_400
 HEADER = ("path", "long_name", "crap")
@@ -121,7 +124,8 @@ def report(root: Path, name: str) -> dict:
     return {"open": len(working), "dropped_total": len(replay.dropped),
             "anchor_ts": replay.anchor, "uncommitted": replay.uncommitted(working),
             "oldest": _oldest(replay.entered, working, replay.anchor),
-            "dropped_last_30d": replay.within(30), "dropped_last_90d": replay.within(90)}
+            "dropped_last_30d": replay.within(30), "dropped_last_90d": replay.within(90),
+            "shallow": text(root, "rev-parse", "--is-shallow-repository") == "true"}
 
 
 def _too_old(found: dict, max_age_months: int | None) -> list[str]:
