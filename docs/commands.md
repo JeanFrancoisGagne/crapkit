@@ -1,8 +1,10 @@
 # Command details
 
 README's [Subcommands](../README.md#subcommands) table gives each command, every flag
-and what the command is for, in one row. Three commands check, print or refuse more than
-a row can say. This page holds the rest for `doctor`, `mutate` and `claude-hook`.
+and what the command is for, in one row. Four commands check, print or refuse more than
+a row can say. This page holds the rest for `doctor`, `mutate`, `claude-hook` and
+`duplication`. The fields `next-item` prints and how it breaks ties are in
+[docs/agent-json.md](agent-json.md#next-item).
 
 ## doctor
 
@@ -114,9 +116,26 @@ PATH`.
 
 `crapkit mutate` is diff-scoped mutation testing: comparison flips, boundary shifts,
 boolean connectives and boolean literals on changed lines. It runs `mutation_command`
-once per mutant and lists the survivors. The README row has the file
-selection, the counts and the summary lines. This section is which operators make a
-mutant in each language.
+once per mutant and lists the survivors. The README row has the flags. This section has
+the file selection, the counts, the summary lines and which operators make a mutant in
+each language.
+
+### Files and counts
+
+The diff's files and the `--files` list both pass through the scored corpus first, the
+same predicate `coverage` uses (scopes, excludes, the test-file cut, `max_file_bytes`):
+a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims is
+named on stderr and never mutated, `--json` lists it under `outside_corpus`, and when
+nothing is left stdout says `nothing to mutate` at exit 0 without starting the suite.
+
+`--max-mutants` (default 100) caps the run and the cap warning goes to stderr only, so
+`mutants` in `--json` is the capped count. A mutant whose suite timed out counts as
+killed, and `--json` also counts it under `timed_out`, a count inside `killed`. A mutant
+whose suite exited 5 ran no test and gets no verdict: it still counts as killed, as it
+did in 0.8.0, `--json` also counts it under `no_verdict`, a count inside `killed`, and
+the summary says `no verdict: N of the K killed ran no test (exit 5), so no test caught
+them` below its `mutation: K/M killed` line. `killed` + `survived` is always `mutants`;
+JSON schema 2 is where a no-verdict mutant leaves the score.
 
 ### Files it refuses
 
@@ -140,6 +159,50 @@ Shell and PowerShell files are refused by name on stderr rather than mutated: `<
   `ok && ready`, does.
 - The C family's `--` is one token too, so `n-->0` reads as `n-- > 0` and its `>`
   mutates.
+
+## duplication
+
+`crapkit duplication` pairs near-duplicate functions by normalized line shingles with
+containment scoring. The README row has the flags, their defaults and the lines this
+section explains. This section is which lines of a function enter its shingles.
+
+### A function's own lines
+
+Each function is shingled from its own lines: the lines of a function nested in it, past
+that function's first line, are the nested function's, so a clone of a closure pairs once
+and never through the factory around it. A function and its nested closure never pair.
+
+### Comment lines
+
+Blank lines and comment lines stay out. A comment line starts with a comment marker of the
+file's language or lies inside a block comment: `#` in Python and shell, `#` and `<# #>`
+in PowerShell, `//` in Zig, `//` and `/* */` in every other language. A line that holds
+code after a block comment's closer is code, whether the comment opened on that line or
+above it. So `**options`, `*out = x;`, `/* tag */ acc += 1;` and `*/ x = a` are code
+lines, and a code line enters the shingles whole, its comments included. Python also
+leaves out a line starting with three quotes, a one-line docstring or a docstring's first
+or last line, and keeps the docstring's other lines.
+
+### Where a block comment opens
+
+A block comment opens at a line's start, or after code and a space when no string,
+character literal or comment is open there, the line read from its start, and counts only
+when its own line or a later line of the function closes it. So `s = "http://x"; /* note`
+opens one and `x = 1; // see /* here` does not. A `'` opens a string in JavaScript,
+TypeScript, Vue and PowerShell and a one-character literal elsewhere, so a Rust lifetime
+opens nothing. A block comment ends at its first closer, in Rust and Swift too, where block
+comments nest. Strings are read only on a code line that holds a block opener, so a line
+inside a multi-line string that starts with a comment marker stays out as well.
+
+### Lines the reader misreads
+
+The reader knows plain strings and character literals and no other literal, so a few lines
+read wrongly. A raw string that ends in a backslash or holds one quote, and a regex literal
+that holds one, leave a string open, so a block opener after them opens nothing: Rust
+`r"C:\"` and `r#"a"b"#`, C++ `R"(a"b)"`, JavaScript `/"/`. A `/*` after a space inside
+a regex literal opens a block comment, so `re = /a /* b/;` hides the lines up to the next
+`*/`. In PowerShell a `#` inside a word starts a line comment, so `echo a#b <# note` opens
+nothing.
 
 ## claude-hook
 
