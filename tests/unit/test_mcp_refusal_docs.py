@@ -25,8 +25,10 @@ _REQUIRES = re.compile(r"\(((?:`[a-z_]+`(?:,| and)? ?)+) require `path` and `nam
 
 
 def _section(page: str) -> str:
+    """The page's MCP section; the whole record for the ADR, amendments included."""
     text = (ROOT / page).read_text(encoding="utf-8")
-    return text.split(f"\n{PAGES[page]}\n", 1)[1].split("\n## ", 1)[0]
+    body = text.split(f"\n{PAGES[page]}\n", 1)[1]
+    return body.split("\n## ", 1)[0] if PAGES[page].startswith("## ") else body
 
 
 def _answer(tmp_path: Path, tool: str, arguments) -> str:
@@ -100,7 +102,7 @@ def test_a_frame_that_is_not_one_json_object_gets_no_reply(frame):
 def test_every_page_says_a_frame_that_is_not_one_json_object_gets_no_reply(page):
     text = _section(page)
     if page.startswith("docs/adr/"):
-        text = text.split("Amended in 0.8.1.", 1)[1]
+        text = text.split("## Amendments (0.8.1)", 1)[1]
 
     sentences = _frame_sentences(text)
 

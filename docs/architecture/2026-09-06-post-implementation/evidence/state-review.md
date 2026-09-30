@@ -11,7 +11,7 @@ Reviewed clean commit `499d9db4f9ff4d212fb94ea3975c7477b6b1c968`. Six new candid
 | 5 | ST3: Optional marks evidence | An absent TSV still causes a full 100,000-row read | Worklist and HTML report |
 | 6 | ST6: GitHub property encoding | Commas and percent sequences change the filename interpreted by the runner | Findings output adapter |
 
-The full candidate record is in [state-candidates.json](state-candidates.json). It includes source lines, caller flow, proposed change, before/after schematic, deletion test, leverage, locality, validation needed, cost, risk and ADR disposition. No interfaces are designed in this review.
+The full candidate record is in [state-candidates.json](../state-candidates.json). It includes source lines, caller flow, proposed change, before/after schematic, deletion test, leverage, locality, validation needed, cost, risk and ADR disposition. No interfaces are designed in this review.
 
 ## Evidence and replay
 

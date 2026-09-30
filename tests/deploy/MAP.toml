@@ -856,8 +856,8 @@ headings = ["A repo that is not Python"]
 cells = ["lin-uvx-polyglot-start"]
 
 [[doc]]
-page = "README.md"
-headings = ["Upgrading from 0.4.4"]
+page = "docs/upgrading.md"
+headings = ["Analysis version 8"]
 cells = ["lin-up-pip-0.4.4"]
 
 [[doc]]
@@ -1008,7 +1008,7 @@ cells = ["lin-pip-start-py311", "lin-pyextra-quickstart-py313"]
 
 [[doc]]
 page = "docs/lanes.md"
-headings = ["A crapkit root below the repo top", "The gate gates below the top since 0.4.5"]
+headings = ["A crapkit root below the repo top", "The gate reads paths from the crapkit root"]
 cells = ["lin-monorepo"]
 
 [[doc]]
@@ -1053,7 +1053,7 @@ cells = ["lin-up-lizard-only", "lin-up-pip-0.4.0", "lin-skew-cli"]
 
 [[doc]]
 page = "docs/ratchet.md"
-headings = ["Upgrading to 0.4.5: analysis version 8"]
+headings = ["Analysis version 8: a re-seed that only restamps"]
 cells = ["lin-up-pip-0.4.4", "lin-up-chain"]
 
 [[doc]]
@@ -1118,12 +1118,12 @@ cells = ["docs-harness-sections", "lin-profiles-sim", "win-profiles-sim"]
 
 [[doc]]
 page = "docs/handbook.html"
-headings = ["0.4.5 is one of those bumps"]
+headings = ["Analysis version 8 was one of those bumps"]
 cells = ["lin-up-pip-0.4.4"]
 
 [[doc]]
 page = "docs/handbook.html"
-headings = ["What 0.4.5 caches, and where it lives"]
+headings = ["What crapkit caches, and where it lives"]
 cells = ["lin-up-pipx-0.4.15"]
 
 [[doc]]

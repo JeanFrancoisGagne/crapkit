@@ -1,7 +1,8 @@
 """The plugin's skills, followed as an agent or a user would follow them.
 
-    lin-onboard-skill   every fence of crapkit-onboard/SKILL.md in page order: the install lines run,
-                        each printed line is reproduced and compared, the Bash entry parses
+    lin-onboard-skill   every fence of crapkit-onboard/SKILL.md in page order: init first, then the
+                        install lines run, each printed line is reproduced and compared, the Bash
+                        settings object parses
     lin-recover-skill   each row of crapkit-recover's exit-code table: the refusal is produced, the
                         row's first command runs, the fix is applied, the refused command succeeds
     lin-skills-copy     plugin/skills/* copied where the docs say, parsed by Claude Code and Codex;
@@ -86,8 +87,8 @@ def reproduced(box, repo: Path, block: docsnip.Fence, names: dict) -> list[tuple
 
 
 def fragment(block: docsnip.Fence) -> list[tuple[list[str], list[str]]]:
-    """The settings fragment, parsed, beside the README's Bash entry."""
-    entries = json.loads("{" + block.text + "}")["PostToolUse"]
+    """The settings object, parsed, beside the README's Bash entry."""
+    entries = json.loads(block.text)["hooks"]["PostToolUse"]
     return [([json.dumps(entries)], [json.dumps([bash_entry()])])]
 
 
@@ -99,7 +100,7 @@ def ran(box, repo: Path, block: docsnip.Fence) -> list[tuple[list[str], list[str
 
 def follow(box, repo: Path, block: docsnip.Fence, names: dict) -> list[tuple[list[str], list[str]]]:
     """One fence as the page means it: run, compare, or parse."""
-    if block.text.lstrip().startswith('"PostToolUse"'):
+    if block.text.lstrip().startswith("{"):
         return fragment(block)
     if docsnip.outputs(block):
         return printed(box, repo, block, names)

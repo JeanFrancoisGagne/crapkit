@@ -17,13 +17,13 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 |---|---|---|
 | "crapkit advisory: N function(s) over ceiling C in PATH (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` (added context on exit 0 in Cursor, Copilot CLI and VS Code) | The PostToolUse hook judged a function the edit changed. PostToolUse runs after the write and cannot block | Decompose that function now. The commit gate refuses it later, with more work stacked behind it |
 | "crapkit advisory: PATH could not be read, so no function in it was judged (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` | The edit left a file no reader can read, so none of its functions was judged. The commit gate refuses that file once staged, with the same `UNREAD` line | Change what the reason names (for a TypeScript arrow, wrap its body in parentheses or a block), or list the file under `[exclude]` in `crapkit.toml`: [README: the gate](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#the-gate) |
-| "crapkit gate: N staged function(s) carry a ratchet mark and were not gated - `crapkit verify` fails a mark that rises" | The commit gate exempted debt the ratchet already signed for. The commit went through | Nothing. Only `crapkit verify` judges whether a mark rose |
+| "crapkit gate: N staged function(s) carry a ratchet mark and were not gated - `crapkit verify` fails a mark that rises" | The commit gate pardoned debt the ratchet already signed for. The commit went through | Nothing. Only `crapkit verify` judges whether a mark rose |
 | "crapkit doctor: the plugin at PATH is version X, and the crapkit its hooks spawn (CLI_PATH) is Y", exit 1 | The plugin and the crapkit on PATH ship as separate artifacts and drifted apart; the line names which executable answered | Update whichever is behind: the CLI, or the plugin with your agent's refresh lines, in Claude Code `claude plugin marketplace update crapkit` then `claude plugin update crapkit@crapkit --scope user`, in Codex `codex plugin marketplace remove crapkit`, then the README's `codex plugin marketplace add` line at the CLI's release tag, then `codex plugin add crapkit@crapkit`. A second `claude plugin install` only answers that the plugin is already installed |
-| "crapkit doctor: checking PATH", then nothing | You named a directory above the plugin root and doctor found the install under it. The line says which tree the verdict is about | Nothing. Exit 0 means the plugin and the CLI agree |
+| "crapkit doctor: checking PATH", then nothing | You ran `--plugin-root` with no PATH, or named a directory above the plugin root, and doctor found the install (one line per install it checks). The line says which tree the verdict is about | Nothing. Exit 0 means the plugin and the CLI agree |
 | "WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it", from `crapkit doctor` | The lane measures coverage exactly as before. What it cannot feed are the two checks that read a test-results file | Add the junit flag and `results_artifact` the WARN prints. Until then exit 8 can never fire for that lane's scopes: [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start) |
 | "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping)", from `crapkit verify` | The marks file predates stamping, so nothing can be compared against it | Run `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`: seed stamps the metric of the run it reads: [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp) |
 | "crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact - add --cov-branch to the lane command to measure branches", from `crapkit coverage` | The lane scored on statements instead of branches, so CRAP is understated on branchy functions. A report carrying neither branches nor statements is still exit 5 | Add `--cov-branch` to the lane command, then rerun `crapkit coverage`: [docs: pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) |
-| "crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) - those files are skipped and the rest of the report is scored", from `crapkit coverage` | A plugin reporter, django or jinja templates, declares no code regions for those files. Every other file in the report scored. A report where NO file carries regions is still exit 5 | Nothing, unless you expected those files measured: [docs: a file the report carries no regions for](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-file-the-report-carries-no-regions-for) |
+| "crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) - those files are skipped and the rest of the report is scored", from `crapkit coverage` | A plugin reporter, django or jinja templates, declares no code regions for those files. Every other file in the report scored. A report where no file carries regions is still exit 5 | Nothing, unless you expected those files measured: [docs: a file the report carries no regions for](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-file-the-report-carries-no-regions-for) |
 | "warning: churn counts read only the commits this clone holds; this shallow clone does not hold every commit: set fetch-depth: 0 on the checkout or run git fetch --unshallow", from `crapkit worklist` or `crapkit next-item` (`brief` and `ratchet report` name mark ages too) | The checkout is a shallow clone, so churn, mark ages and repayments count only the commits it holds: one per file at depth 1. The command answered, and its JSON says `shallow: true` | Nothing blocks. Before trusting the ranking or a mark's age, set `fetch-depth: 0` on the checkout or run `git fetch --unshallow`: [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) |
 
 Six more lines come out of `crapkit doctor --plugin-root`, same exit 1.
@@ -92,17 +92,19 @@ the OOM killer: rerun.
 
 Exit 3 fires before any lane runs, so nothing was measured and nothing was written.
 
-`ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run
-measures [crapkit-analysis=8 lizard=1.24.0]` is an upgrade, not a break. Shell cognitive
-complexity nests since analysis 8, so shell numbers moved and CRAP scores from the two
-versions are not comparable; ccn did not move. Run `crapkit coverage`, then
-`crapkit ratchet prune`, then `crapkit ratchet seed`: prune drops a mark whose key the new
-analysis moved, and seed stamps the metric of the run it reads, so a seed from a run the
-older crapkit measured keeps the old stamp and verify keeps refusing. When a failed verify
-pins the baseline, plain seed reads the pinned run. Name the newer one with
-`crapkit ratchet seed --baseline N`: on such a store a plain `crapkit verify` prints N in the
+`ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] but this run
+measures [crapkit-analysis=13 lizard=1.24.0]` is the 0.8.1 upgrade, not a break. Version 13
+moves numbers in every language but Python, and some of Python's cognitive and nesting, so
+CRAP scores from the two versions are not comparable:
+[docs: analysis version 13](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-13).
+Run `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`: prune
+drops a mark whose key the new analysis moved, and seed stamps the metric of the run it
+reads, so a seed from a run the older crapkit measured keeps the old stamp and verify keeps
+refusing. When a failed verify pins the baseline, plain prune and plain seed both read the
+pinned run. Name the newer one to each: `crapkit ratchet prune --baseline N`, then
+`crapkit ratchet seed --baseline N`. On such a store a plain `crapkit verify` prints N in the
 taint warning above its refusal, and the refusal ends by saying a failed verify pins the plain
-seed; `crapkit verify --baseline N` ends with that seed itself. When the FIRST bracket is the
+seed; `crapkit verify --baseline N` ends with that seed itself. When the first bracket is the
 newer one, a newer crapkit or lizard wrote the marks (`the marks come from a newer crapkit
 than this install`): upgrade this install, and never seed, since seed and prune refuse those
 marks and a seed would restamp the team's marks backwards:
@@ -130,6 +132,7 @@ lists an unread file. The `check_gate` tool answers such a file with `gate.ok` f
 bytes that are not UTF-8` is a warning for a tracked name no scope takes, and the command's
 own exit stands; `--json` lists the same names in `unreadable_names`:
 [docs: file paths](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#file-paths-and-root-discovery).
+
 ## An exit-5 line about the report itself
 
 `lane 'py' FAILED: unparseable coverage.py report PATH: pkg/mod.py: outer: no start_line;
@@ -145,11 +148,11 @@ once, which `verify` reports at exit 7:
 ## a lane that wrote no artifact: seven causes
 
 The lane log names which one. It sits at `.crapkit/lane-<name>.log`; the failure line quotes
-its tail and names that path in full, so read the log before guessing — the tail is 500
+its tail and names that path in full, so read the log before guessing: the tail is 500
 characters of a file that holds the whole run.
 
 On a lane with `retries` set, every attempt appends to that one file and the cause the
-message quotes is read from the LAST attempt alone: the text after the final
+message quotes is read from the last attempt alone: the text after the final
 `--- attempt N ---` banner line. A retry that died of something else than attempt 1 is
 what you are being shown, and the earlier attempts are in the log above that banner, which
 is why the path is worth opening. Attempt 1 writes no banner, so a log holding none is a
@@ -158,7 +161,7 @@ single attempt and its whole output is in scope.
 | Cause | Signature in the log | Owner |
 |---|---|---|
 | No coverage provider installed, vitest | `MISSING DEPENDENCY '@vitest/coverage-v8'` | [docs: getting an artifact out of vitest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#getting-an-artifact-out-of-vitest) |
-| No coverage provider installed, pytest | `unrecognized arguments: --cov`, so pytest-cov is missing from the environment the SUITE runs in, which a pipx or uv-tool install of crapkit never shares | [docs: pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) |
+| No coverage provider installed, pytest | `unrecognized arguments: --cov`, so pytest-cov is missing from the environment the suite runs in, which a pipx or uv-tool install of crapkit never shares | [docs: pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) |
 | Tests failed, so the runner wrote no report | a red suite and no file, vitest with `reportOnFailure` unset | [docs: reportOnFailure](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#reportonfailure) |
 | The report landed somewhere the lane does not name | the suite passed and `artifact` still points at nothing | [docs: where artifacts live](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#where-artifacts-live) |
 | Killed or refused before it could write | `timed out after Ns (attempt N)`, `wrote no output for Ns (attempt N), so crapkit killed it` (the `no_progress_seconds` watch), or `host-only (container runs OOM)` | [docs: a suite that stops making progress](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-suite-that-stops-making-progress), [docs: timeouts and retries](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#timeouts-and-retries) |
@@ -194,7 +197,7 @@ then rerun `crapkit coverage`.
 This is tooling, not your code. What it costs depends on whether any lane survived. A lane
 that fails beside a lane that worked still writes a run: the failed lane's scopes fall back
 to `no-lane`, the run is typed `partial`, and `verify` refuses to conclude at all. When
-EVERY declared lane fails, `coverage` prints a closing count, `crapkit: every lane failed
+every declared lane fails, `coverage` prints a closing count, `crapkit: every lane failed
 (N of N); the errors are above`, exits 5 and writes no run at all, so `crapkit runs` has
 nothing to show and there is no partial run for `verify` to refuse against. Read the lane
 lines above that count; it repeats none of them.
@@ -202,20 +205,20 @@ lines above that count; it repeats none of them.
 ## "measured N file(s), none of them under the paths its scopes declare"
 
 The lane wrote a real artifact, and none of the paths in it reach the scopes the lane
-claims — so the join finds nothing and every function in those scopes would score
+claims, so the join finds nothing and every function in those scopes would score
 `untested`. **Read the paths first**: this message comes in three verdicts, two of them exit 5 and
 only one of them lets the run score on. The measured paths decide which, and the message quotes a few of
 them:
 
 | The paths it reports | Verdict | Cause and fix |
 |---|---|---|
-| absolute or drive-lettered (`C:/…`) and resolving OUTSIDE this checkout, or climbing out of it (`../…`) | the lane FAILS, **exit 5**; its scopes fall back to `no-lane` | the run measured a different tree: a stale artifact, or the wrong environment. A `python -m pytest` lane binds to whatever venv the shell has active, which in a second worktree is the other checkout's — run the suite through the project's own manager (`uv run python -m pytest …`). On an istanbul lane the reader rebases every path under this checkout's root, so an escaped path means the artifact was written elsewhere: rerun the suite here rather than reusing one copied in or restored from a CI cache. A `../` climb lands here whatever it points at: it is relative to a working directory the artifact never recorded |
-| absolute or drive-lettered and resolving UNDER this checkout | the lane FAILS, **exit 5**; its scopes fall back to `no-lane` | right tree, wrong spelling: the runner reported absolute paths and crapkit joins on root-relative ones, so the join finds nothing. Nothing about the environment is wrong. Turn the spelling off at the runner — coverage.py takes `relative_files = true` under `[tool.coverage.run]` in pyproject.toml (or `[run] relative_files = true` in .coveragerc), an istanbul reporter takes its own `cwd`/`root` option — then rerun the lane |
-| repo-relative but rooted one level down (`faro/core.py` where the scope is `src`), or no paths at all | a **warning** on stderr and **exit 0**: the run scores on, with every function in those scopes `untested` | the runner reports relative to a subdirectory — set `path_prefix` on the lane (coveragepy only; the istanbul reader never reads that key) — or the greenfield shape, a suite that imports none of the scoped source yet, where `untested` is the right answer and there is nothing to fix |
+| absolute or drive-lettered (`C:/…`) and resolving **outside** this checkout, or climbing out of it (`../…`) | the lane FAILS, **exit 5**; its scopes fall back to `no-lane` | the run measured a different tree: a stale artifact, or the wrong environment. A `python -m pytest` lane binds to whatever venv the shell has active, which in a second worktree is the other checkout's: run the suite through the project's own manager (`uv run python -m pytest …`). On an istanbul lane the reader rebases every path under this checkout's root, so an escaped path means the artifact was written elsewhere: rerun the suite here rather than reusing one copied in or restored from a CI cache. A `../` climb lands here whatever it points at: it is relative to a working directory the artifact never recorded |
+| absolute or drive-lettered and resolving **under** this checkout | the lane FAILS, **exit 5**; its scopes fall back to `no-lane` | right tree, wrong spelling: the runner reported absolute paths and crapkit joins on root-relative ones, so the join finds nothing. Nothing about the environment is wrong. Turn the spelling off at the runner, then rerun the lane: coverage.py takes `relative_files = true` under `[tool.coverage.run]` in pyproject.toml (or `[run] relative_files = true` in .coveragerc), and an istanbul reporter takes its own `cwd`/`root` option |
+| repo-relative but rooted one level down (`faro/core.py` where the scope is `src`), or no paths at all | a **warning** on stderr and **exit 0**: the run scores on, with every function in those scopes `untested` | the runner reports relative to a subdirectory: set `path_prefix` on the lane (coveragepy only; the istanbul reader never reads that key). Or it is the greenfield shape, a suite that imports none of the scoped source yet, where `untested` is the right answer and there is nothing to fix |
 
 So a green `crapkit coverage` can still be carrying this: `lane 'py' measured N file(s) …
 so every function in those scopes will score untested`. Nothing in either exit-5 row applies
-to it. And `path_prefix` only ever PREPENDS, so it cannot rescue an absolute path in the
+to it. And `path_prefix` only ever prepends, so it cannot rescue an absolute path in the
 other direction.
 
 An artifact holding both shapes at once takes the first row. A path from somewhere else

@@ -213,10 +213,11 @@ UNINSTALL = {
 # the line that moves each one to a new release. Measured: Copilot CLI 1.0.88's
 # `plugin marketplace update` and `plugin update`; the Dockerfile installs the
 # clone's own source at build time; pre-commit 4.6.2's `autoupdate` in the
-# lin-up-precommit-0.7.6 cell.
+# lin-up-precommit-0.7.6 cell. The Docker row checks out the release tag: main's tip
+# carries the last release's version string over code no release shipped.
 CHANNEL_UPGRADES = {
     "the Copilot CLI plugin": ("`copilot plugin marketplace update crapkit`", "`copilot plugin update crapkit@crapkit`"),
-    "the Docker image": ("`git pull`", "`docker build -t crapkit .`"),
+    "the Docker image": ("`git fetch --tags`", "`git checkout v", "`docker build -t crapkit .`"),
     "the pre-commit framework (Route 3)": ("`pre-commit autoupdate`", "`rev`"),
     "the GitHub Action": ("`uses: JeanFrancoisGagne/crapkit@...`", "new tag"),
 }

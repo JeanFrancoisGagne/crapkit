@@ -143,7 +143,7 @@ body h1{{font-size:clamp(38px,6vw,68px);margin:12px 0 20px;line-height:1.15}}bod
 <p class="meta">SOURCE 499d9db4f9ff4d212fb94ea3975c7477b6b1c968 · Review only · Production unchanged</p>
 <div class="metrics"><div class="metric"><b>{len(candidates)}</b><span>fresh candidates</span></div><div class="metric"><b>{strong}</b><span>strong recommendations</span></div><div class="metric"><b>64</b><span>production modules</span></div><div class="metric"><b>{len(data['coverage'])}</b><span>review areas</span></div></div>
 <p class="legend">Solid box: module · Arrow: flow · Dashed divider: seam · Dark box: concentrated ownership</p></header>
-<nav><a href="#priorities">Ranked list</a><a href="#coverage">Coverage map</a><a href="#evidence">Verification</a><a href="{NAME}.json">Candidate data</a><a href="evidence.zip">Evidence bundle</a></nav>
+<nav><a href="#priorities">Ranked list</a><a href="#coverage">Coverage map</a><a href="#evidence">Verification</a><a href="{NAME}.json">Candidate data</a></nav>
 <div class="focus"><b>First: automatic lane reuse.</b> A changed test input produces a passing trusted verdict with reuse, then exit 8 on a fresh run of the same tree. <a href="#EX1">Inspect the reproduced failure and proposed module ownership.</a></div>
 <section id="priorities"><h2>Ranked opportunities</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>Opportunity</th><th>Recommendation</th><th>Evidence class</th></tr></thead><tbody>{rows}</tbody></table></div></section>
 <section class="map"><h3>Where the strongest failures meet</h3><pre class="mermaid">flowchart LR

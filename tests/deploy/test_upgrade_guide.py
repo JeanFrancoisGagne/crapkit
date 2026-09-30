@@ -157,10 +157,10 @@ def churn_adopted(box, repo) -> None:
     assert LEGACY_CHURN not in files and CHURN in files, sorted(files)
 
 
-def readme_refusal(candidate) -> str:
-    """README 'Upgrading from 0.4.4': the quoted refusal, with only its second
-    stamp number moved to the candidate's analysis version."""
-    [(_command, printed)] = docsnip.outputs(docsnip.fence("README.md", "Upgrading from 0.4.4"))
+def guide_refusal(candidate) -> str:
+    """docs/upgrading.md 'Analysis version 8': the quoted refusal, with only its
+    second stamp number moved to the candidate's analysis version."""
+    [(_command, printed)] = docsnip.outputs(docsnip.fence("docs/upgrading.md", "Analysis version 8"))
     second = list(re.finditer(r"crapkit-analysis=(\d+)", printed))[1]
     return printed[:second.start(1)] + str(state.analysis_version(candidate)) + printed[second.end(1):]
 
@@ -180,18 +180,18 @@ def test_lin_up_pip_0_4_0(box, templates, candidate):
 
 
 @cell("lin-up-pip-0.4.4", channel="pip venv", harness="none",
-      scenario="upgrade: 0.4.4 churn adopt-once; README block compared with the second stamp number replaced",
+      scenario="upgrade: 0.4.4 churn adopt-once; the guide's version 8 block compared with the second stamp number replaced",
       use_cases="upgrade guide", os="linux", image="core", cadence="nightly")
 def test_lin_up_pip_0_4_4(box, templates, candidate):
     source = state.build(box, state.source_version("0.4.4"), cache=templates)
     repo = source.checkout(box)
     install_old(box, source, "3.12", f"crapkit=={source.version}")
 
-    def readme_names_the_refusal(box, repo):
-        refusal = box.run(["crapkit", "verify"], cwd=repo, expect=3, note="README 'Upgrading from 0.4.4'")
-        assert output(refusal).strip() == readme_refusal(candidate), box.transcript.text()
+    def guide_names_the_refusal(box, repo):
+        refusal = box.run(["crapkit", "verify"], cwd=repo, expect=3, note="docs/upgrading.md 'Analysis version 8'")
+        assert output(refusal).strip() == guide_refusal(candidate), box.transcript.text()
 
-    state.walk(box, repo, candidate, source, state.upgrade_line(PIP), upgraded=readme_names_the_refusal)
+    state.walk(box, repo, candidate, source, state.upgrade_line(PIP), upgraded=guide_names_the_refusal)
     churn_adopted(box, repo)
 
 

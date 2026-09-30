@@ -212,11 +212,13 @@ def test_the_provider_install_is_pinned_to_the_vitest_major():
     assert 'npm i -D "@vitest/coverage-v8@<your vitest major>"' in step
 
 
-def test_the_provider_step_shows_both_worked_examples():
+def test_the_provider_step_reads_the_major_and_shows_the_one_npm_installs():
+    """`npm i -D vitest` installs vitest 5, so worked examples for 2 and 3 sent a
+    fresh repo to a provider its vitest refuses."""
     step = _provider_step()
 
-    for major in ("2", "3"):
-        assert f'"@vitest/coverage-v8@{major}"' in step, f"no worked example for vitest {major}"
+    assert "`npm ls vitest`" in step
+    assert '"@vitest/coverage-v8@5"' in step, "no worked example for vitest 5"
 
 
 def test_the_failed_lane_step_says_it_stores_nothing():

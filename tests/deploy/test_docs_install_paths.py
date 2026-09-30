@@ -225,7 +225,7 @@ def test_the_pip_user_row_upgrades_and_pip_names_the_path_to_add(box, candidate)
 
 # --- downgrade -----------------------------------------------------------------------
 
-DOWNGRADE_TO = "0.7.6"
+DOWNGRADE_TO = "0.8.0"
 def downgrade_line(installer: str) -> str:
     """The command docs/upgrading.md's Downgrading list gives this installer."""
     page = (docsnip.root() / "docs" / "upgrading.md").read_text(encoding="utf-8")
@@ -240,7 +240,7 @@ def stamps(refusal: str) -> set[str]:
 
 @cell("docs-downgrade", channel="pip venv, pipx, uv tool", harness="none",
       scenario="downgrade: a repo adopted under the candidate, then each downgrade row of docs/upgrading.md "
-               "installs 0.7.6 and the page's token table writes the launcher back; doctor, coverage and "
+               "installs 0.8.0 and the page's token table writes the launcher back; doctor, coverage and "
                "next-item work, verify refuses naming both stamps, and the page's re-seed block ends at verify OK",
       use_cases="downgrade", os=("linux", "windows"), image="core", cadence="push")
 @pytest.mark.parametrize("installer", ["pip", "pipx", "uv tool"])

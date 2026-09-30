@@ -168,16 +168,27 @@ def test_the_summary_table_links_every_section():
 
 
 def test_the_floors_the_page_names_are_the_ones_the_deploy_pins_hold():
-    """The releases a reader is told the deploy cells run are the ones they run: the
-    pinned Claude Code and Codex, and the oldest Claude Code floor, where the hook
-    cells run the plugin's one shell-form hook."""
+    """The releases a reader is told the install tests run are the ones they run:
+    the pinned Claude Code and Codex, and the oldest Claude Code floor, where the
+    hook cells run the plugin's one shell-form hook."""
     pins = tomllib.loads((ROOT / "tools" / "deploy" / "pins.toml").read_text(encoding="utf-8"))["harness"]
     claude, codex = sections()["Claude Code"], sections()["Codex"]
     oldest = min(pins["claude-code"]["floors"], key=lambda release: tuple(map(int, release.split("."))))
 
-    assert f"run it on {oldest} as well" in claude
+    assert f"run it on Claude Code {oldest} as well" in claude
     assert f"The deploy suite runs {pins['claude-code']['version']}" in claude
     assert f"The deploy suite runs {pins['codex']['version']}" in codex
+
+
+def test_the_codex_upgrade_row_moves_a_pinned_marketplace_to_the_new_tag():
+    """Every page prints the Codex install line with `--ref vX.Y.Z`, and a
+    marketplace added at a tag stays there, so a new thread alone keeps the old
+    plugin. The row said Codex upgrades git marketplaces when it starts."""
+    row = next(line for line in sections()["Codex"].splitlines() if line.startswith("| After an upgrade |"))
+
+    assert "`codex plugin marketplace remove crapkit`" in row
+    assert "`codex plugin add crapkit@crapkit`" in row and "at the new `--ref`" in row
+    assert "upgrades configured git marketplaces when it starts" not in row
 
 
 @pytest.mark.parametrize("linking", ["README.md", "docs/adoption.md", "docs/agent-json.md",

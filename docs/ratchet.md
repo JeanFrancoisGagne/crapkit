@@ -7,7 +7,7 @@ question: *has this function got worse than the day we agreed to live with it?*
 it; it fails the build instead. New debt enters only through `ratchet seed` or an audited
 override, both of which are visible in a diff.
 
-The pre-commit gate treats a mark as an exemption; `crapkit verify` fails a mark
+The pre-commit gate pardons any marked function; `crapkit verify` fails a mark
 that rises. See [the commit-gate rule](#the-commit-gate-skips-marked-functions).
 When upgrading, review [function identity](#same-line-function-identity) before
 reseeding marks recorded by an older reader.
@@ -181,7 +181,7 @@ what is left for a function the diff never touched, which is the case further do
 
 The looseness is deliberate. Before it, a comment added inside a marked function refused the
 commit. On a repo carrying 40,303 marks that meant a seeded tree could not be touched, while
-`rescore --gate` on the same tree passed. The advisory hook `crapkit claude-hook` exempts on
+`rescore --gate` on the same tree passed. The advisory hook `crapkit claude-hook` pardons on
 existence too, so a session of green advisories no longer ends at a red commit.
 
 ---
@@ -361,9 +361,13 @@ one tag behind, or a pre-commit `rev` left at the old tag, measures the older an
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=12 lizard=1.24.0] but this run measures [crapkit-analysis=11 lizard=1.24.0] - the marks come from a newer crapkit than this install; upgrade it to the version that wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than re-seed, which would restamp the team's marks backwards and make every upgraded teammate's verify refuse them
+crapkit: ratchet marks were recorded under [crapkit-analysis=14 lizard=1.24.0] but this run measures [crapkit-analysis=13 lizard=1.24.0] - the marks come from a newer crapkit than this install; upgrade it to the version that wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than re-seed, which would restamp the team's marks backwards and make every upgraded teammate's verify refuse them
 EXIT=3
 ```
+
+crapkit prints that line from 0.8.1 on; the example is a 0.8.1 reader meeting marks a
+later release stamped 14. A 0.8.0 reader meeting 0.8.1's marks prints the older line, which
+asks for a seed; upgrade that reader instead.
 
 The versions compare field by field, as numbers: `crapkit-analysis` is crapkit's, and
 `lizard` names a newer lizard when only that field moved. Seed and prune refuse the same
@@ -450,7 +454,7 @@ EXIT=3
 Reseeding from a fresh run can update compatible marks; changed function membership needs
 the identity review below first.
 
-### Upgrading to 0.4.5: analysis version 8
+### Analysis version 8: a re-seed that only restamps
 
 This historical transition changed analysis version 7 to 8. The verify refusal quoted
 above belongs to that upgrade; the current reader uses version 13. Follow
@@ -658,7 +662,8 @@ Merge made by the 'ort' strategy.
 ```
 
 ```
-# crapkit-analysis=8 lizard=1.24.0
+# crapkit-analysis=13 lizard=1.24.0
+# crapkit-keys=1
 path	long_name	crap
 app/a.py	foo( x )	31.5000
 app/b.py	bar( y )	22.0000
@@ -687,7 +692,7 @@ stamps its own older metric and the next merge refuses again:
 
 ```
 $ git merge main
-crapkit: ratchet merge refused: ours is [crapkit-analysis=11 lizard=1.24.0] and theirs is [crapkit-analysis=12 lizard=1.24.0] - marks from different metric versions cannot merge; theirs is newer, so with a crapkit that measures [crapkit-analysis=12 lizard=1.24.0], run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline the merged marks with `crapkit ratchet seed`
+crapkit: ratchet merge refused: ours is [crapkit-analysis=11 lizard=1.24.0] and theirs is [crapkit-analysis=13 lizard=1.24.0] - marks from different metric versions cannot merge; theirs is newer, so with a crapkit that measures [crapkit-analysis=13 lizard=1.24.0], run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline the merged marks with `crapkit ratchet seed`
 ```
 
 When the stamps do not compare, as with an unstamped side, it asks you to re-seed one side:
@@ -845,7 +850,7 @@ crapkit-ratchet.tsv` instead of two zero counts.
 
 A run that passed **because of an `--override`** does not tighten anything. The override
 already wrote the debt it granted, and letting the same run also rewrite every other mark
-would mix a granted exemption into a routine tightening.
+would mix a granted override into a routine tightening.
 
 A function scoring worse than its mark is a ratchet regression, whether or not the diff
 touched it. That is the point: coverage rot regresses functions nobody edited.
@@ -936,7 +941,7 @@ commit has nothing to compare against and tightens as it always did. `verify --n
 is the blunt version: the verdict stands and the marks file is not rewritten at all.
 
 **Trusted** is the same word `ratchet seed` uses, and the same test: a failed verify and a
-`partial` run are invisible here too. Both carry numbers no other reader accepts — a failed
+`partial` run are invisible here too. Both carry numbers no other reader accepts: a failed
 verify's can come off a red tree, and a `partial` run measured a fraction of the suite, so
 its coverage is low and its CRAP is high to match. Damping against either would hold a mark
 at a value nothing vouches for.

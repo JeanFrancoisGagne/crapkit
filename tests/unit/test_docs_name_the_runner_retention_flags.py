@@ -14,7 +14,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = ("CONTRIBUTING.md", "docs/resources.md")
+# docs/resources.md keeps one pointer to CONTRIBUTING.md: the runner ships in a
+# clone, not in a PyPI install.
+PAGES = ("CONTRIBUTING.md",)
 
 
 @lru_cache(maxsize=1)

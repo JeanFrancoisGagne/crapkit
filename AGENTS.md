@@ -101,7 +101,7 @@ do next.
 - the twin selector on a name one file gives to several functions (`"__post_init__#2"`)
 
 Exact first: a NAME that IS a function's long name or bare identifier resolves to that
-function alone, even when other names contain it — `route` is `route`, never
+function alone, even when other names contain it: `route` is `route`, never
 `route_chain`. A NAME that names no function falls back to a substring search, so a
 half-remembered fragment still finds what holds it. `brief` and `explain` run the same
 rule on the same string, and both read a start line or an `(anonymous)#N` handle off the
@@ -129,7 +129,7 @@ One file can also give one name to several NAMED functions: several dataclasses 
 with a `__post_init__`, both arms of an `#ifdef` fork. A bare name resolves to the worst
 of them, which is the one the queue ranks, in `brief`, `explain` and
 `get_function_history` alike. `NAME#2` selects the second in file order and
-`NAME#3` the third — the same ordinals the ratchet keys their marks on, so the mark in a
+`NAME#3` the third, the same ordinals the ratchet keys their marks on, so the mark in a
 packet is the mark on the function that packet opened. An ordinal past the last twin
 exits 1:
 
@@ -183,7 +183,7 @@ Three rules decide what it judges:
   legacy functions in the same file are not judged.
 - **Metric**: ccn against the file's scope ceiling, coverage ignored. Same question the
   pre-commit hook asks.
-- **Exemption**: a function carrying a ratchet mark it has not exceeded passes. Push it
+- **Pardon**: a function carrying a ratchet mark it has not exceeded passes. Push it
   past its mark and it fails here, ahead of verify's exit 6. Verify keeps exit 7 for a
   mark that rose in a function the diff never touched.
   The marks file is read only when a changed function is over its ceiling, so a clean
@@ -706,10 +706,15 @@ run. The store fills missing per-run rollups when `trend` or `report` asks for t
 ## Setup
 
     pip install -e ".[dev,accuracy-push]"
+    npm ci --prefix tools/accuracy/node/push
     git config core.hooksPath git-hooks
 
-The dev extra ships `pytest`, `pytest-cov`, `pytest-xdist` and `coverage`. None of the
-four is a convenience.
+The Node tools under `tools/accuracy/node/push` are what the pre-push checks of a
+JavaScript or TypeScript calculation and `change_control.py declare` run.
+
+The dev extra ships `pytest`, `pytest-cov`, `pytest-xdist`, `coverage`, `PyYAML` and
+`Pillow`. None of them is a convenience: PyYAML reads the workflow files the CI tests
+check, and Pillow renders the demo the demo tests build.
 
 `coverage>=7.13.1` is the oldest coverage whose report the coverage.py reader takes (it
 writes `start_line`), and it clears 7.10.6, the floor the
@@ -768,20 +773,21 @@ python tools/deploy/run.py --native --os windows        # Windows or macOS, afte
 ci.yml runs the push set in `deploy-linux`, `deploy-linux-native`, `deploy-windows` and
 `deploy-action`. deploy.yml runs the nightly, weekly, release and published sets, and runs
 on a pull request only when it changes an install surface or carries the `deploy-full`
-label. Before a release, push the release commit, dispatch the release set with
-`gh workflow run deploy.yml --ref main -f cadence=release` and wait for it to pass:
-`python tools/release/release.py check` refuses until a release-cadence run at HEAD is green. `tests/deploy/MAP.toml` maps every documented install command, channel, harness and
-upgrade source to its cells, and `tests/unit/test_deploy_map.py` fails on a doc fence the
-map does not cover. A new `@cell` goes into the map with its packet, cadence, os and image,
+label. Before a release, push HEAD (the commit stage 1 will bump), dispatch the release
+set with `gh workflow run deploy.yml --ref main -f cadence=release` and wait for it to
+pass: `python tools/release/release.py check VERSION` refuses until a release-cadence run
+at HEAD is green. `tests/deploy/MAP.toml` maps every documented install command, channel,
+harness and upgrade source to its cells, and `tests/unit/test_deploy_map.py` fails on a
+doc fence the map does not cover. A new `@cell` goes into the map with its packet, cadence, os and image,
 and into a run that selects it; `tests/unit/test_deploy_map.py` and
 `tests/unit/test_deploy_workflows.py` name each cell missing from either.
 `tools/deploy/README.md` is the full guide.
 
 A change to anything crapkit computes, a score, a label, a ranking or a pass/fail,
 also runs the calculation-accuracy suite: `python tools/accuracy/run.py --tier push -n 4`
-(docs/accuracy.md has every tier). A fix to a calculation adds a row to
-`tests/accuracy/suite_strength/retro/bugs.tsv` whose check fails at the commit before the
-fix; a change that moves a golden declares itself with
+(docs/accuracy.md has every tier). A fix to a calculation needs the rows
+[docs/accuracy.md: past bugs](docs/accuracy.md#past-bugs) names; a change that moves a
+golden declares itself with
 `python tools/accuracy/change_control.py declare`, and the pre-push hook refuses the push
 until it does, printing the command.
 
@@ -828,23 +834,16 @@ returns the moment its state appears, so the bound costs a passing test nothing,
 miss it kills the child and reports what the child printed. A child script written from a
 template spells `CHILD_WAIT` where it waits and `CHILD_HOLD` where it holds a lock until
 the test releases it. `run_cli` and `mcp_stdio.run` wait the bound unless a call names
-another. A product deadline under test keeps its own number, listed with its reason in
-`tests/unit/test_one_hang_bound.py`, which fails on any other wait bounded under the hang
-bound in any file under `tests/`.
+another. A hold outlasts the longest chain of waits a test starts after it.
+`tests/unit/test_one_hang_bound.py` refuses a wait bound spelled as a number, and
+`tests/unit/test_loaded_machine_waits.py` refuses a CLI, lane or mutation deadline under
+the bound unless a test is about it.
 
 A fixture that builds a measured repo builds it once per worker through
 `tests/e2e/repo_templates.py` and hands each test a copy. A test that asserts what a first
 run does gets a fresh build. A copy's lane artifacts still key files by the build's
 staging dir, which is gone, so a test that reads dark lines or reuses artifacts runs
 `coverage` in its copy first, or builds fresh.
-
-A test waits on a child through `tests/hang_guard.py`: one bound, `HANG_SECONDS`, that a
-passing wait never pays, and a miss that kills the child and fails with what it printed.
-A child script spells `CHILD_WAIT` for a state and `CHILD_HOLD` for a lock the test
-releases; a hold outlasts the longest chain of waits a test starts after it.
-`tests/unit/test_one_hang_bound.py` refuses a wait bound spelled as a number, and
-`tests/unit/test_loaded_machine_waits.py` refuses a CLI, lane or mutation deadline under
-the bound unless a test is about it.
 
 ## Where code goes
 
@@ -948,8 +947,9 @@ not in the installed package.
 Six rules the suite cannot fully police. Break one and the failure surfaces somewhere
 else, usually later, usually as a plausible wrong number.
 
-- **Every function you add or edit sits at ccn 6 or below.** The pre-commit gate refuses
-  the rest; the section below says what a refusal means.
+- **Every function you add or edit sits at or under its scope's `target` in this repo's
+  own `crapkit.toml`: 6 for `src` and `tools`, 5 for `tools/accuracy`.** The pre-commit
+  gate refuses the rest; the section below says what a refusal means.
 - **Register a new command once, in the parser.** Import helpers directly from their
   owning family module. Keep `crapkit.cli.main` as the public process entry point.
 - **Change what a metric measures and bump `ANALYSIS_VERSION` in `analyze.py`.** The
@@ -958,7 +958,10 @@ else, usually later, usually as a plausible wrong number.
   because shell blocks now nest. Without the bump nothing refuses, and 40k marks are
   quietly compared against numbers they never described. Then re-measure `GOLDEN_RECORDS`
   in `tests/unit/test_analysis_cache_identity.py` on every Python the CI runs and set
-  `GOLDEN_ANALYSIS_VERSION` to the new version; a test fails until you do.
+  `GOLDEN_ANALYSIS_VERSION` to the new version; a test fails until you do. Declare the
+  change too: `python tools/accuracy/change_control.py declare` appends the
+  `metric-digests.tsv` row for the new version, and the pre-push hook refuses the push
+  until it does.
 - **Read a lane command with `lane_command.command_steps`, `shell_words` or
   `shell_segments`, never `str.split()`.** A whitespace split breaks a quoted interpreter
   path at its space and reads `-k "not slow"` as three positionals. They read the command
@@ -982,8 +985,9 @@ that fails on the parent commit. A bug fix lands with the test that reproduces i
 
 ## The cc <= 6 gate
 
-Every function you add or edit must sit at min-CCN 6 or below. The pre-commit hook runs
-`python -m crapkit hook-precommit` over the staged blobs:
+Every function you add or edit must sit at or under its scope's `target` in this repo's
+own `crapkit.toml`: 6 for `src` and `tools`, 5 for `tools/accuracy`. The pre-commit hook
+runs `python -m crapkit hook-precommit` over the staged blobs:
 
     crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
       ccn   7  calc/report.py:39  tally( rows , low , high , invert , label , pad , strict )
@@ -992,14 +996,14 @@ Every function you add or edit must sit at min-CCN 6 or below. The pre-commit ho
 Exit 6 blocks the commit. Decompose until every touched function passes. A refusal is
 design feedback, not a threshold to widen.
 
-A function the committed ratchet already carries a mark for is exempt, and the hook
+The hook pardons a function the committed ratchet already carries a mark for, and
 reports the count on stderr. Touching signed debt does not refuse the commit; `crapkit
 verify` is what fails a mark that rises.
 
-Two gates, two exemptions, and the difference is on purpose. The pre-commit hook exempts
+Two gates, two pardons, and the difference is on purpose. The pre-commit hook pardons
 a marked function whatever its fresh score, because it reads staged blobs and a staged
 blob has no coverage behind it: the hook cannot tell a mark that held from one that
-rose. `crapkit rescore --gate` and `crapkit verify` exempt only a touched function whose
+rose. `crapkit rescore --gate` and `crapkit verify` pardon only a touched function whose
 fresh CRAP sits at or under its mark. So an edit that pushes signed debt past its mark
 still commits, and verify then refuses it with exit 6. Exit 7 stays for a mark that rose
 in a function the diff never touched.

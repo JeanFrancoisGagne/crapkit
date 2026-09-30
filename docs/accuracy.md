@@ -7,7 +7,15 @@ them from moving without a declared change.
 
 It lives in `tests/accuracy` and `tools/accuracy`, apart from the unit and e2e
 suites in `tests/unit` and `tests/e2e`, which pin crapkit's behavior. This page
-is for contributors: how to run it, what a failure means, and how to add a check.
+is for contributors:
+
+- [Run each tier locally](#run-each-tier-locally)
+- [When a check fails](#when-a-check-fails)
+- [Add a check](#add-a-check)
+- [Replay a past bug](#past-bugs)
+- [Declare a change that moves a golden](#change-control)
+
+The generated [rulings](#rulings) and [conventions](#conventions) tables close the page.
 
 ## What it checks
 
@@ -172,7 +180,8 @@ A pull request runs the nightly tier as well while it carries the `accuracy` lab
 Run every command from the repository root. `run.py` exits 0 when every check
 passed, 1 when a check failed, and 3 when the only problems were infra misses
 (an oracle not installed, a fetch that failed) after one retry. Each run writes a
-receipt to `.crapkit/accuracy/<tier>-<shard>-<os>-<python>.json` and prints each
+receipt to `.crapkit/accuracy/<tier>[-<shard>]-<os>-<python>.json` (for example
+`push-windows-3.12.json`) and prints each
 check's declared and measured seconds. A check whose test file is not there
 fails without running and names the file and its row in `tools/accuracy/checks/`.
 
@@ -282,6 +291,161 @@ inside the process, stuck in C code past its bound
 (`tests/e2e/cli_in_process.py`). It ends on purpose, after writing every
 thread's stack to `in-process-hangs.log` under pytest's basetemp
 (`pytest-of-<user>/pytest-<n>/`, or its `popen-gw<N>` folder under xdist).
+
+## Past bugs
+
+`tests/accuracy/suite_strength/retro/bugs.tsv` lists every past calculation bug:
+its fix commits, the commit before them, and the check that must catch it.
+`ledger.tsv` beside it records the last replay of each row. `tools/accuracy/retro.py`
+replays a row: it checks out the commit before the fix and the fix, installs each
+commit's crapkit in a venv of its own, and runs the check from this tree against it.
+Replaying a bug needs uv: `retro.py` builds each replay venv with `uv venv` and
+`uv pip install`. A fix commit needs the rows the `fix` kind lists under
+[Declaring a change](#declaring-a-change).
+
+```
+python tools/accuracy/retro.py run R57 --record
+```
+
+A replay counts only when the check fails on an AssertionError at the commit
+before the fix and passes at the fix. A check that passes before the fix catches
+nothing, and one that fails at the fix proves nothing; both are refused, the row
+stays `pending`, and its ledger note says why. Each night accuracy.yml replays the
+rows whose check changed and a seventh of the rest: the `retro` job in the Linux
+image, and the Windows cell the rows whose `platform` is `windows`
+(`retro.py nightly --platform-only`). The nightly job judges and never records,
+so a row whose check changed replays every night until someone records it:
+after changing a check, or anything it imports, list those rows with
+`python tools/accuracy/retro.py stale`, replay them with `run <id> --record`
+and commit `ledger.tsv`. A row whose test is not written yet never replays and
+stays `pending`.
+
+When the check cannot ask its question of the old commit (it reads a field the fix
+added, or a later bug fails it too), write a probe: a script in `retro/probes/`
+that asks only this bug's question through the CLI or API both commits have. It
+exits 0 when the value holds and raises AssertionError when it does not, and its
+`# source:` line names where the expected value comes from, never crapkit's output
+at the fix. Name it in the row's `probe` cell.
+
+The replayed check runs with `CRAPKIT_ACCURACY_PYTHON` set to the commit's venv,
+that commit's crapkit (and nothing else from its venv) first on PYTHONPATH, and
+`CRAPKIT_ACCURACY_CHECKOUT` naming the commit's checkout, where a check finds the
+files a wheel does not carry, such as `action.yml`. Every tier's items run, but an
+item a `python` marker keeps for a newer Python than the replay's is left out, since
+it cannot run there. A row's `env` cell may set
+`CRAPKIT_ACCURACY_LANGUAGES` and `CRAPKIT_ACCURACY_ROOT_PATHS` for a commit that
+read fewer languages or refused a root scope of `.`. `CRAPKIT_RETRO_WORK` moves
+the worktrees and venvs (default `.crapkit/accuracy/retro`), and rows R01 to R12
+need `CRAPKIT_RETRO_BUNDLE`, the history bundle their commits live in.
+
+## Change control
+
+### The rule for goldens
+
+A golden is crapkit's own output on a fixed corpus, kept under
+`tests/accuracy/*/goldens/`. It cannot prove a number right, since crapkit wrote
+it; it proves the number did not move. So no golden, and no expected value,
+changes on its own. The goldens, rulings, hand tables, probes and oracle
+adapters are locked in `tests/accuracy/change_control/goldens.lock`, and these
+rules hold on every tree (`test_change_control.py`, on every push):
+
+- Every golden equals what crapkit prints now.
+- Every locked file's sha256 equals its lock row, and every lockable file has one.
+- Each lock row names a change in `CHANGES.tsv`, and each change other than kind
+  `none` has a line in CHANGELOG.md.
+- The last `metric-digests.tsv` row is the running `ANALYSIS_VERSION`, lizard
+  version and corpus, and its digest is the one computed over the small corpus
+  now. A move of that digest takes a new `ANALYSIS_VERSION`.
+- `test-counts.tsv` holds each packet's test function count.
+
+### Declaring a change
+
+A diff that moves a golden or a locked file, or that touches a module a
+`calcs.tsv` row names, needs a declared change:
+
+```
+python tools/accuracy/change_control.py declare C12 --kind fix --calcs "CRAP score" --reason "..."
+```
+
+`declare` regenerates the goldens, judges every moved value against its outside
+oracle, and stops on a move the oracle does not support ("crapkit now says 9,
+radon says 7"); `--against-oracle RULING` accepts one that a rulings row of that
+calc covers. It relocks the files, appends the `CHANGES.tsv` row and prints the
+CHANGELOG line the commit needs. `--no-regenerate` judges the goldens as they
+are, for a change that moves no crapkit output. `goldens/full.tsv` pins the full
+corpus's exports, and `declare` remeasures it only when a built full corpus is
+at hand (`CRAPKIT_ACCURACY_CORPUS`, the accuracy image's `/corpus`, or the cache
+`python tools/accuracy/corpus.py fetch` fills). Without one it says so on its
+last line, and the nightly's full-corpus check still compares that file, so
+fetch the corpus before you declare a change that moves a metric.
+
+Run `declare` on Linux or in the accuracy image (`docker run --rm -v "$PWD:/src"
+crapkit-accuracy:<tag> python tools/accuracy/change_control.py declare ...`). On Windows
+and macOS the regenerated small-corpus goldens gain a row for `src/py/Upper.PY` that the
+Linux goldens do not hold, and `declare` then asks for an `ANALYSIS_VERSION` bump no code
+made. Which platform is right is an open question.
+
+| Kind | For | The same diff also needs |
+|---|---|---|
+| `fix` | crapkit was wrong | A `bugs.tsv` row (12 columns: id, fix_commits, before_commit, packet, test, probe, env, method, platform, replay, calc, symptom), a check that fails at the commit before the fix, a row in the owning packet's `retro.tsv` naming that check, and a `ledger.tsv` row. The `bugs.tsv` row names the fix commit, so it lands in a commit after the fix |
+| `definition` | crapkit now means something else on purpose | An edit to README.md, CONTEXT.md, docs/agent-json.md or this page; a rulings row covering every moved cell; a hand or probe row with an outside source for each moved calc |
+| `feature` | crapkit computes something new | Nothing more; its calcs are the ones whose output moved |
+| `none` | A refactor or a relock | A reason; no golden cell may move |
+
+Rules that compare two commits run in three places: `git-hooks/pre-push` against
+`origin/main`, CI's verdict job against `refs/accuracy/green` (the newest main
+commit whose verdict passed, so a push that skipped CI is still judged), and the
+release against the previous tag. On top of the in-tree rules they refuse a
+change that drops or rewrites a recorded row (`CHANGES.tsv`, `bugs.tsv`, the
+ledger, the retro tables, a rulings id), lowers a mutation floor, collects fewer
+tests in a packet, or declares a calc that did not move. Each refusal prints the
+command that fixes it. The rows of a bug `bugs.tsv` marks `open` are the one
+exception: its fix waits off main and lands as other commits, so those rows follow
+it, as long as the bug keeps a `bugs.tsv` row.
+
+## Add a check
+
+1. Put the test in its packet's directory. Its expected values come from the
+   methods above, never from crapkit's output.
+2. Name its file in a row of `tools/accuracy/checks/<packet>.py`, with its
+   serial seconds on Ubuntu, and `os_sensitive: True` when the answer can change
+   with the OS. The contract fails on a test module no check names, on a check
+   whose file is not there, and on a push tier whose declared seconds pass 504,
+   naming the five slowest checks. A check for another tier names it
+   (`"tiers": ["nightly"]`), and its tests carry the same marker
+   (`pytestmark = [pytest.mark.nightly]`), because a test with no tier marker runs
+   in push. `"os": ["linux"]` on the row and `@pytest.mark.platform("linux")` on
+   the test limit it to one platform.
+3. A new calculation gets a `calcs.tsv` row naming its modules, its functions and
+   its independent test. Then run `python tools/docs/generate.py`: it rewrites
+   pyproject.toml's `[tool.mutmut]` `paths_to_mutate`, the union of every row's
+   modules, and the tables on this page.
+4. Take Hypothesis settings from `accuracy.kit.settings` (`pure` or `process`),
+   dated repos from `make_repo`, and the measured small corpus from the
+   `small_corpus` fixture. A test that starts git, node, pwsh or the crapkit CLI
+   (`make_repo`, the drive helpers) carries `@pytest.mark.process`, or it fails
+   naming the marker.
+5. Run `python tools/accuracy/change_control.py counts --write` and commit
+   `tests/accuracy/change_control/test-counts.tsv`. Rule T6 fails while a packet's
+   test count differs.
+
+`tests/accuracy/kit/test_kit_contract.py` holds the rules every packet follows:
+no skip or xfail outside a rulings row, no crapkit import in an independent
+test's closure, every hand table citing its source, every model citing doc lines
+that still hash to their pins. Suite strength's nightly reach check
+(`tests/accuracy/suite_strength/test_calc_reach.py`) runs each function a
+calcs.tsv row names: on the golden CLI run over the small corpus, or else under
+the row's independent test, both measured with coverage.py down to subprocess
+children. A function neither run reaches fails it: the row's test then checks a
+copy of the rule, or the row names the wrong function.
+
+## Releases
+
+`python tools/release/release.py run accuracy VERSION` runs after the verify
+stage: the release tier here, then accuracy.yml's release mode on the tag commit.
+Stage 2b publishes only when the local receipt passed at this HEAD and GitHub
+holds a successful release run at the tag commit. See
+[tools/release/README.md](../tools/release/README.md#the-accuracy-stage).
 
 ## Rulings
 
@@ -965,140 +1129,3 @@ outside support is `docs/accuracy.md#conventions`.
 | V4 | Ratchet file parse and dump | a hand-typed mark of -1, which no CRAP can reach, is read and rewritten as -1.0000 | -1.0000 | CRAP &gt;= ccn &gt;= 1 (Savoia and Evans) | refused | definition |
 | V4.0 | Ratchet file parse and dump | a hand-typed mark of 0, which no CRAP can reach, is read and rewritten as 0.0000 | 0.0000 | CRAP &gt;= ccn &gt;= 1 (Savoia and Evans) | refused | definition |
 <!-- /generated:conventions -->
-
-## Past bugs
-
-`tests/accuracy/suite_strength/retro/bugs.tsv` lists every past calculation bug:
-its fix commits, the commit before them, and the check that must catch it.
-`ledger.tsv` beside it records the last replay of each row. `tools/accuracy/retro.py`
-replays a row: it checks out the commit before the fix and the fix, installs each
-commit's crapkit in a venv of its own, and runs the check from this tree against it.
-
-```
-python tools/accuracy/retro.py run R57 --record
-```
-
-A replay counts only when the check fails on an AssertionError at the commit
-before the fix and passes at the fix. A check that passes before the fix catches
-nothing, and one that fails at the fix proves nothing; both are refused, the row
-stays `pending`, and its ledger note says why. Each night accuracy.yml replays the
-rows whose check changed and a seventh of the rest: the `retro` job in the Linux
-image, and the Windows cell the rows whose `platform` is `windows`
-(`retro.py nightly --platform-only`). The nightly job judges and never records,
-so a row whose check changed replays every night until someone records it:
-after changing a check, or anything it imports, list those rows with
-`python tools/accuracy/retro.py stale`, replay them with `run <id> --record`
-and commit `ledger.tsv`. A row whose test is not written yet never replays and
-stays `pending`.
-
-When the check cannot ask its question of the old commit (it reads a field the fix
-added, or a later bug fails it too), write a probe: a script in `retro/probes/`
-that asks only this bug's question through the CLI or API both commits have. It
-exits 0 when the value holds and raises AssertionError when it does not, and its
-`# source:` line names where the expected value comes from, never crapkit's output
-at the fix. Name it in the row's `probe` cell.
-
-The replayed check runs with `CRAPKIT_ACCURACY_PYTHON` set to the commit's venv,
-that commit's crapkit (and nothing else from its venv) first on PYTHONPATH, and
-`CRAPKIT_ACCURACY_CHECKOUT` naming the commit's checkout, where a check finds the
-files a wheel does not carry, such as `action.yml`. Every tier's items run, but an
-item a `python` marker keeps for a newer Python than the replay's is left out, since
-it cannot run there. A row's `env` cell may set
-`CRAPKIT_ACCURACY_LANGUAGES` and `CRAPKIT_ACCURACY_ROOT_PATHS` for a commit that
-read fewer languages or refused a root scope of `.`. `CRAPKIT_RETRO_WORK` moves
-the worktrees and venvs (default `.crapkit/accuracy/retro`), and rows R01 to R12
-need `CRAPKIT_RETRO_BUNDLE`, the history bundle their commits live in.
-
-## Change control
-
-### The rule for goldens
-
-A golden is crapkit's own output on a fixed corpus, kept under
-`tests/accuracy/*/goldens/`. It cannot prove a number right, since crapkit wrote
-it; it proves the number did not move. So no golden, and no expected value,
-changes on its own. The goldens, rulings, hand tables, probes and oracle
-adapters are locked in `tests/accuracy/change_control/goldens.lock`, and these
-rules hold on every tree (`test_change_control.py`, on every push):
-
-- Every golden equals what crapkit prints now.
-- Every locked file's sha256 equals its lock row, and every lockable file has one.
-- Each lock row names a change in `CHANGES.tsv`, and each change other than kind
-  `none` has a line in CHANGELOG.md.
-- The last `metric-digests.tsv` row is the running `ANALYSIS_VERSION`, lizard
-  version and corpus, and its digest is the one computed over the small corpus
-  now. A move of that digest takes a new `ANALYSIS_VERSION`.
-- `test-counts.tsv` holds each packet's test function count.
-
-### Declaring a change
-
-A diff that moves a golden or a locked file, or that touches a module a
-`calcs.tsv` row names, needs a declared change:
-
-```
-python tools/accuracy/change_control.py declare C12 --kind fix --calcs "CRAP score" --reason "..."
-```
-
-`declare` regenerates the goldens, judges every moved value against its outside
-oracle, and stops on a move the oracle does not support ("crapkit now says 9,
-radon says 7"); `--against-oracle RULING` accepts one that a rulings row of that
-calc covers. It relocks the files, appends the `CHANGES.tsv` row and prints the
-CHANGELOG line the commit needs. `--no-regenerate` judges the goldens as they
-are, for a change that moves no crapkit output. `goldens/full.tsv` pins the full
-corpus's exports, and `declare` remeasures it only when a built full corpus is
-at hand (`CRAPKIT_ACCURACY_CORPUS`, the accuracy image's `/corpus`, or the cache
-`python tools/accuracy/corpus.py fetch` fills). Without one it says so on its
-last line, and the nightly's full-corpus check still compares that file, so
-fetch the corpus before you declare a change that moves a metric.
-
-| Kind | For | The same diff also needs |
-|---|---|---|
-| `fix` | crapkit was wrong | A `bugs.tsv` row and a check that fails at the commit before the fix |
-| `definition` | crapkit now means something else on purpose | An edit to README.md, CONTEXT.md, docs/agent-json.md or this page; a rulings row covering every moved cell; a hand or probe row with an outside source for each moved calc |
-| `feature` | crapkit computes something new | Nothing more; its calcs are the ones whose output moved |
-| `none` | A refactor or a relock | A reason; no golden cell may move |
-
-Rules that compare two commits run in three places: `git-hooks/pre-push` against
-`origin/main`, CI's verdict job against `refs/accuracy/green` (the newest main
-commit whose verdict passed, so a push that skipped CI is still judged), and the
-release against the previous tag. On top of the in-tree rules they refuse a
-change that drops or rewrites a recorded row (`CHANGES.tsv`, `bugs.tsv`, the
-ledger, the retro tables, a rulings id), lowers a mutation floor, collects fewer
-tests in a packet, or declares a calc that did not move. Each refusal prints the
-command that fixes it. The rows of a bug `bugs.tsv` marks `open` are the one
-exception: its fix waits off main and lands as other commits, so those rows follow
-it, as long as the bug keeps a `bugs.tsv` row.
-
-## Add a check
-
-1. Put the test in its packet's directory. Its expected values come from the
-   methods above, never from crapkit's output.
-2. Name its file in a row of `tools/accuracy/checks/<packet>.py`, with its
-   serial seconds on Ubuntu, and `os_sensitive: True` when the answer can change
-   with the OS. The contract fails on a test module no check names, on a check
-   whose file is not there, and on a push tier whose declared seconds pass 504,
-   naming the five slowest checks.
-3. A new calculation gets a `calcs.tsv` row naming its modules, its functions and
-   its independent test. Then run `python tools/docs/generate.py`: it rewrites
-   pyproject.toml's `[tool.mutmut]` `paths_to_mutate`, the union of every row's
-   modules, and the tables on this page.
-4. Take Hypothesis settings from `accuracy.kit.settings` (`pure` or `process`),
-   dated repos from `make_repo`, and the measured small corpus from the
-   `small_corpus` fixture.
-
-`tests/accuracy/kit/test_kit_contract.py` holds the rules every packet follows:
-no skip or xfail outside a rulings row, no crapkit import in an independent
-test's closure, every hand table citing its source, every model citing doc lines
-that still hash to their pins. Suite strength's nightly reach check
-(`tests/accuracy/suite_strength/test_calc_reach.py`) runs each function a
-calcs.tsv row names: on the golden CLI run over the small corpus, or else under
-the row's independent test, both measured with coverage.py down to subprocess
-children. A function neither run reaches fails it: the row's test then checks a
-copy of the rule, or the row names the wrong function.
-
-## Releases
-
-`python tools/release/release.py run accuracy VERSION` runs after the verify
-stage: the release tier here, then accuracy.yml's release mode on the tag commit.
-Stage 2b publishes only when the local receipt passed at this HEAD and GitHub
-holds a successful release run at the tag commit. See
-[tools/release/README.md](../tools/release/README.md#the-accuracy-stage).

@@ -133,6 +133,51 @@ def test_the_slug_rule_matches_the_headings_it_is_pointed_at():
     assert "reportonfailure" in _anchors("docs/lanes.md")
 
 
+_CODE = re.compile(r"^(```|~~~).*?^\1[^\n]*$|`+[^`\n]*`+", re.MULTILINE | re.DOTALL)
+_MD_LINK = re.compile(r"\]\(([^)\s]+)\)")
+
+
+def _unreleased(page: str) -> str:
+    """CHANGELOG's top section: the one a release publishes next."""
+    return _doc(page).split("\n## ", 2)[1]
+
+
+def _link_target(page: str, url: str) -> tuple[str, str] | None:
+    """(repo path, anchor) a link names, or None for another site's URL."""
+    if url.startswith(BLOB):
+        path, _, anchor = url[len(BLOB):].partition("#")
+        return path, anchor
+    if re.match(r"[a-z]+:", url):
+        return None
+    path, _, anchor = url.partition("#")
+    base = (ROOT / page).parent
+    return ((base / path).resolve().relative_to(ROOT.resolve()).as_posix() if path else page), anchor
+
+
+def _broken_links(page: str, text: str) -> set[tuple[str, str]]:
+    targets = [_link_target(page, url) for url in _MD_LINK.findall(_CODE.sub("", text))]
+    return {(page, f"{path}#{anchor}") for path, anchor in filter(None, targets)
+            if path.endswith(".md") and _link_is_broken(path, anchor)}
+
+
+def test_every_link_in_the_docs_lands_on_a_page_and_heading_that_exist():
+    """A page linked `#analysis-version-12`, a heading no release shipped, and
+    only the skill pages had their anchors checked. Every Markdown page a user
+    reads, and the CHANGELOG section a release publishes, gets the same check."""
+    pages = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "docs").glob("*.md")) + ["README.md"]
+    broken = set().union(*(_broken_links(page, _doc(page)) for page in pages),
+                         _broken_links("CHANGELOG.md", _unreleased("CHANGELOG.md")))
+    assert broken == set(), "each link names a page or heading the repo does not hold"
+
+
+def test_the_docs_link_check_skips_code_and_follows_relative_paths():
+    """Guards the test above: `f[T](a)` in a code span is no link, and a
+    relative link resolves against the page that holds it."""
+    assert _broken_links("docs/upgrading.md", "`f[T](a):` [x](#no-such-heading)") == {
+        ("docs/upgrading.md", "docs/upgrading.md#no-such-heading")}
+    assert _broken_links("docs/upgrading.md", "[r](../README.md#exit-codes) [l](lanes.md)") == set()
+
+
 def test_the_pytest_cause_in_the_recover_table_owns_the_pytest_section():
     """One row carried both providers and linked the vitest section alone. The
     agent that got there from a pytest lane read about @vitest/coverage-v8 and

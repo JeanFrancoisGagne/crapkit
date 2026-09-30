@@ -111,7 +111,7 @@ def test_the_changelog_names_the_same_size_edit_as_a_limit():
 
 # -- verify tells a commit the clone lacks from a rewrite -------------------------
 
-_BASELINE = "a74260f321f" + "4e0b9d2c61a8f3e57d0c1b2a9e8f7d6c5"
+_BASELINE = "a74260f321f" + "4e0b9d2c61a8f3e57d0c1b2a9e8f7"
 
 
 def _not_behind(shallow: bool, held: bool) -> str:

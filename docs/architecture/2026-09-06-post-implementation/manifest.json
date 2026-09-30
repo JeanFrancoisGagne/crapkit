@@ -10,12 +10,12 @@
       "sha256": "6d9c09c340de44e9fe4b336569368b9206811589936ea231cbef433354aafe04"
     },
     "build-review.py": {
-      "bytes": 15770,
-      "sha256": "c95c9eb90f5b4c6761382a9660a9e898dc8d3fd02cf06f8b8ec9528102111cdb"
+      "bytes": 15728,
+      "sha256": "b0762ae98d2462e0d28840cadf20d10d9a086955f448bb12ade460efa15fbc3d"
     },
     "crapkit-architecture-rerun-2026-09-06.html": {
-      "bytes": 85855,
-      "sha256": "2e187645bc807a88057fdc607d34e0feecfdb9486a4349b8116880b9d1cda53b"
+      "bytes": 85813,
+      "sha256": "42901a53fee62a366e6f3eaa9af8c6c65440bf8f668b4abac976f745f0e8030d"
     },
     "crapkit-architecture-rerun-2026-09-06.json": {
       "bytes": 71925,
@@ -162,8 +162,8 @@
       "sha256": "879ef18dbf5805244bddec3d305a6184f1fc9a78e4fd2a4f652ccbaec861f0f1"
     },
     "evidence/state-review.md": {
-      "bytes": 14287,
-      "sha256": "5af3076c6df51b1067f552a8fa8135b2c286ba05631d155e1a727f9b6df13ee4"
+      "bytes": 14290,
+      "sha256": "448eced64d53b93a89322b39543b6de18f75e7751bb0ef7393790b463197786e"
     },
     "execution-candidates.json": {
       "bytes": 17644,
@@ -174,8 +174,8 @@
       "sha256": "8b0f22eb1a8ce912d41b31348cbbc7769017aa421d57000c790538cd73435bd5"
     },
     "publish-review.py": {
-      "bytes": 5324,
-      "sha256": "a3bdc49bd34afc62c5d5322b0507ca6a1c66c424fa48db648ffe64c6af8afcef"
+      "bytes": 5581,
+      "sha256": "ee33ba1e8faa49b1f73ccd1219e87c3d1992cc186d30feaac1ca618423a6c802"
     },
     "README.md": {
       "bytes": 1800,

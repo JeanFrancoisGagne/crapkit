@@ -43,7 +43,8 @@ Sometimes none can. crapkit reads two coverage formats, coverage.py's JSON and i
 `coverage-final.json`, so a Go, Rust or Swift scope has no lane to prefer. There
 `coverage_optional` is the honest answer, not a shortcut, and `crapkit init` already wrote
 it: any scope whose languages all lack a parser comes out of `init` carrying the key. What
-is left for you is the first reason — code a test could reach but never will. See
+is left for you is the first reason: code no test can reach, such as entry points and
+deploy scripts. See
 [lanes.md](lanes.md#which-languages-a-lane-can-measure).
 
 ## What to do about `no_lane_over_target`
@@ -228,15 +229,19 @@ claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin 
 claude plugin install crapkit@crapkit
 ```
 
-`--sparse` checks out the two directories the plugin ships from, 0.8 MB of a 61 MB
-repository.
+`--sparse` checks out the two small directories the plugin ships from, where a clone of
+the whole repository can outrun Claude Code's 120-second clone timeout.
 
 It carries three skills, the read-side MCP server, and one advisory PostToolUse hook that
 names functions an edit pushed over their ceiling. The hook never blocks; the commit gate
-stays the only enforcement point. Cursor imports Claude Code plugins from the same home, and
-GitHub Copilot CLI and VS Code load them too, so the hook runs there as well and hands the
-advisory to the model as added context. After a CLI upgrade, `crapkit doctor --plugin-root PATH`
-compares the two and prints nothing when they agree.
+stays the only enforcement point. Cursor imports the plugin Claude Code installed in the
+same home. GitHub Copilot CLI installs it with `copilot plugin marketplace add
+JeanFrancoisGagne/crapkit` and `copilot plugin install crapkit@crapkit`, and VS Code loads
+it once you add it as an agent plugin ([harnesses](harnesses.md#vs-code-with-github-copilot)).
+In all three the hook hands the advisory to the model as added context. After a CLI
+upgrade, `crapkit doctor --plugin-root PATH` compares the two and exits 0 when they agree.
+When it found the install under PATH rather than at it, it first prints `crapkit doctor:
+checking ROOT`, naming the install it read.
 
 The plugin registers that hook on `Edit|Write`. A session that writes source through a
 shell heredoc gets no advisory until the consumer adds a second entry of their own with
