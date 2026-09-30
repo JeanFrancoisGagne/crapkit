@@ -2,3313 +2,410 @@
 
 ## 0.8.1 — unreleased
 
-A deploy suite now installs crapkit the way the docs say, through each channel and into
-each agent, fresh and as an upgrade, and a calculation-accuracy suite checks every number
-crapkit computes against outside tools and hand tables. This release fixes what both found.
+0.8.1 fixes what two new test suites found in 0.8.0: one installs crapkit the way the
+docs say, through each channel and into each agent, and one checks every number crapkit
+computes against outside tools and hand tables. Many fixes change how crapkit reads C,
+C++, Objective-C, Java, Swift, Rust, Go, Zig, shell and PowerShell, so scores move under
+analysis version 13, where 0.8.0 wrote 11, and every repo re-seeds its marks once. Others
+name a value nobody measured, where 0.8.0 read it as zero, empty or passing.
+
+Python lanes need coverage.py 7.13.1 or newer (step 2), and several exit codes move (step
+3). The twelve MCP tools keep their names, JSON schema version 1 stays, and `flag`
+gains the value `excluded`. crapkit supports Python 3.14, and lizard is capped at
+`lizard>=1.24.0,<1.25`. Each line below links to its full entry in [crapkit 0.8.1 in
+detail](docs/releases/0.8.1.md).
 
 ### Upgrading from 0.8.0
 
-- The coverage.py reader, two source reads and the readers under Analysis version 13
-  below move the analysis version from 11 to 13 in one step. The two source reads are a
-  UTF-16 source, and an identifier holding a byte cp1252 leaves undefined (see Text that
-  is not UTF-8 below). Every repo re-seeds its marks once: `crapkit coverage`, then `crapkit
-  ratchet prune`, then `crapkit ratchet seed`.
-  When a failed verify pins the baseline, pass the new run to both, `crapkit ratchet prune
-  --baseline N` and then `crapkit ratchet seed --baseline N`. Until then `verify` refuses
-  the marks as recorded under another metric version. The first `inventory` or `coverage`
-  analyzes every file again. See the [upgrade
-  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-13).
-  (accuracy changes C2 and C7)
-- The `py` and `dev` extras require coverage.py 7.13.1 or newer. Coverage 7.6 to 7.13.0
-  write a function's region with no `start_line`, and `crapkit coverage` now refuses
-  such an artifact at exit 5 (see the coverage readers below). Upgrade coverage where
-  each Python lane runs, with `pip install -U "coverage>=7.13.1"`, or with `pip install
-  -U "crapkit[py]"` where crapkit shares that environment, then rerun `crapkit
-  coverage`. An artifact that carries `start_line` scores as it did in 0.8.0.
-- Where marks were measured on coverage 7.6 to 7.13.0, 0.8.0 gave a nested function its
-  encloser's coverage. On the new coverage that function scores its own region, so its
-  CRAP can rise once. `ratchet seed` never raises a mark, so after the re-seed `verify`
-  reports the rise as a `RATCHET` line at exit 7 on a function the diff never touched. The
-  [upgrade
-  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#081-on-coverage-76-to-7130)
-  says how verify names each such function after the seed.
-- `crapkit.toml` reads every path it carries the same way on every OS, and three of those
-  readings can change what an existing config scores. They move no analysis version and
-  need no re-seed of their own: the one re-seed above covers them. A scope path in
-  another letter case on a case-insensitive disk
-  (`paths = ["Src"]` for `src/`) claimed no file and now claims its directory, so its
-  functions score and meet the gate; a scope path spelled absolutely is refused at load
-  with exit 3 and the relative path to write. `[exclude]` globs written `src\gen\**`,
-  `./src/gen/**`, `/src/gen/**` or `src/gen/` excluded nothing and now exclude. A
-  `path_prefix` written `api\`, `./api/`, `.\api\`, `/api/` or, on a case-insensitive
-  disk, `API/` scored every function in its scopes untested and now joins the lane's
-  coverage. Before upgrading, run `crapkit doctor --show-files > before-doctor.txt` and
-  `crapkit coverage --export before.tsv`; after, run both again and compare the per-scope
-  file counts. See the [upgrade
-  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#config-paths-that-081-reads-on-every-os).
-- A config `crapkit init` wrote under 0.8.0 names the python of the OS it ran on:
-  `.venv\\Scripts\\python.exe` (as the TOML string spells it) or `.venv/bin/python`, which
-  fail every lane on the other OS, or a bare `python`, which fails on an Ubuntu without
-  python-is-python3. Swap the venv launcher for `{python:.venv}` and a bare name for
-  `{python}`. 0.8.0 does not know the token and hands it to the shell as written, so its
-  `doctor` FAILs every lane that holds one and its `coverage` exits 5
-  (`/bin/sh: 1: {python:.venv}: not found` under sh). Commit the swap only once every
-  clone, the Action's `uses:` pin and the pre-commit `rev` run 0.8.1; the [upgrade
-  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#a-team-upgrades-every-reader-before-the-re-seed-lands) quotes both
-  shells' lines. A downgrade writes each token back as the launcher first; the guide's
-  [Downgrading](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#downgrading)
-  section lists them.
-- Three config-path exit codes change. On Windows a root on a network share exits 3 before any lane
-  starts, where every lane ran in `C:\Windows`. A lane whose `cwd` names no directory
-  fails as that lane, and a run with no lane left exits 5, where `crapkit coverage` ended
-  in a Python traceback at exit 1. A lane with `path_prefix` fed another checkout's
-  coverage.py report, or a lane scoped to the root fed another checkout's coverage.py or
-  istanbul report, fails the same way, where it exited 0.
-- A lane whose `bash -c` or `sh -c` payload hands pytest a positional that narrows the
-  suite, or hands vitest a file filter beside `--coverage`, now exits 3 at config load, as
-  the same command without the wrapper always did: drop the positional or set
-  `full_suite = false`. A lane whose `artifact` is empty or names the root (`.`), or whose
-  `results_artifact` names the root, exits 3 at load too.
-- A lane whose name Windows cannot use as a file name (`unit?`, `a:b`, `nul`, a trailing
-  dot or space) now exits 3 at load on every OS, and so do two lanes whose names differ
-  only in case. `unit?` ended `crapkit coverage` in a Python traceback at exit 1, and
-  `a:b` wrote the lane's log into an NTFS alternate data stream of `.crapkit/lane-a`.
-  Rename the lane.
-- The commit hook scores a staged file whose extension is upper case (`src/MAIN.CPP`,
-  `src/Tool.PY`) and exits 6 on a function over its ceiling there, where 0.8.0 left the
-  file unscored and passed at 0. `test-scoped` refuses a `test_*.py`, `*.test.*` or
-  `*.spec.*` file outside every scope and outside a `test`, `tests` or `__tests__`
-  directory at exit 3, where 0.8.0 ran the scope's template on it at 0. Move such a file
-  under a scope's `paths` or into `tests/`.
-- Many more exit codes move. The upgrade guide lists each with its 0.8.0 and 0.8.1 exit
-  and what to change: [missing values](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#missing-values-that-081-names), [the
-  commit gate](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#the-commit-gate-in-081), [text that is not
-  UTF-8](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#text-that-is-not-utf-8) and [the
-  rest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#other-exit-codes-that-move-in-081). Read them before you move a CI job,
-  an Action pin or a pre-commit `rev`.
-- The commit hook under `pre-commit run --all-files`, the form pre-commit.ci and
-  pre-commit/action run, now judges every tracked file and exits 6 on a function over its
-  ceiling that no mark signs, where 0.8.0 judged the empty staged diff and passed at 0.
-  Seed the marks or decompose those functions before you move the `rev`. A hook at the
-  git top of a monorepo whose `crapkit.toml` sits below, or armed before `crapkit init`,
-  exited 3 on every commit; it now gates each root below that owns a staged file, or
-  passes.
-- crapkit's own messages spell a dash as ` - ` where 0.8.0 printed an em dash, among
-  them doctor on a repo with no lane and worklist, brief and digest before the first run.
-  A script or a test that matches one of those lines has to match ` - ` now. A path or a
-  function name crapkit quotes keeps its own characters.
-- The churn window counts back from HEAD's commit date on the UTC calendar, never from
-  the day of the run (see The churn window ends at HEAD's commit date below). worklist and
-  brief can rank a function differently from 0.8.0 on a repo whose HEAD commit is older
-  than the day it is measured, and on a machine whose local date is not the UTC date.
-  Scores do not move, and it needs no re-seed of its own.
-- A partial run's `crap_load` sums only the scopes it measured, so `coverage --json` and
-  the run line report less than 0.8.0 did on a run with a failed or skipped lane: 0.8.0
-  added that lane's functions at the cov-0 stand-in. `by_scope` still carries each
-  unmeasured scope's load.
-- Library API: the suite-drop check moved to `crapkit.lane_results.suite_drops(behind,
-  current)`, which walks the trusted runs behind this one. `crapkit.lanes.suite_drops(previous,
-  current)` still answers for the last trusted run and raises a DeprecationWarning; it
-  goes in 0.9.0. See the [upgrade
-  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#library-callers).
-- Library API: `lanes.lane_sources_unchanged` keeps its 0.8.0 arguments and its bool
-  answer through 0.8.x, and warns with a `DeprecationWarning` when called; 0.9.0 removes
-  it. Read `lane_freshness.Freshness(root, lanes, scope_paths).lines(lane)` instead: an
-  empty string means the lane's lines are fresh, any other string is the reason they are
-  not. `lanes.staleness_reads` keeps its 0.8.0 arguments through 0.8.x too, warns the
-  same way, and yields the value `lane_sources_unchanged` takes as `git`, so the 0.8.0
-  pattern of one `with` block around every lane's call still runs. Use
-  `lane_freshness.Freshness(root, lanes, scope_paths)` as that context instead: it reads
-  the stamp file once for every lane. `MissingLines` takes an optional third field,
-  `drift`, and `uncovered.lane_views` returns each lane's note with `blackout`, whether it
-  withholds every file's lines.
-- Library API: `lanes.uncommitted_changes` raises `GitError` when git cannot say,
-  where it returned `[]`.
-- Library API: other module names moved with no warning. `gitio.file_log_patches` and
-  `gitpaths.history_line` are gone, `lanes.SUITE_DROP_FRACTION` is
-  `lane_results.SUITE_DROP_FRACTION`, `mcp_server.build_argv` takes a third argument,
-  `repo`, and `mutate_pool.run_one` and `run_mutants` return `MutantVerdict` where they
-  returned bool. See the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#library-callers).
-- Upgrade the CLI with the installer that owns it; the [upgrade
-  table](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) now has
-  rows for pip --user, pipx, uvx, the Copilot CLI plugin, the Docker image, the
-  pre-commit `rev` and the Action's `uses:` pin.
-- Codex users: a marketplace added at a tag stays at that tag. After upgrading the CLI,
-  run `codex plugin marketplace remove crapkit`, the README's `codex plugin marketplace
-  add` line at the new `--ref`, and `codex plugin add crapkit@crapkit`, then start a new
-  thread. The plugin arrives with a `.codex-plugin/plugin.json` that keeps Claude Code's
-  hook out of Codex.
-- Restart each MCP session after the upgrade. A 0.8.0 server does not notice the new
-  files under it; from 0.8.1 on, a server that outlives an upgrade says so on every call.
-- An MCP client that negotiates `2024-11-05` or `2025-03-26` no longer gets
-  `structuredContent`, or an `outputSchema` in `tools/list`, which those revisions do not
-  define; the text carries the same object. An answer longer than 7,500 characters carries `truncated`, and its `full`
-  command prints the whole answer from the CLI. JSON-RPC codes move too: `params` that
-  are not an object answer `-32602` and a message with an `id` and nothing to do answers
-  `-32600`, each listed in the [upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#mcp-answers-in-081).
+Take these steps in order; steps 1 to 6 come before you upgrade crapkit. Each step links
+the part of the upgrade guide that explains it, and [the detail
+page](docs/releases/0.8.1.md#upgrading-from-080) keeps the full upgrade notes.
 
-### Analysis version 13
+1. Run `crapkit doctor --show-files > before-doctor.txt` and `crapkit coverage --export
+   before.tsv`, then run both again after the upgrade and compare the per-scope file
+   counts. 0.8.1 reads every `crapkit.toml` path the same on every OS, so an `[exclude]`
+   glob spelled `src\gen\**` and a `path_prefix` spelled `./api/` now match, a scope path
+   in another letter case matches on a disk that ignores case, and an absolute scope path
+   exits 3.
+   [Config paths](docs/upgrading.md#config-paths-that-081-reads-on-every-os)
+2. Upgrade coverage.py where each Python lane runs: `pip install -U "coverage>=7.13.1"`.
+   Coverage 7.6 to 7.13.0 writes no function `start_line`, and 0.8.1 refuses that report
+   at exit 5. [0.8.1 on coverage 7.6 to 7.13.0](docs/upgrading.md#081-on-coverage-76-to-7130)
+3. Read what moves an exit code before you move a CI job:
+   [missing values](docs/upgrading.md#missing-values-that-081-names),
+   [the commit gate](docs/upgrading.md#the-commit-gate-in-081),
+   [text that is not UTF-8](docs/upgrading.md#text-that-is-not-utf-8) and
+   [the rest](docs/upgrading.md#other-exit-codes-that-move-in-081). Three config-path
+   exit codes change. A root on a Windows network share exits 3, a lane whose `cwd` names
+   no directory fails, and a lane fed another checkout's coverage report fails where it
+   passed. A `bash -c` lane that narrows its suite exits 3 at load: drop the positional or
+   set `full_suite = false`. So do a lane name Windows cannot use and two lane names that
+   differ only in case (rename the lane), and an `artifact` that is empty or `.` or a
+   `results_artifact` of `.` (name the report file). The commit hook now scores a staged
+   file with an upper-case extension, such as `src/Tool.PY`, and exits 6 on a function
+   over its ceiling there, where 0.8.0 passed at 0. `test-scoped` refuses a test-named
+   file outside every scope and every test directory at exit 3: move it under a scope's
+   `paths` or into `tests/`. `verify` rounds a hand-typed mark to four decimals.
+4. Check what reads crapkit's output. Messages spell a dash as ` - `, `worklist` ends with
+   a `-> next:` line, a no-lane row prints `cov -`, a run with no scored function prints a
+   load of `0.0`, a partial run's `crap_load` counts only the scopes it measured, and
+   SARIF's `$schema` names the docs.oasis-open.org copy. `flag` can read `excluded`, and
+   the coverage summary gains an `excluded` count. An agent loop written against the
+   three-clause stop rule needs a fourth, `scored_changes == 0`; anything else, `null`
+   included, means refresh and ask again. A lane's `artifact` and `results_artifact` sit
+   under `.crapkit/aside/` while it runs, so a lane command that reads or appends to its
+   previous report finds nothing there: write the report fresh each run.
+   [Values that move without an exit code](docs/upgrading.md#values-that-move-without-an-exit-code),
+   [Freshness in 0.8.1](docs/upgrading.md#freshness-in-081)
+5. An MCP client that parses answers meets five JSON-RPC answers that move: `params` that
+   are not an object get `-32602`, a `method` that is not a string gets `-32601`, a
+   message with an `id` and nothing to do gets `-32600`, a response the server never
+   asked for gets no reply, and `arguments` that are not an object get a tool result with
+   `isError: true`. A client on MCP `2024-11-05` or `2025-03-26` no longer gets
+   `structuredContent`, and an answer over 7,500 characters carries `truncated`.
+   [MCP answers in 0.8.1](docs/upgrading.md#mcp-answers-in-081)
+6. Library callers: `lanes.suite_drops`, `lanes.lane_sources_unchanged` and
+   `lanes.staleness_reads` warn until 0.9.0, and `lanes.uncommitted_changes` raises
+   `GitError` where it returned `[]`. `mutate_pool.run_one` and `run_mutants` return
+   `MutantVerdict`, and a survivor is truthy, so compare with the enum. Other names moved
+   with no warning. [Library callers](docs/upgrading.md#library-callers)
+7. On Windows, first stop every crapkit MCP server by closing the agent sessions that run
+   it: a running `crapkit.exe mcp` holds the launcher, and `uv tool upgrade`, `pipx
+   upgrade` under uv and pip 22.3.1 then fail. Upgrade the CLI in every clone with the
+   installer that owns it: the [upgrade table](docs/upgrading.md) has a row for each. The
+   CI install pin, the Action's `uses:` pin and the pre-commit `rev` wait for step 12.
+   [Windows launcher locks](docs/upgrading.md#windows-launcher-locks)
+8. A commit hook written from the 0.8.0 README runs `python -m crapkit` alone and refuses
+   every commit under a pipx or uv tool install. Write it again from
+   [Route 1](README.md#route-1-githookspre-commit-local-not-committed) or
+   [Route 2](README.md#route-2-a-committed-hooks-directory).
+9. Upgrade the plugin. In Claude Code, run `claude plugin marketplace update crapkit`,
+   then `claude plugin update crapkit@crapkit --scope user`; a marketplace added with
+   0.8.0's line clones the whole repository, so remove it, add it back with `--sparse
+   .claude-plugin plugin`, and install the plugin again. 0.8.0's README added the Codex
+   marketplace with no `--ref`, so it follows main, and Codex updates the plugin from it
+   when it starts, while a marketplace added at a tag stays at that tag. Move either one:
+   run `codex plugin marketplace remove crapkit`, the README's `codex plugin marketplace
+   add` line at the release's `--ref` and `codex plugin add crapkit@crapkit`, start a new
+   thread, then run `crapkit doctor --plugin-root PATH`. Then restart every MCP session,
+   and start any running `crapkit watch` again: a 0.8.0 watch can end in a traceback at
+   its next rescore.
+   [Plugin and MCP clients](docs/upgrading.md#plugin-and-mcp-clients)
+10. Re-seed each repo once: `crapkit coverage`, then `crapkit ratchet prune`, then
+    `crapkit ratchet seed`. When a failed verify pins the baseline, pass the new run to
+    both: `crapkit ratchet prune --baseline N`, then `crapkit ratchet seed --baseline N`.
+    Until the re-seed, `verify` refuses marks stamped with analysis version 11 at exit 3.
+    The first run analyzes every file again. Once no 0.8.0 runs in a checkout, delete
+    `.crapkit/churn-cache-v2.json`, `.crapkit/churn-log-v2.z`, `.crapkit/churn-log-v2.json`
+    and `.crapkit/coupling-cache-v1.json`, which 0.8.1 never reads.
+    [Analysis version 13](docs/upgrading.md#analysis-version-13)
+11. Run `crapkit hook-precommit` with nothing staged. Under `pre-commit run --all-files`,
+    the form pre-commit.ci and pre-commit/action run, the hook now judges every tracked
+    file and exits 6 on a function over its ceiling that no mark signs, where 0.8.0 passed
+    at 0. Record the debt it names with `crapkit coverage` and `crapkit ratchet seed`, or
+    decompose those functions, before you move the pre-commit `rev`.
+    [The commit gate in 0.8.1](docs/upgrading.md#the-commit-gate-in-081)
+12. Commit the new marks together with every pin that runs crapkit: the CI install pin,
+    the Action's `uses:` pin and the pre-commit `rev`. 0.8.1's `verify` refuses marks
+    stamped 11 and 0.8.0's refuses marks stamped 13, so a pin that moves alone turns CI
+    red until the other lands.
+    [A team upgrades every reader first](docs/upgrading.md#a-team-upgrades-every-reader-before-the-re-seed-lands)
+13. Before you push that commit, run `crapkit verify`. `ratchet seed` never raises a mark,
+    so each marked function whose CRAP rose under version 13 prints a `RATCHET` line and
+    verify exits 7, even where no diff touched it. An override cannot accept a ratchet
+    regression: raise each such mark in `crapkit-ratchet.tsv` by hand to the score verify
+    prints, and commit it where a reviewer sees it. Once the commit lands, emit any
+    committed `verify --emit-baseline` file again on the default branch: a file 0.8.0
+    wrote holds no failure list, so `verify --baseline-tsv` forgives none of its failures.
+    [Measure before changing marks](docs/upgrading.md#measure-before-changing-marks)
+14. A config that 0.8.0's `init` wrote names one OS's python. Swap the venv launcher,
+    `.venv\Scripts\python.exe` or `.venv/bin/python`, for `{python:.venv}`, and a bare
+    `python` for `{python}`. 0.8.0 does not know the token and hands it to the shell, where
+    the lane fails at exit 5, so commit the swap only once every clone, the Action's
+    `uses:` pin and the pre-commit `rev` run 0.8.1. To go back to 0.8.0 later, write each
+    token back as its launcher first ([Downgrading](docs/upgrading.md#downgrading)).
+    [The launcher token](docs/configuration.md#the-launcher-token)
 
-- `nesting` reads crapkit's cognitive pass in every language, as Python's has since
-  0.5.0, where the other languages read lizard's ND column, and `cognitive` reads each
-  language's own rules: recursion is a call that reaches the function, and a body with
-  no braces pays the nesting it sits in.
-- C, C++, Objective-C, Java and Swift list the functions lizard's readers hid, invented
-  or misnamed, count every parameter a function declares, and read a C++ reference's
-  `&&`, a Swift optional mark, `??` and a string's `\( )` the way the language does. A
-  Rust `#` keeps the rest of its line.
-- Shell reads the depth of its blocks, the commands inside its strings and a function's
-  whole name. PowerShell reads keywords in any case, the expression inside a quoted
-  subexpression, and the functions and parameters it lost.
-- `duplication` and brief's twins shingle each function from its own lines and read a
-  comment line the way its language writes one; no score moves with them. (accuracy
-  change C8)
-- Go and Zig functions are read to where their signature ends, and no Go type switch,
-  comment or Zig multiline string ends one early. A `//` comment ends at its line in
-  every language but C, C++ and Objective-C. A Zig switch and a Go `select` count as the
-  switch they are, Zig and shell words that decide nothing stop counting, and shell
-  arithmetic counts its conditional operator.
-- Rust reads its own syntax: a signature, a `for` that is no loop and a closure's `||`
-  decide nothing, `loop` counts as a loop, and a signature with no body is no function.
-- A shell heredoc line ends where bash ends it, and JavaScript and TypeScript coverage
+### Scores that move: analysis version 13
+
+These changes move scores and share the one re-seed in step 10. [Analysis version
+13](docs/releases/0.8.1.md#analysis-version-13) sums them up.
+
+- [`nesting`](docs/releases/0.8.1.md#nesting-reads-block-depth-in-every-language) comes
+  from crapkit's cognitive pass in every language, as Python's has since 0.5.0, not from
+  lizard's ND column, and
+  [`cognitive`](docs/releases/0.8.1.md#cognitive-complexity-reads-each-languages-own-rules)
+  follows each language's own rules.
+- C, C++ and Objective-C list [the functions lizard hid, invented or
+  misnamed](docs/releases/0.8.1.md#c-c-and-objective-c-functions-that-were-hidden-invented-or-misnamed),
+  such as each function of a libstdc++ header, which 0.8.0 read as one row, [count every
+  declared parameter](docs/releases/0.8.1.md#the-c-family-counts-every-parameter-a-function-declares),
+  and [a C++ reference's `&&`](docs/releases/0.8.1.md#the--of-a-c-reference-decides-nothing)
+  costs nothing. Java lists [the methods lizard
+  hid](docs/releases/0.8.1.md#java-methods-that-were-hidden-invented-or-misnamed) behind
+  an annotated local, an enum constant's body or a text block.
+- Swift gets [rows for the functions lizard
+  hid](docs/releases/0.8.1.md#swift-functions-the-reader-hid-get-their-rows), [counts
+  decisions as the McCabe text
+  does](docs/releases/0.8.1.md#swift-decisions-count-the-way-the-mccabe-text-counts-them)
+  and [reads an interpolation as
+  code](docs/releases/0.8.1.md#a-swift-interpolation-reads-as-code).
+- Rust [reads its own syntax](docs/releases/0.8.1.md#rust-reads-its-own-syntax-not-cs): a
+  signature, a `for` that is no loop and a closure's `||` decide nothing, and [a `#` keeps
+  the rest of its line](docs/releases/0.8.1.md#a-rust--keeps-the-rest-of-its-line).
+- Go and Zig
+  [signatures](docs/releases/0.8.1.md#go-and-zig-signatures-end-where-the-language-ends-them),
+  [blocks and strings](docs/releases/0.8.1.md#go-and-zig-blocks-and-strings-end-where-the-language-ends-them)
+  end where the language ends them, [a Zig switch or a Go
+  `select`](docs/releases/0.8.1.md#switch-prongs-and-select-count-as-the-switch-they-belong-to)
+  counts once in `ccn_mod`, and [Zig's `try`, optional `?` and error-set
+  `||`](docs/releases/0.8.1.md#words-that-decide-nothing-stop-counting) open no nesting
+  level. [A `//` comment](docs/releases/0.8.1.md#a--comment-ends-at-its-line) that ends in
+  a backslash ends at its line outside C, C++ and Objective-C.
+- Shell reads [`(( ))` as C](docs/releases/0.8.1.md#shell-arithmetic-reads-as-c), [the
+  depth of its blocks and the commands inside a quoted
+  substitution](docs/releases/0.8.1.md#shell-reads-the-depth-of-its-blocks-and-the-commands-inside-its-strings)
+  and [a function's whole name](docs/releases/0.8.1.md#shell-keeps-a-functions-whole-name)
+  such as `log::info`, and a name spelled `switch` no longer adds to `ccn_mod` in shell or
+  Python. [A form feed on a heredoc
+  line](docs/releases/0.8.1.md#a-form-feed-on-a-heredoc-line-no-longer-ends-the-heredoc-in-the-shell-reader)
+  no longer ends the heredoc.
+- PowerShell reads [keywords in any case and PowerShell 7's
+  operators](docs/releases/0.8.1.md#powershell-reads-keywords-in-any-case-and-counts-powershell-7s-operators),
+  [functions named with a scope or dots](docs/releases/0.8.1.md#powershell-finds-the-functions-it-lost)
+  and [the decisions inside a quoted
+  subexpression](docs/releases/0.8.1.md#powershell-reads-the-expression-inside-a-quoted-subexpression).
+- [A comment counts one line per LF](docs/releases/0.8.1.md#a-comment-is-one-line-per-lf),
+  and [JavaScript and TypeScript
+  coverage](docs/releases/0.8.1.md#javascript-and-typescript-coverage-stays-with-its-own-function-below-a-lone-cr-or-u2028)
   stays with its own function below a lone CR or U+2028.
-- Coverage lands on the function that owns it: an uncalled arrow or method reads 0.
-- A function its coverage tool was told to leave out reads the new flag `excluded` and
-  scores `crap = ccn`.
-- CRAP comes out the same on Windows and Linux, and a CRAP exactly at its ceiling reads
-  ok.
-
-### A lane with no test results is not a lane that ran 0 tests or failed none
-
-A lane records a test count and a failure list only when it parsed a junit report. It
-records neither when it declares no `results_artifact`, or when `--reuse-artifacts` finds
-the report gone or unreadable. Every reader of those fields took that absence for a value.
-
-- `coverage` no longer reports a lane that wrote no test counts as having run 0 tests, and
-  a run that counted nothing no longer hides the next run's suite drop. The drop line then
-  names the older run it compared with, `fewer than run 1's 20 (the last trusted run, run
-  2, recorded no test count for it)`, where it called that count the last trusted run's.
-- `verify` compares a lane's suite size and failures with the newest trusted run at or
-  behind the baseline's commit that recorded them, when the baseline recorded neither, and
-  a line names that run. A suite that fell from 20 tests to 2 passed without a word, and a
-  test failing at the baseline's own commit came back as a `NEW FAILURE`, exit 8.
-- When no run recorded a failure list for the lane, each of its failures still counts as
-  new, exit 8, and verify now says they may predate the change. This is the pull request
-  that adds `results_artifact` to a lane whose suite already fails a test. `verify --json`
-  lists such lanes under `lanes_without_baseline_results`, and the Action's comment gives
-  each one a bullet.
-- `verify --reuse-artifacts` exits 5 when a lane declares a `results_artifact` it reused
-  and could not read (gone, empty, malformed, zero testcases, a crashed worker, a count
-  that does not match its cases), names each such lane and its file, and stores no run.
-  The refusal ends `run verify without --reuse-artifacts so the lane writes it again`.
-  verify read the absent failure list as no new failures: exit 0, `"ok": true`, and a run
-  that checked no test became the next trusted baseline. `coverage --reuse-artifacts`
-  over the same junit still warns and scores the lane.
-- `verify --json` lists under `lanes_without_results` every lane that declares no
-  `results_artifact`, and the Action's comment says their new failures went unchecked. A
-  lane with no `results_artifact` whose command exited nonzero gets a stderr line naming
-  the exit code, which was the only sign a test failed.
-- A verify run that crapkit 0.7.x stored kept a failure that passed its flake retry in its
-  failure list. Read as a baseline, it forgave a later real failure of that test. verify
-  now reads such a run's failures from the newest trusted run behind it, and says so.
-- `verify --emit-baseline` writes each lane's test count and failure list on the file's
-  stamp line, so `--baseline-tsv` forgives a failure the baseline had and warns about a
-  shrinking suite. A file written by 0.8.0 or older carries neither; verify says so once
-  and names the command that rewrites it. The Action's comment names a file baseline by its
-  commit, where it printed `baseline None`.
-- A reused junit that is not valid UTF-8 is an unreadable report that names its line and
-  column, the same warning as any other. It ended `coverage --reuse-artifacts` with a
-  traceback.
-
-### The Action's comment tells a missing payload from an empty one
-
-- When `crapkit worklist` wrote no ranking, the comment quotes its error, or says it
-  printed nothing, in place of `No ranked function in these files.`. With no run to read
-  it exits 1 with an error object, which the comment read as a ranking with no rows.
-- When `crapkit coverage` printed no summary at all, the no-verdict line says it crashed or
-  was killed before scoring. It said every lane failed, which since 0.5.0 prints an error
-  object of its own.
-
-### A missing file, record or history is not an empty one
-
-- `verify` reads a marks file that is missing, or holds only blank lines, as a file it
-  cannot see, not as a repo that never marked any debt. It judges against the newest marks
-  the history since the baseline committed, and names that commit and the `git checkout`
-  that restores them. A commit that deleted or emptied `crapkit-ratchet.tsv` let a marked
-  function's CRAP rise with exit 0. verify never writes those marks back, and a pass no
-  longer restamps an emptied file into a header with no rows and asks for a `git add`.
-  `verify --json` keeps `ratchet_sha256` for the file on the tree and adds
-  `ratchet_source` (`"tree"` or `"committed"`), `ratchet_source_commit` and
-  `ratchet_source_sha256`, which name the marks it judged against. When the clone does not
-  hold that history, verify refuses with exit 4; the git reads under it answered as if no
-  commit had held marks.
-- The commit hook, `rescore --gate` (and so the MCP tool `check_gate`) and verify refuse a
-  changed file no reader could read, exit 6, with an `UNREAD` line naming the file and the
-  reader's reason. Such a file is scored as zero functions, and every gate read that as
-  nothing over the ceiling: a ccn-8 function in the same file as one TypeScript arrow the
-  reader refuses passed all four. `rescore --gate --json` lists them under
-  `gate.unread_files` and `verify --json` under `unread_files`, each entry
-  `{path, reason, dirty}`; SARIF names them `crapkit/unread`, and the Action's comment
-  gives each a bullet. An unread file the change never touched still passes.
-- An override never grants past an unread file. With `CRAPKIT_OVERRIDE_REASON` set, the
-  commit hook signed the debt beside a staged file no reader could read: it wrote and
-  staged `crapkit-ratchet.tsv`, raised the alert and stored a hook run, then refused the
-  commit over the file anyway. `verify --override` wrote the mark, printed `1 mark
-  granted` and exited 6 with no reason given. Both now refuse first, write nothing, and
-  print `override refused: 1 unread file (PATH: REASON) never qualifies for an override`
-  with what to do about the file.
-- The advisory hook (`crapkit claude-hook`) exits 2 when an edit leaves a file no reader
-  can read, with `crapkit advisory: PATH could not be read, so no function in it was
-  judged (the edit landed; nothing was blocked)`, an `UNREAD` line and the fix. It exited
-  0 in silence, so an agent learned of the file only when the commit gate refused it. A
-  tracked file the edit left unchanged against `HEAD` stays silent. The Action's comment
-  counts an unread file among the gate violations (`1 gate violation (1 unread file)`),
-  where its count line read `0 gate violations` under a failed gate.
-- The run's line for such a file now ends `and the commit gate refuses these files when
-  staged`, `crapkit doctor` WARNs about each file the newest coverage run could not read
-  and no reader can read now, and `hook-precommit --help` names the refusal. The upgrade
-  guide says to run `crapkit coverage` and fix or exclude each file it names before the
-  hook refuses a commit over one.
-- `inventory`, `coverage` and `verify` name on stderr each declared scope that scored no
-  function: one that claims no file (a renamed directory, a path typo, the wrong language)
-  or one whose every file no reader could read. Such a run reported `0 over ceiling 6,
-  CRAP load 0, grade A+` at exit 0, and only `doctor` said the scope was empty. The run
-  summary's `empty_scopes` carries them, and the Action's scored line names each one. A
-  scope whose files a reader read and found no function in, such as one of constants, is
-  measured and not named.
-- The run's CRAP load counts the scopes its over-ceiling count and grade count. A partial
-  run summed a failed or skipped lane's functions at the cov-0 stand-in, so one line read
-  `0 over ceiling 6, CRAP load 32.0, grade A+` where the measured scopes held 2.0.
-  `by_scope` still carries each unmeasured scope's own load.
-- `--reuse-artifacts` refuses a lane while `.crapkit/artifacts.json` cannot be read (it does
-  not parse, its top level is not an object, or the lane's entry is not an object), and
-  says to rerun the lane or delete the file. The refusal a failed attempt records lives in
-  that file, and each of those forms read as no stamp, so reuse scored the dead lane's
-  leftover as a trusted run. The file is now written through a temporary file, so a crash
-  cannot cut it short, and `doctor` WARNs about a file that does not parse, as it did for a
-  mangled entry.
-- `digest` lists an over-ceiling function in a scope the older run of its pair never
-  scored as `newly scored over ceiling in scope NAME`. A scope added to `crapkit.toml`
-  between two runs announced its old debt as `new over ceiling`, which now means only a
-  function added to a scope both runs scored.
-- `coverage --reuse-unchanged` says `junit.xml: missing` when a file a lane declares, its
-  `artifact` or `results_artifact`, is gone, and `junit.xml: unreadable (why)` when it
-  cannot be opened. The stderr line and the stored `rerun_reason` said the bytes of a file
-  that no longer exists differ from its stamp. The lane reran either way.
-- The merge driver reads an empty base as no common ancestor. Two branches that each
-  created `crapkit-ratchet.tsv`, such as two first seeds, met in an add/add merge; git
-  handed the driver an empty `%O`, the driver read it as a legacy marks file and refused
-  with `ratchet key identity versions differ; reconcile the legacy function mapping before
-  merging`, and git recorded a conflict. The driver now merges the two files as a union,
-  each mark both sides hold at the lower value.
-
-### A value nobody measured is named, not printed as a fact
-
-Thirteen changes that name a missing value can move an exit code: the gates' refusal of an unread
-file and the advisory hook's exit 2, the `verify --reuse-artifacts` refusal of an
-unreadable junit, the shallow-clone refusal below, the refusal of a coverage artifact
-missing a count, the refusals of an istanbul `fnMap` entry without `loc.end.line` and of
-a `branchMap` entry with no line, the `--reuse-artifacts` refusal while
-`.crapkit/artifacts.json` cannot be read, the marks verify judges when the marks file is
-deleted or emptied, the history `ratchet report --enforce` reads for a marks file renamed
-with `git mv`, and the failure lists verify reads from an older run, those last two in
-both directions. The [upgrade
-guide](https://github.com/JeanFrancoisGagne/crapkit/blob/v0.8.1/docs/upgrading.md#missing-values-that-081-names)
-lists each with its old and new exit and what to change. A repo upgrading from 0.4.15 or older runs `crapkit coverage` once
-without `--reuse-artifacts` first: those stamps hold no refusal, so the first reuse scores
-an artifact a failed lane left, and one real run records the refusal for a lane that still
-writes nothing.
-
-- A depth-1 clone, the `actions/checkout` default, holds one commit, so every mark read 0
-  days old, nothing read as repaid and churn counted one commit per file. `ratchet report
-  --enforce` with `debt_max_age_months` or `repayment_min_per_30d` set now exits 4 there,
-  ending `set fetch-depth: 0 on the checkout or run git fetch --unshallow`. It passed an
-  age limit a full clone fails and failed a repayment quota a full clone passes.
-  `worklist`, `next-item`, `brief` and `ratchet report` still answer, print one stderr
-  line such as `warning: churn counts read only the commits this clone holds`, and carry
-  `shallow` in their JSON, as do the MCP tools `list_worklist` and `get_next_item`. The
-  Action's comment repeats the line above its table.
-- A marks file renamed with `git mv` keeps its history. `ratchet report` and `brief` read
-  the log of the old name on from the commit that renamed it, so every age and repayment
-  counts across the rename. The log started at the rename: every mark read 0 days old
-  and no earlier repayment counted, so `ratchet report --enforce` passed an age limit the
-  whole history fails and failed a repayment quota it meets.
-- A row no coverage measured carries `unmeasured: true` and its text says `not measured`:
-  a function in a `no-lane` or `cc-only` scope, or one `rescore` and `check_gate` find no
-  row for because it was added or renamed since the run. Such a row read as cov 0% and
-  untested, and `brief` and `next-item` multiplied that stand-in into
-  `est_uncovered_paths`. The `worklist` row prints `-` in its cov column for a `no-lane`
-  or `cc-only` function, as `rescore` does; it printed `cov   0%` beside a cc-only `crap`
-  equal to ccn. `rescore --gate` prints `cov -` on such a row's GATE line, as its table
-  does; the GATE line said `cov 0%`. `cov`, `crap`, `flag`, `remedy` and
-  `est_uncovered_paths` keep their values until JSON schema 2.
-- `brief`, `next-item`, `explain` and the MCP tools `get_function_brief` and
-  `get_next_item` give a function in a scope no lane covers its own dark-line note: `no lane covers scope 'src',
-  so no artifact can name uncovered lines for src/a.py; add 'src' to a [[lane]]'s scopes
-  to measure it`. A lane whose artifact went stale, or was only ever reused and so never
-  stamped, set its note for every path, so such a function read `lane 'lib': files in
-  its scopes changed since cov.json was written`, and rerunning that lane measured nothing
-  there.
-- `mutate` reports two kinds of kill no failing test decided apart from the rest. A
-  mutant whose suite ran past `mutation_timeout_seconds` prints `timed out, counted
-  killed`, and one whose suite exits 5, pytest's code for a run that collected no test,
-  prints `no verdict: the suite ran no test (exit 5), counted killed`. The summary says how
-  many of the killed were each, and `--json` adds `timed_out` and `no_verdict`, both
-  counts inside `killed`. Both printed `mutation: 2/2 killed (100%)`, the output of real
-  kills, with nothing else. `killed`, `survived` and the rate keep their meaning; JSON
-  schema 2 takes no-verdict mutants out of `killed`.
-- The commit hook's audited override marks the CRAP a function's scope scores. In a
-  `coverage_optional` scope, where CRAP is ccn because no coverage exists there, it wrote
-  ccn^2 + ccn, the CRAP of a function measured at 0%: 72 for a ccn-8 function. verify then
-  let that function grow to ccn 72 before its mark failed. A scope a lane measures still
-  marks the untested CRAP, since a staged blob carries no coverage.
-- `doctor --tune` sums only the lanes that recorded a duration and names the others
-  (`130.0s serial -> ~100.0s across 3 lane slot(s) for 2 of 3 lanes; cost unknown for
-  'b'`). A lane with no duration was dropped from the sum, and one whose junit carries no
-  `time` attribute was summed as 0 s.
-
-### The Action finds its own comment on every thread
-
-- The Action edits its pull request comment when another comment on the thread has no
-  body, or a body that is not a string. The GitHub API does not require a comment's
-  body, and one such comment anywhere in the thread failed the lookup, so every push
-  posted a second crapkit comment while the job stayed green.
-- The lookup takes the first comment that starts with the `<!-- crapkit-action -->`
-  line. A reviewer's reply quoting the crapkit comment carried the line too, and the
-  step tried to edit that reply, which the job's token cannot do.
-- When GitHub answers a page of the comment list with an error, the step no longer takes
-  GitHub's error JSON for a comment id. It sent the edit to
-  `issues/comments/{"message": ...}`, so no comment was written or updated and the
-  pull request kept the previous push's verdict. It now edits the crapkit comment it
-  found before the error, and the job log says so.
-- When the comment list fails before the step finds a crapkit comment, a 502 or a rate
-  limit on any page, the step lists the comments once more. The crapkit comment can sit
-  on the page that failed or on a later one, and posting at once would leave the thread
-  with two. When the second listing fails too, the step posts a fresh comment and the
-  job log says the listing failed twice.
-- A thread with a crapkit comment on two pages no longer logs `looking the existing
-  comment up exited 141: posting a fresh one` before editing the first one. `head -n 1`
-  closed the pipe while gh was still writing.
-- The reason a base run was not made quotes crapkit's first `lane '<name>' FAILED:`
-  line. It quoted the first stderr line, so a lane that passed with coverage.py's
-  no-branch-data warning was named in the comment and the failing gate in place of the
-  lane that failed, and a crapkit killed before it printed anything left the reason
-  empty after its colon. That case now reads `crapkit coverage exited <code> and printed
-  nothing`.
-- "build the comment" no longer stops the job on a changed file whose name is not UTF-8.
-  A Linux checkout keeps such names as git stores them, the builder decoded them as
-  strict UTF-8, and the composite stopped before it posted a comment or ran the gate, so
-  the job failed with `gate: "false"`. The name still counts as a changed file.
-- The `top` input takes whatever string the workflow hands over. `""` (an unset
-  expression) renders 5 rows. `"ten"`, `"5.0"` and `"-1"` render 5 and print a warning
-  naming the input on the run's summary page. The first three exited 2 and failed the job
-  with no comment, and `"-1"` dropped the last row without a word.
-- The verdict prints fifty bullets per finding kind at most, then a line counting the
-  rest, and a request body still over GitHub's 65,536-character limit is cut at a line
-  that fits, the marker first. A pull request with 1,500 new test failures made a
-  152,245-character body, GitHub answered 422, and no comment was posted.
-
-### `doctor --plugin-root` reads every shape of the installer's files
-
-- With no PATH, doctor reads `installed_plugins.json` as an older Claude Code wrote it,
-  one object per plugin id, beside today's list of installs. That file, a `plugins` key
-  that is null or a list, an install list holding null, and an `installPath` that is not
-  a string all ended the command in a traceback. Such an entry now records nothing, and
-  the cache scan still finds the install.
-- A `.claude-plugin/plugin.json` that is there but gives no version no longer reads as a
-  missing file. A file that does not parse to an object says `has a
-  .claude-plugin/plugin.json that is not a JSON object`, and an object whose `version` is
-  absent, null, a number or a list says `has a .claude-plugin/plugin.json with no version
-  string`; both then name the reinstall for each scope that holds the install. A number
-  or a list there also ended a search over several installs in a traceback.
-
-### `init` reads package.json by one JSON rule, appends to .gitignore as git reads it, and finishes a half-done init
-
-- `init` no longer ends in a TypeError, before it writes `crapkit.toml`, on a
-  `package.json` whose `scripts` or `devDependencies` is null or a number, at the root or in
-  a workspace. It reads the file the way npm does: `scripts` that are not an object, and a
-  script whose command is not a string, are no scripts, and a `devDependencies` list names
-  the strings in it.
-- A `scripts` list such as `["test"]`, or a string such as `"vitest run"`, no longer writes
-  an `npm run test` lane: npm has no such script, and the lane failed on its first run.
-- `init` reads each `package.json` past a UTF-8 byte-order mark, as npm does; a BOM cost the
-  js lane in silence. A root `package.json` that is not one UTF-8 JSON object stops `init` at
-  exit 3 before it writes any file, naming the file and the fix: one in UTF-16 or holding a byte
-  that is not UTF-8 (`init wrote no file: package.json is not UTF-8 (byte e9 at offset 36);
-  save it as UTF-8`), where 0.8.0 ended in a traceback after `crapkit.toml` was written, and
-  one that does not parse or holds something other than a JSON object (`package.json holds
-  an array, not a JSON object; save one object there`), which 0.8.0 read as a package.json
-  naming no runner, so the js lane went missing without a word. A nested one, a test
-  fixture say, is skipped with one line naming it.
-- `init` appends to `.gitignore` as git reads it, as bytes: a cp1252 comment, CRLF lines and
-  a byte-order mark stay byte for byte, and the new entries take the file's own line
-  ending, where a CRLF `.gitignore` came back all LF and a cp1252 comment ended `init` after
-  `crapkit.toml` was written. A UTF-16 `.gitignore` is named with the fix and left as it was.
-- `init` reads each `.gitignore` line past a UTF-8 byte-order mark, as git does. A
-  `.crapkit/` first line behind the mark already ignores the store, in the repo's own
-  `.gitignore` or in one above a nested init, and `init` no longer appends a second one.
-- `init` writes `.gitignore` before `crapkit.toml`. Run over a `crapkit.toml` an earlier run
-  left behind, it adds the missing `.gitignore` entries, says so and exits 0, leaving
-  `crapkit.toml` byte for byte; 0.8.0 refused with `crapkit.toml already exists`, so
-  `.crapkit/` was never ignored. When that `.gitignore` is UTF-16, the step it cannot
-  finish, it exits 3 with the one line that names the file and the fix, where it went on to
-  say `crapkit.toml already exists ... edit it instead`, a file that needed nothing.
-
-### The MCP server refuses `params` and `arguments` that are not objects in words an agent can act on
-
-- `tools/call` with `arguments` sent as a number, a string or a list, by-position
-  arguments included, answers a tool result with `isError: true` that names the JSON type
-  it got: `arguments must be an object (got a number)`. It answered `-32603` carrying a
-  Python `AttributeError`, and a string was read one character at a time, so the refusal
-  named `'t'` as an undeclared key. An empty string, `0`, `false` and an empty list get
-  the same refusal, where the server ran the tool as if no arguments were sent; only
-  null or absent `arguments` read as none given.
-- `tools/call` and `initialize` whose `params` are an array, a string, a number or a
-  boolean answer JSON-RPC error `-32602`, with a message naming `params` and the type it
-  got, and the session answers the next request. Both answered `-32603` carrying a
-  Python `AttributeError`. An empty array, an empty string, `0` and `false` get `-32602`
-  too, where 0.8.0 read them as no params. Null or absent `params` answer as before.
-- A `method` that is not a string answers `-32601 unknown method`, where it answered
-  `-32603`.
-- ADR 0001 said an unparsable frame gets a protocol error. The server sends no reply to a
-  frame that is not one JSON object and reads the next line, and the ADR, the agent JSON
-  page and AGENTS.md now say so.
-
-### The coverage readers stop reading an absent field as a value
-
-- A coverage.py artifact with a function region whose `start_line` is absent or null
-  exits 5 with a line naming the artifact, the file, the first such function,
-  `start_line` and `coverage>=7.13.1`. Coverage 7.6 to 7.13.0 write no `start_line`. The
-  reader took the body's first line as the start, which is the line of the `def inner`
-  statement in the encloser's region, so a nested function that never ran scored as half
-  covered. The `py` and `dev` extras now require `coverage>=7.13.1`, the first release
-  that writes `start_line`. A `start_line` that is not a positive whole number exits 5
-  naming the file, the function and the value it holds, and says to regenerate the report
-  with `coverage json`.
-- A coverage.py region without a `summary` object exits 5 naming the file and the
-  function, where it scored the function as never run. A null one exits 5 with the same
-  line, where it printed a Python `AttributeError`.
-- An istanbul `fnMap` entry without `loc.end.line` exits 5 naming the file and the entry.
-  The span fell back to the declaration line, the body's branches attached to nothing,
-  and a function that was called scored as covered. A `branchMap` entry without `loc`
-  counts against the function that holds its `line`, where it attached to none. One with
-  neither `loc.start.line` nor `line` exits 5 naming the file and the branch id, where
-  its branches counted against no function.
-- A coverage artifact that lacks a count exits 5 naming the file and the function, where
-  the reader took the absent count for a zero and the score moved with nothing said. In
-  istanbul that is a `fnMap`, `statementMap` or `branchMap` id with no counter in `f`, `s`
-  or `b`, a whole `s` or `f` record left out included, or a `b` array whose hit counts do
-  not match its branch's `locations`: a dropped branch counter flipped a function from
-  `add-tests` to `ok`, and an if/else whose array was cut to `[1]` scored 1 of 1. In
-  coverage.py it is one count of a pair without its partner (`num_statements without
-  covered_lines`), a summary with neither statement nor branch counts, no statement counts
-  beside 0 of 0 branches, or, in a report that measures branches, a function with no
-  branch counts, which scored from its statements. A report with no `meta` is judged by the
-  counts its functions carry, where it said its term was statement-based while scoring
-  on branches. Each refusal says to regenerate the report.
-- A coverage artifact that starts with a UTF-8 byte-order mark reads past it, as a copy
-  saved with PowerShell's `Out-File -Encoding utf8` has one. Both readers refused it at
-  exit 5 as `istanbul artifact is not a JSON object` or `coverage.py report is not a JSON
-  object`. The digest a run records is still the file's own bytes, mark included.
-- An artifact in UTF-16 or holding a byte that is not UTF-8 exits 5 naming the bytes:
-  `cov.json is not UTF-8 (first bytes ff fe = UTF-16, the PowerShell 5.1 Out-File
-  default); save it as UTF-8`, or `(byte e9 at offset 125)`. It printed Python's `'utf-8'
-  codec can't decode byte`. An artifact with no JSON in it, zero bytes or a mark alone,
-  says it is empty and to rerun the lane, where it said the file was not a JSON object.
-- A field the format writes as an object or a list that holds something else exits 5
-  naming the file, the field and the JSON type it holds, and says to regenerate the
-  artifact: ``src/app.ts: `s` holds null, not an object``. That covers an istanbul file
-  entry, `fnMap`, `f`, `s`, `b` or a `statementMap` entry, and a coverage.py file entry,
-  `executed_lines`, `missing_lines`, `functions` or `contexts`. Each printed a Python error
-  such as `argument of type 'NoneType' is not iterable`, and an empty `functions` list
-  read as a report without branch data. An entry of `missing_lines` that is not an
-  integer, such as `"5"`, exits 5 naming the file, the field and the entry's index; the
-  dead-line read took it for a line that matched none. The dead-line and contexts
-  refusals name the artifact too. An istanbul `fnMap` entry with no `decl.start.line`,
-  as istanbul 0.x wrote, names the file and the entry where the line held only `'decl'`.
-- A non-finite count such as `NaN` in either format names the artifact and says to
-  regenerate it, where the line said `unparseable coverage artifact` and named no file.
-- The coverage.py wrong-tree refusal no longer says to set `path_prefix`. `path_prefix`
-  only prepends, so it cannot rebase another checkout's paths, and a lane that set it had
-  already taken the step. The refusal now says to rerun the lane here instead of reusing a
-  report copied from another checkout. A lane scoped to the root is named as `(.)` in the
-  paths its scopes declare.
-
-### Text that is not UTF-8
-
-A commit, file name, report or MCP frame that is not UTF-8 no longer ends a command with a traceback.
-Two of the source reads below move function keys and scores; they share the one analysis
-version bump under Upgrading from 0.8.0 above.
-
-- An author name, subject, body or patch line a commit stored in bytes that are not UTF-8
-  reads as U+FFFD: in the churn window (`worklist`, `next-item`, `brief`, `coupling` and
-  the MCP tools) and in `explain --history` and `get_function_history`. One such commit
-  inside the 12-month window stopped every churn reader with a UnicodeDecodeError, and on
-  Windows `explain --history` died with an AttributeError after the decode failed in
-  subprocess's reader thread. Every git crapkit starts passes
-  `-c i18n.logOutputEncoding=UTF-8`, so in a repo that sets `i18n.commitEncoding` or
-  `i18n.logOutputEncoding` a name stored as UTF-8 comes back as stored, where `José` and
-  `Josè` had counted as one author. A `core.hooksPath` holding a Latin-1 byte no
-  longer ends `doctor`, and `verify --base` on such a ref gets its exit-4 sentence.
-- `mutate` builds and resets its worktree pool at a HEAD whose subject is not UTF-8.
-  `git worktree add` and a kept tree's `checkout --force` print that subject, and the
-  strict read stopped the run before any mutant, with one worker or several; on Linux a
-  leftover file named in Latin-1 did the same through `clean`.
-- A file git names in bytes that are not UTF-8 (a Latin-1 name made on Linux, kept as it
-  was in a Windows clone's index) no longer ends every command with a traceback. When a
-  scope takes it, `inventory`, `coverage`, `verify`, `doctor`, `watch` and
-  `hook-precommit` exit 3 before any lane runs, with one line naming the file and
-  `git mv`, so no gate passes a source file no reader read; no second line calls the
-  same file left out. A tracked or staged name no scope takes is left out and named
-  once on stderr, and `inventory --json`, `coverage --json` and `verify --json` list it
-  in the new `unreadable_names` field. An untracked one is a change like any other:
-  `coverage --reuse-unchanged` reused a lane whose `inputs` held a new or edited
-  Latin-1 file with `measurement inputs unchanged`, where the same file under a UTF-8
-  name reran it. `verify` lists such an untracked name under `untracked_in_scope`, each
-  byte that is not UTF-8 spelled `\xNN`, and exits 0 as for any file nobody added.
-  `claude-hook` read the working tree's names leniently, so a Bash-written
-  file named in Latin-1 under a scope named no file on disk and its breach passed with no
-  advisory; it now exits 2 with an advisory naming the file and the rename.
-- Under `--json`, the error object of each such refusal lists every refused file in a new
-  `unread_files` field, where the stderr line names the first and counts the rest. Each
-  item is `{path, reason, dirty}`, the shape `rescore --gate --json` and `verify --json`
-  list unread files in, `dirty` true when the file has uncommitted edits or git does not
-  track it. The refusals that carry it: `inventory`, `coverage`, `verify` and `doctor` on
-  a scanned name a scope takes, and `rescore`, `rescore --gate`, `brief`, `explain`,
-  `mutate --files`, `claims release` and `ratchet move` on a file argument naming such a
-  file. The Action's comment gives each file coverage or verify refused this way a bullet
-  under its no-verdict line, where it quoted the message alone and so named only the
-  first. The `check_gate` MCP tool answers a `path` a scope takes
-  whose name is not UTF-8 with a verdict, `gate.ok` false, `judged` 0 and the file in
-  `gate.unread_files` with `dirty` true, the entry shape `rescore --gate --json` lists,
-  plus the `baseline_run`, `baseline_commit` and `note` every verdict carries, where 0.8.0
-  answered `isError: true` with a Python traceback, on Windows too. Under a uv-built venv
-  on Windows, whose launcher hands the CLI such a name as one U+FFFD, it answered
-  `isError: true` with `src/caf\ufffd.ts does not exist`. The server now decides this
-  verdict without starting the CLI. `get_function_brief` and `get_function_history`, under
-  the same launcher, answered such a `path` with `no function named ... in
-  src/caf\ufffd.ts` at exit 1; they now answer the exit-3 error object `brief` and
-  `explain` print, `unread_files` included, also without starting the CLI.
-- A `rescore` or `rescore --gate` argument naming a file whose name is not UTF-8 and that
-  no scope takes is left out with one `crapkit: left out` line on stderr, and the gate
-  judges 0, as `hook-precommit` does for the same staged file. It exited 3 with the
-  rename sentence. `check_gate` answers such a `path` with `gate.ok` true and `judged` 0
-  where it failed the gate. A name a scope takes is still refused at exit 3.
-- Under a POSIX locale that is not UTF-8, `crapkit` restarts itself once with `-X utf8`,
-  so `coverage` scores, and `claude-hook` advises on, `pkg/café.py`; each opened
-  `pkg/caf\xe9.py`, which does not exist, and skipped the file as missing. The POSIX
-  start gate and the measurement owner start in UTF-8 mode with it, so the MCP tools
-  (`get_function_brief`, `check_gate` and the rest) reach such a file too, and the owner
-  holds the lane output crapkit means rather than a file beside it. Lane and
-  mutation children keep your locale, so a Python lane's coverage.py keys the file as
-  `pkg/cafÃ©.py`; crapkit reads that key back as `pkg/café.py`, where the file's
-  functions read as untested (5 measured files where a UTF-8 locale gives 6).
-- A path argument, an override reason (`CRAPKIT_OVERRIDE_REASON` or `verify --override`),
-  a host name or a checkout directory in bytes that are not UTF-8 no longer ends a command
-  with a UnicodeEncodeError. A path argument that names an existing file whose name is not
-  UTF-8 exits 3 with `rename it (git mv) to a UTF-8 name` in `rescore`, `explain`, `brief`,
-  `claims release`, `test-scoped`, `mutate --files` and `ratchet move`; one with no file
-  behind it gets the command's sentence for a missing file. An absolute path argument
-  resolves as the OS spelled it, so under a checkout directory named in Latin-1 it lands
-  inside the repo. An override sends its alert and stores all three audit records, where the
-  store write failed after the alert had gone out; a lane run on such a host or under such
-  a directory takes its output lock. A pytest-cov lane there still fails, since
-  coverage.py's own combine cannot store such a path, and the failure line now names the
-  directory or the host name and the rename; it called the shard coverage.py left what a
-  killed parallel run leaves and handed over a `coverage combine` that fails the same way.
-- A junit report declared ISO-8859-1 or written as UTF-16 is read as it declares, in
-  `coverage`, `verify`, `verify --reuse-artifacts`, the flake retest and `doctor --tune`.
-  Each ended with a UnicodeDecodeError. A report with no declaration is read as UTF-8, so a
-  raw Latin-1 byte there is an unparseable report: a refusal for a run and a warning for a
-  reuse.
-- The MCP server reads on past a stdin frame holding a byte that is not UTF-8, which ended
-  the session with exit 0 and nothing on stderr, and answers an `initialize` sent behind a
-  UTF-8 byte-order mark.
-- A source file that opens with a UTF-16 byte-order mark, as PowerShell 5.1's `Out-File`
-  and the ISE save it, scores its functions. inventory read it as empty, the pre-commit
-  gate passed a ccn-8 function in it, and the advisory hook said nothing. In a source that
-  is not UTF-8, an identifier holding one of the five bytes cp1252 leaves undefined (0x81,
-  0x8D, 0x8F, 0x90, 0x9D) stays whole: a PowerShell function named with one was not
-  scored, and the pre-commit gate passed it at ccn 8. In Python, TypeScript and C such a function keyed as
-  `\ufffd`, `(anonymous)` or `if`, and in Go, Java, Rust, Swift, shell and a C function
-  whose `if` has no braces 0.8.0 scored no such function at all, so it is new and meets
-  the gate as a UTF-16 source's functions do. It now keys by its name, under 0.8.1's
-  analysis version bump. `mutate` writes a mutant back in the file's own encoding: in a cp1252 or
-  Latin-1 file every accented byte outside the mutated line became EF BF BD, and 2 of 2
-  mutants read killed where the UTF-8 twin kills 0. `brief --json`'s `source` reads the
-  file the way the scorer does. An edit to a UTF-16 file is judged on the line it is on:
-  git counts a line at every 0A byte of such a file, and one character such as 上
-  (U+4E0A) above a ccn-8 function moved an edit on its last line below the function, so
-  `hook-precommit` exited 0 and `verify`, `claude-hook` and `mutate` read the edit as
-  touching nothing. The analysis cache version moves, so the first run reads
-  every file again. A UTF-16 file with no byte-order mark, which scored no function with
-  nothing said, is an unread file: every gate names it as UNREAD and exits 6, and the
-  reason says to save it as UTF-8 or with its mark. The analysis cache version moves
-  again for it (cache=9).
-- Every reader of the marks file (`verify`, `ratchet report`, `brief`, the advisory hook,
-  the override grant and the merge driver) reads it by one rule: UTF-16 by its byte-order
-  mark, else UTF-8 with each other byte as U+FFFD. A cp1252 byte in one mark's name, or a
-  file saved by a bare PowerShell 5.1 `Out-File`, stopped each of them at exit 3. A write
-  that would save U+FFFD in place of a name (`ratchet seed`, `prune`, `move`, verify's
-  tighten, the merge driver) refuses at exit 3 naming the byte, and a UTF-16 file is
-  written back as UTF-16 in its own line endings. A past revision in cp1252 or UTF-16 no
-  longer stops `ratchet report`, and a UTF-16 one keeps each mark's entry date. verify
-  reads such a revision by the same rule when it stands in for a deleted marks file.
-- `init`'s reads of a `package.json` or `.gitignore` in UTF-16, behind a byte-order mark or
-  holding a byte that is not UTF-8 are in the `init` section above.
-- Lane, flake-retest and mutation children start with `PYTHONIOENCODING=utf-8` on every
-  OS unless the lane's `env` sets it. A refusal quotes `No module named 'café'` as the
-  child wrote it, a `pytest -s` test that prints an emoji passes under crapkit as it does
-  in a terminal, and `mutate` no longer refuses such a suite as failing on the unmutated
-  tree.
-- The Linux measurement owner reads every `/proc/<pid>/stat` as bytes, so a process
-  anywhere on the host named in Latin-1, or a UTF-8 name the kernel cut mid-character, no
-  longer stops `coverage`, `verify`, `test-scoped`, `mutate` and the MCP tools with
-  `measurement owner stopped`. The owner's stderr goes to `.crapkit/owner.log`, and each
-  exit-5 `measurement owner stopped` line names that file and says whether the owner
-  wrote to it.
-- A `CRAPKIT_COMMAND_FAMILIES` crapkit did not write is refused at exit 5 by a line that
-  names the variable, quotes its value and says to unset it. crapkit hands that variable,
-  a JSON list of absolute paths, to the commands a lane starts. Set to anything else (empty,
-  `not json`, `5`, an object), it stopped `coverage`, `verify`, `test-scoped`, `mutate`
-  and the MCP tools with `measurement owner stopped before confirming ownership`, which
-  named neither the variable nor the fix.
-- `doctor --plugin-root` reads the PATH launcher's `--version` answer as bytes. A launcher
-  that prints a byte that is not UTF-8 gets the FAIL line, now `gave no readable answer
-  to crapkit --version`, and exit 1, with no reader-thread traceback on Windows. The
-  plugin manifest is read as Claude Code reads it: a byte that is not UTF-8 as U+FFFD, no
-  longer a missing plugin.json, and a byte-order mark as the error `claude plugin
-  validate` gives it.
-- A file behind a big-endian UTF-16 mark (`fe ff`) is refused as big-endian, in the JSON
-  and coverage artifact refusals and in `init`'s `.gitignore` line, and `doctor` notes it
-  that way. Every message named it the PowerShell 5.1 Out-File default, which writes
-  `ff fe`.
-- The Action builds its comment when git's error for a failed base diff, or a saved
-  `--changed` list, holds a byte that is not UTF-8: the byte reads as U+FFFD. The step
-  ended with a UnicodeDecodeError and posted nothing.
-- `doctor` prints a note, exit code unchanged, for a scoped source that opens with a
-  UTF-16 byte-order mark, which git diffs as binary, and for an `i18n.commitEncoding`
-  that is not UTF-8, under which git labels the UTF-8 bytes Git for Windows writes with
-  that encoding and a reader that asks for UTF-8 gets `José` back as `JosÃ©`.
-
-The exit codes, the lane environment and the files that change on upgrade are in the
-[upgrade guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#text-that-is-not-utf-8).
-
-### A path reads as the file git names, in any spelling that names it
-
-- `init` writes a lane's python as a launcher token, `{python:.venv}` for the repo's venv
-  and `{python}` for a bare name, and the loader reads it for the OS reading the file:
-  `.venv\Scripts\python.exe` or `.venv/bin/python`, and `python` on Windows or `python3`
-  elsewhere. A Windows author's `.venv\Scripts\python.exe` failed every lane of a Linux
-  checkout with its own venv (exit 5, doctor FAIL), the Linux spelling failed the same way
-  under cmd.exe, and a bare `python` failed on an Ubuntu without python-is-python3. The
-  token works in lane and retest commands, `[crapkit.scoped_tests]` and
-  `mutation_command`, and the full-suite guard and `doctor` read the expanded command. A
-  machine where only another name resolves, such as `py` on Windows, keeps that name.
-- `crapkit.toml` reads every path it carries on every OS the way it reads scope paths.
-  `[exclude] globs`, `path_prefix`, lane `cwd`, `artifact` and `results_artifact`, and
-  `ratchet_file` take `\` as a separator and drop a leading `./`; a trailing `/` on a glob
-  names the directory's contents, as in .gitignore; and on a case-insensitive disk scope
-  `paths` and lane `inputs` take the case the directory lists. Before, a glob in any other
-  spelling excluded nothing, a `path_prefix` like `api\` scored a tested function
-  untested, a Windows-written `cwd = 'api\'` crashed on Linux with a traceback,
-  `artifact = '.crapkit\cov.json'` failed a lane that had written it, and
-  `ratchet_file = 'gates\ratchet.tsv'` read no marks. An absolute scope path
-  (`/home/dev/repo/web`, `/c/...`, `/mnt/c/...`, `\\server\share\...`,
-  `//server/share/...`) is refused at load with its relative spelling, where it scored 0
-  files. `doctor` no longer tells a `./.crapkit/cov.json` artifact to move.
-- `doctor` WARNs on each `[exclude]` glob that matches no tracked file, quoting it as
-  written and with the spelling the loader reads, and names each tracked file whose name
-  holds `\` as unsupported. Such a glob excluded nothing while doctor said `no problems
-  found`, and such a file scored untested with nothing saying why. init's default globs
-  are left out.
-- The unmeasured-scope warning quotes the `path_prefix` a lane sets when that prefix keys
-  every measured file outside its scopes, and names the value that would key a file the
-  runner named under them: `path_prefix = 'api' would key the runner's src/calc.py as
-  api/src/calc.py`, or no prefix at all. It told the user to set `path_prefix`, which was
-  already set.
-- A lane whose `cwd` names no directory fails as that lane, with `cwd <path> is not a
-  directory, so the command never ran; fix cwd = 'nope' for this lane in crapkit.toml, or
-  create that directory`, and a run with no lane left exits 5. `crapkit coverage` ended in
-  a Python traceback and exit 1.
-- A file argument in any case or shell spelling names the file git names: `SRC\app.ts` on
-  a case-insensitive disk, and on Windows `/c/...` from Git Bash, `/mnt/c/...` from WSL,
-  and `\\localhost\C$\...`, `\\?\C:\...` and `\\?\UNC\localhost\C$\...` as their drive.
-  Before, `rescore --gate` judged 0 functions and passed a file that fails in git's
-  spelling, and MCP `check_gate` answered `gate.ok` true the same way; `test-scoped`
-  refused a file its scope declares; `brief` and `explain` found nothing; `ratchet move`
-  filed a mark under a key no row carries; `mutate --files` called an in-scope file
-  outside the corpus; `--repo` and an MCP call's `repo` in Git Bash or WSL spelling found
-  no crapkit.toml, and `init --repo` in that spelling ended in a Python traceback and exit
-  1; and `next-item --exclude` and MCP `get_next_item` handed out the
-  directory they were told to skip as `pkg\legacy`, `./pkg/legacy` or `PKG/Legacy`.
-  `--help` for each file argument and for `--exclude` names the spellings it reads.
-- A file argument that names a directory exits 3 with `src is a directory; name the
-  source files in it`: `rescore`, `rescore --gate` and `explain`, and MCP `check_gate`,
-  which answers isError true. `rescore --gate src`, `src/`, `.` and `""` judged 0
-  functions and passed at exit 0 while a file under it failed the gate when named, and
-  `check_gate` answered `gate.ok` true; a directory named like a source file ended in a
-  PermissionError traceback.
-- The flags that write or open a file read their path the way a file argument does:
-  `--export`, `--sarif`, `--emit-baseline`, `report --out`, `verify --baseline-tsv`,
-  `inventory --db` and `doctor --plugin-root`, and the `CLAUDE_CONFIG_DIR` and
-  `CRAPKIT_RESOURCE_DIR` variables. On Windows `inventory --export /c/Users/me/x.tsv`
-  exited 0 and wrote `C:\c\Users\me\x.tsv`, and a baseline, database or plugin
-  directory typed `/c/...` or `/mnt/c/...` was looked for under `C:\c` or `C:\mnt`.
-  `--help` for each flag names the spellings.
-- A writer flag that names a directory exits 3 before the command does any work, with
-  `--sarif 'out' is a directory; name a file to write`: `--export`, `--sarif`,
-  `--emit-baseline` and `report --out`. `--json` prints the error object. `verify --sarif
-  DIR` stored its run as verdict=ok and then ended in a PermissionError traceback at exit
-  1 with nothing on stdout.
-- On Windows a root on a network share exits 3 before crapkit starts any child: `--repo
-  \\server\share\repo`, a session standing in a share, and a `\\wsl.localhost\...`
-  checkout, `init` included. The line says to map the share to a drive letter
-  (`net use Z: \\server\share`) and run crapkit from `Z:\repo`. cmd.exe cannot start a
-  command in a UNC directory and ran every lane in `C:\Windows` instead: a real pytest
-  lane collected `C:\Windows` for 42 s of CPU before it was killed. A root on a mapped
-  drive keeps its letter, for `--repo`, the working directory and an MCP call's `repo`:
-  `resolve()` turned `Z:\repo` into the share behind it, so its lanes started in
-  `C:\Windows` too.
-- The advisory hook reads a payload's `file_path` and `cwd` the way the edited file's disk
-  does: `C:\`, `c:\`, `C:/` and `/c/` paths, another letter case on a case-insensitive
-  disk, and a Bash event's `/c/...` cwd. On Windows an Edit breach and every
-  heredoc-written breach went unadvised, and an edit spelled `...\calc\Mod.py` advised
-  committed debt the edit never touched. A new file whose name holds `[ab]` or `*` is no
-  longer read as tracked with no changed lines, so a breach in it is advised.
-- The istanbul reader rebases a key that names this checkout in another spelling: a
-  lower-case drive, another letter case, a junction or symlink to the checkout, a `\\?\`
-  prefix, or an 8.3 name such as `C:\Users\RUNNER~1\...` on GitHub's Windows runners. The
-  lane FAILED with advice to point the reporter at the checkout it had measured. On a
-  case-insensitive disk a key whose directories below the checkout, or a relative key,
-  are in another letter case (`SRC/app.ts` for git's `src/app.ts`) now keys git's file,
-  where that file scored untested. A relative key written `./src/app.ts` keys git's file
-  too.
-- A lane with `path_prefix` fed a coverage.py report written in another checkout, or a
-  lane whose scope is the root (`.`) fed a coverage.py or istanbul report written there,
-  fails with the wrong-tree refusal, as the same lane without the prefix or with a
-  narrower scope did. The coverage.py reader glues the prefix onto every key, so
-  `backend/` + `/other/checkout/a.py` sat under the `backend` scope, and a root scope
-  claimed any key; every function in the scope scored untested with exit 0. An absolute
-  key under this checkout gets the `relative_files` refusal the same way.
-- The coverage.py reader keys a file in the letter case its directories list, on a
-  case-insensitive disk, whether the lane sets `path_prefix` or not: `PKG/mod.py` under
-  `path_prefix = "backend"`, or `BACKEND/pkg/mod.py`, is git's `backend/pkg/mod.py`.
-  coverage.py on macOS keeps the case the import system handed it, and the file scored
-  untested. An absolute key still fails the lane with the advice to set `relative_files`.
-- After a case-only rename made without `git mv` (Explorer, Finder), the disk lists
-  `App.ts` while git still tracks `app.ts`. A file argument, the advisory hook's edited
-  path and a report's key now take the case git tracks, where they took the listed one:
-  the listed name matched no stored row and no tracked file, so `brief` refused the
-  function and its coverage joined nothing though no byte moved. A name git does not
-  track still takes the case its directories list.
-- `verify` tags a new failure dirty when bun on Windows names its test file with
-  backslashes; it read as committed before. The same holds for a JUnit id whose file part
-  starts with `./` or is an absolute path inside the checkout, as jest-junit's
-  `{filepath}` writes it, on every OS, and on a case-insensitive disk for a relative id in
-  another letter case, as a runner started from `Web\` writes `WEB/src/app.test.ts`.
-- The full-suite guard reads a testpath positional in the case its directory lists, so on
-  a case-insensitive disk `python -m pytest Tests --cov=app` under `testpaths = ["tests"]`
-  is the whole suite. It was refused at exit 3 as narrowing, which sent the user to
-  `full_suite = false`.
-- `init` reads each pytest testpath in the full-suite guard's spelling. `testpaths =
-  [".tests"]` or `["../tests"]` read as `tests/`, so `init` wrote the whole-suite
-  `scoped_tests` command without the `tests` positional under a comment saying testpaths
-  already collects `tests/`. A commented sibling-lane stub names its testpath with `/`
-  separators: `..\tests` read as a tab once uncommented, and `..\impl` did not parse.
-- A source file whose extension is upper case (`src/MAIN.CPP`, `src/defs.H`,
-  `src/Tool.PY`) scores and gates as its lower-case twin does. It was neither scored nor
-  named unclaimed, and `hook-precommit` passed a ccn-8 function in it at exit 0. `doctor`
-  now names such a file outside every scope path as unclaimed. Those files add functions
-  and move no existing score, so there is no analysis bump.
-
-### Colour codes stay out of the text a program reads
-
-- Help, `--help` and usage errors print plain text off a terminal on Python 3.14, even
-  with FORCE_COLOR, PYTHON_COLORS=1 or TERM=dumb FORCE_COLOR=1 set. 3.14's argparse
-  coloured them into a pipe, into a file and into an agent's tool result. At a terminal,
-  help keeps 3.14's colour, and NO_COLOR and TERM=dumb still turn it off. The Action's
-  comment builder prints its usage error plain on 3.14 too.
-- MCP tool results carry no escape codes. A tool whose CLI child printed nothing on
-  stdout answers with the child's stderr, and under the client's colour variables the
-  child coloured an uncaught traceback on 3.13 and 3.14 and a usage error on 3.14.
-- A failed lane names its cause, and the pull-request comment reads as plain text, when
-  FORCE_COLOR or PY_COLORS colours the test runner's output. pytest's colour code in
-  front of `E   ModuleNotFoundError` hid the cause behind the `ERROR path` summary
-  lines, and the refusal on stderr, `--json` lane_failures, the junit collection
-  refusal, the comment and the base run's reason quoted the escape codes. The lane log
-  file keeps its colour.
-- A failed override alert is quoted as plain text. `verify --override` and
-  hook-precommit's override refuse when `alert_command` exits non-zero, and the refusal
-  on stderr and in `--json`'s error object quoted what the command printed with its
-  escape codes: a Python alert script coloured its traceback under FORCE_COLOR from 3.13
-  on. A stderr that held only escape codes, such as a lone colour reset, hid the message
-  the command printed on stdout; the refusal now quotes stdout then. It also says what
-  to fix: `rerun once [crapkit] alert_command in crapkit.toml exits 0`.
-
-### MCP and hook arguments
-
-- An MCP string argument that starts with `-` reaches the command as a value.
-  `get_function_brief path="--help"` answered brief's help text, and `path="-x.py"`,
-  `get_next_item exclude=["-legacy"]` and `check_gate path="-x.py"` answered a usage
-  dump where the tool promises JSON, on Python 3.11 to 3.14.
-- A `claude-hook` flag this crapkit does not know exits 0 with one line naming the
-  version skew, ``crapkit claude-hook: this crapkit does not know `--budget 5`; the hook
-  was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, then
-  run `crapkit doctor --plugin-root` ``. It exited 2 with the usage block, and
-  PostToolUse hands the model an exit 2's stderr on every Edit or Write. The flags this
-  build knows, `--protocol` included, are still read, and other subcommands keep
-  argparse's refusal.
-- An MCP string argument holding U+0000, which JSON allows and no file name or process
-  argument can hold, answers a tool result with `isError: true` before anything spawns:
-  `path must not hold a NUL character (U+0000)`, naming the argument. `check_gate`
-  `path`, `get_function_brief` `name`, an item of `get_next_item` `exclude` and any
-  tool's `repo` answered JSON-RPC `-32603` carrying `ValueError: embedded null
-  character`.
-
-### The same repo prints the same bytes on every machine
-
-- Tracked files missing from the working tree are named in path order. inventory,
-  coverage and verify printed one line per missing file in an order that changed with
-  Python's hash seed from one run to the next.
-
-### Text reaches every shell and encoding intact
-
-- Every line crapkit writes from its own words is ASCII, so `$x = crapkit doctor` in
-  Windows PowerShell 5.1 captures it intact under code page 437 or 1252 (see Upgrading).
-- A message quotes a path the reader typed as typed. Ten messages quoted a path from the
-  command line or `crapkit.toml` with every backslash doubled: `crapkit .\mini`
-  answered `'.\\mini' is not a subcommand`, and doctor named a lane's cwd `'sub\\dir'`.
-- A next step crapkit prints runs as printed in Git Bash. It names `crapkit` when PATH
-  finds this installation's console script, and otherwise the interpreter running it,
-  spelled as A command crapkit prints for the reader to paste (below) says. Before the first run, an MCP tool on Windows named
-  `C:\venv\Scripts\python.exe -m crapkit coverage` as the step to run, and Git Bash
-  answered `C:venvScriptspython.exe: command not found`. A uv tool or pipx install on
-  Windows counts as this installation: both copy the launcher into their bin directory
-  instead of linking it, and a copy with the same bytes as the launcher in the install's
-  own Scripts directory starts the same interpreter. Under `uv tool install crapkit` on
-  Windows, `init` named `.../uv/tools/crapkit/Scripts/python.exe -m crapkit coverage` as
-  the next step.
-- A report or packet command made on Linux runs as printed in cmd.exe, PowerShell, Git
-  Bash and bash, and a report made on Linux and one made on Windows print the same line.
-  The Linux page quoted a path in single quotes, which cmd.exe hands over as part of the
-  path.
-- The measurement owner's channel reads as UTF-8 under any PYTHONIOENCODING. Under
-  utf-8-sig, utf-16 or utf-32, `coverage --json` and `coverage --github` exited 1 before
-  a lane ran, and on Linux every MCP tool call answered a JSON-RPC error.
-- An analysis worker writes UTF-8 to stderr whatever PYTHONIOENCODING says. lizard's
-  `[skip]` line for `src/café.ts` reached the parent as the lone byte 0xe9 on Windows.
-- The override and `digest --alert` hand `alert_command` UTF-8 bytes with LF line ends
-  on every OS. On Windows each LF arrived as CR LF.
-- A failed `digest --alert` quotes what `alert_command` printed, as the override's
-  refusal does, and says the digest above was not alerted. It used to name only the
-  exit code.
-- A failed alert command that printed nothing is refused with `(exit N) and printed
-  nothing` in `hook-precommit`, `verify --override` and `digest --alert`, where the
-  refusal quoted an empty string.
-- `mutate` keeps the mutated line's own line ending, so a mutant changes no byte outside
-  that line. In a CRLF file every mutant also turned the mutated line's CRLF into a bare
-  LF, and in a file whose lines end in CR alone the mutated line took the next line with
-  it.
-
-### CI, tests and release tooling
-
-- CI runs the unit and e2e suites on macOS with Python 3.13, so the letter-case rows run
-  on APFS, which ignores case by default. Until now they ran on Windows NTFS alone.
-- CI tests Python 3.14 on Ubuntu and Windows, and the classifiers name it.
-- tests/conftest.py drops FORCE_COLOR, PY_COLORS, PYTHON_COLORS, NO_COLOR and
-  CLICOLOR_FORCE and sets COLUMNS=80 for every test, so the help tests pass whatever
-  colour or width the contributor's shell exports. The scripts under tools/ print plain
-  help and usage in a pipe on 3.14.
-- Every Python file under src/crapkit, tests and tools compiles with warnings as errors
-  on each CI interpreter, so no SyntaxWarning reaches a first run's stderr.
-- The 17 outputs a program reads (the JSON of coverage, worklist, next-item, brief,
-  explain, duplication, coupling, trend, runs, rescore, verify and ratchet report, the
-  `--github` annotations, the scored TSV, both SARIF files and crapkit-ratchet.tsv) are
-  checked against one set of copies under tests/goldens/machine_outputs/ on every
-  Ubuntu and Windows leg, and the words of every help screen against
-  tests/goldens/help_words.txt on every Python. `CRAPKIT_WRITE_GOLDENS=1` rewrites them
-  after a change every OS makes.
-- tools/action/comment.py strips escape codes through crapkit.plaintext, the one strip
-  every other reader of a child's text uses, so rendering saved payloads by hand needs
-  crapkit installed. The Action installs it before that step, as it did before.
-- The deploy workflow runs the arm64 cells on an arm64 runner, the start on the 3.15
-  prerelease, every harness at its newest release and the Docker product image, and a
-  release's run includes them. Its map, `tests/deploy/MAP.toml`, lists the cells the docs
-  and fixes checks added, and the unit tests name any cell no job runs on each OS it names.
-
-### A lane's staleness is about bytes: it names the files that moved, and a `touch` is not one
-
-- A `touch` that leaves a file's bytes alone no longer makes a lane stale. In a repo that
-  sets `diff.autoRefreshIndex=false`, git named every file whose modification time moved,
-  so a reused lane printed "1 file(s) in its scopes changed", `next-item` and `brief`
-  withheld its dark lines, `--reuse-unchanged` reran it and `verify` counted the file
-  dirty. crapkit now reads the uncommitted set with `git status`, which compares the
-  content through the repo's filters whatever `diff.autoRefreshIndex` says, and hashes
-  each file status calls modified through the same filters, since status skips that
-  comparison for a file whose size moved. A CRLF checkout under `core.autocrlf=true`,
-  and CRLF bytes written over an LF blob under `core.autocrlf=input`, still match their
-  LF blob.
-- A lane's line numbers go stale when the bytes they point into change, and only then.
-  Each run's stamp now records the git blob id of every file under the lane's scopes
-  (`blobs` in `.crapkit/artifacts.json`), the id `git add` would store, and the
-  `--reuse-artifacts` warning, the `uncovered_lines_note` and the report banner compare
-  blob ids instead of asking git about the stamp's commit. git's index gives the id of a
-  file its worktree diff calls unchanged, and `git hash-object --stdin-paths` hashes the
-  rest through the repo's filters, so a CRLF checkout under `core.autocrlf=true` keeps its
-  blob's id, and a submodule is recorded by the commit checked out in it. A message-only
-  amend, a rebase, a detached HEAD, a mode bit and a shallow CI clone with `.crapkit/`
-  restored used to withhold every dark line; they no longer do. An artifact measured on
-  an uncommitted edit is fresh at once, and reverting that edit now withholds the lines,
-  where git called the tree clean and the old lines were served against the reverted
-  file.
-- On Linux and macOS a file at the checkout top whose name starts with a double quote is
-  stamped with its own blob id. It was stamped with the blob of the name git unquoted
-  (`"a".ts` read as `a`), so lane reuse missed an edit to it, and a name like `"d` made
-  every lane read `git cannot say`.
-- The dead lines crapkit folds out of a lane's artifact for diff coverage are cached by the
-  artifact's sha256. The key was its path, modification time and size, so an artifact
-  rewritten with the same size under its old time served the lines of bytes it no longer
-  held.
-- A stale file withholds its own dark lines and no others. One edit used to black out
-  line-level coverage for every file in the repo. The note names the file and says to
-  rerun `crapkit coverage`, since committing changes nothing.
-- The `--reuse-artifacts` warning and the report banner name up to three of the files
-  that moved. The warning counted the files and named none, and the note named neither.
-  The warning now ends with the rerun that measures them: ``rerun the lane (`crapkit
-  coverage --lane unit`) to measure the tree as it is``.
-- A stamp written by 0.8.0 or older holds no blob ids and is judged by its commit until
-  the next `crapkit coverage` replaces it. When git cannot answer, for an old stamp or a
-  new one, the warning and the note say so and quote git's error. The note said "files in
-  its scopes changed" for that case, for an artifact no stamp vouches for and for a stamp
-  commit HEAD does not descend from, and the warning printed nothing at all.
-- The `--reuse-artifacts` warning, the dark-line note, the report banner and
-  `--reuse-unchanged` read one verdict per lane, taken from one read of
-  `.crapkit/artifacts.json` per command. On a 0.8.0 stamp the warning skipped the ancestry
-  and refusal checks the note ran, so after an amend the warning said nothing while the
-  note called the lane stale. A 0.8.0 stamp whose commit this clone does not hold now
-  says `git cannot say which files in its scopes changed since` that commit, where it said
-  the commit was not behind HEAD.
-
-### `--reuse-unchanged` reuses a lane whose inputs did not move, and reruns one whose inputs did, whatever git's diff skips
-
-- A lane that lists `inputs` is reused across a message-only amend, a rebase onto a
-  commit outside its inputs, or a switch to a sibling branch with the same inputs.
-  Reuse now compares the tree under the inputs at the stamp's commit with the working
-  tree, where it required that commit to be behind HEAD. A clone that does not hold the
-  commit reruns the lane and says so, with the fetch to run in a shallow clone.
-- The untracked files a lane's own run writes, such as `.coverage` from pytest-cov at
-  the root or `__pycache__` under its scopes, no longer void its proof. The stamp lists
-  them under `byproducts`. With the `.gitignore` that `crapkit init` writes, which holds
-  only `.crapkit/`, the first run's own output left its stamp without a proof, and the
-  lane never reused.
-- A same-size edit whose old modification time was put back (`cp -p`, `tar -x`, `rsync
-  -t`, `touch -r`), or a second same-size write inside one clock tick, is still not seen
-  by any reader that asks git: lane reuse and the dark-line note, verify's changed files
-  and its split of committed and dirty findings, `rescore --gate`, the commit hook's note
-  that a staged file differs from the working tree, and the files `mutate` copies into its
-  workers. git answers "unchanged" from its index's stat data, as `git status` and `git
-  add` do, and crapkit trusts that answer rather than read every file on every run. That
-  part of the limit holds on Windows, where the change time is the creation time, and
-  under `core.trustctime=false`. On Linux and macOS git's default stat check also
-  compares the change time, which no copy puts back, so git sees the edit once the change
-  time moves a second past the one it recorded. The
-  analysis cache and `watch` compare the modification time and size the same way, and the
-  analysis cache also misses a symlink re-pointed to a same-size target with the same
-  time. `touch` the files after restoring them, and every reader compares their content.
-  The cost of hashing every source is measured for 0.9.0 before that changes.
-- An edit git's own diff skips is a change: a file flagged `--skip-worktree` or
-  `--assume-unchanged` whose bytes differ from the index, and an edit inside a
-  submodule whose `.gitmodules` entry says `ignore = dirty`. Lane reuse, verify's split
-  of committed and dirty findings, and the working-tree copy `mutate` hands its workers
-  all read it; `mutate` judged every mutant against the index's copy of such a test.
-- A lane's proof holds the crapkit version, with `inputs` or without, so an upgrade reruns
-  every lane once and says `the crapkit version changed`. A lane with `inputs` records the
-  parts of its proof too, so its rerun names what moved, as a lane without them does. The
-  proof reads `crapkit.toml` with CRLF as LF, so a checkout under `core.autocrlf=true` is
-  no longer a config change. `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `TMUX`,
-  `VSCODE_GIT_IPC_HANDLE` and `PSModulePath` join the session variables it leaves out,
-  so a new terminal or login reruns nothing. `PATHEXT` stays in it, because it decides
-  what `cmd.exe` starts for a lane's first word, so a switch from PowerShell to Git Bash
-  reruns and names `PATHEXT` alone.
-- The line that reuses a lane names what its proof leaves out, since an edit there reuses
-  the artifact by design: `crapkit: lane 'py': measurement inputs unchanged; reusing
-  without rerun (artifact built at 8c14f3daa8e); its proof leaves out gitignored files and
-  anything outside the repository`. For a lane with `inputs` it names gitignored files,
-  files outside its inputs and inherited environment variables.
-- A lane measured over uncommitted changes has no proof, and its rerun now names them:
-  `its stamp holds no proof: it was measured with 2 uncommitted change(s): calc/grade.py,
-  calc/report.py`.
-- On Windows a same-bytes touch could make a lane's change read fail with `index file
-  open failed: Permission denied`, which read as a changed file: 7 to 12 of 300 touches
-  on git's default config. The worktree diff among those reads rewrote the index. The
-  staged, unstaged and untracked files now come from one `git --no-optional-locks
-  status`, which leaves `.git/index` as it found it.
-- Every git process crapkit starts sets `GIT_OPTIONAL_LOCKS=0`, so `git status` and the
-  other reads that honor it compare a file whose stat data moved without writing the
-  refreshed entry back to `.git/index`, and crapkit's reads leave the index alone while
-  another git runs in the same checkout.
-- A partial run's `-> rerun changed lanes` line says when git cannot tell whether the
-  tree is clean, and quotes git's error. It printed nothing, as for a clean tree.
-
-### A failed lane's leftover stays refused until new bytes replace it
-
-- Whether a lane's attempt wrote its artifact was judged by the file's modification time,
-  so a command that only touched the old report (a make rule, a cache restore that sets
-  times) passed, and crapkit scored the previous run's coverage and stamped it with the
-  new commit. A lane's declared outputs now move under `.crapkit/aside/` before its
-  attempts start, so a file at a declared path afterwards is one an attempt wrote, and a
-  leftover goes back only where nothing was written. The flake retest runs the same way,
-  and a retest that rewrote its junit inside the old file's time tick is read. A lane
-  command that reads its previous report back finds no file at the declared path while it
-  runs.
-- A kill or a CI timeout while a lane runs no longer loses the lane's previous artifact.
-  The files an attempt that never finished set aside stayed under `.crapkit/aside/`,
-  `--reuse-artifacts` exited 5 with `produced no artifact` and never named them, and the
-  next attempt removed them. The next command that measures or reuses the lane now puts
-  each back first and says so: `crapkit: lane 'unit': coverage/coverage-final.json is
-  back at its path; an attempt that did not finish (a kill or a timeout) had set it aside
-  under .crapkit/aside/`. A file written at the path since stays, and the line names
-  where the copy sits.
-- A failed attempt's leftover stays refused while it holds the same bytes. The refusal was
-  keyed on the leftover's modification time, so a `touch`, a copy of the checkout that
-  drops times, or a same-bytes rewrite handed the dead lane's numbers back to
-  `--reuse-artifacts` and `--reuse-unchanged`. The stamp now records the leftover's sha256
-  (`refused_sha256`), and the snapshot store keeps a copy of each refusal, so deleting
-  `.crapkit/artifacts.json` does not lift it. New bytes lift it, as a run of the lane or a
-  salvage writes them. A refusal 0.8.0 recorded still holds by its modification time.
-- `doctor --json` gives each lane a `refusal`: the sentence `--reuse-artifacts` refuses the
-  lane's artifact with, or `null`, from the same question reuse asks. A leftover a failed
-  attempt left behind showed as `artifact_present: true` beside "no problems found".
-  doctor now WARNs on it.
-
-### `scored_changes` says whether the run still describes the files
-
-- `next-item`, `brief`, `brief --batch`, `worklist --json`, the report payload and the MCP
-  tools that print them add `scored_changes`: how many files the ranked run scored hold
-  other content now than the run recorded, deleted files included, or `null` when the run
-  recorded none, as every run 0.8.0 wrote, or git cannot read the tree to compare. `stale`
-  keeps its meaning, the run's commit is not HEAD, and it judges the commit and not the
-  files: an uncommitted rewrite of a scored function left it `false` while `next-item`
-  handed out the pre-edit ccn and span, a run measured on an edit that was later reverted
-  read fresh, and an amend, an empty commit or a README-only commit set it `true` over an
-  identical tree. 0.9.0's schema 2 redefines `stale` as a content difference. Each
-  coverage and verify run now records the blob id of every file it scored in the store; a
-  store 0.8.0 wrote opens as before, and its runs read `null`.
-- Every payload that carries `stale` carries `commands.refresh`, the one call that answers
-  both fields.
-- The stop rule in AGENTS.md, `docs/agent-json.md` and the crapkit skill gains a fourth
-  clause, `scored_changes == 0`. Anything but `0`, `null` included, means run
-  `commands.refresh` and ask again.
-- The plain `worklist` warns on stderr when files the run scored changed since, and names
-  up to three: `2 file(s) changed since run 4 scored them: calc/grade.py, calc/report.py`.
-  When git cannot read the tree it says that instead, `cannot tell which files changed
-  since run 4 scored them, because git failed:` then git's error and ``fix what git
-  reports, then rerun `crapkit coverage` ``, and `scored_changes` is `null`: a failed
-  read is neither "changed" nor "unchanged".
-- The `report` page's banner counts them too: `2 file(s) the run scored changed since`.
-  An uncommitted edit in a `coverage_optional` scope left `stale` false and no lane note
-  to speak for it, so the page showed the numbers from before the edit with no banner.
-- `explain --tests` withholds a file's test ids whenever its dark lines are withheld, and
-  `tests_note` repeats `uncovered_lines_note`. The ids sit on the same line numbers, so
-  after two functions swapped places it credited one with the tests that ran the other. A
-  lane that records no contexts keeps its guidance line.
-- `explain --history` maps the span the run measured through the uncommitted diff onto
-  HEAD's lines before it asks `git log -L`. Four uncommitted lines above a function listed
-  the commits of the function below it, and forty made git refuse the span, which read as
-  an empty list. A span with no line in HEAD, every span before the first commit included,
-  answers `commits: null` with `commits_note` `pkg/m.py:9-10 holds only uncommitted lines,
-  so no commit has touched it yet`, and a git failure quotes git's error in `commits_note`
-  instead of answering `[]`, then says ``fix what git reports, then run `crapkit explain
-  --history` again``.
-
-### A git question that fails is named, and a count names its files
-
-- `verify` tells a baseline commit this clone does not hold from one a rewrite left
-  behind. `git merge-base --is-ancestor` fails on a commit the clone lacks, and verify
-  blamed a rebase or an amend and asked for a fresh baseline. A store copied from
-  another clone, or a CI cache keyed on a branch, can name a commit this checkout never
-  fetched, and the refusal now says `baseline commit a74260f321f is not in this clone,
-  so git cannot say whether it is behind HEAD` and names the `git fetch origin` that
-  brings it. It still exits 4, and the shallow-clone and rewrite sentences are as
-  they were.
-- `ratchet prune` refuses to drop a marked file's debt when the commit its renames start
-  from is gone. The rename diff starts at the store's first run, and a clone can lack that
-  commit: a depth-1 CI checkout with `.crapkit/` restored, a rebase followed by gc, a
-  squash-merged branch that was collected. prune read the failed diff as "nothing was
-  renamed" and dropped a renamed file's marks as repaid debt, printing `followed 0
-  rename(s)`. It now reads renames from the oldest run whose commit the clone holds and
-  says so on stderr, and when a marked file left the checkout before that run it exits 4
-  before writing anything: `run 1's commit 35f524b3f89 is not in this clone, so git
-  cannot say whether src/old.py was renamed or deleted`, then the fetch that brings the
-  commit back, or `ratchet move` when no remote holds it.
-- When git cannot tell whether a run's commit is in the clone, as with a corrupt object,
-  `ratchet prune` exits 4 before writing anything and `verify` exits 4, each quoting
-  git's error and saying to fix what git reports. Lane reuse quotes git's error too, and
-  so does `explain --history`, outside a git work tree as well. They said the commit was
-  missing and pointed at a fetch, or, in `explain --history`, that the function held only
-  uncommitted lines.
-- `ratchet prune` outside a git work tree says it dropped the marks of every file that
-  left, renamed or not, and to run it in the git checkout to keep a renamed file's
-  marks. The note named no action.
-- The prune line names the renames it followed, up to three:
-  `followed 1 rename(s) (calc/grade.py -> calc/grading.py)`.
-- `verify` names the files behind its count, on a line under the verdict: the first three,
-  the files verify scored ahead of the rest, then `and N more`, as in `changed files: app/m.py, app/n.py, tests/test_m.py`. `--json`
-  lists them all as `changed_paths` beside the `changed_files` count.
-- A source file inside a scope that nobody has `git add`ed is not judged, because verify's
-  diff and its corpus hold git-tracked files only, and it read as `(0 changed files)`.
-  verify now says so on stderr, ``warning: 1 untracked file(s) in a scope were not judged
-  (src/added.ts): verify scores git-tracked files only; `git add` them to have them
-  judged``, and `--json` carries the paths as `untracked_in_scope`.
-- The warning that counts functions over the ceiling with no ratchet mark names the first
-  three, each as its path and function.
-- `init` on a repo whose source nobody has added names up to three of the files: ``run `git
-  add` first (2 untracked source file(s) found: lib/util.py, src/app.ts)``. It gave the
-  count alone.
-- The GitHub Action names a base diff git refused. On the `actions/checkout` default, a
-  depth-1 clone without the base commit, `git diff base.sha...HEAD` failed, the step read
-  the failure as an empty list and logged `0 changed file(s)`, and the comment ranked the
-  whole repository with no reason. The step now logs git's first line, and the comment
-  says under its worklist heading that the base diff failed, quotes git, and names
-  `fetch-depth: 0`. A push logs `no base commit on this event: the comment ranks the whole
-  repository`. The step's count names up to three files, and so does the comment's verdict
-  line, from verify's `changed_paths`: ``1 changed file (`app/calc.py`)``. The README's
-  example comment renders that line from a saved payload that carries `changed_paths`.
-
-### claude-hook remembers what it judged, and says what it could not judge
-
-- The `Bash` fallback records the bytes each judgement read, per Claude Code session and
-  per file, under `.git/crapkit/claude-hook/<session_id>/`, and skips a recent file whose
-  bytes match. A `touch`, a same-bytes rewrite, or a test run right after an `Edit` moved
-  an mtime into the 12-second window and repeated an advisory the session had already
-  read. The window and the 25-file cap are unchanged. A session idle for 7 days is pruned
-  when another one starts. Content that arrives with an old mtime (`mv`, `cp -p`, an
-  unpacked archive, or a file a long command wrote well before it returned) is still not
-  judged by the fallback; the commit gate judges it.
-- Before a repo's first commit the hook judges the edited file whole. `git diff HEAD`
-  fails there, the hook read the failure as an empty diff, and a staged breach drew
-  silence while the same file unstaged drew the advisory.
-- When git fails for another reason, such as a corrupt index, the advisory says `git could
-  not report what changed in PATH, so no function in it was judged`, quotes git's error
-  and lists no function. It read the failed `git ls-files` as "untracked" and listed
-  every legacy function in the file. `ls-files` now reads its path literally, so an
-  untracked `calc/[id].py` no longer matches a tracked `calc/i.py`.
-- `crapkit --help` says when the hook speaks: `silent unless the edit leaves a function
-  over its ceiling or a file it could not judge, or the hook passes a flag this crapkit
-  does not know`. It said the hook was silent unless a changed function was over its
-  ceiling.
-
-### watch reads content, and the history caches know their depth
-
-- `watch` rescores a file when its bytes change, not when its mtime moves. A touch, or an
-  editor saving the same bytes, printed `--- changed: src/app.ts` and ran a rescore that
-  labeled the file's coverage STALE; now a file whose mtime moved is read and its git blob
-  id compared with the one recorded for it, the id a lane stamp records, and nothing
-  prints. So a line-ending rewrite git stores as the same blob, such as a CRLF checkout
-  under `core.autocrlf=true`, rescores nothing either. When git cannot give the ids,
-  `watch` names git's error once, keeps the content recorded before and asks again on the
-  next poll. Each poll lists the files your
-  scopes claim again, tracked or not yet added, so a file created while `watch` runs is
-  rescored; the list used to come from `git ls-files` once, at start. When git cannot
-  list them, `watch` keeps polling the last list and says so once, quoting git and ending
-  `fix what git reports. Until git lists them, each poll reads the last list and asks git
-  again`. New bytes written under the file's old mtime (`cp -p`, `touch -r`) are not
-  seen, the same limit the analysis cache has. The first line reads `watching 12 file(s)
-  in scope`, where it said `tracked files`, because the count now holds the files not yet
-  added too.
-- After `git fetch --unshallow` or `--deepen` at an unmoved HEAD, the churn map, the churn
-  log and the coupling cache rebuild from the whole history. Their keys held HEAD but not
-  how much history the clone holds, so `worklist` kept a shallow clone's churn (1 commit
-  where the history held 6) and `coupling` kept zero pairs until the UTC date rolled
-  over, and deleting the coupling cache alone changed nothing.
-
-### A process that exits while a lane stops no longer fails the lane
-
-- On Linux under Python 3.11, a lane failed at exit 5 with `[Errno 3] No such process:
-  '/proc/<pid>/stat'` when any process on the host exited while the measurement owner
-  waited for the lane's process group to end. The owner found each `/proc/<pid>/stat`
-  through a glob, and Python 3.11's glob stats each path it names, which raises for a
-  process that is gone. The owner now lists `/proc` once and reads each record, and a
-  record that is gone reads as no member of the group.
-
-### A refused analysis worker no longer hangs the command's cleanup
-
-- On Linux and macOS, a command whose analysis pool refused a starting worker (the
-  command was being cancelled, or its process guardian had died) could hang in cleanup
-  and never exit. A refused worker exits at once, and it could exit while its queue
-  thread still held the registration queue's write lock; a worker the broken pool killed
-  in the middle of its registration left the lock held the same way. Cleanup then put
-  its stop message on that queue and waited on the lock forever. Cleanup now stops the
-  registration thread with a flag and writes nothing to the queue the workers write to.
-
-### Agents
-
-- New page, [Wiring crapkit into your agent](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/harnesses.md):
-  a block to paste for each of 27 agents, from Claude Code and Codex to Cursor, VS Code,
-  Gemini CLI, Goose, Zed and Aider, with where each starts the server, what environment it
-  passes, the versions checked, what it does with the plugin's hook, and how to restart
-  after an upgrade.
-- The README, AGENTS.md, the adoption and upgrading pages, the onboard skill and
-  `crapkit mcp --help` send every agent but Claude Code and Codex to that page. They sent
-  them to one `mcpServers` block, which OpenCode 1.18.32 and Amp ignore, printing
-  `No MCP servers configured` and exiting 0, and which VS Code 1.139.0 ignores in
-  `.vscode/mcp.json` with no log and no error.
-- Gemini CLI's and Qwen Code's blocks carry `"trust": true`. With the old block `gemini mcp
-  list` showed crapkit connected, and a headless `gemini -p` still handed the model none of
-  the twelve tools, because it drops every tool that would ask for a confirmation; a
-  headless `qwen -p` offered them and declined every call. The Gemini section also says
-  that an untrusted folder disables every server and that a project
-  `.gemini/settings.json` is read only when Gemini starts in that directory.
-- The Claude Agent SDK example passes `allowedTools: ["mcp__crapkit"]`, and the Claude
-  Code section and the README's plugin section say that a headless `claude -p` needs
-  `--allowedTools mcp__crapkit`, or `mcp__plugin_crapkit_crapkit` for the plugin's server.
-  Without it, Claude Code 2.1.281 and both SDKs offered the tools and then answered every
-  call with `Claude requested permissions to use ..., but you haven't granted it yet.`
-- Goose: `goose plugin install` finds no plugin in crapkit's repository (`Error: No
-  supported plugin format found`), and the Goose section says so and gives the
-  `config.yaml` extension that connects.
-- Cline's block carries `"timeout": 60`: Cline waits 3 s for `initialize` otherwise and
-  logs a skipped server only to `~/.cline/data/logs/cline.log`. The page also says which
-  agents take PATH from the login shell (Zed, VS Code launched from the desktop), that Qwen
-  Code starts no server from a project file, and that Junie writes `.output.txt` and
-  `.output.json` into the repository.
-- The README names the Codex floor: the plugin lines need Codex 0.131.0. Beside a plugin
-  from 0.8.0, whose hooks pass `args`, `crapkit doctor --plugin-root` names a Claude Code
-  below 2.1.139, the first release that reads them.
-
-### Install
-
-- The commit-gate hook README Route 1 and Route 2 and the handbook write calls the
-  `crapkit` launcher first, then `uvx crapkit`, then `python -m crapkit`, so it reaches a
-  pipx, uv tool or uvx install. The old hook ran `python -m crapkit`, which none of those
-  installs can import. The gate section says the uvx line runs the release uv fetched
-  first, which need not be the one your team runs, and keeps the gate running after
-  `pip uninstall crapkit` on any machine with uv; Route 2's PowerShell form and the
-  handbook's callout name the uvx line too.
-- [docs/upgrading.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md)
-  says what a downgrade keeps and what it refuses, and that a merge driver and Route 2's
-  hooks path are set per clone.
-- The Docker image's header and `docs/agent-json.md` give a `--user "$(id -u):$(id -g)"`
-  run line: the image serves as uid 1000, and on a checkout another uid owns the tools
-  answer but cannot save their caches.
-- `crapkit --version --json` prints one object, with the two flags in either order:
-  `version`, `commit`, `dirty`, `analysis_version` and `schema`. `commit` is the full sha
-  the running crapkit was built from, and `dirty` says whether that checkout held staged
-  or unstaged edits or a file git neither tracks nor ignores. A source checkout or an
-  editable install answers from git. The build writes both into the package
-  (`crapkit/_build.json`, from a new `setup.py`), so a wheel built in a git checkout, a
-  `pip install git+URL` and a wheel built from an sdist cut in a checkout name their
-  commit too. Both are null for a build made with no checkout at hand. On a terminal,
-  `crapkit --version` of a build that is not a release adds `(commit <sha>, clean)` or
-  `(commit <sha>, dirty)`. A release, built from a clean checkout tagged `v<version>`,
-  prints `crapkit X.Y.Z` as before, and a pipe always gets those two words, which scripts
-  and `doctor --plugin-root` read. Before, `--version --json` printed the text line:
-  argparse ran `--version` before it read `--json`, and two builds that printed the same
-  version could not be told apart.
-
-### A `bash -c` lane is judged by what its payload runs
-
-- The full-suite guard read `bash -c "python -m pytest tests/unit --cov"` as three words
-  with no pytest in them, so a lane that narrows its suite loaded with no refusal. On
-  Windows a single-quoted payload split at every space under cmd.exe, and a whole-suite
-  lane was refused on `tests'`, a token bash never hands pytest, with a hint to switch to
-  double quotes. crapkit now reads the script of a `bash -c` or `sh -c` step with sh's
-  rules on both OSes, as bash itself does, and judges each command in it. doctor's
-  pytest-cov probe asks the python inside the payload, and doctor WARNs when sh cannot
-  split a payload, since no check looked inside it.
-- doctor read a lane's `--data-file` with a pattern that stopped at the first space or
-  quote, so `--data-file="cov a/.coverage"` and `--data-file="cov b/.coverage"` read as
-  one file `cov`: doctor warned that the lanes delete each other's data, and `doctor
-  --tune` held `max_parallel_lanes` at 1. It now reads the value the shell hands
-  coverage.
-
-### Doctor
-
-- doctor FAILs a lane whose `artifact` or `results_artifact` names a directory
-  (`artifact = "coverage"` for vitest's report directory). Such a lane fails every run,
-  and doctor passed it.
-- The onboard and recover skills print the lines `crapkit doctor --plugin-root` prints when
-  it finds no plugin. With no path it names Claude Code's plugin directory and then
-  Codex's, and a path that holds no `.claude-plugin/plugin.json` gets a line that says
-  what to pass instead. The onboard skill said that line named the path and nothing else.
-- The handbook's polyglot workflow shows the WARN doctor prints for the `ui` scope, whose
-  vitest line `init` writes commented out, and the closing line that counts it.
-
-### The advisory hook runs in every agent that loads the plugin
-
-- The plugin's hook is one shell command, `crapkit claude-hook --protocol 1`, where it
-  was 50 exec-form handlers, one per file type. Every agent that loads a Claude Code
-  plugin keeps a handler's `command` and drops the fields it does not know, and only
-  Claude Code 2.1.139 and later read the `args` and `if` those handlers used. Codex,
-  Cursor, GitHub Copilot CLI, VS Code and Claude Code 2.1.138 each started a bare
-  `crapkit` per handler, up to 50 on one edit, each printing its usage and exiting 2:
-  Cursor recorded the edit as denied, VS Code stopped the agent, Copilot held one edit
-  for 30 to 100 s, and Claude Code 2.1.138 woke the model with the usage text. The hook
-  now needs no minimum Claude Code version.
-- `claude-hook` reads each agent's payload: Copilot CLI's `tool_input.path`, Cursor's
-  `postToolUse` event, and VS Code's `filePath`, multi-replace and `apply_patch` edits.
-  It skips a file whose suffix crapkit does not measure before it reads any config, the
-  job the per-file-type `if` rules did.
-- Cursor, Copilot CLI and VS Code get the advisory as one JSON object on stdout with exit
-  0, carrying the lines as `additionalContext` and `hookSpecificOutput.additionalContext`.
-  Cursor reads exit 2 as a deny, VS Code as a blocking error, and Copilot CLI shows it to
-  the user and never to the model, so a Copilot user with the documented `Bash` entry in
-  `.claude/settings.json` heard nothing either. Claude Code keeps stderr and exit 2.
-- VS Code runs a plugin's hook on every tool call and ignores its matcher, so there the
-  hook judges VS Code's file-writing tools alone; a read or a terminal call beside a
-  breaching file stays silent. The `Bash` fallback answers the shell tool by name, `Bash`
-  or Cursor's `Shell`, rather than any event carrying a `command`.
-- Codex gets its own manifest, `plugin/.codex-plugin/plugin.json`: the three skills, the
-  MCP server and `"hooks": {}`. Codex reports an edit as `apply_patch` patch text the hook
-  does not read, and without the key it loaded all 50 handlers.
-- Update the plugin together with the CLI: `claude plugin marketplace update crapkit`,
-  then `claude plugin update crapkit@crapkit --scope user`, then
-  `crapkit doctor --plugin-root`, and restart open sessions.
-
-### The plugin in each agent
-
-- Codex no longer offers `crapkit-onboard` to the model on its own. The skill's
-  `disable-model-invocation: true` is a Claude Code key, and Codex 0.156.1 ignored it
-  and listed the skill in every model request, so the model could start an adoption
-  nobody asked for. The skill now ships `agents/openai.yaml` with
-  `policy.allow_implicit_invocation: false`, which Codex reads from the plugin install
-  and from a copied skills directory alike. Type `$crapkit:crapkit-onboard` to run it
-  from the plugin, or `$crapkit-onboard` from a copied directory. `crapkit` and
-  `crapkit-recover` stay in the model's list.
-- `crapkit-onboard` and `crapkit-recover` label each `claude plugin` line as Claude
-  Code's and give the Codex line beside it. Codex installs the same two skills, and an
-  agent there that followed either one was told to run `claude plugin install`, a
-  command a machine with only Codex does not have. The onboarding skill's pointer for
-  every other agent goes to the block that agent's own config file takes.
-- The recover skill's row for a plugin that drifted from the CLI names each agent's
-  refresh lines, the ones the README runs after an upgrade. Its old line, `claude plugin
-  install crapkit@crapkit`, only answers that the plugin is already installed, and the
-  old version stays in place.
-- `crapkit doctor --plugin-root` names the same refresh pair when the plugin and the CLI
-  disagree on the version: `claude plugin marketplace update crapkit`, then `claude
-  plugin update crapkit@crapkit --scope user`. It named `claude plugin install`, and after
-  running it doctor printed the same line again.
-- The README, the adoption page, the handbook and `crapkit-onboard` name where a copy of
-  `plugin/skills/*` goes: `~/.claude/skills` for Claude Code, `$CODEX_HOME/skills`
-  (`~/.codex/skills` by default) for Codex, `~/.gemini/skills` for Gemini CLI. They said
-  "that runtime's equivalent" or "its own skills directory". Gemini CLI 0.61.0 reads a
-  skill's name and description alone, so it lists `crapkit-onboard` to its model;
-  `gemini skills disable crapkit-onboard --scope user` takes it out once the repo is
-  adopted.
-
-### `doctor` names the setups the next command refuses, and `--plugin-root` names repairs that close the gap
-
-`crapkit doctor` said "no problems found" over setups that `coverage` then refused with
-exit 5, over gates git never ran, and over plugin gaps whose printed repair changed
-nothing. Each of these now gets a line naming the object and the next step:
-
-- A `pytest --cov` lane whose coverage.py is older than 7.13.1, the `py` extra's floor,
-  FAILs. That coverage writes no function start lines, so `crapkit coverage` refuses the
-  lane's report with exit 5. The lane probe asks coverage's version on the start it
-  already made, prints it beside pytest's and pytest-cov's, and names the install line
-  for that interpreter.
-- A `coveragepy` lane with no `container_ok` WARNs inside a container (`/.dockerenv` or
-  `CRAPKIT_INSIDE_CONTAINER=1`), which the lane runner refuses with exit 5.
-- The closing line counts the WARNs above it (`doctor: no problems found, 1 warning
-  above`). A container run printed the lane's WARN and then closed on a bare "no problems
-  found", the one line a skimming reader reads.
-- A commit gate git never runs WARNs: Route 1's hook under a global `core.hooksPath`,
-  Route 2's committed hook in a clone that skipped its `git config core.hooksPath` line,
-  either one after husky's `npm install` took `core.hooksPath` back to `.husky/_` (the
-  WARN names `.husky/pre-commit` as the file to call crapkit from), and a
-  `.pre-commit-config.yaml` naming `crapkit-gate` before `pre-commit install`.
-- A marks file whose merge attribute names a driver this clone never defined WARNs with
-  the `git config merge.crapkit-ratchet.driver` line, since git otherwise merges it as
-  text.
-- A marks file `verify` refuses for its metric stamp gets a line with verify's own refusal
-  and remedy. Right after an upgrade that moves the analysis version, verify exited 3
-  before any lane ran while doctor said `no problems found`. Marks an older metric
-  stamped WARN at exit 0, since the upgrade guide runs doctor before the review and the
-  re-seed that clear them. Marks a newer crapkit or lizard stamped FAIL, since only an
-  upgrade of this install clears them. A marks path doctor cannot read FAILs too, where
-  doctor passed it.
-- Two or more `crapkit` launchers on PATH are named, each with its version: a WARN when
-  their versions differ, a note while they agree. The shell, a git hook, the plugin's
-  hooks and an MCP client each run the first one their own PATH lists, so the hook can
-  judge a commit with one version while the shell records marks with another.
-- In a venv uv made, which holds no pip, the install lines `init` and `doctor` print for a
-  missing pytest-cov or an old coverage.py, and the one `coverage` prints when pytest
-  rejects `--cov`, read `uv pip install --python <that python> ...`. The `<python> -m
-  pip install` they printed failed there with "No module named pip".
-- A lizard that crapkit cannot import FAILs naming the install for the python running
-  crapkit (`uv pip install --python <it> lizard` for a `uv tool install`). The `pip
-  install lizard` it printed ran the shell's pip, which installed elsewhere or was refused
-  as an externally managed environment.
-
-`crapkit doctor --plugin-root`:
-
-- A version gap names the side that is behind and the commands that move it. The old
-  line sent every gap to `claude plugin install crapkit@crapkit`, which prints "already
-  installed" over an older copy, and to `pip install -U crapkit`, which reaches no uv tool
-  or pipx install. A plugin behind now gets `claude plugin marketplace update crapkit`
-  and `claude plugin update crapkit@crapkit --scope <scope>` once per scope that holds the
-  install, with the project directory to run a project or local one in (a `--scope user`
-  update over a project install answered "not installed at scope user"). A plugin Claude
-  Code loads in place from a local directory marketplace gets `git -C <dir> pull`, since
-  `claude plugin update` only refreshes the cache copy beside it. A plugin Codex
-  installed gets `codex plugin marketplace remove crapkit`, the marketplace added again
-  at the CLI's release tag, and `codex plugin add crapkit@crapkit`. A CLI behind gets
-  `uv tool upgrade crapkit`, `pipx upgrade crapkit`, or pip for the python its launcher
-  starts (`uv pip` in a venv uv made). A pre-release or local build names both repairs.
-- An install whose files differ from its marketplace's copy at one version is named, with
-  the `claude plugin uninstall` and `claude plugin install` lines for each scope that
-  holds it, run in its project for a project or local install. Between
-  releases main keeps the release's version string, so `claude plugin update` answers
-  "already at the latest version" and the install keeps the release's files.
-- Run under uvx, `uv run --with` or `pipx run`, it looks past every environment that
-  runner built for this one command, which is any environment in uv's cache (the tagged
-  cache root, wherever `UV_CACHE_DIR` puts it) or in pipx's. `uvx crapkit doctor
-  --plugin-root` found crapkit there and exited 0 while `claude mcp list` failed with
-  ENOENT, and `uv run --with crapkit crapkit doctor --plugin-root` did the same from uv's
-  builds-v0 bucket, with the `--with` layer in archive-v0 behind it. It now FAILs naming
-  the install that stays: `uv tool install crapkit`, or `pipx install crapkit` if `pipx
-  run` started it (pipx 1.17 on its uv backend runs the command through `uv tool run`, in
-  uv's cache). The launcher count in `crapkit doctor` leaves those environments out too,
-  so it no longer asks you to upgrade or uninstall an environment uv rebuilds or deletes
-  on its own.
-- With no PATH it checks every install `installed_plugins.json` records, not only the
-  newest: with a user install at 0.8.0 and a project install at 0.8.1 it checked the 0.8.1
-  copy and exited 0 while every session outside that project ran 0.8.0. It looks in
-  Codex's plugin cache when Claude Code has no install, checks a marketplace added from a
-  local directory in that directory (Claude Code loads it in place), and the no-install
-  line names both harnesses' install commands.
-- A hook's `--protocol` is read from a shell-form command string as well as from `args`,
-  and the Claude Code 2.1.139 line prints only for a plugin whose hooks pass `args`.
-- Every line it prints names the command that closes it, as `doctor --help` says. The
-  protocol line names the side that is behind and its repair, the same as the version
-  line. A hooks file or manifest it cannot read names the reinstall for each scope that
-  holds the install, Codex's `codex plugin remove` and `codex plugin add`, or `git -C
-  <root> checkout -- <file>` for a plugin Claude Code loads in place from a checkout,
-  where the old line said "reinstall the plugin or repair that file". A directory with no
-  manifest names `crapkit doctor --plugin-root` with no PATH. A launcher that answers no
-  `--version` names its installer's reinstall (`uv tool install --force crapkit`, `pipx
-  reinstall crapkit`, pip's `--force-reinstall`), since each upgrade leaves a launcher
-  whose environment lost its python as broken as it was.
-- `doctor --help` says an agreeing check exits 0 after naming a root it found rather than
-  the one you typed, where it said "silent when they agree" over a run that printed
-  `crapkit doctor: checking ROOT`.
-
-### verify, seed and `runs list` read the run behind HEAD, not another branch's
-
-- The baseline is now the newest trusted run whose commit is at or behind HEAD. A store
-  keeps every branch's runs, so after a passing verify on a feature branch and `git
-  checkout main`, verify took the feature branch's run, then exited 4 with `baseline
-  commit ... is not an ancestor of HEAD (rebase or amend rewrote history)`, blaming a
-  rewrite that never happened. It now measures against main's own run. `ratchet seed`
-  and `ratchet prune` read the same run, where seed signed marks off the feature
-  branch's code, and `runs list` marks it, where it marked the run verify refused.
-- When no trusted run sits behind HEAD, verify still exits 4, and the line says why:
-  ``the newest, run 2 @ 7691376dddb, is not an ancestor of HEAD: it was made on branch
-  feature - run `crapkit coverage` on this branch for a baseline here``. A commit no
-  branch holds keeps the rewrite wording, and a shallow clone keeps its fetch-depth fix.
-  `verify --baseline ID` naming a run on another branch gets the same line. seed and
-  prune in that state say the newest run was measured on history HEAD does not contain,
-  where they said the store held no trusted run.
-- The taint rule is unchanged: a failed verify still stands in front of the runs made
-  after it, whichever branch it ran on.
-
-### The commit gate finds the crapkit root below the git top, and judges CI's `--all-files`
-
-- git runs a pre-commit hook at the repository's top. With `crapkit.toml` in
-  `packages/api`, README Route 2's hook and the handbook's refused every commit, a
-  docs-only one included, with `no crapkit.toml at TOP - nothing to analyze`. With no
-  `crapkit.toml` at or above where it runs, the hook now runs the gate in each crapkit
-  root below that owns a staged file, nearest configuration winning, and prints paths
-  from the top: `ccn   8  packages/api/app/route.py:1  route( a , b , c , d )`. A commit
-  that stages nothing under any `crapkit.toml` passes with one note on stderr, and so
-  does every commit in a repo whose gate was armed before `crapkit init`, where each
-  one was refused. `--repo DIR` still names an exact root and refuses one without a
-  configuration.
-- `pre-commit run --all-files`, the form pre-commit.ci and pre-commit/action run,
-  stages nothing and starts no commit, and the hook read only the staged diff, so it
-  passed a breach committed from a clone with no hook installed. Outside a commit (git
-  sets `GIT_INDEX_FILE` for the hooks a commit runs) and with nothing staged, the hook
-  now judges every tracked file's indexed content: `crapkit gate: 1 tracked
-  function(s) exceed the complexity ceiling of 6`, exit 6, with the functions the
-  committed ratchet marks exempt as before. The refusal ends ``or record existing debt
-  with `crapkit ratchet seed` ``, the route for debt the repo already holds. Inside a
-  commit, and under `--base REF`, nothing changes.
-- The refusal every command gives in a directory with no `crapkit.toml` names both ways
-  forward and the configurations the checkout tracks, spelled from where you stand:
-  ``no crapkit.toml at /repo/packages/web - nothing to analyze; run `crapkit init` there
-  to adopt it, or pass --repo DIR to name a directory that holds one; this checkout
-  holds ../api/crapkit.toml``.
-- The handbook's Enforcement block writes the hook through `git rev-parse --git-path
-  hooks`, so it arms a working gate from a crapkit root below the git top, where
-  `.git/hooks/pre-commit` named a directory that does not exist.
-
-### Marks a newer crapkit wrote are sent to an upgrade, not a re-seed
-
-- A team upgrades one member at a time. When the upgraded teammate's re-seeded marks
-  met an older crapkit, the Action pinned one tag behind included, verify's refusal told
-  that reader to run coverage and re-seed. The seed restamped the team's marks under the
-  older analysis, and every upgraded teammate's verify then refused them. The refusal now
-  compares the two stamps field by field and, when the marks are the newer side, says
-  ``the marks come from a newer crapkit than this install; upgrade it to the version that
-  wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than
-  re-seed``. A newer lizard alone is named as lizard. Marks an older crapkit wrote keep the
-  coverage-then-seed remedy.
-- `ratchet seed` and `ratchet prune` refuse, exit 3, to rewrite marks a newer crapkit or
-  lizard recorded from a run an older one measured, and write nothing. seed restamped the
-  file backwards, and prune dropped every mark whose function the older reader names
-  differently. When this install is the older one, the refusal asks for the upgrade. When a
-  failed verify pins them to a run an older release measured, as a plain prune after
-  `ratchet seed --baseline N` on the upgrade recipe's pinned store was, it names the newer
-  run to pass to `--baseline`: that prune used to drop the marks the named seed had just
-  written.
-- The merge driver's stamp refusal names the newer side and the metric to re-seed under:
-  `theirs is newer, so with a crapkit that measures [...]`. "re-baseline one side" named
-  neither, and a seed under the older release left the stamps apart.
-- verify's stamp refusal, the unstamped-marks warning and the merge driver's refusal name
-  `crapkit ratchet prune` between `crapkit coverage` and `crapkit ratchet seed`, as the
-  upgrade guide runs them. They named coverage and seed only, and seed never drops a mark,
-  so a mark under a key analysis 12 moved (a UTF-16 source, a name holding a byte cp1252
-  leaves undefined) stayed in the file.
-- A plain `verify` on a store a failed verify pins no longer ends its stamp refusal with
-  ``re-baseline from run N with `crapkit ratchet seed --baseline N` ``. The Action quotes
-  that line in the pull request comment, where run N, from the runner's store, names
-  nothing, and on a runner that keeps its workspace it was the pull request head's own run,
-  whose seed would have signed the breach as the new ceiling. The refusal now says a failed
-  verify pins the plain seed, and the taint warning above it and seed's own line name the
-  run. `verify --baseline N` still names run N, since you named it.
-- docs/upgrading.md says to upgrade every clone, CI pin and pre-commit `rev` before
-  committing marks seeded under a newer analysis, and to move the Action's `uses:` pin in
-  the same commit as the re-seed.
-
-### A repository git cannot use is named, not quoted
-
-- Outside a git repository, `verify` and `hook-precommit` printed 129 lines of `git diff
-  --no-index` usage and never said the directory was not a repository, because git reads
-  `diff --cached` there as a diff of two paths. Every command that reads git now exits 4
-  with one line that names the directory and the fix: `<dir> is not a git repository, and
-  no directory above it is one`, then run it inside a checkout, or `git init`, `git add`
-  and `git commit` first.
-- In a fresh `git init` repo, `coverage` and `inventory` exited 4 with git's "ambiguous
-  argument 'HEAD': unknown revision" right after `init` passed. They now say `the git
-  repository at <dir> has no commit yet` and ask for the first commit. The commit gate
-  still runs on that first commit, since it reads only the index.
-- A repository git refuses to open, such as one another user owns under git's
-  `safe.directory` check, got the same usage from `verify` and the commit gate. The
-  refusal now quotes git's own message, which carries the `git config --global --add
-  safe.directory` line to run.
-- `verify` on a `.crapkit/` store copied into a fresh `git init` said a rebase or amend had
-  rewritten its baseline. It now names the missing commit.
-- Exit codes do not change. A failure in a repository git can use keeps git's own reason,
-  and a git answer given as exit 1, such as an unset config key, starts no extra process.
-
-### The MCP server answers calls it used to fail
-
-- A call to a 0.5.x tool name answers with the name 0.6.0 gave it: `unknown tool
-  'worklist': renamed list_worklist in 0.6.0, with the same arguments and result; call
-  list_worklist`. A client that pinned the old names, in a Codex `enabled_tools` list or a
-  Claude Code `mcp__crapkit__worklist` allowlist, got `unknown tool 'worklist'` and nothing
-  its model could try next. A name that was never a tool keeps the bare refusal.
-- A call that carries `wait_for_previous` runs. Gemini CLI 0.61.0 adds that boolean to
-  every MCP tool's schema for its own scheduler and forwards it, and crapkit refused it as
-  an undeclared key, so every Gemini call that carried it answered `get_next_item does
-  not take 'wait_for_previous'`. The server now drops it before checking the call; every
-  other undeclared key is still refused
-  ([ADR 0001](docs/adr/0001-mcp-invalid-arguments-are-tool-results.md)).
-- `crapkit mcp --repo ${workspaceFolder}` from a client that does not expand the variable
-  serves where the client started it. Cursor's docs wire a server that way and the Cursor
-  agent CLI passes `${workspaceFolder}` through, so the server read it as a directory
-  below its own and answered every call `no crapkit.toml in <cwd>/${workspaceFolder}`
-  while the client listed it as ready. A `--repo` that holds `${...}` is now ignored and
-  stderr names it; `crapkit mcp --help` says so.
-- A leading `~` in `--repo` or in a tool's `repo` argument is the home directory. An MCP
-  client starts the server without a shell, and cmd.exe expands no `~`, so `--repo
-  ~/app` named `<cwd>/~/app` and every call answered `no crapkit.toml` there. Every
-  subcommand's `--help` says so.
-
-### A process that outlives an upgrade says to restart it
-
-- An MCP server that outlives `pip install -U crapkit` says to restart it. The server
-  imports some modules only at its first tool call, so after an upgrade that call loaded
-  the new release's files into the old process and answered a JSON-RPC `-32603` such as
-  `TypeError: _operation() takes 2 positional arguments but 3 were given`, while a session
-  that had already served a call kept working, so the failure looked random. Each call now
-  reads the version in its own package directory first, and when it changed, answers a
-  tool result that names both versions and the restart. The check lives in the old
-  process, so it helps from the next upgrade on: a 0.8.0 server upgraded to 0.8.1 can
-  still answer the old error once, and the restart fixes it the same way.
-- An upgrade that lands while a call runs no longer breaks that call's answer. The server
-  spells the command that prints a cut answer in full before it starts the CLI, so it no
-  longer loads the new release's `packet.py` after the run.
-- `crapkit watch` checks the same way before each rescore. After an upgrade it exits 1
-  with one line that names both versions and says to restart it, where its first rescore
-  died with a traceback from inside the new files.
-
-### The MCP server finds the workspace when the client starts it elsewhere
-
-- A server whose start directory serves nothing asks a client that declares the `roots`
-  capability for its workspace folders and serves the first one a `crapkit.toml` claims.
-  VS Code starts a server from the user profile's `mcp.json` in the home directory and a
-  plugin's server in the plugin directory, so every call from a VS Code user answered `no
-  crapkit.toml in <home>` inside a measured repo. The server asks after
-  `notifications/initialized` and again after `notifications/roots/list_changed`, and a
-  call that arrives before the answer waits for it, up to 10 seconds. A server started
-  with `--repo` never asks: it serves or refuses that directory as named. A response the
-  server never asked for gets no reply; it used to get a `-32601` error. A message with an
-  `id` and no `method`, `result` or `error` answers `-32600`, the JSON-RPC code for an
-  invalid request, where it also got `-32601`.
-- A server started at or below the plugin directory the client names in `PLUGIN_ROOT`,
-  `COPILOT_PLUGIN_ROOT` or `CLAUDE_PLUGIN_ROOT` no longer walks up from there. A plugin
-  loaded from a crapkit checkout found crapkit's own `crapkit.toml` above the plugin
-  directory and served crapkit's repo, answering `no snapshot in <checkout>`.
-- A GitHub Copilot CLI plugin's server serves the folder its Copilot session works in.
-  Copilot starts a plugin's server in `~/.copilot/installed-plugins/crapkit/crapkit`, moves
-  a `cwd` the plugin's config names outside that directory back into it, and declares no
-  roots, so every call answered `no crapkit.toml in ...installed-plugins/crapkit/crapkit`
-  inside a measured repo. Copilot gives the server `COPILOT_AGENT_SESSION_ID`, and the
-  session keeps its working directory in `session-state/<id>/workspace.yaml` under
-  `COPILOT_HOME`; the server reads it at each call and walks up from it. Where no session
-  record names a folder, the `initialize` instructions and each tool result say the server
-  started in the plugin's install directory and ask for the workspace as the `repo`
-  argument.
-- The MCP page drops the claim that a globally registered server serves the workspace it
-  starts in, and says where each client starts it.
-
-### An MCP answer fits in one tool result
-
-- Every JSON answer is 7,500 characters or shorter, counted as its text takes them inside a
-  client's JSON of the result. Cline keeps 8,000 characters of that JSON and cuts the
-  middle out, and a brief on a 300-line function ran to 15 KB and more, so its model got
-  `get_function_brief` and `list_worklist` top 50 as JSON it could not parse. A longer
-  answer now loses the end of its list fields, largest first, then of its string fields,
-  such as a brief's `source`, then of its objects, at any depth: `check_gate` on a file
-  with 60 breaches cuts `gate.breaches` and keeps `gate.ok`, and a gate over hundreds of
-  files cuts the per-file `gate.ceilings` map by entries. It carries `truncated`: each cut
-  field by its dotted path, what it kept of what it had, and the CLI command that prints
-  the whole answer. A worklist of 50 keeps its top rows; a brief keeps its source ahead of
-  the file's other functions. A failing `check_config` report, 18 KB on a repo with 40
-  lanes that cannot start, is cut the same way and stays a tool error. Every output
-  schema declares the field.
-- `structuredContent` goes only to a client that negotiated `2025-06-18`, the revision
-  that defines it. A `2024-11-05` client such as Cline got the answer twice, which
-  doubled what it cut. `tools/list` lists `outputSchema` to the same clients only, since a
-  client on the TypeScript SDK 1.12 offers `2025-03-26` and fails a call to a tool whose
-  listed schema its result does not fill.
-- A Windows command line printed by crapkit writes a long flag such as `--top` bare, as
-  cmd.exe and PowerShell both pass it on.
-
-### Running crapkit through uvx
-
-- Under `uvx crapkit`, every next step and refusal names `uvx crapkit`: `init` ends with
-  ``next: run `uvx crapkit coverage` ``, and `coverage` with `-> next: uvx crapkit
-  worklist`. They named `crapkit`, which uvx never puts on PATH, so the command the
-  README's route for a repo that is not Python printed next answered `crapkit: not found`
-  (exit 127). crapkit started from another runner's cache, such as `pipx run`, names the
-  interpreter running it (`<python> -m crapkit`). A runner's cache is a directory tagged
-  CACHEDIR.TAG above the environment; `uv tool install` and `pipx install` still get
-  `crapkit`.
-- A packet built under uvx (`uvx crapkit brief --json`, or `get_function_brief` from an
-  MCP server uvx started) spells `commands.gate`, `scoped_tests`, `verify` and `refresh`
-  as `uvx crapkit ...`, and the Windows encoded form starts `uvx`. The agent's shell
-  answered all four with `crapkit: not found`. Everywhere else they stay `crapkit ...`.
-- `uvx crapkit doctor --plugin-root` no longer counts the launcher uvx put on its own PATH.
-  It found that copy and passed, exit 0, a plugin whose hooks spawn a `crapkit` that no
-  other process's PATH carries. It now prints ``FAIL no `crapkit` on PATH``.
-- [The git merge driver](docs/ratchet.md#the-git-merge-driver) gives a uvx clone
-  `git config merge.crapkit-ratchet.driver "uvx crapkit ratchet merge %O %A %B"`. The
-  documented `crapkit ratchet merge %O %A %B` failed every marks-file merge there with
-  `crapkit: not found` and left your side in crapkit-ratchet.tsv with no conflict markers.
-  The page and the recover skill quote that failure and say to run `git merge --abort`
-  rather than stage the file, and `crapkit ratchet --help` names the uvx line.
-- README says a Python repo installs crapkit with pip, `uv tool install` or `pipx install`
-  rather than running it through uvx: uvx puts its own interpreter first on the PATH the
-  lane inherits, so the lane's `python` has neither the suite's packages nor pytest-cov.
-
-### A claim taken before analysis version 11 keeps holding its nested def
-
-- A claim saves the name its function was handed out under. One taken under 0.7.x on a
-  Python def nested three or more deep saved `a.a.b.c( x )`, and once `coverage` measured
-  under analysis version 11, which names the def `a.b.c( x )`, that name matched no
-  function. `next-item` and `brief --batch` handed the def to the next session while the
-  claim stood, `verify` never closed the claim, `claims release` refused the name `brief`
-  prints, and `brief` left the claim out of the def's `attempts`. Each now reads a claim
-  against the run's own names, so the claim holds the def under its new name. A run that
-  still holds the saved name keeps it: a def nested in a def of its own name reads
-  `a.a.b.c` under version 11 as well, and its claim stays on it.
-- Two of version 11's renames leave a claim nothing to follow: a generic def that read
-  `]( a : int )`, and a def that moved to the next twin key because a one-line def of
-  its name above it is now listed. The [upgrade
-  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-11)
-  says to release a claim on either before upgrading and take it again after the first
-  `coverage`.
-
-### The printed steps from `init` reach a passing verify
-
-- The README's first run is `coverage`, `worklist`, `ratchet seed`, a commit and
-  `verify`. `coverage` printed `-> next: crapkit worklist`, and `worklist` and `seed`
-  printed no next step, so a user who ran only what crapkit printed stopped at the risk
-  map with no mark signed and no verify passed.
-- `worklist` now ends with the command to run next: `coverage` when the run it ranked
-  cannot serve as a baseline, `ratchet seed` while the repo has no `crapkit-ratchet.tsv`,
-  with a line saying what the seed does, and `next-item` after that. `worklist --json`
-  prints the map alone, as before.
-- `ratchet seed` ends with ``-> next: commit crapkit-ratchet.tsv, then run `crapkit
-  verify` ``. A seed from a run another crapkit version measured adds no such line,
-  because its own line already says verify refuses those marks and names the run that
-  restamps them.
-- Every `worklist` and `seed` transcript in the README, the pages under docs/ and the
-  handbook ends with these lines. The handbook's day-one story runs `worklist` after
-  `inventory`, so its block ends with `run 1 is an inventory run (no coverage was
-  measured) and cannot serve as a baseline for next-item, ratchet seed or verify` and
-  `-> next: crapkit coverage`.
-
-### A process started without USERPROFILE finds its home
-
-- check_config, `doctor`, `doctor --json`, `doctor --plugin-root` with no PATH, `coverage`
-  and an `inventory` large enough to open the analysis pool answered `RuntimeError: Could
-  not determine home directory.` on Windows when the environment held no `USERPROFILE`,
-  `HOMEDRIVE` or `HOMEPATH`. An MCP client that builds the server's environment from an
-  allowlist, a service or a scheduled task starts crapkit that way, and every other MCP
-  tool kept working. crapkit now reads the profile folder Windows reports for the
-  process's user, the folder `USERPROFILE` names in that user's other processes, so
-  worker slots, measurement locks and the plugin cache land where they always did.
-  Setting `HOME` never helped, because Python ignores it on Windows. When nothing names
-  a home, the command exits 5 with `no home directory` and names the variable to set.
-
-### The GitHub Action scores a crapkit root below the repository top
-
-- The Action takes a `working-directory` input: the directory that holds
-  `crapkit.toml`, relative to the checkout, `"."` by default. Every step ran at the
-  workspace root, so a monorepo whose `crapkit.toml` sits in `packages/api` got
-  `crapkit coverage` exit 3 (`no crapkit.toml at ... - nothing to analyze`) and, with
-  gate `"true"`, a failed check on every pull request. The coverage, verdict, worklist
-  and changed-file steps now run in that directory, the base run scores the same
-  directory at the fork point, and the changed files are named from it, the way the
-  worklist names them. Set `working-directory: packages/api` on the crapkit step and on
-  the job's own `pip install -e ".[dev]"` step; README's "The inputs" shows both.
-- A job that leaves the input out still gets exit 3 at the top, and the comment now says
-  what to do about it: the no-verdict line ends ``set the action's `working-directory`
-  input to the directory that holds crapkit.toml`` after the directory coverage looked in.
-
-### A command at the repository top is told which root to name
-
-- A CI step starts at the repository top, and crapkit finds its root by walking up from
-  where it stands, never down. In a monorepo whose `crapkit.toml` sits in
-  `packages/api`, `crapkit verify` there refused with `no crapkit.toml at <top> -
-  nothing to analyze`. The refusal now names each tracked `crapkit.toml` below that
-  directory and the flag that reaches it: `...; crapkit.toml sits below it in
-  packages/api: pass --repo packages/api`. Several are listed, three by name. The lookup reads the git
-  index, only on the way to the refusal. With none below, the refusal names `crapkit
-  init` and `--repo DIR` instead, and any configuration elsewhere in the checkout.
-- README's gate section and the lanes page give the spelling for each route:
-  `working-directory: packages/api` for a CI step and the Action, and, to pin the commit
-  gate to one root, `--repo packages/api` on the hook line or `args: [--repo,
-  packages/api]` for the pre-commit framework.
-
-### Install, upgrade and removal
-
-- README Install says what to run when pip stops with `error: externally-managed-environment`,
-  which Debian 12, Ubuntu 23.04 and later, Homebrew and uv's own Pythons print: `pipx install
-  crapkit`, `uv tool install crapkit`, or a venv. The commit hook README prints reaches
-  either tool install, since it runs the `crapkit` command before the `python` on PATH,
-  which does not hold it. The section
-  also tells a Python 3.10 user that pip ends with `No matching distribution found for
-  crapkit` and that `uvx crapkit` runs crapkit on a Python uv finds or downloads.
-- README Install and the [upgrade
-  guide](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md) say where
-  `pip install --user` puts the `crapkit` command (`~/.local/bin`,
-  `~/Library/Python/3.12/bin`, `%APPDATA%\Python\Python312\Scripts`) and quote pip's
-  `which is not on PATH` warning. Until PATH names that directory, the Claude Code plugin
-  lists its server as `Failed to connect`.
-- `crapkit doctor --plugin-root` run on a machine with no `crapkit` on PATH ends its FAIL
-  with the directory that holds the launcher of the crapkit running it, when there is
-  one: `This crapkit's launcher is in DIR, which PATH does not list: add that directory
-  to PATH, then restart the agent.` That is where `pip install --user` and a venv leave
-  it, and the line named only `pipx install crapkit`. Under `uvx`, `uv run --with` or
-  `pipx run` the FAIL names the install that stays instead, since that launcher sits in an
-  environment the tool deletes or rebuilds.
-- The upgrade table has rows for pip --user, pipx (`pipx upgrade crapkit`), uvx
-  (`uvx crapkit@latest --version`) and an install from the git URL (`python -m pip install
-  --force-reinstall --no-deps git+https://github.com/JeanFrancoisGagne/crapkit.git`). A
-  cached `uvx crapkit` keeps running the release it fetched first, and so does a client
-  whose entry runs `uvx crapkit mcp` until it restarts. The git line run again keeps the
-  old code, because commits between two releases share one version string.
-- The Windows launcher-lock section says what each installer does while a `crapkit.exe mcp`
-  runs, measured on Windows 11 with pip 26.2.1, pipx 1.17.6 and uv 0.12.18. pip exits 0
-  and the running server keeps serving the old code until its client restarts.
-  `uv tool upgrade` fails with `os error 32`. `uv tool install crapkit@latest`, and pipx
-  when it installs through uv, fail with `Access is denied. (os error 5)`, and after that
-  `uv tool install` the `crapkit` command raises `ModuleNotFoundError` until the install
-  runs again. The page named only error 32, which pip did not print.
-- New section: [Removing
-  crapkit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit).
-  The section takes out the hook and the merge driver first, then the files crapkit
-  wrote, then the package and the plugins, with each gate route's pieces and each
-  installer's removal line. After `pip uninstall crapkit` alone, the sh hook keeps
-  judging every commit through `uvx crapkit` on a machine with uv, with whatever release
-  uv has cached or can download, and without uv stops every commit on
-  `No module named crapkit`, or on `exec: python: not found` on a machine with only
-  `python3`. The PowerShell hook of Route 1 and the handbook names the launcher pip
-  deletes, so it stops every commit on `No such file or directory`, uv or not. Every merge of `crapkit-ratchet.tsv` conflicts after the driver's `crapkit: not
-  found`. README and the handbook say the same where they point at the section.
-- The handbook's Install section names the PEP 668 refusal, the 3.10 route through
-  `uvx crapkit`, what each Windows installer does under a live session, and links the
-  upgrade table and the removal steps. Its Windows paragraph had named only `os error 32`.
-- An override or `digest --alert` with no `alert_command` now prints a line to paste:
-  `alert_command = "cat >> .crapkit/alerts.log"`, and on Windows, whose cmd.exe has no
-  `cat`, `alert_command = 'findstr "^" >> .crapkit/alerts.log'`. The configuration and
-  ratchet pages give both. The refusal named the key and no value, and no page showed
-  one.
-- The Dockerfile header and the Docker section of agent-json.md give
-  `--user "$(id -u):$(id -g)"`. On a Linux host whose uid is not 1000 the image still
-  answers, but it cannot save its churn and coupling caches under `.crapkit/`, so every
-  call walks the git history again.
-
-### Plugin installs
-
-- The marketplace lines cloned the whole repository tip for a plugin that lives in
-  `.claude-plugin/` and `plugin/`: 61 MB for Claude Code and 69 MB for Codex, and one
-  Claude Code add ran into its 120-second clone timeout. Every page now prints them with
-  `--sparse`, which checks out 0.8 MB for Claude Code
-  (`claude plugin marketplace add JeanFrancoisGagne/crapkit --sparse .claude-plugin plugin`)
-  and 1.9 MB for Codex. A Claude Code marketplace added without `--sparse` keeps its full
-  clone; docs/upgrading.md has the three lines that replace it.
-- Codex reinstalled the plugin from main at its next start whenever main moved, so a push
-  between releases took a Codex user's plugin past their PyPI CLI with no command from
-  them, and `crapkit doctor --plugin-root` then exited 1. The Codex line pins the release
-  tag with `--ref`, and the release step rewrites that tag with the other version
-  surfaces. A marketplace added from an earlier page follows main; the refresh in the
-  next entry moves it onto the tag.
-- A marketplace added at a tag stays there, so the Codex refresh is now
-  `codex plugin marketplace remove crapkit`, the add line at the new tag,
-  `codex plugin add crapkit@crapkit` and `codex plugin list --marketplace crapkit --json`.
-  The old refresh ran `codex plugin add` after `codex plugin marketplace upgrade` had
-  already installed the plugin, and on Windows that repeat exited 1 with
-  `failed to back up plugin cache entry: Access is denied. (os error 5)` while a file of
-  the old copy was open, so a reader saw a failed upgrade that had landed.
-- The Codex section names the Codex its lines need: 0.131.0 or newer, since 0.130.0
-  answers `codex plugin add` with `unrecognized subcommand 'add'`, and 0.137.0 for the
-  listing's `--json`.
-- README and docs/upgrading.md say the installed plugin moves only at a release:
-  `claude plugin update` compares version strings, and main carries the last release's
-  version until the next one.
-- On Windows, `claude plugin marketplace add JeanFrancoisGagne/crapkit` failed with
-  `Filename too long` for any `CLAUDE_CONFIG_DIR` of 66 characters or more, which the
-  default `~\.claude` reaches under a user profile path of 58, and against
-  github.com Claude Code then reported only an SSH error. A 139-character evidence path
-  under `docs/architecture` was the cause, because Git for Windows leaves
-  `core.longpaths` off. That folder is now
-  `docs/architecture/2026-09-06-post-implementation/evidence/`, the longest tracked path
-  is 101 characters, and a test fails on any path over 110. The review's
-  `build-review.py` and `publish-review.py` link into the new folder, and a test
-  rebuilds and publishes the review and holds both to the committed copy.
-
-### The gate recipes in README and the handbook arm a gate that runs
-
-- The hook body README's Route 1 and Route 2 and the handbook write runs the `crapkit`
-  on PATH, then `uvx crapkit`, and falls back to `python -m crapkit`. It was `exec python
-  -m crapkit hook-precommit` alone, so a pipx or uv tool install, the installs README
-  names for the gate, and any machine with `python3` and no `python` (Debian, Ubuntu,
-  macOS) refused every commit with `exec: python: not found`. The gate section says what
-  a hook that reaches no `crapkit`, no `uvx` and no `python` that imports crapkit
-  prints: exit 127 and `exec: python: not found` with no python, exit 1 and `No module
-  named crapkit` from a python that lacks it.
-- Route 1 and the handbook's Enforcement block write the hook to `$(git rev-parse
-  --git-common-dir)/hooks/pre-commit`. In a linked worktree, where `.git` is a file,
-  `.git/hooks/pre-commit` failed with `Directory nonexistent` and the next commit went
-  through ungated. Route 1's PowerShell form takes the same path and bakes in the
-  `crapkit` launcher your shell resolves, not `python`.
-- Route 2 and the handbook's Enforcement section have a PowerShell block. Pasted into
-  PowerShell, Route 2's sh block stopped at its heredoc; the handbook's met no `printf`
-  or `chmod`, and in 5.1 a `&&` it cannot parse. Neither wrote a hook, and the next
-  commit went through ungated.
-- The gate section says to run `git config core.hooksPath` first. A hooks path set
-  globally or by husky makes git skip `.git/hooks`; a husky repo adds `crapkit
-  hook-precommit` to `.husky/pre-commit` instead of setting the path.
-- Route 1 says which PowerShell writes a byte-order mark: Windows PowerShell 5.1 from `>`
-  and `Out-File`. PowerShell 7 writes none.
-- The handbook's Enforcement block commits `crapkit.toml` and `.gitignore` with the
-  marks. It committed the marks alone, so workflow 4's CI job, which runs on a fresh
-  clone, stopped at `no crapkit.toml` before any verdict. Workflow 3 shows the `doctor`
-  run `init` leaves, `doctor: no problems found`, where it showed two FAIL lines for
-  scopes `init` already marks `coverage_optional = true`.
-
-### `mutate` keeps an operator its language reads as one token whole
-
-- `mutate` read Go's channel arrow `<-` as the comparison `<`: `ch <- v` grew `ch <=- v`
-  and `v := <-ch` grew `v := >=-ch`. Neither compiles, so the compiler killed them and
-  the run counted kills no test made, which raised a Go file's kill rate. The same split
-  hit `>>>` and `>>>=` in JavaScript, TypeScript, Vue and Java (`a >>> b` grew
-  `a >><= b` and `a >>>= b`), C++'s `<=>` and its `<%` and `%>` digraphs, and Swift,
-  which reads any run of operator characters as one operator (`x |> f` grew `x |>= f`).
-  These operators now make no mutant, and a comparison beside one still makes its own.
-  Kill rates on such files can fall. No CRAP score changes.
-- The decrement `--` split the other way. C, C++, Objective-C, Java, JavaScript and
-  TypeScript read `n-->0` as `n-- > 0`, but `mutate` read an arrow `->` out of it, so
-  the loop bound grew no mutant and a test that never reached zero read as enough.
-  `n-->0` and `n --> 0` now grow `n-->=0` and `n--<=0`, as `n-- > 0` always did, and
-  `p--->y`, which is `(p--)->y`, still grows none. Kill rates on such files can move
-  either way. No CRAP score changes.
-
-### `mutate` flips a `&&` or `||` only where it joins two operands
-
-- In Rust a `||` with nothing on its left is a closure with no parameters and a `&&`
-  there borrows twice, and in C++ `auto&& x`, `int&& y` and `Foo&& other` declare
-  references. `mutate` flipped them all, so `spawn(move || ...)` grew
-  `spawn(move && ...)` and `Foo&& other` grew `Foo|| other`. It also flipped the name a
-  declaration gives an operator (`bool operator<(const A&) const;` grew `operator<=`,
-  and Swift's `static func <` grew `static func <=`), and it read the type argument in
-  `static_cast<T&&>(x)` as two comparisons. None of these compiles, so each counted as
-  a kill no test made. They now make no mutant. A connective after an operand,
-  including one that starts a rustfmt continuation line, still makes its own. `mutate`
-  cannot tell a type name from any other name, so in C, C++ and Objective-C files the
-  layout decides after a name: a `&&` hugged to one side (`Foo&& x`, `Foo &&x`,
-  `ok&& ready`) or followed by `)`, `,` or `>` is a reference and makes no mutant, and
-  one spaced on both sides or on neither (`a && b`, `a&&b`) is a connective, so a
-  reference written `Foo && x` still makes a mutant. Kill rates on Rust, C, C++,
-  Objective-C and Swift files can fall. No CRAP score changes.
-
-### `mutate` flips Zig's `and` and `or`, and leaves its `||` alone
-
-- Zig joins booleans with `and` and `or`. Its `||` merges two error sets, and `&&` is
-  no Zig operator. `mutate` gave Zig the C-family table, so `const E = A || B;` grew
-  `const E = A && B;`, which does not compile and counted as a kill no test made,
-  while `a and b` grew no mutant at all. Zig now has a table of its own: the same
-  comparisons and boolean literals, and `and` and `or` flipped into each other. Zig
-  files can gain mutants, and their kill rates can move either way. No CRAP score
-  changes.
-
-### `mutate` flips Swift's `==` and `===`
-
-- Pygments' Swift lexer calls `=` punctuation, and `mutate` looked only at operators
-  there, so `a == b` and `a === b` grew no mutant, and a Swift test that never checked
-  an equality read as enough. Both now mutate, to `a != b` and `a !== b`. An unspaced
-  `a<b` still makes no mutant: a `<` before a name is also how Swift opens a generic's
-  angles (`Foo<Bar>`). Swift files gain mutants, and their kill rates can move either
-  way. No CRAP score changes.
-
-### Recovery recognizes an abandoned temporary mutation run of any size
-
-- Startup recovery and `crapkit clean` refused a temporary mutation receipt that recorded
-  more than 100 workers. `mutation_workers` has no upper bound, and a concurrent run
-  records the smaller of `mutation_workers` and its mutant count, so an abandoned run of
-  101 or more workers read `unproven` and its worktrees stayed on disk. Any count of 1 or
-  more is now recognized. `crapkit clean` also stops printing `()` after a run it
-  recognized: only a refusal prints a reason.
-
-### Batches are placed by the risk of all their rows
-
-- `worklist --batches` hands out files, and groups of co-changing files, largest summed
-  `risk` first, each to the batch with the least `risk` so far. It ordered them by their
-  riskiest row, so a file of many middling rows went out late, onto a batch that was
-  already full. Six files at 4.36, 3.53, 3.49, 2.19, 0.01 and 0.01, where the 3.49, the
-  2.19 and one 0.01 change together, split into two batches of 9.22 and 4.37; they now
-  split 7.89 and 5.70, the best split there is. That order is LPT scheduling, so under
-  `--batches N` the heaviest batch stays within 4/3 - 1/(3N) times the best split's
-  heaviest: 9.205 here, which the old 9.22 passed. On an unchanged store a file can move
-  to another batch; no score moves.
-
-### Parallel lanes start in the order doctor --tune costs them
-
-- Under `max_parallel_lanes` above 1, a lane with no recorded run, because its artifact
-  was reused or `.crapkit/` was cleaned, starts by the time its `results_artifact` JUnit
-  report claims. It read as 0 s and started last, while `doctor --tune` costed it by that
-  report: lanes of 5, 5 and 10 s on two slots took 15 s where `doctor --tune` said 10.
-  Lane results still merge in declaration order, so no score moves.
-- `doctor --tune` no longer ends in a traceback on a JUnit report that is not UTF-8. Such
-  a report, like one that is not XML, gives its lane no duration.
-
-### A command crapkit prints for the reader to paste runs in Git Bash and PowerShell
-
-- When `python -m crapkit` started crapkit, every next step and refusal names the
-  interpreter's path, and on Windows two of the shells a reader pastes into could not
-  run that line. Printed bare, `C:\app\.venv\Scripts\python.exe -m crapkit coverage`
-  reached Git Bash as `C:app.venvScriptspython.exe` and exited 127, because bash reads
-  each backslash as an escape. A path holding a space went in double quotes, which
-  PowerShell reads at the start of a line as a string, so the line stopped at `-m` with
-  a parse error. The path now prints with forward slashes, which cmd.exe, PowerShell and
-  Git Bash all open, and a segment holding a space or a shell operator is quoted on its
-  own, `C:/"Program Files"/Python311/python.exe`, so the line never opens with a quote.
-- One case trades cmd.exe for PowerShell. A venv's `python.exe`, run from cmd.exe, ends
-  its own name at the first space unless the line opens with a quote, and PowerShell
-  cannot run a line that opens with one, so no line runs a venv in a spaced directory in
-  every shell. Before quoting a segment, crapkit looks for a spelling of the same file
-  with no space: the directories a link points at, then the 8.3 short name. When there
-  is none, as on a volume that keeps no 8.3 names, the line runs in PowerShell, pwsh and
-  Git Bash and no longer runs in cmd.exe, where the 0.8.0 spelling, the whole path in
-  double quotes, did. In cmd.exe, put the whole path in double quotes by hand.
-  [docs/adr/0003](docs/adr/0003-a-pasted-command-never-opens-with-a-quote.md) says why
-  PowerShell won.
-- On POSIX an interpreter path that needs quoting goes in single quotes, so sh no longer
-  expands a `$` or a backtick inside it.
-- `crapkit <path>` is refused with the command to run instead, `crapkit inventory --repo
-  <path>`, and the path went into that command as it came: a space split it into two
-  arguments in every shell, and Git Bash read the backslashes of `C:\work\app` as
-  escapes. The path now goes in with forward slashes, and in one pair of double quotes
-  when it holds a space or a shell operator: `--repo "my repos/app"`. Quoting only the
-  spaced segment is not enough after the command word, because PowerShell ends a word
-  that opens with a quote at the closing one and read `"my repos"/app` as two arguments.
-  The fix doctor prints for a hook committed without the executable bit, `git
-  update-index --chmod=+x <path>`, quotes the path the same way, so a hooks directory
-  whose name holds a space stays one path.
-- The note init and doctor print for a lane whose python cannot import pytest_cov, and
-  the refusal after pytest rejects `--cov`, end with an install line built on the lane's
-  python. When the lane names that python by path, as init writes a repo's venv on
-  Windows, the line was `.venv\Scripts\python.exe -m pip install pytest-cov`: Git Bash
-  ran it as `.venvScriptspython.exe` and exited 127, and from any directory but the
-  lane's no shell found the file. The line now names the file the path resolves to,
-  spelled the way a next step spells crapkit's own interpreter. A lane that names
-  `python` still gets `python -m pip install pytest-cov`.
-- The recipe a refused coveragepy lane prints for the shards a killed parallel run left
-  behind was `coverage combine && coverage json -o <target>`. Windows PowerShell 5.1
-  has no `&&` and stopped at a parse error before either command ran. The recipe now
-  names the two commands one after the other, and the target goes in as one word.
-
-### A SARIF log names a schema URI that answers
-
-- Every SARIF log `--sarif` writes named its schema at
-  `https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json`,
-  which answers HTTP 404, so a validator that fetches `$schema` failed. SARIF 2.1.0
-  section 3.13.3 asks for a URI the schema can be obtained from. `$schema` is now
-  `https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json`,
-  where OASIS publishes the schema and the id the schema declares for itself. The
-  results, rules and every other field do not change.
-
-### The churn window ends at HEAD's commit date
-
-- The churn window reaches `churn_window_months` back from HEAD's commit date. It was
-  cut with `git log --since=12.months.ago`, which git reads against today's date, so a
-  tree measured a year after its last commit ranked every file dormant: a four-commit
-  repo listed four active files one day after its newest commit and none 400 days
-  after it. README's promise that a fixed tree ranks identically forever now holds, on
-  any day and any machine: the month arithmetic runs in UTC.
-- Churn weights, `risk`, the `worklist` and `next-item` order and the ranked
-  co-change pairs change for any repo whose HEAD commit is older than the day it is
-  measured. CRAP scores and ratchet marks do not, so nothing re-seeds. See the
-  [upgrade guide](docs/upgrading.md#the-churn-window-ends-at-heads-commit-date).
-- The churn caches move to `churn-cache-v3.json`, `churn-log-v3.z` and
-  `coupling-cache-v2.json`. Each file 0.4.5 to 0.8.0 wrote holds a window cut at the
-  wall clock, and the same key would have served it on the day of an upgrade, so the
-  first churn read walks the window once. Those files stay on disk, untouched, so an
-  older crapkit sharing the working tree keeps its own caches warm.
-- The `churn_window_months` description in `crapkit.schema.json`, which editors show on
-  hover, the MCP descriptions of `churn_window_months` and `window_months`, and the
-  `report` page's footer say the window counts back from HEAD's commit date.
-
-### Coupled pairs that tie rank by their paths
-
-- `coupling` ranks two pairs whose support x confidence are equal by their paths, and
-  brief's `coupling` partners and `worklist --batches` read that order. crapkit
-  multiplied in binary floating point, where 3 x 0.1111 is 0.33330000000000004 and
-  1 x 0.3333 is 0.3333, so two tied pairs ranked by that rounding noise and `--top` kept
-  whichever it put first. The coupling cache ranks the pairs it reads the same way, so a
-  cache an older crapkit wrote serves the new order from the first run after the upgrade.
-- A coupling cache holding a count or confidence of `Infinity` or `NaN` reads as cold. An
-  `Infinity` count stopped `coupling`, `brief` and `worklist --batches` with
-  `OverflowError`, and a non-number confidence was served as a real pair.
-
-### Marks that rose by the same amount list in path order
-
-- `verify` lists `ratchet_regressions` largest rise first, and rises equal at 4 places
-  in path order. The rise was a float difference, where 10.3 - 10.1 is
-  0.20000000000000107 and 20.3 - 20.1 is 0.1999999999999993, so two marks that rose by
-  0.2 listed in that noise's order and the `--override` refusal named whichever came
-  first.
-
-### Batches whose risks sum to the same total
-
-- `worklist --batches` sums each batch's `risk` exactly, in whole ten-thousandths, the
-  places a risk is rounded to. It summed floats, where 0.7 + 0.1 is 0.7999999999999999,
-  so of two batches holding 0.8 that one read as lighter: it took the next file instead
-  of the batch with fewer entries, and batches of equal risk came out of file order. On
-  Python 3.11 three risks that add up to exactly 117.4173 read 117.41729999999998, so
-  the same worklist also split differently on 3.11 and 3.12.
-
-### `explain --history` returns each commit message as git stored it
-
-- A body line that was `\x02` ended its commit's record there, and a body line starting
-  with `\x01` opened a commit that does not exist. With fewer than three words after the
-  `\x01`, `explain --history` exited 1 with a `ValueError` traceback. A body with no final
-  newline came back empty. explain framed every record with those two characters, and a
-  commit message can hold them. It now asks `git log -L` for the commits' names alone
-  and reads their messages with NUL between the fields, the one byte a message cannot
-  hold.
-- A `\r` in a subject or body, and a form feed, `\x1c` or `\x85` in a body, came back in
-  `--json` as a line break: git's output was read in text mode and split with
-  `str.splitlines`. They now come back as committed. The text output still starts a new
-  indented line at each of them, so a `\r` cannot move the cursor back over the indent.
-- A function in a file that is not UTF-8, or a repo whose `i18n.logOutputEncoding` names
-  another encoding, made `explain --history` fail with a traceback. explain no longer
-  reads the span's hunks, and asks git for the messages in UTF-8.
-- Scores, marks and the JSON field names do not change.
-
-### Churn reads an author name as one name, whatever bytes it holds
-
-- git keeps a `\r` or a `\x02` inside an author name. The churn window's log was read in
-  text mode, which split a name at its `\r`, and each commit's header was cut at its
-  first `\x02`, so the rest of the name was read as the commit's dates. That commit lost
-  both dates, its author counted as another, and after a `\r` the next carried refresh
-  dropped the commit as older than the window. The churn `authors` and `weight` of every
-  file it touched moved, and with them the `risk` that ranks the worklist. The log is now
-  split at LF alone and each header is read from the right.
-- The churn caches under `.crapkit/` change their path-format key, so the first command
-  that reads churn after upgrading walks the window once more. Scores and marks do not
-  change.
-
-### A user's log settings no longer change what crapkit reads from history
-
-- With `log.showSignature=true`, git checks each signed commit's signature and prints the
-  result ahead of the commit's record. The churn window read that line
-  (`Good "git" signature for ...`, or `No signature`) as a file every signed commit
-  changed, and the ratchet history carried it inside each patch. Each walk also ran
-  `ssh-keygen` or `gpg` once per signed commit: a cold churn walk over 60 SSH-signed
-  commits took 10.7 s where it now takes 0.3 s.
-- With `log.follow=true`, git follows a lone path across a rename, and its `--follow`
-  drops commits from a log read oldest first. Once the ratchet file had been renamed,
-  `ratchet report` lost the commits after the rename, so its repayments, velocity and
-  ages came up short.
-- With `log.showRoot=false`, git lists no files and prints no patch for the root commit.
-  The files it added got no churn from it, and the marks it added never entered
-  `ratchet report`.
-- Every git crapkit runs now sets `log.showSignature=false`, `log.follow=false` and
-  `log.showRoot=true`, git's own defaults, beside the `diff.relative` and
-  `core.quotePath` it already sets. `explain --history` (above) reads under the same
-  settings. A repo without these settings reads as before. Under `log.showRoot=false`
-  the churn `commits`, `authors` and `weight` of the root commit's files move, and with
-  them `risk`; no score or mark moves. The churn caches already walk the window once
-  more after upgrading (above), so no stored count keeps the old reading.
-
-### A comment is one line per LF
-
-- lizard counted a comment's lines with `str.splitlines`, which also ends a line at a
-  vertical tab, a form feed, `\x1c`, `\x1d`, `\x1e`, U+0085, U+2028 and U+2029. A
-  comment holding one of them moved every function below it down one line per
-  character, in every language. `brief`, `worklist` and the gates named lines the
-  function does not sit on, and a span moved onto the next function joined that
-  function's coverage: a function its tests call scored its uncalled neighbour's 0%. A
-  comment now counts one line per LF, as git, Python's compiler, coverage.py, c8 and
-  `@vitest/coverage-v8` count it.
-- JavaScript's own rule, which Babel, TypeScript source maps and V8's stack traces
-  number by, also ends a line at U+2028 and U+2029. The istanbul reader now moves
-  those numbers onto crapkit's lines (below), so a JavaScript or TypeScript function
-  below such a comment reads its own coverage under `@vitest/coverage-v8`,
-  `@vitest/coverage-istanbul`, jest and nyc alike. Before, a V8 lane on a JavaScript
-  file gave it its neighbour's.
-- Those functions' spans, coverage and CRAP change, so this release raises the analysis
-  version and every marks file re-seeds once. See the [upgrade
-  guide](docs/upgrading.md#line-ends).
-
-### Every refused file is counted and named, once per run
-
-- A file no reader can tokenize is named on stderr under its own path, whatever another
-  file holds. A cold run reads identical bytes once and hands the result to every copy,
-  and through 0.8.0 a refusal went along with it: two refused files with the same bytes,
-  such as a vendored copy or two stubs cut off at the same signature, printed `1 file(s)
-  could not be tokenized` and named only the first path. Each copy of a refused file is
-  now read under its own path, so the count and the names match the files. Scores do not
-  change.
-- The pre-commit hook on a change of fewer than 16 files noted each staged file on its
-  own. Two refused files printed two `1 file(s) could not be tokenized` counts, and every
-  file that defines a name more than once took a line of its own. The hook now prints one
-  count, and names five such files before counting the rest, as its pooled arm and every
-  other run do.
-
-### A lone CR no longer hides a changed function from the gates
-
-- git's diff ends a line at LF only, and crapkit's reader, like Python and coverage.py,
-  also ends one at a lone CR. The commit gate, `rescore --gate`, `verify`, `mutate` and
-  the advisory hook matched git's line numbers against the reader's lines unmapped, so
-  each lone CR above a function moved the diff one line up from it. A new file saved
-  with CR-only line ends is one line to git, and the gate judged only its first
-  function. An edit to a def line below one lone CR touched no function at all. Either
-  way a function over the ceiling passed the gates and `verify`, and `verify` checked
-  the wrong lines against coverage for `diff_uncovered_max`. `mutate` grew its mutants
-  on the line above the one the edit changed, and the advisory hook stayed silent.
-- Each of them now places a changed line by the bytes of the file it changed: the staged
-  blob for the commit gate, the working tree for the rest. A file with no lone CR reads
-  as before, and so does a UTF-16 file: its CR is `0D 00`, which no LF byte follows, and
-  its lines are already mapped onto its text lines. No score moves, and marks need no
-  re-seed.
-- `explain --history` made the same mistake the other way: it handed `git log -L` the
-  function's span in the reader's lines, so below a lone CR git followed the lines one
-  below the function and missed the commits that changed its def line. The span now
-  goes to git in git's lines, placed by HEAD's copy of the file. In a UTF-16 file, where
-  git counts a line at every 0A byte and a character such as 上 splits a text line in
-  two, it goes as the git lines that hold the function.
-
-### A form feed no longer moves a function in `brief`, `mutate` and `duplication`
-
-- Python's `str.splitlines` ends a line at a form feed, a vertical tab, `\x1c`-`\x1e`,
-  NEL, U+2028 and U+2029 as well as at LF and CR. `brief`, `mutate` and `duplication`
-  numbered a file's lines with it, so each such character above a function put the
-  function one line lower than its span. Below a form feed, `brief` showed the lines
-  above the function, `mutate` grew no mutant on the line the edit changed, and
-  `duplication` missed a twin.
-- `mutate` also dropped any line end but LF from the line it mutated. In a file saved
-  with CR-only line ends the mutated line ran into the next one, the mutant failed to
-  compile, and it counted as killed.
-- All three now end a line at LF, CRLF and a lone CR only, the way the scores number
-  it, and a mutated line keeps its own line end. The stored twin index changes format
-  and is built again once, the first time `brief` or `duplication` reads a run. No score
-  moves.
-
-### A form feed on a heredoc line no longer ends the heredoc in the shell reader
-
-- The shell reader blanks every heredoc body before it counts, and it found the body's
-  lines with `str.splitlines`. bash ends a heredoc line at LF only. A body line such as
-  `note<FF>EOF` closed the body one line early, so the lines up to the real `EOF`
-  counted as code: an `if a && b` there added 2 to `ccn`. Code after a form feed on the
-  line that opens a heredoc read as body and did not count.
-- The reader now ends a heredoc line where bash does. `ccn`, cognitive, nesting and
-  NLOC move for a `.sh` or `.bash` function with a vertical tab, form feed,
-  `\x1c`-`\x1e`, NEL, U+2028 or U+2029 on a heredoc line or on the line that opens one.
-  This is part of analysis version 13, so marks re-seed once with it; see
-  [docs/upgrading.md](docs/upgrading.md#line-ends).
-
-### JavaScript and TypeScript coverage stays with its own function below a lone CR or U+2028
-
-- Coverage producers number a file's lines by their own rule. `@vitest/coverage-v8`
-  ends a JavaScript line at LF only. Babel, which jest, nyc and
-  `@vitest/coverage-istanbul` instrument with, and the source maps a TypeScript file's
-  positions come back through, also end one at a lone CR, U+2028 and U+2029. crapkit
-  ends one at LF, CRLF and a lone CR, and it took an istanbul artifact's line numbers
-  as its own. Five lone CRs above a function in a JavaScript file under a V8 lane gave
-  the function, run both ways, the 0% of the uncalled function below it; five U+2028
-  in a TypeScript string did the reverse. A file saved with CR-only line ends is one
-  line to V8, so every function in it shared one span.
-- The istanbul reader now places each position on crapkit's lines. For a file that
-  holds a lone CR, U+2028 or U+2029 it reads the source and takes the rule under which
-  each named function's name sits on its declaration line, and uses the column to find
-  the line inside one that V8 counted whole. A file with no named function has nothing
-  to decide by and keeps its numbers. Every other file keeps its numbers as they are.
-- `cov`, CRAP and the uncovered lines `verify` checks a diff against move for
-  JavaScript and TypeScript functions in such files, so this is part of analysis
-  version 12 too. The reader reads each measured file once per parse to tell: about 3 s
-  more on a 24 s parse of 29,615 file records on Windows.
-
-### Go and Zig signatures end where the language ends them
-
-- A function type no longer opens a function. After a package-level `var hooks
-  []func()` the next Go function had no row. A local `var cb func(int) error`, or
-  Zig's `const cb: *const fn (u8) void = &f;`, took the enclosing function's next
-  block as its body: an anonymous row held that block's `if`, and the function lost
-  it from `ccn`, `cognitive` and `nesting`. A Zig `extern fn` prototype took the next
-  function's body the same way, and that function had no row.
-- A function whose result type holds braces spans its body: Go's `struct{ a int }`,
-  Zig's `struct { usize, usize }`, `error{Oops}!u8` and `union(enum) {...}`. It ended
-  on its signature line at ccn 1.
-- A package-level Go literal with a result, `var f = func(a int) error {...}` or
-  `func(a int) List[int] {...}`, is an anonymous function like the literal without
-  one. It had no row. One whose result is a function type, `func(a int) func(b int)
-  int {...}`, reads `(a int)` where lizard read a method named `func`, `(a int)func b
-  int`.
-- A composite literal of functions, `[]func(){f, g}` or `map[string]func() func()
-  int{...}`, is a literal, not a function. lizard listed it as an anonymous row at
-  ccn 1. A function literal inside a package-level composite literal keeps its row
-  and reads like any package-level literal, `(i int)`, where it read ` i int` and
-  took the handle `i`.
-- A Zig function named by a string, `fn @"weird name"(x: i32) i32`, is listed under
-  that name, and its handle is the whole `@"weird name"`. It had no row.
-- `params` counts a parameter of function type once, where `f func(int, string)
-  error` and Zig's `lessThan: fn (T, T) bool` read 2, and counts a parameter whose
-  type ends in a brace, where `v interface{}` read 0. Those long names do not
-  change, so their marks keep their keys.
-- `params` counts a package-level Go literal's parameters. lizard read its list as a
-  method's receiver, so `var f = func(a, b int) {...}` read 0 and now reads 2. Its
-  long name stays `(a,b int)`.
-
-### A `//` comment ends at its line
-
-- A `//` comment that ends in a backslash, such as `// C:\dir\`, ends at its line in
-  Go, Zig, Java, JavaScript, TypeScript, TSX, Vue, Swift and Rust. lizard read it on
-  into the next line, as a C preprocessor splices lines, so that line counted as
-  comment: a function whose signature sat there had no row, and one whose `if` sat
-  there ended at that `if`'s `}`. C, C++ and Objective-C keep the splice, because
-  their preprocessor joins the lines before it reads any comment.
-
-### Go and Zig blocks and strings end where the language ends them
-
-- A Go type switch, `switch x := v.(type) {`, is a switch. lizard read its `type` as
-  a type declaration that took the switch's `{`, so the switch's `}` ended the
-  function: the code after the switch counted nowhere, and `ccn` fell by each
-  decision there. A function with a type switch can read higher and go over its
-  ceiling.
-- Each line of a Zig multiline string, `\\...`, is text. lizard read it as code: a
-  `}` in it ended the function, a `{` took the functions after it into that one, and
-  an `if`, `and` or `or` in it counted.
-- A `}` that closes nothing at file level, such as the one a type switch left, no
-  longer costs each Go method after it its row.
-
-### Switch prongs and select count as the switch they belong to
-
-- A Zig switch's `else =>` and `_ =>` prongs no longer count as a case, as `default`
-  does not in C. A switch of two prongs and an `else` read `ccn_std` 4 and now reads
-  3, and its cognitive `else` +1 is gone: `else =>` is the switch's default, not an
-  else.
-- `ccn_mod` reads a Zig switch once, where it added the switch without taking its
-  prongs back and read above `ccn_std`, and a Go `select` once, where each `case`
-  took a point off and the `select` added none. `ccn` is the smaller column, so a
-  Zig function with a switch of three prongs and an `else` reads 2 where it read 5,
-  and a Go function with a `select` of two cases and a default reads 2 where it read
-  1 and can now be over its ceiling.
-
-### Words that decide nothing stop counting
-
-- A Zig `try` opens no nesting level. lizard's nesting extension counted it as a
-  structure that never closed, so three tries in a row read `nesting` 3.
-- A Zig `?` marks an optional type (`?usize`) or unwraps one (`p.?`). It read as a
-  conditional operator, cognitive +1 and a nesting level; it now costs nothing.
-- A Zig `||` merges two error sets, `(A || B)!T`, and no longer costs cognitive +1 as
-  a boolean operator; Zig's boolean or is `or`. lizard's nesting extension still
-  reads it as a level.
-- `case`, `def` and `foreach` are names in Zig and open no nesting level.
-- A shell `?` outside arithmetic is a glob character (`ls a?b`). The cognitive column
-  charged each one as a conditional operator, and now charges none.
-
-### Shell arithmetic reads as C
-
-- Inside `(( ))` and `$(( ))` bash reads C, and `a ? b : c` is C's conditional
-  operator. It now counts one in `ccn` as in C, where no shell `?` counted, and one
-  in `cognitive`, as it did in 0.8.0. `f() { echo $(( x > 0 ? 1 : 0 )); }` reads
-  `ccn` 2 where it read 1.
-- A C-style `for ((;;))` counts its loop once. Its `;;` read as a case arm's end, so
-  the loop read `ccn` 3.
-
-### Rust reads its own syntax, not C's
-
-- A Rust signature decides nothing. A `where` clause, a `?Sized` bound and a `for<'a>`
-  binder each added 1 to ccn; the body's `{` now sets the function back to its base of
-  1, and cognitive reads nothing before it.
-- A `for` that is no loop decides nothing in a function's body either. Rust spells three
-  things `for`: a loop, a `for<'a>` binder, which has a `<` right after it, and the
-  `for` of `impl Trait for Type`, which has a name or a `>` right before it. A trait
-  implemented inside a function, the way a test defines the stub it needs, cost that
-  function 1 in ccn and 1 plus its nesting in cognitive, a binder in a `let`'s type the
-  same, and the `?` of a `?Sized` bound on such an item 1 in ccn. Each now costs nothing
-  in those two columns. The nesting column is lizard's and still reads such a `for` as
-  a level.
-- A `||` or `&&` with no operand before it is no operator. `move || n` and
-  `unwrap_or_else(|| 0)` open a closure with no parameters, and `|&&x|` takes a double
-  reference. Each cost 1 in ccn, 1 in cognitive and usually a nesting level, and now
-  costs nothing.
-- A let-else counts one decision in ccn, the one its `if let` twin counts.
-- `?` is no increment in cognitive and opens no nesting level: it returns early on an
-  error, or relaxes a bound in `?Sized`. It keeps its 1 in ccn.
-- `loop` is a loop: +1 and the nesting it sits in, in cognitive, and a level in
-  nesting. The `if` inside a `loop` cost 1 where the same `if` inside a `while` cost 2.
-- `catch`, `switch`, `foreach`, `case` and `def` are names in Rust, not keywords. A
-  method `.catch()` cost 1 in ccn, in cognitive and in nesting, `.switch()` 1 in
-  ccn_mod and in cognitive, and a loop variable named `case` a nesting level each time
-  it appeared.
-- A signature that reaches a `;` before any `{` has no body: a trait's required method,
-  an `extern` block's foreign function, a `fn` pointer type. lizard waited through the
-  `;` for a `{`, listed the signature as a function that ran through the next body, and
-  gave the function it swallowed no row. Such a signature is now no function. A `fn`
-  pointer type is told apart at its `(`, so one inside a generic, `Vec<fn(i32) -> bool>`
-  or `Vec::<fn()>::new()`, no longer takes the block after its `let` and the decisions
-  in it.
-- A comma inside a parameter's type or pattern, `(char, char)`, `HashMap<K, V>` or a
-  struct pattern's `Point { x, y }`, parts no parameters. The long name keeps its
-  spelling.
-- A parameter that binds an array or struct pattern, `[a, b]: [u8; 2]` or
-  `Pair { a, b }: Pair<u8>`, counts once in `params`. lizard counts a parameter only
-  where it finds a name at the end of its text or right before its `:`, and such a
-  parameter has neither.
-- Measured over 229 files of a Rust workspace: ccn rises in 184 of 3,523 rows and falls
-  in 215, cognitive falls in 993 and rises in 27, and nesting falls in 861 and rises
-  in 8. Every rise in cognitive or nesting holds a `loop`. Six rows of bodiless
-  signatures are gone, three functions get the row they never had, and `params` falls
-  in 8 and rises in 1. Four test functions that implement a trait in their body fall in ccn and
-  cognitive. Six more rows fall where lizard's tokenizer reads a raw string's quoted
-  contents as code, and a word `for` in that text counted as a loop.
-- A parameter typed `&&T` now reads `& &` in the function's long name, so that
-  function's ratchet key changes; the workspace has none.
-- In Python and shell, a name spelled `switch` no longer adds 1 to ccn_mod. Neither
-  language has a switch statement, and `def pick(switch): return switch` read ccn_mod
-  3. Over 43,771 standard-library and site-packages files, 205 Python rows fall. The
-  gated ccn takes the lower of the two columns and moves in none.
-- The change is part of analysis version 13, which makes each marks file re-seed once
-  ([upgrading](docs/upgrading.md#rust-rows)).
-
-### The lane guard reads a command the way sh and cmd.exe read it
-
-No score moves and no analysis-version bump. The full-suite guard and `doctor` read these
-lane commands the way the shell that runs them does:
-
-- An operator touching a word still ends the command. `...py.json&& python -m coverage
-  json` is two commands on both shells and was refused naming `python`; `&`, `|` and
-  `||` read the same way, and on sh so does `;` (`;echo done`).
-- A redirection keeps its target when the target is quoted (`>"lane.log"`,
-  `2>"lane err.log"`, and `>'lane.log'` on sh), and leaves the word it touches:
-  `tests>lane.log` hands pytest `tests`. Each of these was refused with exit 3.
-- On Windows the line is read in two passes, cmd.exe's and then the runner's. A quote a
-  caret hands on opens no run for cmd.exe, so `-k ^"x & python -m pytest pylib/unit^"`
-  starts a second, narrowed pytest. That lane loaded and took its coverage from the
-  narrowed run; it now exits 3. The runner reads `\"` as a quote inside its quoted run,
-  so `-k "a\" tests \"b"` is one value and loads.
-- On sh a line break ends the command, a backslash at the end of a line joins it to the
-  next, and a `#` that starts a word starts a comment. cmd.exe runs the first line only,
-  drops carriage returns, and lets a quote that never closes take the rest of the line.
-- cmd.exe's delimiters are `;`, `,`, `=` and a non-breaking space as well as the blanks.
-  It skips them before a command or a redirection target, ends the program's name and a
-  target at them, and drops them between two redirections: `>lane.log ; 2>&1` hands
-  pytest nothing and loads, where it was refused naming `;`. A digit touching `>` is the
-  stream when a delimiter, a quote, `&`, `|` or a parenthesis stands in front of it, so
-  `a^|2>x` hands on `a|`.
-- On cmd.exe a `(` where a command starts opens a block and its `)` ends the command,
-  so `(python -m pytest --cov=src ) > lane.log` loads and `doctor` finds python in it; a
-  block left open runs nothing on the line. `doctor` also stops naming the `2` of
-  `&2>err.log` as a runner.
-
-### `test-scoped` reads a test file the way the scored corpus does
-
-- A file outside every scope runs under the one templated scope only from a `test`,
-  `tests` or `__tests__` directory, in any case. `test-scoped` also took a name,
-  `test_*.py`, `*.test.*` or `*.spec.*`, as a test, so `tools/test_helper.py`, which
-  the scored corpus reads as source, ran the only template's command on a file no scope
-  owns. It now exits 3: `tools/test_helper.py belongs to no declared scope, and only a
-  file under a test, tests or __tests__ directory runs without one`. Move the file under
-  a scope's `paths` or into a test directory to run it.
-- A test file outside every scope when no scope declares a template now says so, where
-  it said the file belonged to no declared scope.
-
-### `brief` marks a coupled test file by the rule `init` and `doctor` read
-
-- A coupling partner's `is_test` came from a name rule `brief` kept for itself. It said
-  `false` for `x_test.go` and `x_test.py`, which the default exclude globs drop as
-  tests, and `true` for `tools/test_deploy.sh`, which the scored corpus scores as
-  source. It now reads the test-file rule `init` and `doctor` use: a `test`, `tests` or
-  `__tests__` directory, or `test_x.py`, `x_test.py`, `x_test.go`, `x.test.*` and
-  `x.spec.*`. The MCP `get_function_brief` packet carries the same field.
-
-### Coverage lands on the function that owns it
-
-- The istanbul reader places each counter by line and column: a statement counts from a
-  function's body on, a branch from its declaration on. For `const f = (x) => x * 2`
-  istanbul writes a statement for the declaration, which starts ahead of the arrow's body
-  and runs at import. It counted for the arrow, so an arrow no test called read 0.5 under
-  vitest (v8 and istanbul providers), nyc and Jest. It now counts for the code around the
-  arrow, and the arrow reads 0. A ternary or `&&` that opens ahead of a callback on the
-  same line, as in `if (ok && list.some((x) => x.ready))`, moves from the callback to the
-  function around it. Under raw v8-to-istanbul output (c8, Jest's v8 provider) the line
-  that opens an indented method or arrow counts for the code around it, so an uncalled
-  class method reads 0 where it read 1/6. Over a 658-function artifact from a large
-  consumer repo, 12 functions change coverage: 5 rise and 7 fall. A fall raises CRAP on
-  a function nobody edited, so the change is part of analysis version 13, which makes
-  each marks file re-seed once. [What the istanbul parser
-  reads](docs/lanes.md#what-the-istanbul-parser-reads) states the rule.
-- A new flag, `excluded`, marks a function its coverage tool was told to leave out:
-  `# pragma: no cover` or an exclude pattern that takes every statement in it under
-  coverage.py (from coverage.py 7.10.1 its default patterns take a stub whose body is
-  `...`), `/* istanbul ignore next */` or `/* v8 ignore next */` under istanbul. It
-  scores `crap = ccn` and its remedy is `ok` or `decompose`, the way a `cc-only`
-  function scores. It read cov 0, flagged `untested` or `measured`, at
-  `crap = ccn^2 + ccn` with `add-tests`, advice no test could follow, and a large one
-  sat over the ceiling for good. istanbul drops an ignored function from `fnMap`, so a
-  function missing from the `fnMap` of an instrumented file, one with statements, that
-  lists others reads `excluded` as well. A file with no `fnMap` entries, or a hand-built
-  entry with no statements, keeps reading `untested`. rescore keeps an excluded function
-  excluded, and a one-line def under `# pragma: no cover` reads `excluded` rather than
-  taking the def-line floor. The coverage summary counts the flag as `excluded` (JSON)
-  and `N excluded` (text), the MCP schemas list it, and the README's Flags table
-  explains it. Excluded functions fall from `ccn^2 + ccn` to `ccn`, so marks tighten at
-  the next ratchet update; this is part of analysis version 13.
-
-### Every platform computes the same CRAP
-
-- `crap` cubes `1 - cov` with two products instead of `** 3`. IEEE 754 rounds a product
-  correctly everywhere and leaves `pow()` to each C library, so Windows and Linux gave
-  some scores different last bits. CRAP(36, 53/120) is exactly 261.57225 and now prints
-  261.5722, not 261.5723: the `** 3` double sat just above the tie on both. Measured on
-  Windows over ccn 1 to 60 and every coverage fraction up to 240ths, 21 scores print a
-  different 4 dp value: 12 fall by 0.0001 and 9 rise by 0.0001. One prints a different
-  2 dp value: CRAP(25, 19/50) is exactly 173.955 and now prints 173.96, not 173.95.
-  Marks are stored at 4 dp, and seed never raises a mark, so after the re-seed a marked
-  function whose score rose reads as a ratchet regression nobody caused, such as
-  CRAP(20, 3/200) at `402.2686 -> 402.2687`; raise that mark by hand. The change is part
-  of analysis version 13, which makes each marks file re-seed once.
-  [Upgrading](docs/upgrading.md#score-arithmetic) lists what moves.
-
-### A CRAP exactly at its ceiling reads ok
-
-- CRAP(18, 2/3) is exactly 30, and its float is 30.000000000000004. At `target = 30`,
-  the crap4j threshold README recommends, `remedy` said `add-tests`, the run totals and
-  a brief's file totals counted it over target and lowered the grade, `ratchet seed`
-  marked it, `verify`'s gate refused it when an edit touched it, and the digest named it
-  new over ceiling. Every comparison with a ceiling now counts a score within a relative
-  2^-48 of it as the ceiling. Over ccn 1 to 60 and coverage fractions up to 400ths, the
-  float strays no more than 5.2 units in its last place from the exact value, and an exact
-  CRAP that is not a whole ceiling misses it by at least 1/64,000,000. `trend` keys its
-  stored rollups on the rule, so its first run after the upgrade counts every run again.
-  Scores do not move. A mark on a function whose CRAP is exactly its ceiling leaves the
-  marks file at the next `verify` that passes and tightens.
-
-### `est_uncovered_paths` rounds the exact product
-
-- `next-item` and `brief` round `(1 - cov) * ccn` half to even on the exact product
-  rather than on its float. (1 - 5/12) * 6 is exactly 3.5 and now reads 4; the float
-  was 3.4999999999999996 and read 3. Over ccn 1 to 40 and coverage fractions up to
-  120ths, 127 of the 820 exact halves move by 1. The number is not stored, so nothing
-  re-seeds. `docs/agent-json.md`, AGENTS.md and the MCP output schemas now say half to
-  even, where they gave a bare `round()` that reads as half up.
-
-### The CRAP load is the exact sum of the scores
-
-- `crap_load` in `coverage`, `trend`, the digest and a brief's file totals adds the
-  scores with `math.fsum` and rounds once. Python 3.11's `sum()` adds left to right and
-  SQLite's `SUM()` adds in scan order before SQLite 3.43, so eleven scores that add up to
-  507.62500000000006 printed 507.62 in one row order and 507.63 in another. `trend` also
-  added each scope's rounded load, so on any Python a run whose three scores add up to
-  257.12500000000006 printed 257.12 in `trend` and 257.13 in `coverage`. The rollup now
-  stores the whole run's totals beside each scope's, so the first `trend` after the
-  upgrade sums every run again; a first fill of 960,000 scored rows takes 6.6 s, up
-  from 5.9 s. A run with no scored function prints a load of `0.0`, not `0`. Loads are not
-  stored in the marks file, so nothing re-seeds.
-
-### crapkit stops before it stores or prints a number that breaks its definition
-
-- Every number crapkit writes to the store, the marks file or a report now passes a
-  check against its documented bound first: a CRAP outside `ccn` to `ccn^2 + ccn`, or
-  other than `ccn^2 + ccn` at coverage 0; a flag or remedy that does not follow the
-  README tables; a mark that rises; a worklist out of risk order; a verify exit that
-  breaks the 6, 7, 8, 9 precedence. A check that fails stops the command with exit 5
-  and error kind `internal`, names the check and the function it caught, and says what
-  was not written. It is a crapkit bug, not a problem in your repo: report the message
-  and `crapkit --version`. See [agent-json.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md).
-- A hand-typed mark in `crapkit-ratchet.tsv` with more than four decimals reads as the
-  four-decimal value the file format holds, the value every rewrite of the file already
-  gave it. A mark below any CRAP, such as 0 or -1, is still read and kept as written.
-- lizard is capped below 1.25 (`lizard>=1.24.0,<1.25`). Its readers decide every `ccn`
-  crapkit stores, so a new lizard release can no longer move scores unannounced; a
-  nightly job scores a corpus under the newest lizard so a move is known before the cap
-  is lifted.
-
-### The field definitions say what the code computes
-
-- `docs/agent-json.md`, CONTEXT.md and the MCP output schemas state `cov`'s fallbacks
-  (statement coverage with no branches, invoked-or-not with no statements) and that a
-  Python `and` or `or` adds to `ccn` with no branch arc for coverage to record. They
-  also give `crap`'s formula, when `flag` reads `untested` for a measured function, the
-  half-even rounding of `est_uncovered_paths` and what `target` bounds.
-- The README's Languages section states that the Rust and shell readers count each
-  `match` or `case` arm in the modified column too, so the arms are gated: a seven-arm
-  `match` gates at `ccn` 8, where a C `switch` with seven cases gates at 2.
-  `docs/agent-json.md` states that `scored.params` counts a Python signature up to its
-  first `)`, as lizard reads it, which keeps each def's ratchet key. Neither number
-  moves.
+- [Coverage lands on the function that owns
+  it](docs/releases/0.8.1.md#coverage-lands-on-the-function-that-owns-it): an uncalled
+  arrow reads 0, a function its coverage tool leaves out reads the new flag `excluded` at
+  `crap = ccn`, and [a nested Python
+  function](docs/releases/0.8.1.md#the-coverage-readers-stop-reading-an-absent-field-as-a-value)
+  reads its own coverage.py region.
+- [`crap`](docs/releases/0.8.1.md#every-platform-computes-the-same-crap) cubes `1 - cov`
+  with two products, so Windows and Linux print the same score. Over ccn 1 to 60 and
+  every coverage fraction up to 240ths, 21 scores move by 0.0001.
+- [A source file saved as UTF-16](docs/releases/0.8.1.md#text-that-is-not-utf-8) scores
+  its functions, and in a source that is not UTF-8 an identifier holding a byte cp1252
+  leaves undefined keys by its own name.
+
+### Numbers that move without a version bump
+
+These move a printed value or an order, and no score moves. The ceiling rule also touches
+marks: a mark on a function whose CRAP is exactly its ceiling leaves the marks file at
+the next passing `verify`, and `ratchet seed` no longer writes one.
+
+- [A CRAP exactly at its ceiling](docs/releases/0.8.1.md#a-crap-exactly-at-its-ceiling-reads-ok)
+  reads `ok`,
+  [`est_uncovered_paths`](docs/releases/0.8.1.md#est_uncovered_paths-rounds-the-exact-product)
+  rounds half to even on the exact product, and
+  [`crap_load`](docs/releases/0.8.1.md#the-crap-load-is-the-exact-sum-of-the-scores) is
+  the exact sum of the scores.
+- Ties follow the stated tie-break, not float noise: [equal
+  scores](docs/releases/0.8.1.md#functions-with-the-same-crap-rank-by-their-tie-break),
+  [ratchet regressions that rose by the same
+  amount](docs/releases/0.8.1.md#marks-that-rose-by-the-same-amount-list-in-path-order),
+  [digest lines](docs/releases/0.8.1.md#digest-lines-that-tie-list-by-path), [coupled
+  pairs](docs/releases/0.8.1.md#coupled-pairs-that-tie-rank-by-their-paths) and [batch
+  risks](docs/releases/0.8.1.md#batches-whose-risks-sum-to-the-same-total).
+- [`worklist --batches`](docs/releases/0.8.1.md#batches-are-placed-by-the-risk-of-all-their-rows)
+  places files by the summed risk of their rows, and [parallel
+  lanes](docs/releases/0.8.1.md#parallel-lanes-start-in-the-order-doctor---tune-costs-them)
+  start in the order `doctor --tune` costs them.
+- [The churn window](docs/releases/0.8.1.md#the-churn-window-ends-at-heads-commit-date)
+  counts back from HEAD's commit date on the UTC calendar.
+- [`duplication` and brief's twins](docs/releases/0.8.1.md#near-duplicate-functions)
+  shingle each function from its own lines and read comments by language.
+
+### Values nobody measured
+
+Thirteen changes that name a missing value can move an exit code, and the [upgrade
+guide](docs/upgrading.md#missing-values-that-081-names) lists each with its old and new
+exit.
+
+- [A lane with no test results](docs/releases/0.8.1.md#a-lane-with-no-test-results-is-not-a-lane-that-ran-0-tests-or-failed-none)
+  no longer reads as a lane that ran 0 tests or failed none, `verify --reuse-artifacts`
+  exits 5 on a junit report it cannot read, and `verify --baseline-tsv` forgives a failure
+  the baseline file recorded.
+- [A missing or empty marks file](docs/releases/0.8.1.md#a-missing-file-record-or-history-is-not-an-empty-one)
+  is judged by the marks last committed, and the gates refuse a changed file that no
+  reader could read, as `UNREAD` at exit 6.
+- [A row no coverage measured](docs/releases/0.8.1.md#a-value-nobody-measured-is-named-not-printed-as-a-fact)
+  carries `unmeasured: true`, and a depth-1 clone makes `ratchet report --enforce` with
+  an age or repayment limit exit 4.
+- [The coverage readers](docs/releases/0.8.1.md#the-coverage-readers-stop-reading-an-absent-field-as-a-value)
+  refuse at exit 5 an artifact that lacks a field or a count, and name the file and the
+  field.
+- [A git question that fails](docs/releases/0.8.1.md#a-git-question-that-fails-is-named-and-a-count-names-its-files)
+  is named, and `ratchet prune` no longer drops a renamed file's marks when the commit
+  its renames start from is gone.
+- [A directory that is not a git repository](docs/releases/0.8.1.md#a-repository-git-cannot-use-is-named-not-quoted)
+  exits 4 with one line, where `verify` printed 129 lines of git's usage.
+- [Every file no reader can tokenize](docs/releases/0.8.1.md#every-refused-file-is-counted-and-named-once-per-run)
+  is counted and named once per run, and [the Action's
+  comment](docs/releases/0.8.1.md#the-actions-comment-tells-a-missing-payload-from-an-empty-one)
+  tells a missing worklist or summary from an empty one.
+
+### Lanes, reuse and freshness
+
+- [A lane's staleness](docs/releases/0.8.1.md#a-lanes-staleness-is-about-bytes-it-names-the-files-that-moved-and-a-touch-is-not-one)
+  compares git blob ids, so a `touch` is no change and an edit is.
+- [`--reuse-unchanged`](docs/releases/0.8.1.md#--reuse-unchanged-reuses-a-lane-whose-inputs-did-not-move-and-reruns-one-whose-inputs-did-whatever-gits-diff-skips)
+  reuses a lane across a message-only amend, a rebase or a branch switch that left its
+  inputs alone, and names what moved when it reruns.
+- [A failed attempt's leftover artifact](docs/releases/0.8.1.md#a-failed-lanes-leftover-stays-refused-until-new-bytes-replace-it)
+  stays refused until new bytes replace it, and a kill no longer loses the lane's last
+  artifact.
+- [`scored_changes`](docs/releases/0.8.1.md#scored_changes-says-whether-the-run-still-describes-the-files)
+  counts the scored files that changed since the run, and
+  [`watch`](docs/releases/0.8.1.md#watch-reads-content-and-the-history-caches-know-their-depth)
+  rescores on new bytes, not a new mtime.
+- [A `bash -c` lane](docs/releases/0.8.1.md#a-bash--c-lane-is-judged-by-what-its-payload-runs)
+  is judged by the commands its payload runs, and [the full-suite
+  guard](docs/releases/0.8.1.md#the-lane-guard-reads-a-command-the-way-sh-and-cmdexe-read-it)
+  reads a lane command the way sh and cmd.exe read it.
+- [`test-scoped`](docs/releases/0.8.1.md#test-scoped-reads-a-test-file-the-way-the-scored-corpus-does)
+  runs a file outside every scope only from a test directory, and [brief's
+  `is_test`](docs/releases/0.8.1.md#brief-marks-a-coupled-test-file-by-the-rule-init-and-doctor-read)
+  follows the test-file rule `init` and `doctor` read.
+- [A lane on Linux](docs/releases/0.8.1.md#a-process-that-exits-while-a-lane-stops-no-longer-fails-the-lane)
+  no longer fails when another process exits while it stops, and [a refused analysis
+  worker](docs/releases/0.8.1.md#a-refused-analysis-worker-no-longer-hangs-the-commands-cleanup)
+  no longer hangs cleanup.
+
+### Paths, text and shells
+
+- [A path](docs/releases/0.8.1.md#a-path-reads-as-the-file-git-names-in-any-spelling-that-names-it)
+  in `crapkit.toml`, on the command line or in a coverage report names the file git
+  names: in another letter case on a disk that ignores case, and in Git Bash or WSL
+  spelling on Windows. `init` writes a lane's python as a launcher token, `{python:.venv}`
+  or `{python}`, which the loader reads for the OS reading the file.
+- [A command at the repository top](docs/releases/0.8.1.md#a-command-at-the-repository-top-is-told-which-root-to-name)
+  names the `--repo` that reaches each `crapkit.toml` below it.
+- [`init`](docs/releases/0.8.1.md#init-reads-packagejson-by-one-json-rule-appends-to-gitignore-as-git-reads-it-and-finishes-a-half-done-init)
+  reads `package.json` the way npm does, appends to `.gitignore` without rewriting its
+  bytes or line ends, and finishes an init that stopped halfway.
+- [A commit, file name, report or MCP frame that is not UTF-8](docs/releases/0.8.1.md#text-that-is-not-utf-8)
+  no longer ends a command in a traceback.
+- [A lone CR](docs/releases/0.8.1.md#a-lone-cr-no-longer-hides-a-changed-function-from-the-gates)
+  no longer moves a changed line off its function in the gates, and [a form
+  feed](docs/releases/0.8.1.md#a-form-feed-no-longer-moves-a-function-in-brief-mutate-and-duplication)
+  no longer moves a function in `brief`, `mutate` or `duplication`.
+- [crapkit's own messages](docs/releases/0.8.1.md#text-reaches-every-shell-and-encoding-intact)
+  are ASCII and quote a path as typed, and [a next step it
+  prints](docs/releases/0.8.1.md#a-command-crapkit-prints-for-the-reader-to-paste-runs-in-git-bash-and-powershell)
+  runs when pasted into Git Bash and PowerShell, and [under
+  uvx](docs/releases/0.8.1.md#running-crapkit-through-uvx) names `uvx crapkit`.
+- [Help, usage errors and MCP results](docs/releases/0.8.1.md#colour-codes-stay-out-of-the-text-a-program-reads)
+  carry no colour codes off a terminal, and [tracked files missing from the working
+  tree](docs/releases/0.8.1.md#the-same-repo-prints-the-same-bytes-on-every-machine) are
+  named in path order.
+- crapkit reads history as git stored it: [`explain
+  --history`](docs/releases/0.8.1.md#explain---history-returns-each-commit-message-as-git-stored-it)
+  returns each commit message as committed,
+  [churn](docs/releases/0.8.1.md#churn-reads-an-author-name-as-one-name-whatever-bytes-it-holds)
+  reads an author name holding a `\r` or `\x02` as one name, and [settings such as
+  `log.showSignature`](docs/releases/0.8.1.md#a-users-log-settings-no-longer-change-what-crapkit-reads-from-history)
+  change nothing.
+- [A Windows process started without `USERPROFILE`](docs/releases/0.8.1.md#a-process-started-without-userprofile-finds-its-home)
+  finds its home, and [a SARIF log's `$schema`](docs/releases/0.8.1.md#a-sarif-log-names-a-schema-uri-that-answers)
+  names a URI that answers.
+
+### doctor
+
+- [`crapkit doctor`](docs/releases/0.8.1.md#doctor-names-the-setups-the-next-command-refuses-and---plugin-root-names-repairs-that-close-the-gap)
+  names the setups the next command refuses: a coverage.py older than 7.13.1, an
+  artifact path that is a directory, a gate git never runs, a merge driver never defined,
+  marks verify refuses, and more than one launcher on PATH. `--plugin-root` names the
+  side that is behind and the command that closes each gap, and [reads every shape of the
+  installer's files](docs/releases/0.8.1.md#doctor---plugin-root-reads-every-shape-of-the-installers-files)
+  without a traceback.
+
+### MCP server
+
+- [`arguments` and `params` that are not objects](docs/releases/0.8.1.md#the-mcp-server-refuses-params-and-arguments-that-are-not-objects-in-words-an-agent-can-act-on)
+  get an answer that names the JSON type they hold, and [a string
+  argument](docs/releases/0.8.1.md#mcp-and-hook-arguments) that starts with `-` reaches
+  the command as a value.
+- [A 0.5.x tool name](docs/releases/0.8.1.md#the-mcp-server-answers-calls-it-used-to-fail)
+  answers with its new name, and Gemini CLI's `wait_for_previous` is dropped.
+- [The server](docs/releases/0.8.1.md#the-mcp-server-finds-the-workspace-when-the-client-starts-it-elsewhere)
+  finds the workspace through the client's `roots`, or Copilot CLI's session record, when
+  the client starts it elsewhere.
+- [Every JSON answer](docs/releases/0.8.1.md#an-mcp-answer-fits-in-one-tool-result) fits in
+  7,500 characters, and [a server that outlives an
+  upgrade](docs/releases/0.8.1.md#a-process-that-outlives-an-upgrade-says-to-restart-it)
+  says to restart it, from the next upgrade on.
+
+### Plugin, hooks and agents
+
+- [Wiring crapkit into your agent](docs/harnesses.md) is a new page with a setup block
+  for each of 27 agents ([detail](docs/releases/0.8.1.md#agents)).
+- [The advisory hook](docs/releases/0.8.1.md#the-advisory-hook-runs-in-every-agent-that-loads-the-plugin)
+  runs in Claude Code, Cursor, GitHub Copilot CLI and VS Code, and Codex gets a manifest
+  of its own. [Codex](docs/releases/0.8.1.md#the-plugin-in-each-agent) no longer offers
+  the onboard skill unasked.
+- [The marketplace lines](docs/releases/0.8.1.md#plugin-installs) clone only the plugin
+  directories, and the Codex line pins the release tag.
+- [`claude-hook`](docs/releases/0.8.1.md#claude-hook-remembers-what-it-judged-and-says-what-it-could-not-judge)
+  remembers what it judged in each session, and [reads a flag it does not
+  know](docs/releases/0.8.1.md#mcp-and-hook-arguments) as a version gap, exiting 0 where
+  it exited 2.
+
+### Install, the gate and the Action
+
+- [The install pages](docs/releases/0.8.1.md#install-upgrade-and-removal) cover PEP 668,
+  the `uvx crapkit` route on Python 3.10, where pip finds no crapkit, a `pip --user`
+  launcher off PATH, Windows launcher locks and removal.
+- [The gate recipes](docs/releases/0.8.1.md#the-gate-recipes-in-readme-and-the-handbook-arm-a-gate-that-runs)
+  run `crapkit`, then `uvx crapkit`, then `python -m crapkit`, and [the commit
+  gate](docs/releases/0.8.1.md#the-commit-gate-finds-the-crapkit-root-below-the-git-top-and-judges-cis---all-files)
+  gates each crapkit root below the git top.
+- [The steps `init` prints](docs/releases/0.8.1.md#the-printed-steps-from-init-reach-a-passing-verify)
+  reach a passing verify.
+- [The Action](docs/releases/0.8.1.md#the-action-finds-its-own-comment-on-every-thread)
+  edits its own comment on every thread, fits GitHub's comment limit and reads a `top`
+  that is not a whole number as 5, and [its
+  `working-directory` input](docs/releases/0.8.1.md#the-github-action-scores-a-crapkit-root-below-the-repository-top)
+  scores a crapkit root below the repository top.
+
+### mutate, ratchet and history
+
+- [`mutate`](docs/releases/0.8.1.md#mutate-keeps-an-operator-its-language-reads-as-one-token-whole)
+  keeps an operator its language reads as one token whole, and [flips `&&` and
+  `||`](docs/releases/0.8.1.md#mutate-flips-a--or--only-where-it-joins-two-operands) only
+  where they join two operands: never in a Rust closure, and never in a C++ reference
+  written against one side, such as `Foo&& x`. It [flips Zig's `and` and
+  `or`](docs/releases/0.8.1.md#mutate-flips-zigs-and-and-or-and-leaves-its--alone) and
+  [Swift's `==` and `===`](docs/releases/0.8.1.md#mutate-flips-swifts--and-), and
+  [recovery](docs/releases/0.8.1.md#recovery-recognizes-an-abandoned-temporary-mutation-run-of-any-size)
+  finds an abandoned mutation run of any size.
+- [`verify`, `ratchet seed` and `runs list`](docs/releases/0.8.1.md#verify-seed-and-runs-list-read-the-run-behind-head-not-another-branchs)
+  read the run behind HEAD, not another branch's, and [marks a newer crapkit
+  wrote](docs/releases/0.8.1.md#marks-a-newer-crapkit-wrote-are-sent-to-an-upgrade-not-a-re-seed)
+  send the reader to an upgrade.
+- [The merge driver](docs/releases/0.8.1.md#a-missing-file-record-or-history-is-not-an-empty-one)
+  merges two branches that each created `crapkit-ratchet.tsv`, where it refused, and [a
+  uvx clone](docs/releases/0.8.1.md#running-crapkit-through-uvx) gets a driver line git
+  can start.
+- [A claim taken before analysis version 11](docs/releases/0.8.1.md#a-claim-taken-before-analysis-version-11-keeps-holding-its-nested-def)
+  keeps holding its nested def.
+- [crapkit stops at exit 5](docs/releases/0.8.1.md#crapkit-stops-before-it-stores-or-prints-a-number-that-breaks-its-definition)
+  before it stores or prints a number that breaks its documented bound, and [the field
+  definitions](docs/releases/0.8.1.md#the-field-definitions-say-what-the-code-computes)
+  say what the code computes.
 
 ### For contributors
 
-- The calculation-accuracy suite (`tests/accuracy`, [docs/accuracy.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md))
-  checks every calculation against outside tools, hand tables and models written from
-  the docs, on every push and nightly. Install `pip install -e ".[dev,accuracy-push]"`:
-  `git-hooks/pre-push` runs change control, which stops a push that moves a golden or a
-  metric without a declared change.
-- The goldens, rulings, hand tables, probes and oracles are locked
-  (`tests/accuracy/change_control/goldens.lock`, change C1). Changing one takes a
-  `CHANGES.tsv` row first:
-  `python tools/accuracy/change_control.py declare <id> --kind fix --calcs "<calc>" --reason "<why>"`.
-  A change to a module a calc lives in takes one too, and change control's refusal
-  prints the command it needs.
-- The nightly tier reads the full corpus from the cache `python tools/accuracy/corpus.py fetch`
-  fills, with no setting; `CRAPKIT_ACCURACY_CORPUS` points it at another copy.
-- Each past calculation bug replays its check at the commit before its fix and at the
-  fix (`tools/accuracy/retro.py`); [Past bugs](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md#past-bugs)
-  says what a replay proves and when a bug needs a probe.
-- `tools/accuracy/run.py` fails a check whose test file is missing and names the file and
-  the checks row to fix; under `-n N` it had passed that check as `empty`. The four lane
-  unit tests that assumed a host now pass inside the accuracy image.
-- [docs/accuracy.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md)
-  says how to run each tier locally and what the change-control rules ask of a golden,
-  and lists every calculation and every ruling. `python tools/docs/generate.py` writes
-  those tables, and pyproject.toml's `[tool.mutmut]` `paths_to_mutate`, from the
-  `calcs.tsv` and `rulings.tsv` tables; the unit suite fails while one is out of date.
-- The rulings this release's fixes close read `fixed`, and their strict xfails are gone.
-  The fixes that move no scored cell are declared together (accuracy change C3).
-
-### Digest lines that tie list by path
-
-- `digest` lists functions whose CRAP moved by the same amount, or new functions with the
-  same CRAP, in path order. It sorted each section by a float alone, where 10.4 - 9.0 is
-  1.3999999999999986 and 6.6 - 5.2 is 1.4000000000000004, so two functions that rose by
-  1.4 listed in that noise's order and the five-line cut kept whichever it put first.
-  Moves and scores now compare at 4 decimal places.
-
-### Functions with the same CRAP rank by their tie-break
-
-- `next-item`, `brief --batch`, `verify`'s `gate_violations` and a bare twin name in `brief`
-  and `explain` compare CRAP at 4 decimal places, so equal scores tie and the stated
-  tie-break decides: more commits, then path and start line for the queue, path then
-  start line for the gate, the first in the file for twins. ccn 25 at 80% coverage and
-  ccn 5 at none both score 30, but the floats read 29.999999999999996 and 30.0, so
-  `next-item` handed out the function in the quieter file first and a bare twin name
-  picked the later twin.
-### The C family counts every parameter a function declares
-
-- `params` counts each declaration in the parameter list. lizard named a parameter
-  after the last word of its declaration and left it out when that word was not a
-  name: `f(int*, char)` read 1, `f(const int arr[4])` and `f(const int (&arr)[4])` read
-  0, `main(int argc, char *argv[])` read 1, and `g(void (*r)())` read 0. `(void)` and a
-  lone `...` still declare none.
-- An Objective-C method counts its arguments: `- (int)pairFor:(int)a to:(int)b` reads
-  2, where every method read 0.
-- A `<` inside a parenthesized default argument, `f(bool b = (1 < 2))`, no longer
-  breaks the functions after it. lizard left its bracket stack one deep, so every later
-  function in the file read `params` 0 and printed its long name without spaces,
-  `g(int a,int c)`. Those functions now read `g( int a , int c)`, a new ratchet key.
-- `params` is reported and never gated.
-
-### C, C++ and Objective-C functions that were hidden, invented or misnamed
-
-- A `<` comparison in a default template argument, `template <int N, bool E = (N < 19)>`,
-  or in a member initializer, `static constexpr bool v = N < 19;`, no longer hides
-  every function after it. lizard read the `<` as a template bracket and read on to the
-  next `>` in the file: fmt 11.0.2's chrono.h kept rows for its first 1,102 lines of
-  2,432, 113 functions. This fix lists 285, and with the local-class members below the
-  file lists 297. Each new row is scored, gated and ratcheted for the first time.
-- A declaration whose trailing return type holds braces, `static auto check(int) ->
-  decltype(all(Tag{}));`, has no row. The braces read as a body.
-- An attribute between the parameter list and the body keeps the function's name and
-  start line. `int run(int a) __attribute__((noinline)) {` read `__attribute__`, a
-  destructor with a lock annotation, `S::~S() LOCKS_EXCLUDED(mu) {`, read
-  `LOCKS_EXCLUDED`, and an Objective-C method with `API_AVAILABLE(ios(10))` or
-  `NS_SWIFT_NAME(...)` read `)`, started on the attribute's line and counted 1 of
-  cognitive for recursion on the body's first `)`. These rows take their real name, a
-  new ratchet key, so a mark recorded under `__attribute__((noinline))`,
-  `API_AVAILABLE( ios(10))`, `LOCKS_EXCLUDED( mu)` or `)` is no longer seen; `ratchet
-  prune` drops it. A macro with arguments before the name, `static int EXPORT(x) f(int
-  a, int b)`, still names f. One shape keeps lizard's reading: after a list of unnamed
-  parameters of a named type, `int run(Foo) LOCKS_EXCLUDED(mu) {` is still named
-  `LOCKS_EXCLUDED`.
-- An Objective-C instance-variable block, `@interface Extension () { int _first; }`, is
-  no function. It read as one named `Extension()`, or after its last variable when the
-  extension adopted a protocol.
-- In a `.m` or `.mm` file, a C function's parameter list no longer names a method
-  after the word that follows it. A prototype, `int f(int);`, followed by an array
-  initializer's braces gave a function named after the array.
-- A member function of a class defined inside a function has a row of its own, named
-  after both, `outer.Local::twice`. lizard read the class as part of the function around
-  it, which paid for the member's decisions: fmt 11.0.2's `compute_width` read ccn 27
-  with no decision of its own and now reads 1, with the 27 on
-  `compute_width.count_code_points::operator ( )`. In four fmt headers 29 members get a
-  row and 6 enclosing functions lose ccn.
-- A class head holding an attribute or a macro keeps the class in its members' names.
-  `struct alignas(16) Vec {` and `class __declspec(dllexport) Foo {` read as a function
-  named after the attribute, whose body was the class, and an export macro spelled
-  every member `Q_CORE_EXPORTQString::size` or `testing::GTEST_API_Test::SetUpTestSuite`.
-  They read `QString::size` and `testing::Test::SetUpTestSuite`, a new ratchet key: 194
-  rows in Qt 6.7's qstring.h and 60 in GoogleTest 1.14's gtest.h change name and
-  nothing else.
-- A function whose declarator sits in parentheses is named after itself. A function
-  returning a function pointer, `int (*get(int k))(int)`, read `int( * get(int k))(
-  int)`, whose bare name is `int`, and counted its return type's parameters: SQLite
-  3.46's `unixDlSym` read `params` 0 for its 3. After a return type ending in `*` or
-  `&`, `char *(*get(void))(void)`, lizard read no function at all. A name in
-  parentheses, `static constexpr T (max)() noexcept`, read `T( max)`, and a name built
-  by a macro, `STRINGLIB(find)(const STRINGLIB_CHAR *str, ...)`, read `STRINGLIB`. They
-  read `get`, `max` and `find`, a new ratchet key: 94 rows in the MSVC STL's `<limits>`
-  and `<random>` and 24 in CPython 3.13's stringlib change name and nothing else.
-- A C++20 requires-clause no longer hides the function it constrains. lizard read a
-  trailing `requires`, `void f(T t) requires C<T> {`, as an old-style C parameter: the
-  function had no row, and a row was named after the first statement of its body,
-  `if( t)`, or after a constructor's first member initializer, with the rest of the
-  body left out. A concept's requires-expression, `concept C = requires (T a) { a + 1;
-  };`, read as a function named `requires`. In the MSVC STL's `<ranges>`, 458
-  functions get a row and 66 rows that were no function go; `<concepts>` and
-  `<iterator>` lose 14 more and gain 19. A `&&` in the clause opens no nesting level,
-  so 13 functions that had a row read one `nesting` level less.
-- A namespace head holding an attribute or a macro with arguments no longer reads as a
-  function whose body is the whole namespace. `namespace std _GLIBCXX_VISIBILITY(default)
-  {` opens every libstdc++ header, and each one was a single row: GCC 14.2's
-  `stl_vector.h` read one function, `_GLIBCXX_VISIBILITY( default)`, at ccn 105, and now
-  lists 146, `stl_algobase.h` 109 and `basic_string.tcc` 36. Each new row is scored,
-  gated and ratcheted for the first time. `namespace ns __attribute__((visibility(...)))
-  {` read the same way. A word after the name, `namespace ns ABI_TAG {`, and `inline` in
-  a nested definition, `namespace a::inline b {`, no longer join the name: members read
-  `ns::f` and `a::b::f`, where they read `nsABI_TAG::f` and `a::inlineb::f`.
-- A function-try-block, `int main() try { ... } catch (...) { ... }`, is one function
-  with its handlers. The function ended at the try block's `}`, each handler read as a
-  function named `catch( ...)`, and a constructor's row, `S::S(int a) try : x(a) {`,
-  was named after its first member initializer, `x( a)`. The function now reads as it
-  would with a try statement around its body: it ends at its last handler, and each
-  `catch` adds 1 to its `ccn` and 1 to its `cognitive`, which can put it over its
-  ceiling.
-- A constructor whose member initializer list ends in a pack expansion, `S(B... b) :
-  B(b)... {`, keeps its body. lizard read the `...` as the next initializer and the
-  body as that initializer's braced value: the constructor read `ccn` 1 whatever its
-  body held, and the next function's body closed it, so that function had no row. The
-  constructor's `ccn` and `cognitive` now count its body, which can put it over its
-  ceiling, and the function after it is scored for the first time.
-
-### Java methods that were hidden, invented or misnamed
-
-- An annotation with arguments on a local variable, `@SuppressWarnings("unchecked") int
-  x = (int) o;`, no longer hides every method after the one that holds it. lizard read
-  the arguments with the counter the method body kept its braces in and never saw them
-  close. In 13 files of Guava 33.2.1, Gson 2.11.0, Commons Lang 3.14.0 and JUnit
-  5.10.2, 451 methods that had no row now have one, most of them after an annotated
-  local: Futures.java listed 2 of its 61.
-- A second annotation with arguments, `@Deprecated @InlineMe(...) int inlined(int n)`,
-  no longer names the row: lizard dropped the token after a bare annotation, so the row
-  read `InlineMe( replacement = ...)`, and `@Deprecated record P(int x) {...}` read as a
-  method named P that hid the record's methods. These rows take their real name, a new
-  ratchet key.
-- An enum constant with a body, `ONE() { int value(int n) {...} }`, is no method, and the
-  methods its body declares have rows. The same holds for an anonymous class created in
-  a field of a top-level interface, which read as a method named after its type.
-- An annotation element's default, `String[] alternate() default {};`, is no body. A
-  braced default read as one, and any other default ran on to the next `{` in the file
-  and hid what followed.
-- A method of an anonymous or local class inside a method is named with its class once:
-  `A::go.run()`, where it read `A::A::go.run()`. The name is a new ratchet key.
-- A record declared first in a class or interface body, `class A { record S(int y)
-  {...} }`, is no method. lizard took the `{` before `record` for part of a name, read
-  the record as a method named `S` and gave the record's methods no row.
-- A method is named after every enum, interface and record around it, as it was after
-  every class: `A::F::g()` for a method of enum `F` in class `A`, where it read
-  `A::g()`, so the methods of two enums in one class no longer share a name told apart
-  by an ordinal. `sealed class Shape permits Circle, Square` names its methods
-  `Shape::area()`, where they read `ShapepermitsCircle,Square::area()`. A method of an
-  anonymous class is named after the classes that hold its method: it read
-  `B::go.run()` when a class `B` was declared before `go`, and `G::e.run()` inside a
-  nested class `G`, where it now reads `A::G::e.run()`. In 13 files of Guava, Gson and
-  JUnit and 8 of OpenJDK, 127 rows change name. One of them also loses 1 of cognitive:
-  recursion counted when a call spelled a method's whole name, which only the methods
-  of a top-level interface had, so OpenJDK's `ClassFile.of(Option...)` counted its call
-  to the overload `of()`.
-- A text block, `"""` over lines (JLS sec. 3.10.6), is one string. lizard read `""` and
-  then a string that ended at the first quote of the block's text, so the text between
-  two of its quotes was code: `a "{" b` in a block hid the next method, and `x "a && b"
-  y` added 1 to ccn. A block whose quotes hold no code reads as before: 646 blocks in
-  two OpenJDK test files change no row.
-- A record or an interface declared inside a method, `record R(int x) {...}` or
-  `interface I {...}` (JLS sec. 14.3), has rows for its methods. lizard read their
-  methods as statements of the method around them, which paid their `ccn`. A local
-  variable named `record` still declares nothing.
-- A field or an abstract method at the end of an anonymous or local class no longer
-  takes the row of the method the class sits in. lizard kept the member's name current,
-  so the row came out as `A::outer.y`, starting on the field's line. The method now
-  counts the class's field and annotation lines in its `nloc` wherever they stand;
-  those before the class's first method counted for no function, so Guava's
-  `Iterators.cycle` reads `nloc` 13 where it read 11.
-- `params` counts `String args[]`, which read 0.
-- A parameter list opens no nesting level, as in C++: a wildcard `?` that lizard read
-  as a conditional, `BiFunction<? super K, ? super @Nullable V, ...>`, read one level.
-
-### The `&&` of a C++ reference decides nothing
-
-- A `&&` that declares a reference costs nothing in `ccn`, `cognitive` or `nesting`:
-  `for (auto&& x : r)` read ccn 3 for one loop, `static_cast<Widget&&>(w)` and a lambda
-  taking `auto&&` read ccn 2 with no decision, `auto&& w = make();` cost 1 of
-  cognitive, and `void take(Widget&& w)` read nesting 1 with no structure. In eight
-  fmt 11.0.2 headers, 9 functions lose ccn (`range_begin`, `range_end` and
-  `range_mapper::map` among them), 19 lose cognitive and 54 lose nesting. `.mm` files
-  read the same.
-- `while (n > 0 && (p = next(p)) != 0)` counts its `&&` again. lizard refunded any `&&`
-  an `=` followed before the next `;`, `{`, `}` or `)`, taking this one for a reference
-  bound to `p`; lua's `lmemfind` reads ccn 6 where it read 5.
-- A parameter list opens no nesting level: a `?:` in a default argument read nesting 1.
-  A function whose parameter list held a `&&` can read one level deeper after this (6
-  of the fmt functions):
-  lizard's nesting column counts a braceless `if` followed by a later structure one
-  level too deep, and the `&&` had hidden that by flipping the counter's state. The
-  function now reads what the same body reads with `T` for `T&&`.
-
-### Swift functions the reader hid get their rows
-
-- Swift files go through crapkit's own reader, built on lizard 1.24.0's. lizard's reader
-  took seven Swift shapes for a declaration or a preprocessor line, and each one opened
-  a function or dropped a brace where the code has neither: the function holding the
-  shape ran on to a later `}`, and the functions after it had no row. `super.init(...)`
-  and `.init(...)`, `r.get()` and `case .get`, `Socket(protocol: p)`, `return type`,
-  `#fileID` and `if #available(...) {`, a failable `init?`, and a closure passed after a
-  comma now read as the code says. Measured on Alamofire 5's 44 source files against
-  tree-sitter-swift: 52 of the 832 functions it parses had no row and 13 more ended on
-  the wrong line; now all 832 start and end where it says. The 51 rows that were made
-  up are gone.
-- A function named by a raw identifier, any text between backticks (Swift 6.2,
-  SE-0451), is listed. Swift Testing names tests that way,
-  ``@Test func `keeps onboarding if offline`() {``, and lizard read a backtick name
-  only when it was one word, so each such function had no row and an `if`, `for` or
-  `while` among the words counted as a decision where the name was called. Its long
-  name keeps the backticks, and `brief`, `explain` and the other commands that take a
-  name accept the whole backticked name. Alamofire 5 has none; a large consumer repo
-  gains 3,057 rows.
-- A function that swallowed its neighbours shrinks, and its ccn and cognitive fall
-  with them; a function that had no row is listed, and the gate reads it the next time
-  its file changes. A function lizard already read whole keeps its long name, so its
-  mark keeps its key.
-
-### Swift decisions count the way the McCabe text counts them
-
-- The `case` of `if case`, `guard case`, `while case` and `for case` no longer counts as a
-  switch case, +1 ccn_std and a nesting level. A keyword spelled as an argument label,
-  `func value(for name: String)`, no longer counts as a loop, an if or a catch in ccn,
-  cognitive or nesting. An optional mark, `(any Error)?`, `[Int]?` or `Int?.self`, is no
-  decision; after `)`, `]` or `>` it counted as a conditional operator. `Empty?.none`,
-  `Int?.some(1)` and `Int?.init(1)` name a member of the optional type, so their `?` is
-  a mark too. Each `?` of an optional chain, `a?.b`, `f()?.g`, `c?()` or `d?[0]`, adds
-  1 to ccn and nothing to cognitive or nesting, the way `?.` counts in TypeScript:
-  after a name it counted nothing, and after `)` or `]` it counted as a conditional
-  operator with a nesting level. The conditional operator, which Swift writes with
-  spaces on both sides, still counts. Each `??` now adds 1 to ccn, as `&&` does. On
-  Alamofire 5 the gated ccn rises on 117 functions and falls on 82. Against
-  tree-sitter-swift's count plus one per optional chain, ccn_std now differs on 4 of
-  832 functions, down from 201 of the 780 that 0.8.0 listed. Those 4 hold a `&&` or
-  `||` in a `#if` line or an `@unknown default`, which crapkit counts as no decision on
-  purpose.
-- `params` no longer counts a comma inside one parameter (`pair: (Int, Int)`,
-  `(A, B) -> Void`, `[1, 2]`, `Dictionary<String, Int>()`), and `nesting` no longer
-  rises at each `try`. A comparison in a default value, spaced or not
-  (`a: Bool = x > 0`, `x<0`, `{ $0 < $1 }`, `1<<2`, `0..<n`), is no bracket, so the
-  comma after it still ends a parameter: a `<` opens a generic clause only when its
-  `>` comes before a `:`, an `=`, a brace or the end of the bracket around it. Neither
-  column is in the score. On Alamofire 5, params falls on 28
-  functions and nesting on 179, and cognitive falls on 81 with the labels and optional
-  marks.
-
-### A Swift interpolation reads as code
-
-- A Swift string holds an expression in `\( )`, and that expression can hold a string of
-  its own: `"\(d["key"] ?? "none")"`. The reader ended the outer string at the inner
-  string's first quote, so the inner string's words read as code, and a `{` or `}` in it
-  moved the brace count: the function holding it had no row. A string with no inner
-  quote came out as one token, so a `&&`, `||`, `??` or `?:` inside its `\( )` counted
-  nothing in ccn or cognitive. A multi-line string between triple quotes ended at the
-  first quote of its text, so an `if` or `for` in the text after it counted.
-- Every `\( )`, and `\#( )` in a raw string, now reads as code, and the text around it
-  reads as a string that keeps its lines. On Alamofire 5's 101 Swift files, ccn rises by
-  1 or 2 on 13 of 1,993 functions, each for a `??` inside `\( )`; no row appears, goes or
-  moves.
-
-### A Rust `#` keeps the rest of its line
-
-- The Rust reader read `#` the way lizard's C reader does, as a preprocessor line that
-  runs to the end of the line. `#[inline] fn f() {` on one line lost its `fn` and `{`,
-  and the function had no row. A raw string (`r#"..."#`), a raw identifier (`r#type`) or
-  an attribute before code on the same line lost that code too, with any decision or
-  brace in it. An attribute's `#[` and the whole of a raw string or raw identifier are
-  now one token each, and the rest of the line reads as code. A raw string in Swift or
-  Rust ends where as many hashes as opened it close it, however many. ripgrep's 13
-  files in the accuracy corpus hold no such line and read the same; a repo that writes
-  `#[test] fn t() {` gains a row per such function.
-
-### Shell reads the depth of its blocks and the commands inside its strings
-
-[Upgrading](docs/upgrading.md#shell-and-powershell-rows) says what moves.
-
-- A shell function's `nesting` is how deep its blocks go. lizard's ND column closed a
-  level only on a `}` or at a `;`, and shell closes `if`, loops and `case` with `fi`,
-  `done` and `esac`, so every block leaked a level: seven ifs side by side read 6, four
-  nested read 3, and a `case` read 0. They read 1, 4 and 1 now, the depth crapkit's
-  cognitive pass measures, and `&&` or `||` opens no level. `nesting` is reported and
-  never gated, so no gate verdict moves with it.
-- A command inside a quoted substitution counts. `x="$(cmd || true)"` read ccn 1,
-  because the whole double-quoted run was one string token; it reads 2 now, as
-  `x=$(cmd || true)` does, and its cognitive score rises by the same `||`. The same
-  holds for backticks inside quotes, `$(( ))`, a substitution inside `${v:-...}` and
-  one substitution inside another. A heredoc opened inside a quoted substitution, as
-  in `v="$(node - "$f" <<'JS'`, is now a body, so the program in it adds no ccn and no
-  NLOC.
-- A heredoc opener is judged by everything open where it stands, carried from the
-  lines above it. Its own line's quotes decided before, so a `<<'JS'` on the line
-  that closed a multi-line `X="$(...)"` read as quoted, and the program in its body
-  counted as shell: one consumer function read ccn 33 and cognitive 418 where 10 and
-  11 are right. A `<<` on the second line of a multi-line string, or in a multi-line
-  single-quoted program, is text and opens nothing.
-- A case statement inside a quoted substitution ends at its `esac`. Each pattern ends
-  in a bare `)`, and `"$(case $os in Linux) echo l;; esac)"` was cut at `Linux)`, so
-  its arms counted nothing, and a quote or a brace in an arm could hide the next
-  function. The same `)` no longer ends a function whose body is a subshell,
-  `f() ( case ... esac )`: on a large consumer repo one such function ended 72 lines
-  early, and now spans its 140 lines and reads ccn 46 where it read 26.
-- A quoted substitution reads eight levels of parens, up from three, so the `|| true`
-  after a `node -e '...'` program with five levels of calls in it counts.
-- A reserved word counts only where shell reads one: first in a command, straight
-  after another reserved word, as a for's `do` and as a case's `esac` (POSIX XCU
-  2.4). `echo done` closed the loop around it, so an if after it in the loop paid no
-  nesting. The `for` of `git for-each-ref`, the `select` of `xcode-select` and the
-  `if` of a `--exit-if-exists)` pattern each counted a decision or opened a block
-  that never closed, and the `done` of `done=1` closed one. A `;;` outside a case,
-  as in `for ((;;))`, no longer counts as an arm. On a large consumer repo 3
-  functions fall, by up to 1 in ccn and 2 to 24 in cognitive; of the 2,826 functions
-  in Ubuntu's bash-completion scripts 18 fall and none rise.
-- A `#` inside a word is part of the word, not a comment (POSIX XCU 2.3). The reader
-  opened a comment at every `#`, so the rest of the line was lost: the `&&` after a
-  regex holding `[#/]` counted nothing, and `elif (( (8#$mode & 0111) == 0111 ))`
-  hid its own `))` and `then`, which left the function open to the end of its file.
-  One 3,500-line script in a branch of a large consumer repo reported 16 of its 101
-  functions and reports all 101 now; on the repo's main line 5 functions rise in
-  ccn, by 1 to 5.
-- A `?` is a decision only inside arithmetic. Outside `$(( ))`, `(( ))` and
-  `for (( ))` it matches one character, as in `ls a?b`, a `-[PUGOF]?*)` pattern or a
-  `=~` regex, and the cognitive pass charged each one as a ternary, +1 and its
-  nesting. Inside arithmetic it is C's `?:`, and ccn now counts it there as it counts
-  a C ternary. `break 2` and `continue 1` pay their cognitive +1 only as commands, not
-  as the words of `echo break 2`; an array literal's words stay words over every line
-  they span; and `goto`, which shell does not have, costs nothing. On a large consumer
-  repo 14 functions fall in cognitive, by 1 to 4, and no ccn moves.
-- An unpaired double quote before many substitutions no longer stalls the shell
-  reader. With no closing quote left in the file, the string rule tried every way of
-  reading each `$( )` after it, twice the time per substitution: 7 s for 24 of them.
-
-Measured on a large consumer repo's 1,613 shell functions: 146 rise in ccn, by 1 to
-20; 2 fall, by 1 and 23, where a heredoc body had counted as shell; 6 lose 4 to 39
-NLOC of heredoc body; and the subshell-bodied function above gains 71. No function
-appears or disappears. A function the rise puts over its ceiling fails the gate the
-next time its file changes.
-
-### PowerShell reads the expression inside a quoted subexpression
-
-- A `-and`, `-or`, `if` or loop inside a `$( )` subexpression in a double-quoted
-  string counts. `"$($a -and $b)"` read ccn 1 and reads 2 now, as `$($a -and $b)`
-  does, and its cognitive score rises by the same decisions. An `if` or loop there
-  also opens its `nesting` level, as it does outside the string. The string rule
-  takes the subexpression whole, so the quotes inside it pair among themselves:
-  `"$(Get-Item "x{")"` ended at its second quote, left a `{` in code, and the
-  function around it had no row. The rule reads eight levels of parens, so
-  `"$(f (g (h ($a -and $b))))"` counts its `-and` and `"$(f (g (h ("x{"))))"` hides
-  no function. On a large consumer repo 6 of 339 PowerShell functions rise by 1 in
-  ccn and by 1 or 2 in cognitive (an `else` costs 1 too), one reads a level deeper
-  in `nesting`, and no span moves.
-
-### Cognitive complexity reads each language's own rules
-
-`cognitive` follows Sonar's Cognitive Complexity paper (v1.7). The pass that measures it
-read one set of keywords and one recursion and sequence rule for every language, so on
-common shapes it charged recursion, logical sequences and nesting that were not there
-and missed some that were. Each rule now reads the language it is in:
-
-- Recursion is a call to the function itself. Before, any token spelled like the name
-  lizard held when the body began counted: a local variable named like the function,
-  another object's method (`self.inner.close()`), `super().__init__()` inside an
-  `__init__`, a constructor inside C++'s `File::open`. A Go, shell or PowerShell
-  function that called itself, a Java method, a C++ method in a namespace or class and
-  a nested Python def cost nothing. A call now counts through no receiver, through
-  `self`, `this`, `Self`, `cls` or the function's own qualifier, as a command word in
-  shell and PowerShell, as a message to `self` with the whole selector in Objective-C,
-  and through a Go method's own receiver. In C++, Java and Swift, where several
-  functions can share a name, it must also pass as many arguments as the function
-  takes, and no other function of that name in the file may take them too, so an
-  overload that forwards to another is not recursion. crapkit reads no types, so a
-  function that calls itself with the same number of arguments as another overload
-  takes, `walk(n - 1)` beside `walk(String s)`, reads no recursion either. Swift's
-  argument labels are part of a function's name, so `description(for: headers)`
-  inside `description(of request:)` calls another function, and a closure after the
-  call's `)` is one more argument: `each(n - 1) { body($0) }` inside
-  `each(_ n:, _ body:)` is recursion.
-- In Python, JavaScript, TypeScript, Go and Rust a method is reached only through its
-  object or its type, so a bare name in its body is another function: `return
-  open(self.path)` in a method `open` calls the builtin and costs nothing, and so does
-  `walk(n)` inside a Rust `impl`. `T.walk(n - 1)` in a static method is recursion,
-  through the class's name, and so are `R::spin(n - 1)` in a Rust impl, `A.f(n - 1)`
-  in a Swift type and `R.f(n - 1)` in a Zig container. A parameter, an import or an
-  assignment spelled like the function hides it in Python, JavaScript, TypeScript, Go,
-  Rust and Swift: `from json import dumps` in `def dumps`, `use
-  std::os::unix::fs::symlink;` in `fn symlink` and `const route = app.route` in
-  `function route` each make the call the bound value's. An arrow whose body is an
-  expression, `const fact = (n) => n ? n * fact(n - 1) : 1`, calls itself; it read no
-  recursion before.
-- A sequence of logical operators costs +1 per bracket, across line breaks. A sequence
-  continued on the next line cost twice, a comma in a call's arguments split it, and a
-  negated group joined the sequence around it: `if (a && !(b && c))` reads 3, as the
-  paper scores it, where it read 2. `??` costs nothing: Swift charged it as an operator,
-  and lizard's JavaScript, TypeScript and PowerShell tokenizers split it into two `?`,
-  so `a ?? 0` cost 2. `and` and `or` are operators only in Python, Zig and the C family,
-  and not before a `:`, where they name an Objective-C selector part. GCC's `a ?: b`
-  costs what a conditional operator costs.
-- The operators of a sequence read left to right through a plain group, as Sonar's
-  reference implementation flattens a logical expression: `a && (b || c) && d` changes
-  operator twice and costs 3. A group that is the operand of a comparison, an
-  arithmetic operator or a call, `(a || b) == c`, holds a sequence of its own, even of
-  the same operator: `a && (b && c) == d && e` reads 2 where it read 1. So do a list, a
-  dict and an Objective-C message, and each operand of a conditional expression:
-  `x && y ? a && b : c && d` reads 4 where it read 2. A conditional inside a group makes
-  the group one operand of the sequence around it, so `a && (b ? c : d) && e` costs 2,
-  and `a && (b && c ? d : e) && a` costs 3 where it read 2. A braceless
-  body's statement is a sequence apart from its header's, so `if (a && b) return c && d;`
-  reads 3 like its braced form. In shell and PowerShell a line break inside `( ... )` or
-  `$( ... )` ends a sequence, because those brackets hold commands.
-- A word is a control structure only in a language that has it. `c.do(1)` in Python
-  and `do(n)` in Go read as do-while loops, `p.then(g).catch(h)` and `Symbol.for(k)` as
-  a catch and a loop, and Swift's `do`, which only opens the scope a `catch` handles, as
-  a loop. A word right after a `.` on its line names a member in every language.
-  Structures a language spells its own way cost nothing before and now cost what a loop,
-  an `if` or a `switch` costs: Swift's `repeat` and `guard`, Rust's `loop`, Go's
-  `select`, PowerShell's `trap` and a Python `match` statement. `match` is a soft
-  keyword, so `match = re.match(p, s)` still costs nothing. A Python case guard's
-  `if` now sits one level inside its `match`, so a match with one guarded case at the
-  top of a function reads 3 where it read 1, as a Rust match with a guard reads.
-- A `while` right after a `}` is a do-while's tail only when a `do` (Swift: `repeat`)
-  opened that block. A loop after an `if` block or a Python dict literal cost nothing.
-  A do-while without braces, `do a--; while (a > 0);`, is one loop too, where it cost
-  2, and the loop or `if` around it keeps its body to the `;` after the condition.
-- A `break` or `continue` costs +1 only with a label as the language spells one:
-  `'outer` in Rust, `:blk` in Zig, a count in shell, a name elsewhere. A Rust arm's
-  `Err(_) => continue,`, a Zig prong's `.eq => continue,`, a TypeScript key
-  `continue: false` and, in Go and Swift, a bare `break` before the next `case` each
-  read as a jump to a label.
-- A body without braces holds a nesting level in C, C++, Objective-C, Java,
-  JavaScript, TypeScript and Zig, so `for (const x of xs) if (x) visit(x);` reads 3
-  where it read 2. The structure also stops waiting for a `{` at the end of its
-  statement: after `if (a) return 0;` a bare block, a lambda's body or a switch's
-  `default: {` no longer sits one level too deep.
-- The block around a JavaScript or TypeScript arrow with a block body closes at its `}`.
-  lizard gives the arrow's `{` to the function around it, so that block never closed
-  its level and every structure after it sat one level deeper: a zod parser with many
-  `.then((r) => { ... })` calls read 159 in 0.8.0 and reads 109, 24 of the 50 through
-  this rule.
-- A Python comprehension's level closes with its bracket, so
-  `[p for p in a] + [q for q in b]` reads `cognitive` 2 and `nesting` 1 where it read 3
-  and 2. A line that continues a bracket starts no statement, so a conditional
-  expression split over lines costs 1, not 2, and a filter on its own line costs what
-  it costs on one line.
-- A Zig `else |err| if (...)` is an else-if and costs the flat +1 an else-if costs.
-
-Measured over 12,432 functions in 20 open-source projects: 1,082 move `cognitive`, 953
-down and 129 up. Python moves most, 621 of 5,967 rows; 473 of its 576 drops are the
-recursion rule, most of them a method that calls another object's method of the same
-name, as an `__init__` calls `super().__init__()` or a `close` calls
-`self.x.close()`. TypeScript moves 185 of 1,948, Swift 90 of 871, Objective-C 62 of
-288, and C and C++ 49 of 1,344; every other language moves fewer than 25. Python `nesting`
-comes from this pass and moves in 69 rows, 68 of them through the comprehension and
-continuation-line rules; a `match` statement and a loop after a dict literal now open
-a level. The next section moves every other language's `nesting`. No `ccn` value moves.
-
-`cognitive` and `nesting` are reported and never gated, and neither `ccn` nor coverage
-moves, so no CRAP score, gate verdict or mark value moves
-([upgrading](docs/upgrading.md#cognitive-complexity-per-language)).
-
-### Nesting reads block depth in every language
-
-- `nesting` comes from crapkit's cognitive pass in every language, as it has for
-  Python since 0.5.0. The other languages read lizard's ND column, which
-  closed a level at every `}` and at the first `;` after a structure without braces,
-  and opened one for `&&`, `||`, `case`, `try` and even a parameter named `def`: three
-  nested loops read 2, a Go `if a && b && c || d` read 4, a Go switch with three cases
-  read 3, a PowerShell `if ($a -and $b -or $c)` read 3 and its `switch` 0, a shell
-  `[ "$a" ] && [ "$b" ] || echo no` read 2, and a braceless `if` before a loop left
-  its level open over the loop's body.
-  Now each `if`, `else`, loop, `switch` and `catch` body is a level whether it has
-  braces or not, a conditional operator's arms are one, and logical operators, case
-  labels, `try`, bare blocks and a `?` with no `:` open none. The [`nesting`
-  row](docs/agent-json.md#item-fields) lists what counts in each language.
-- A structure whose body has no braces stops waiting for one at the end of its
-  statement. After `if (a) return;` the next block of any kind, a bare `{`,
-  `synchronized`, `@autoreleasepool` or a lambda's body, read as the `if`'s body, so
-  `cognitive` charged every structure inside it one level of nesting too many, and
-  `nesting` counted the block as a level. A Java method holding `if (a) return;` and
-  then a lambda with one `if` in it read `cognitive` 3 and `nesting` 2; it reads 2
-  and 1.
-- A `{` in a structure's header is no longer its body. Go's `for _, x := range
-  []string{"a", "b"} {`, a table-driven test's `range []struct{...}{...} {`, C++'s
-  `for (auto x : {1, 2})`, Java's `new int[]{...}`, a destructuring `for (const { a }
-  of xs)`, and a lambda or an object literal passed in a condition each took the
-  header's first `{` for the body, so the real body sat outside the structure: an
-  `if` inside such a loop read `nesting` 1 and cost 1 in `cognitive`, where it is 2
-  and costs 2. The same rule stops a Swift argument label spelled `for` and a
-  PowerShell `[switch]` parameter from turning the function's own body into a
-  level, and a Rust match guard's `if` from taking the next arm's block. For the
-  `[switch]` parameter only `cognitive` moves (3 to 2 for one `if` in the body):
-  lizard's ND never read the word, so `nesting` was already 1.
-- A word spelled like a structure keyword is no structure where it is a name. Go
-  and Zig have no do-while, so `do(n)`, a Go method or closure named `do` and a Zig
-  `fn do` are names, and so is a `do` after a `.` in any language but Python
-  (`obs.do(fn)`). No structure keyword is followed by a `:`, so an object's key
-  `{if: 1, do: 2}`, a type's member `{ for: string }` and a Swift argument label
-  `g(for: x)` are names too. Each one cost `cognitive` +1 plus its nesting. In Go a
-  `do` also took the next `{`, a method's body or a literal, for its block, so the
-  structures inside paid a level too many: a Go method named `do` holding one `if`
-  read `cognitive` 3 and reads 1, and a recursive Go closure named `do` in
-  `go/types` read 45 and reads 9. lizard's ND never read `do`, so `nesting` does not
-  move for it; a keyword key opened a level per key, so a function holding `{if: 1,
-  for: 2, while: 3, do: 4, switch: 5, catch: 6}` read `nesting` 4 and `cognitive` 6,
-  and reads 0 and 0.
-- A `while` right after a `}` is the tail of a do-while only where that `}` closed
-  the `do`'s block (or a Swift `repeat`'s). Every `while` after a `}` read as a tail,
-  so a loop after an `if` block, an object literal or a Python dict cost nothing and
-  opened no level: a C function with an `if` block and then a loop holding one `if`
-  read `cognitive` 2 and reads 4. lizard's ND read its `nesting` right, 2, where the
-  cognitive pass read 1, so without this rule those rows would have lost a level
-  with the move to the cognitive pass. Go has no `while`, so there the word is a
-  name, as `do` is: a Go variable named `while` cost +1 at each use.
-- Zig's `else =>` is a switch's default prong and opens no level, as a `case` label
-  opens none; it waited for a block and took the prong's `{` for a level. An else
-  with a payload and no braces, `else |err| return err;`, ends at its `;`: the
-  payload's first `|` read as the token after the else, so the else waited on and
-  the next block in the function, a labeled block or a struct literal, took its
-  level. Read past its payload, `else |err| if (...)` is one else-if link that costs
-  +1, as `else if` does, where the `if` paid +1 of its own, and a `switch` after
-  `else |err|` sits in the else's body, as after a plain `else`. In the Zig standard
-  library this rule alone moves `nesting` in 45 of 3,475 functions, 37 down and 8
-  up, and lowers `cognitive` in 12.
-- An `if` in a Zig return type, `fn f(x: anytype) if (A) u8 else u16 {`, sits in the
-  function's declaration, and its arms end at the function's `{`. Its else took that
-  `{` for its block and held the whole body one level down: a body holding one `if`
-  read `nesting` 2 and `cognitive` 4, as 0.8.0 did, and reads 1 and 3.
-  `std.simd.prefixScanWithFunc` reads `cognitive` 15 where 0.8.0 read 21. An `if` in
-  a Zig field's or variable's type ends at the `=` after the type, so the `if` in
-  `called: if (safety) bool else void = if (safety) false else {},` that gives the
-  value sits beside the first, not in its else. In the Zig standard library these
-  two rules alone lower both columns in 4 of 3,487 functions.
-- A `,` ends a body with no braces in Zig, where an `if` is a value that sits in a
-  list and there is no comma operator: each `if` in a switch's prongs or an
-  argument list sits at its own level. In C, C++, Objective-C, Java and JavaScript
-  the `,` is the comma operator and the body goes on past it, so in `if (a) x++, y =
-  b ? 1 : 2;` the conditional operator sits in the if's body, `nesting` 2, as 0.8.0
-  read it.
-- Measured over 21,099 functions in 20 open-source projects: 1,489 of the 6,465
-  functions outside Python move `nesting`, 1,289 down and 200 up, and 54 move
-  `cognitive`, 36 down and 18 up. No Python row moves `nesting`, 3 move `cognitive`
-  (a `while` after a dict literal), and no `ccn` value moves. Against an independent
-  tree-sitter reading of Sonar's nesting rules over 3,228 functions in C, C++,
-  Objective-C, Java, Go, Rust, Swift, Zig and shell, crapkit agreed on 2,295 before
-  and 2,962 now. Most of the rest are closures, which open no level in crapkit's
-  reading and one in that oracle's. Over 24,540 functions in the Go standard library
-  and actionlint, 4,137 move `nesting`, 3,387 down and 750 up, and 271 move
-  `cognitive`: 264 up from the header literals above and 7 down from `do` and
-  `while`.
-- `nesting` and `cognitive` are reported and never gated, so no gate verdict moves
-  with them ([upgrading](docs/upgrading.md#nesting-in-every-language)).
-
-### PowerShell reads keywords in any case and counts PowerShell 7's operators
-
-- A keyword that starts a statement counts in any case, as PowerShell reads it: `IF`,
-  `ForEach`, `ElseIf`, `Default`, `Function`. A capitalized `if` used to count
-  nothing, a capitalized `Default` arm cost a point as if it tested something, and a
-  function declared with `Function` got no row.
-- A keyword word that is a command, an argument or a member counts nothing in any case:
-  `$xs | foreach { }` (the ForEach-Object alias), `$xs.foreach({ })`, `git switch main`,
-  `Write-Output if`. Written in lower case, each cost a loop, a condition or a
-  cognitive switch that the capitalized spelling did not.
-- `-And`, `-OR` and `-Xor` count as their lower-case spelling does.
-- `-and`, `-or` and `-xor` in a command's arguments count nothing, since PowerShell
-  reads them there as parameter names: `if (Test-Path $a -or $b)` hands `-or` to
-  Test-Path, so it costs 1 for the `if` where it cost 2. `(Test-Path $a) -or $b` still
-  counts the operator.
-- A keyword word that is a hashtable key counts nothing: `@{ if = 1; while = 2 }` cost
-  2. Neither does one in a command's arguments after a string, a `)` or a
-  line-continuing backtick (`Write-Output 'a' if`), which only a word, a parameter or a
-  pipe right before it made an argument.
-- PowerShell 7's pipeline chains `&&` and `||` count one decision each. They counted
-  nothing.
-- `??` and `??=` count one decision each. `??` read as two `?` ternaries and cost 2.
-- PowerShell 7.1's null-conditional `${a}?.Name` and `${a}?[0]` count one decision each,
-  as `??` does, and no cognitive complexity. `?[` read as a ternary and cost a
-  cognitive point.
-- A variable name holding a `?` or written in braces reads as one name: `$?`, `$ok?`,
-  `${if}`, `${env:ProgramFiles(x86)}`. `$?` cost a ternary's point in `ccn`, and in
-  cognitive complexity outside parentheses; a keyword in braces counted as that keyword;
-  and the braces of `${env:ProgramFiles(x86)}` in a loop's condition read as the loop's
-  block, so every structure inside the loop scored one nesting level too shallow.
-- `-and` and `-or` open no nesting level, since an operator is no structure. Each used
-  to add a level of its own, so one `if ($a -and $b -or $c)` read nesting 3; it reads 1.
-- `ccn_mod` counts a switch's arms the way `ccn_std` does. It read one higher for every
-  `switch`, and for every `[switch]` parameter type as well. `ccn` is the smaller of
-  the two columns, so it does not move.
-- A `[switch]` parameter type costs no cognitive complexity. It read as a switch
-  statement: +1, and the block after it counted one level deeper.
-- A switch arm whose pattern is a script block, `{ $_ -gt 5 } { 'big' }`, costs 1. The
-  pattern's braces counted as a second arm, so it cost 2.
-- A switch whose flags or subject hold a `]` or a `;` counts its arms: `switch
-  ($m['k'])` and `switch -file $paths[0]` counted none.
-- `switch` opens a switch only where it starts a statement. `git switch main` opened
-  one, the next block became its body, and every block directly inside that one cost
-  a point as an arm.
-
-### PowerShell finds the functions it lost
-
-- A function whose name carries a scope or dots gets a row under the whole name:
-  `function script:Get-Thing` reports `script:Get-Thing` and `function Get.Thing`
-  reports `Get.Thing`. It had no row, and its decisions counted toward no function.
-- A declaring word that declares nothing opens nothing: `dotnet build --configuration
-  $c`, `$o.filter`, `@{ filter = '*.txt' }`, `Write-Output function`. It opened a
-  function, so the function around the word lost its row, and a phantom row named
-  after a later token, such as `$c`, could take its place.
-- The decisions in a class's methods count toward no function. They counted toward the
-  function whose body declares the class. Methods still get no row.
-- A `//` or a `/*` in a word hides nothing. PowerShell has neither comment, but lizard's
-  C rules read `Invoke-RestMethod https://h/p ; while ($a) { }` as one token from the
-  `//` on, the loop and its braces with it, and `Get-Item a/*` ran on to the next `*/`
-  in the file, every function between the two included.
-- A `#` inside a word is part of the word, as PowerShell reads it: `Write-Host a#b;
-  if ($a) {` counts its `if`, and `C#`, `https://h/p#top`, `1#c` in a command's
-  arguments and `function Get-A#B` keep what follows them on the line. The `#` opened
-  a comment that took the rest of the line, a `{` with it, so the function ended at the
-  first `}` after it. A `#` after a space, a key, a closed string, a `)`, or a number or
-  a variable in an expression (`$x = 1#c`) still opens a comment.
-- Neither change moved a row in the 2,000 PowerShell functions measured (a large
-  consumer repo, posh-git, and the modules Windows PowerShell ships): their URLs and
-  hashes sit in strings. Reading a word through its `#` costs the tokenizer about a
-  quarter more time on PowerShell files.
-- `params` counts the parameters of the `param(...)` block that opens a function body,
-  so an advanced function no longer reads 0. Counting the block changes no key: the
-  long name, which is the ratchet key, holds only the header list.
-- A parameter counts once whatever its entry holds, in the header list and in the
-  `param(...)` block. A comma inside an attribute or a default value,
-  `[Parameter(Mandatory, Position = 0)]` or `$Items = @(1, 2, 3)`, added a parameter,
-  and a name in braces, `${Pattern}`, or holding a `?`, `$ok?`, counted none.
-  `params` is reporting only, so no score moves.
-- A header parameter written in braces keeps its braces in the long name:
-  `function A(${x}, ${y})` reads `A ${x} , ${y}` where it read `A $ { x } , $ { y }`,
-  so that function's ratchet key changes.
-- A header list that holds `$?`, or a keyword or operator in capitals, changes its key
-  too: `function A($x = $?)` reads `A $x = $?` where it read `A $x = $ ?`, and `-AND`,
-  `-Or`, `IF` and `ELSE` in a default value or an attribute read `-and`, `-or`, `if`
-  and `else`, the spelling that now counts.
-- Rows appear, phantom rows go and some keys change, so upgrade in this order:
-  `crapkit coverage`, then `crapkit ratchet prune` to drop marks left under names the
-  run no longer has, then `crapkit ratchet seed`.
-
-### Shell keeps a function's whole name
-
-- A function whose name holds `-`, `.` or `:` gets a row under the whole name:
-  `do-thing()`, `function log::info`, `lib.util()`. `name()` was reported under the part
-  after its last separator, so two helpers such as `app-config` and `app-show-config`
-  shared one key, and `function name` got no row at all.
-- A keyword inside a longer word counts nothing: `xcode-select` read as a `select` loop
-  that never closed, so one install helper scored cognitive 34 for a hand count of 10;
-  `wait-for-device` cost a `for` condition; `snapshot-switch` cost a switch in `ccn_mod`.
-- `switch` costs nothing in `ccn_mod`. Shell has no switch statement, and
-  `git switch main` read `ccn_mod` 2.
-- Rows are renamed, so upgrade in the same order as for PowerShell: `crapkit coverage`,
-  `crapkit ratchet prune`, `crapkit ratchet seed`.
-
-### Near-duplicate functions
-
-`duplication` and brief's `duplication_twins` list different pairs. No score, mark or
-analysis version moves: duplication feeds no CRAP input. The run's stored shingle index
-is rebuilt at the first `duplication` or `brief` after upgrading.
-
-- A function is shingled from its own lines. The lines of a function nested in it, past
-  that function's first line, are the nested function's: the way `nloc` already counts
-  them. A factory was shingled with its closure's body, so every clone of a closure was
-  reported twice, once for the closure and once for the factory, even a factory with 3
-  lines of its own under `--min-lines 8`. An arrow that returns an arrow, `load = (id) =>
-  async (dispatch) => {`, is one span to lizard, and the outer one now keeps only its
-  first line, so a clone of the inner body pairs once there too.
-- A brief on a closure no longer lists its factory as a twin at 1.0: the factory's own
-  lines hold none of the closure's. `contained` still marks a twin that nests with the
-  target, now only where the enclosing function's own lines copy the nested one.
-- A comment line is what the file's language calls one. One prefix list served every
-  language, so a line starting with `#`, `//`, `/*`, `*` or three quotes was left out
-  everywhere: a Python `**options` or `// 2` line, a C `*out = x;` or `#define` line, a
-  Rust `#[attr]` line, a JavaScript generator's `*name() {` line. Two functions that
-  differ in one such line share 5 of 10 shingles and read 8 of 9, 0.8889, a pair at the
-  default 0.8. Python leaves out `#` lines and, as before, a line starting with three
-  quotes; shell leaves out `#`; PowerShell `#` and `<# #>`; Zig `//`; every other
-  language `//` and `/* */`, where a block comment's lines without a leading `*` were
-  read as code. A line that holds code after a block comment's closer is code now:
-  `/*@__PURE__*/ build(a)`, `/* lead */ x += 1;` and `*/ x = a` were left out for their
-  first characters.
-- A block comment opened after code, `int x = a; /* starts here`, leaves its later lines
-  out, where only those starting with `*` were left out before. The line is read from its
-  start: an opener inside a string or after a `//` opens nothing, and a `//` inside a
-  closed string does not stop one, so `s = "http://x"; /* note` opens a block comment. An
-  opener that no later line of the function closes opens nothing either: a line starting
-  with `/*` inside a template literal is code, as are the lines after it. Raw strings and
-  regex literals read as plain strings here, and the README's `duplication` row names
-  the few lines that misreads.
+CI runs on macOS and on Python 3.14, a deploy suite installs crapkit the way the docs
+say, and a calculation-accuracy suite checks every number crapkit computes against
+outside tools. [For contributors](docs/releases/0.8.1.md#for-contributors) and [CI, tests
+and release tooling](docs/releases/0.8.1.md#ci-tests-and-release-tooling) have the
+detail. The accuracy suite's change log records this release's fixes as C2, C3, C7, C8,
+C11 and C15.
 
 ## 0.8.0 — 2026-09-23
 
