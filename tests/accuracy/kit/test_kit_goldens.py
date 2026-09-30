@@ -1,5 +1,6 @@
 """kit.goldens: normalized goldens, the lock over them, and the rule that a golden
 changes only together with a declared change."""
+import os
 from pathlib import Path
 import shutil
 import sys
@@ -7,7 +8,7 @@ import sys
 import pytest
 
 import hang_guard
-from accuracy.kit import corpus_run, goldens
+from accuracy.kit import corpus_run, drive, goldens, repos
 
 KIT_RELATIVE = Path("tests") / "accuracy" / "kit" / "fixtures"
 RUN = goldens.REPO / "tools" / "accuracy" / "run.py"
@@ -47,6 +48,45 @@ def test_goldens_hold_no_root_no_host_and_no_clock(seed_goldens, tmp_path_factor
     assert '"created_at": "<created_at>"' in seed_goldens["runs.json"]
     assert "<time>" in seed_goldens["report.html"]
     assert not [name for name in seed_goldens if name.endswith(".stderr")]
+
+
+def _stub_launcher(directory: Path, version: str) -> Path:
+    """A crapkit launcher that answers `crapkit VERSION`: a batch file on
+    Windows, an executable shell script elsewhere."""
+    directory.mkdir(parents=True)
+    if os.name == "nt":
+        (directory / "crapkit.bat").write_bytes(f"@echo crapkit {version}\r\n".encode("ascii"))
+    else:
+        script = directory / "crapkit"
+        script.write_bytes(f"#!/bin/sh\necho crapkit {version}\n".encode("ascii"))
+        script.chmod(0o755)
+    return directory
+
+
+def _doctor_golden(repo_templates, top: Path) -> tuple[str, str]:
+    """(what doctor --json printed, its golden form) on a fresh seed repo under `top`."""
+    root = repo_templates.copy(repos.tree_spec(corpus_run.SEED), top / "repo").root
+    printed = drive.Driver(root, spawn=True).run("doctor", "--json").stdout
+    outputs = top / "outputs"
+    outputs.mkdir()
+    (outputs / "doctor.json").write_text(printed, encoding="utf-8")
+    return printed, goldens.goldens_of(corpus_run.CorpusRun(root, outputs, 0, {}))["doctor.json"]
+
+
+@pytest.mark.process
+def test_the_host_s_other_crapkit_installs_move_no_golden(repo_templates, tmp_path, monkeypatch):
+    """Doctor warns when PATH holds crapkit launchers that answer different
+    versions. That describes the machine the suite runs on, not the corpus, so
+    a developer's pipx or uv tool install of another release must leave
+    doctor.json's golden as it is on a machine with one crapkit."""
+    _, alone = _doctor_golden(repo_templates, tmp_path / "alone")
+    stubs = [_stub_launcher(tmp_path / name / "bin", version)
+             for name, version in (("old", "0.0.1"), ("new", "0.0.2"))]
+    monkeypatch.setenv("PATH", os.pathsep.join([*map(str, stubs), os.environ.get("PATH", "")]))
+    printed, crowded = _doctor_golden(repo_templates, tmp_path / "crowded")
+
+    assert "crapkit launchers" in printed, "doctor never saw the two stub launchers"
+    assert crowded == alone
 
 
 def test_the_committed_seed_goldens_match_their_lock():

@@ -18,7 +18,8 @@ TSV rows are read as docs/portable-records.md tells another tool to read them.
 
 normalize() replaces what differs between two correct runs (times, durations,
 absolute roots, temp paths, the crapkit and Python versions) with placeholders,
-so goldens and cross-run comparisons see only what a calculation decided.
+and drops doctor's warning about the crapkit launchers on the host's PATH, so
+goldens and cross-run comparisons see only what a calculation decided.
 """
 from __future__ import annotations
 
@@ -93,8 +94,19 @@ def _normal_dict(value: dict, volatile: Volatile) -> dict:
     return dict(_normal_item(key, item, volatile) for key, item in value.items())
 
 
+# Doctor's warning that PATH holds crapkit launchers answering different
+# versions. It reads the machine (a pipx or uv tool install, another venv), and
+# the corpus decides none of it, so a finding list drops it whole: a placeholder
+# would still make the list one item longer on such a machine.
+_HOST_LAUNCHERS = re.compile(r"PATH holds \d+ crapkit launchers: ")
+
+
+def _host_finding(item) -> bool:
+    return isinstance(item, str) and _HOST_LAUNCHERS.match(item) is not None
+
+
 def _normal_list(value: list, volatile: Volatile) -> list:
-    return [normalize(item, volatile) for item in value]
+    return [normalize(item, volatile) for item in value if not _host_finding(item)]
 
 
 _NORMALIZERS = {dict: _normal_dict, list: _normal_list,

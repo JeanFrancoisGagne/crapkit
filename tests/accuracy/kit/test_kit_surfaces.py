@@ -81,6 +81,17 @@ def test_durations_and_host_resources_are_volatile():
         "lanes": [{"name": "py", "seconds": "<seconds>"}], "resources": "<resources>"}
 
 
+def test_the_host_s_crapkit_launchers_leave_the_warnings_and_the_rest_stays():
+    skew = ("PATH holds 2 crapkit launchers: /opt/a/bin/crapkit (0.8.1), /home/u/.local/bin/"
+            "crapkit (0.7.6). The shell, a git hook, the plugin's hooks and an MCP client each "
+            "run the first one their own PATH lists, so they can run different versions")
+    lane = "lane 'py' declares no results_artifact: the crashed-worker check cannot run for it"
+    payload = {"warnings": [skew, lane], "problems": ["PATH holds nothing crapkit decides"]}
+
+    assert surfaces.normalize(payload, surfaces.Volatile()) == {
+        "warnings": [lane], "problems": ["PATH holds nothing crapkit decides"]}
+
+
 @pytest.fixture(scope="module")
 def bundle(repo_templates, tmp_path_factory):
     """One seed repo at ceiling 3, measured, marked, then edited so verify fails:
