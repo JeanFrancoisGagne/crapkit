@@ -645,12 +645,13 @@ def _app_item(driver: drive.Driver) -> dict:
 @pytest.mark.parametrize("change", cadence.tiered(sorted(LINE_CHANGES),
                                                   push=sorted(LINE_CHANGES)[:1]))
 def test_line_freshness_reads_source_changes_only(make_repo, change):
-    """docs/lanes.md: a stale artifact silences the dark-line fields with a
-    note naming the lane; only a change under the lane's scopes makes it stale."""
+    """docs/lanes.md: a stale artifact silences the dark-line fields of the
+    file that moved, with a note naming the lane; a change outside the lane's
+    scopes moves nothing."""
     sc = _measured(make_repo)
     changed = LINE_CHANGES[change](sc)
     item = _app_item(sc.driver)
-    stale = model.lines_stale(SCOPES["a"], changed)
+    stale = model.lines_stale("src/app.py", SCOPES["a"], changed)
     assert (item["uncovered_lines"] is None) == stale, item
     assert ("lane 'a'" in item.get("uncovered_lines_note", "")) == stale, item
 
