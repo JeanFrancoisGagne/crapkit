@@ -68,8 +68,8 @@ def test_a_group_left_with_only_its_unreaped_leader_stops_on_the_real_kernel():
 @pytest.mark.skipif(os.name == 'nt', reason='Windows stops a lane with a Job, not a process group')
 def test_the_process_table_scan_finds_ps_off_the_callers_path(tmp_path, monkeypatch):
     """Every macOS lane stop reaches the ps scan, since the kernel refuses the
-    probe on the unreaped leader. doctor's start probe runs crapkit with a PATH
-    of one tool directory, and that PATH holds no ps (#78)."""
+    probe on the unreaped leader. A crapkit started with a PATH that holds no
+    ps, as the doctor tests start it, must still stop its lanes (#78)."""
     monkeypatch.setattr(owner, 'sys', SimpleNamespace(platform='darwin'))
     monkeypatch.setenv('PATH', str(tmp_path))
     member = subprocess.Popen([sys.executable, '-c', 'import sys; sys.stdin.read()'],
