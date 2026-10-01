@@ -237,8 +237,8 @@ exit.
   is judged by the marks last committed, and the gates refuse a changed file that no
   reader could read, as `UNREAD` at exit 6.
 - [A row no coverage measured](docs/releases/0.8.1.md#a-value-nobody-measured-is-named-not-printed-as-a-fact)
-  carries `unmeasured: true`, and a depth-1 clone makes `ratchet report --enforce` with
-  an age or repayment limit exit 4.
+  carries `unmeasured: true` in `brief`, `next-item` and `rescore`, and a depth-1 clone
+  makes `ratchet report --enforce` with an age or repayment limit exit 4.
 - [The coverage readers](docs/releases/0.8.1.md#the-coverage-readers-stop-reading-an-absent-field-as-a-value)
   refuse at exit 5 an artifact that lacks a field or a count, and name the file and the
   field.

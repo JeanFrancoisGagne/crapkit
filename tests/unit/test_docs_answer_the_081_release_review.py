@@ -2,11 +2,13 @@
 code does not do. Each test here runs the code path a sentence describes, or reads
 it, and pins the sentence that now says what it does.
 """
+import json
 import re
 from functools import lru_cache
 from pathlib import Path
 
-from cli_inproc_repo import commit_all, repo, seed_artifacts, template_repo  # noqa: F401
+from cli_inproc_repo import (add_knotty, commit_all, repo, seed_artifacts,  # noqa: F401
+                             template_repo)
 
 from crapkit.cli import main
 from crapkit.store import SnapshotStore
@@ -74,3 +76,55 @@ def test_an_override_with_no_alert_command_exits_3_before_any_lane_and_the_notes
              "before any lane runs")
     assert moved in _changelog_steps()
     assert moved in _section("docs/releases/0.8.1.md", "## Upgrading from 0.8.0")
+
+
+# --- which JSON carries `unmeasured` (docs[3]) --------------------------------------
+
+def _cc_only(repo) -> None:
+    """`src` asks for no coverage and no lane reads it, and a function there sits
+    over the ceiling, so every view ranks a row no measurement stands behind."""
+    toml = repo / "crapkit.toml"
+    text = toml.read_text(encoding="utf-8").replace(
+        'languages = ["typescript"]\n\n[[scope]]\nname = "web"',
+        'languages = ["typescript"]\ncoverage_optional = true\n\n[[scope]]\nname = "web"', 1)
+    text = re.sub(r'\[\[lane\]\]\nname = "unit"\n(?:.*\n)*?scopes = \["src"\]\n', "", text)
+    toml.write_text(text, encoding="utf-8", newline="\n")
+    add_knotty(repo)
+    commit_all(repo, "src is cc-only")
+    seed_artifacts(repo, unit=False)
+
+
+def _json(argv, repo, capsys):
+    assert main([*argv, "--repo", str(repo)]) in (0, 6), argv
+    return json.loads(capsys.readouterr().out)
+
+
+def test_worklist_json_rows_carry_no_unmeasured_key_and_the_guide_says_which_do(repo, capsys):  # noqa: F811
+    """The guide's worklist bullet said "The JSON keeps `cov` and adds `unmeasured:
+    true`". A script that read `row["unmeasured"]` off `worklist --json` got a
+    KeyError: `_entry_json` never writes it. brief, next-item and rescore do."""
+    _cc_only(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+
+    (row,) = [r for r in _json(["worklist", "--json"], repo, capsys)["active"] if r["flag"] == "cc-only"]
+    item = _json(["next-item"], repo, capsys)["item"]
+    brief = _json(["brief", "src/app.ts", "knotty", "--json"], repo, capsys)
+    gate = _json(["rescore", "src/app.ts", "--gate", "--json"], repo, capsys)["functions"]
+
+    assert "unmeasured" not in row and row["cov"] == 0.0
+    assert (item["flag"], item["unmeasured"]) == ("cc-only", True)
+    assert brief["unmeasured"] is True
+    assert {f["unmeasured"] for f in gate} == {True}
+
+    values = _section(GUIDE, "## Values that move without an exit code")
+    assert "The JSON keeps `cov` and adds `unmeasured: true`" not in values
+    assert ("`worklist --json` keeps such a row's `cov` at `0.0` and adds no key: its `flag` "
+            "reads `no-lane` or `cc-only`. `brief --json`, `next-item` and `rescore --json` keep "
+            "`cov` and add `unmeasured: true`.") in values
+    assert ("carries `unmeasured: true` in `brief`, `next-item` and `rescore`"
+            in _section("CHANGELOG.md", "## 0.8.1 — unreleased"))
+    detail = " ".join(_doc("docs/releases/0.8.1.md").split())
+    assert ("A row no coverage measured carries `unmeasured: true` in `brief`, `next-item`, "
+            "`rescore` and their MCP tools") in detail
+    assert "A `worklist --json` row adds no key; its `flag` says the same." in detail

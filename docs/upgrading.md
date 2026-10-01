@@ -574,8 +574,9 @@ These changes move text or JSON a script reads, with no exit code to flag them:
   last row. `worklist --json` prints the map alone, as before.
 - A `worklist` row for a function no lane measures, in a `no-lane` or `cc-only` scope,
   prints `-` in its cov column (`cov    -`), where 0.8.0 printed `cov   0%`, and
-  `rescore --gate` prints `cov -` on its GATE line. The JSON keeps `cov` and adds
-  `unmeasured: true`.
+  `rescore --gate` prints `cov -` on its GATE line. `worklist --json` keeps such a row's
+  `cov` at `0.0` and adds no key: its `flag` reads `no-lane` or `cc-only`. `brief --json`,
+  `next-item` and `rescore --json` keep `cov` and add `unmeasured: true`.
 - The SARIF log `--sarif` writes names `$schema`
   `https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json`,
   where 0.8.0 named
