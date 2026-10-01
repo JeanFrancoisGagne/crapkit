@@ -66,6 +66,8 @@ def test_a_group_left_with_only_its_unreaped_leader_stops_on_the_real_kernel():
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Windows stops a lane with a Job, not a process group')
+@pytest.mark.skipif(not os.path.exists('/bin/ps'), reason='a Linux image without procps ships no /bin/ps; '
+                                                         'Linux reads /proc, and macOS always has it')
 def test_the_process_table_scan_finds_ps_off_the_callers_path(tmp_path, monkeypatch):
     """Every macOS lane stop reaches the ps scan, since the kernel refuses the
     probe on the unreaped leader. A crapkit started with a PATH that holds no
