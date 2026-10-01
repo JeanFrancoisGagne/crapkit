@@ -70,8 +70,8 @@ or no longer (fixed). `python tools/docs/generate.py` writes this table, the
 | Calculation | Packet | Independent test | Definitions | Open defects | Fixed |
 |---|---|---|---:|---:|---:|
 | File universe and scope ownership | `analysis_oracles` | `test_universe_layouts.py::test_crapkit_assigns_the_hand_owners` | 0 | 1 | 0 |
-| Source decoding and line normalization | `analysis_oracles` | `test_decode_matrix.py::test_every_variant_reads_the_hand_rows` | 0 | 1 | 2 |
-| Function discovery and spans | `analysis_oracles` | `test_complexity_oracles.py::test_spans_match_the_treesitter_counters_on_the_probes` | 5 | 27 | 29 |
+| Source decoding and line normalization | `analysis_oracles` | `test_decode_matrix.py::test_every_variant_reads_the_hand_rows` | 0 | 0 | 3 |
+| Function discovery and spans | `analysis_oracles` | `test_complexity_oracles.py::test_spans_match_the_treesitter_counters_on_the_probes` | 5 | 26 | 30 |
 | Python reader: spans, names, inline_body, unread-def net | `analysis_oracles` | `test_python_ast.py::test_spans_match_ast` | 2 | 0 | 0 |
 | JS/TS expression arrows and template literals | `analysis_oracles` | `test_ts_compiler.py::test_sibling_arrows_are_separate_functions` | 0 | 1 | 0 |
 | Rust reader (match arms) | `analysis_oracles` | `test_equivalence.py::test_match_equals_if_chain` | 2 | 0 | 0 |
@@ -147,8 +147,8 @@ or no longer (fixed). `python tools/docs/generate.py` writes this table, the
 | Verdict exit code and dirty split | `verdict_model` | `test_exit_and_settle.py::test_exit_json_and_stored_run_name_one_verdict` | 0 | 0 | 0 |
 | Standing unmarked debt | `verdict_model` | `test_exit_and_settle.py::test_the_hand_table_holds_all_16_subsets_and_the_model_reads_it` | 0 | 1 | 0 |
 | Baseline and run trust selection | `verdict_model` | `test_history_machine.py::test_every_step_in_one_scripted_history` | 0 | 0 | 1 |
-| Metric stamp guard | `verdict_model` | `test_history_machine.py::test_seed_stamps_the_metric_of_the_run_it_read` | 0 | 1 | 0 |
-| Audited override grant | `verdict_model` | `test_history_machine.py::test_override_checks_the_stamp` | 0 | 1 | 0 |
+| Metric stamp guard | `verdict_model` | `test_history_machine.py::test_seed_stamps_the_metric_of_the_run_it_read` | 0 | 0 | 1 |
+| Audited override grant | `verdict_model` | `test_history_machine.py::test_every_step_in_one_scripted_history` | 0 | 0 | 1 |
 | Ratchet tighten, damping and delta | `verdict_model` | `test_history_machine.py::test_bouncing_measurement_holds_marks` | 0 | 1 | 0 |
 | Ratchet seed and prune | `verdict_model` | `test_history_machine.py::test_seed_reads_the_run_verify_reads` | 0 | 1 | 0 |
 | Ratchet merge driver | `verdict_model` | `test_merge_driver.py::test_every_key_merges_as_git_merge_file_and_the_docs_resolve_it` | 0 | 0 | 0 |
@@ -664,7 +664,7 @@ what either side says fails, whichever side moved.
 | `history_oracles` | 11 | 0 | 4 |
 | `runtime_guards` | 2 | 4 | 1 |
 | `score_model` | 17 | 1 | 7 |
-| `suite_strength` | 0 | 17 | 6 |
+| `suite_strength` | 0 | 13 | 10 |
 | `verdict_model` | 7 | 0 | 14 |
 
 <details><summary><code>analysis_oracles</code>: 392 rows</summary>
@@ -1193,8 +1193,8 @@ what either side says fails, whichever side moved.
 | SS7 | Change-control verdict | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | tools/accuracy/change_control.py:plan_declare,tools/accuracy/change_control.py:pre_push | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
 | SS8 | File universe and scope ownership | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/universe.py:assign_files | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
 | SS9 | Parameter list (params, packet.params) | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/packet.py:params | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
-| SS10 | Source decoding and line normalization | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/analyze.py:read_source | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
-| SS11 | Function discovery and spans | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/analyze.py:analyze_source | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
+| SS10 | Source decoding and line normalization | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | none | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | fixed | docs/accuracy.md#add-a-check |
+| SS11 | Function discovery and spans | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | none | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | fixed | docs/accuracy.md#add-a-check |
 | SS12 | next-item ranking and empty-queue reasons | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/cli/queue.py:_skip_reason | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
 | SS13 | Run totals and trend rollup | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/store.py:SnapshotStore.run_totals | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
 | SS14 | doctor --tune knobs and lane cost | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/doctor.py:suggest_knobs | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
@@ -1202,10 +1202,10 @@ what either side says fails, whichever side moved.
 | SS16 | Burn-down, mark age and debt policy | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/ratchet_report.py:mark_age_days,src/crapkit/ratchet_report.py:policy_violations | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
 | SS17 | Brief packet fields and regrowth | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/packet.py:file_totals | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
 | SS18 | Handles and NAME resolution | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/keys.py:handle_ordinal,src/crapkit/keys.py:select | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
-| SS19 | Metric stamp guard | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/ratchet.py:stamp_conflict | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
+| SS19 | Metric stamp guard | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | none | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | fixed | docs/accuracy.md#add-a-check |
 | SS20 | Standing unmarked debt | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/verify.py:unmarked_over_ceiling | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
 | SS21 | Ratchet tighten, damping and delta | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/ratchet.py:ratchet_delta | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
-| SS22 | Audited override grant | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/override.py:_granted_marks,src/crapkit/override.py:_require_auditable_override,src/crapkit/override.py:record_override | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
+| SS22 | Audited override grant | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | none | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | fixed | docs/accuracy.md#add-a-check |
 | SS23 | Ratchet seed and prune | each function the calcs.tsv row names, run by the golden CLI run or by the independent test at the push tier's example counts | src/crapkit/ratchet.py:prune_ratchet | coverage.py line data over the golden CLI run and the row's independent test (kit/reach.py) | none | defect | docs/accuracy.md#add-a-check |
 
 </details>
