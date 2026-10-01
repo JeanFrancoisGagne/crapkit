@@ -196,6 +196,32 @@ def test_every_windows_cell_that_runs_uv_has_it_before_its_tier():
     assert windows["steps"].index(setup) < first
 
 
+# The Windows nightly cell, measured 2026-10-01 at f3794e4a natively on one
+# machine: the nightly tier at -n 4 in seven parts took 2961 s summed, and the
+# 24 Windows past-bug rows replayed cold in 434 s. The push tier's
+# --os-sensitive run took 101 s on windows-latest and 70 s on that machine at
+# 34302d84, which scales the two to a runner. The steps before the tier took
+# 2.4 min in run 36891129973's 3.13 cell.
+WINDOWS_RUNNER_PER_LOCAL = 101 / 70
+WINDOWS_TIER_SECONDS = 2961
+WINDOWS_RETRO_SECONDS = 434
+WINDOWS_SETUP_MINUTES = 2.4
+
+
+def test_the_windows_cells_get_twice_what_the_nightly_cell_measured():
+    """Both cells were cancelled at a 75-minute bound nobody had measured, with the
+    tier at 97% and 99%. The bound is twice the measured 3.13 cell (tier and
+    replays), as ci.yml bounds its legs, and the replay step's own bound covers
+    twice its measured cold replay."""
+    windows = _jobs("accuracy.yml")["windows"]
+    replays = step(windows, "run", "python tools/accuracy/retro.py")
+    retro_minutes = WINDOWS_RETRO_SECONDS * WINDOWS_RUNNER_PER_LOCAL / 60
+    cell_minutes = WINDOWS_SETUP_MINUTES + WINDOWS_TIER_SECONDS * WINDOWS_RUNNER_PER_LOCAL / 60 + retro_minutes
+
+    assert 2 * cell_minutes <= windows["timeout-minutes"] <= 2 * cell_minutes + 5
+    assert 2 * retro_minutes <= replays["timeout-minutes"]
+
+
 COLD_SECONDS_A_ROW = 51.5  # a Linux row replayed with no worktree, venv or verdict kept, measured 2026-10-01
 BOUND = re.compile(r"\$\{\{\s*fromJSON\('(\{.*?\})'\)\[inputs\.retro_seconds \|\| '(\d+)'\]\s*\}\}")
 

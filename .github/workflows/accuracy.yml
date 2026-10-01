@@ -294,7 +294,11 @@ jobs:
     needs: plan
     if: needs.plan.outputs.mode != 'weekly'
     runs-on: windows-latest
-    timeout-minutes: 75
+    # Twice the 3.13 cell measured on 2026-10-01: 2.4 min of setup, the nightly
+    # tier at 71 min and 24 cold past-bug replays at 10.4 min, each scaled from
+    # one machine by the push tier's 101 s on windows-latest against 70 s there
+    # (tests/unit/test_ci_accuracy_jobs.py holds the numbers).
+    timeout-minutes: 170
     strategy:
       fail-fast: false
       matrix:
