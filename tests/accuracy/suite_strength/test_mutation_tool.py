@@ -394,11 +394,15 @@ def test_a_shard_outside_the_range_is_refused():
 
 
 def test_release_coverage_names_changed_functions_no_complete_diff_mutated():
-    diffs = [{"complete": True, "functions": [["src/crapkit/score.py", "crap"]]},
-             {"complete": False, "functions": [["src/crapkit/digest.py", "totals"]]}]
-    changed = [("src/crapkit/score.py", "crap"), ("src/crapkit/digest.py", "totals")]
+    totals = mutation.Result("crapkit.digest.x_totals__mutmut_1", "src/crapkit/digest.py", "totals",
+                             "killed").__dict__
+    diffs = [{"complete": True, "head": HEAD_B, "functions": [list(CRAP)], "results": [KILLED_CRAP]},
+             {"complete": False, "head": HEAD_B, "functions": [["src/crapkit/digest.py", "totals"]],
+              "results": [totals]}]
+    changed = [CRAP, ("src/crapkit/digest.py", "totals")]
 
-    assert mutation.uncovered(changed, diffs) == ["src/crapkit/digest.py:totals"]
+    assert mutation.uncovered(changed, diffs, _text_at(SAME_CRAP)) == [
+        ("src/crapkit/digest.py:totals", "no complete diff run mutated it")]
 
 
 def _receipts(directory: Path, *receipts: dict) -> Path:
@@ -1090,18 +1094,41 @@ def test_the_floors_command_fails_a_group_below_its_floor(tmp_path, monkeypatch,
     assert "floor core: 100.0% (1/1), floor 95.0% ok" in capsys.readouterr().out
 
 
+CRAP = ("src/crapkit/score.py", "crap")
+KILLED_CRAP = mutation.Result("crapkit.score.x_crap__mutmut_1", *CRAP, "killed").__dict__
+SAME_CRAP = {(HEAD_B, *CRAP): "def crap(): ...\n", ("HEAD", *CRAP): "def crap(): ...\n"}
+
+
+def _text_at(texts: dict):
+    """Stands in for function_text's reader: {(commit, module, name): text}, and
+    None (a module this clone cannot read there) for any other."""
+    return lambda commit, module, name: texts.get((commit, module, name))
+
+
+def _same_scope(monkeypatch) -> list:
+    """Stand in for scope_gained: the calc scope did not grow since the weekly
+    head, which here is no commit git could read. Records each (repo, base)."""
+    asked = []
+    monkeypatch.setattr(mutation, "scope_gained", lambda repo, base: asked.append((repo, base)) or [])
+    return asked
+
+
 def test_the_covered_command_names_each_changed_function_no_diff_run_mutated(
         tmp_path, monkeypatch, capsys):
     weekly = {"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 1}
-    diff = {"kind": "diff", "complete": True, "functions": [["src/crapkit/score.py", "crap"]]}
+    diff = {"kind": "diff", "complete": True, "head": HEAD_B, "functions": [list(CRAP)],
+            "results": [KILLED_CRAP]}
     receipts = _receipts(tmp_path / "r", weekly, diff)
-    seen = []
+    seen, read, asked = [], [], _same_scope(monkeypatch)
     monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
     monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: seen.append(
-        (repo, base, modules)) or [("src/crapkit/score.py", "crap"), ("src/crapkit/score.py", "grade")])
+        (repo, base, modules)) or [CRAP, ("src/crapkit/score.py", "grade")])
+    monkeypatch.setattr(mutation, "function_text", lambda repo: read.append(repo) or _text_at(
+        SAME_CRAP))
 
     assert mutation.main(["covered", "--receipts", str(receipts)]) == 1
     assert seen == [(mutation.REPO, HEAD_A, ["src/crapkit/score.py"])]
+    assert read == [mutation.REPO] and asked == [(mutation.REPO, HEAD_A)]
     assert capsys.readouterr().out == (
         f"mutation: src/crapkit/score.py:grade changed since the weekly run at {HEAD_A[:12]} "
         "and no complete diff run mutated it\n")
@@ -1109,6 +1136,7 @@ def test_the_covered_command_names_each_changed_function_no_diff_run_mutated(
 
 def test_the_covered_command_passes_when_every_change_was_mutated(tmp_path, monkeypatch):
     weekly = {"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 1}
+    _same_scope(monkeypatch)
     monkeypatch.setattr(mutation, "calc_modules", lambda: [])
     monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [])
 
@@ -1133,11 +1161,53 @@ def test_the_covered_command_refuses_a_weekly_shard_whose_receipt_judged_nothing
 
 
 def test_a_diff_receipt_holding_a_mutant_mutmut_never_judged_covers_no_function():
-    diffs = [{"complete": True, "functions": [["src/crapkit/score.py", "crap"]],
-              "results": [UNJUDGED]}]
+    diffs = [{"complete": True, "head": HEAD_B, "functions": [list(CRAP)], "results": [UNJUDGED]}]
 
-    assert mutation.uncovered([("src/crapkit/score.py", "crap")], diffs) == [
-        "src/crapkit/score.py:crap"]
+    assert mutation.uncovered([CRAP], diffs, _text_at(SAME_CRAP)) == [
+        ("src/crapkit/score.py:crap", mutation.NOT_MUTATED)]
+
+
+@pytest.mark.parametrize("receipt, texts, why", [
+    ({"head": HEAD_B, "results": []}, SAME_CRAP,
+     f"the diff run at {HEAD_B[:12]} made no mutant of it"),
+    ({"head": HEAD_B, "results": [KILLED_CRAP]}, {(HEAD_B, *CRAP): "a", ("HEAD", *CRAP): "b"},
+     f"changed again after the diff run at {HEAD_B[:12]}"),
+    ({"head": HEAD_B, "results": [KILLED_CRAP]}, {(HEAD_B, *CRAP): "", ("HEAD", *CRAP): ""},
+     f"changed again after the diff run at {HEAD_B[:12]}"),
+    ({"head": HEAD_B, "results": [KILLED_CRAP]}, {("HEAD", *CRAP): "b"},
+     f"this clone cannot read src/crapkit/score.py at the head of the diff run at {HEAD_B[:12]}"),
+    ({"head": "HEAD", "results": [KILLED_CRAP]}, {("HEAD", *CRAP): "b"},
+     "a diff receipt that mutated it names no head commit"),
+    ({"results": [KILLED_CRAP]}, SAME_CRAP, "a diff receipt that mutated it names no head commit"),
+], ids=["no-mutant", "changed-after", "gone-both-sides", "unreadable-head", "ref-not-sha",
+        "no-head"])
+def test_a_diff_receipt_covers_no_function_it_made_no_mutant_of_or_that_changed_since(
+        receipt, texts, why):
+    diffs = [{"complete": True, "functions": [list(CRAP)], **receipt}]
+
+    assert mutation.uncovered([CRAP], diffs, _text_at(texts)) == [("src/crapkit/score.py:crap", why)]
+
+
+def test_one_receipt_that_covers_is_enough_and_each_that_does_not_is_named():
+    head_c = "c" * 40
+    stale = {"complete": True, "head": HEAD_A, "functions": [list(CRAP)], "results": [KILLED_CRAP]}
+    empty = {"complete": True, "head": HEAD_B, "functions": [list(CRAP)], "results": []}
+    fresh = {**stale, "head": head_c}
+    text = _text_at({(HEAD_A, *CRAP): "old", (head_c, *CRAP): "new", ("HEAD", *CRAP): "new"})
+
+    assert mutation.uncovered([CRAP], [stale, empty, stale], text) == [(
+        "src/crapkit/score.py:crap", f"changed again after the diff run at {HEAD_A[:12]}; "
+                                     f"the diff run at {HEAD_B[:12]} made no mutant of it")]
+    assert mutation.uncovered([CRAP], [stale, empty, fresh], text) == []
+
+
+def test_a_function_s_text_holds_its_decorators_and_each_def_of_its_name():
+    source = ("import functools\n\n\n@functools.cache\ndef f():\n    return 1\n\n\n"
+              "class A:\n    def m(self):\n        return 2\n\n    def m(self):\n        return 3\n")
+
+    assert mutation.function_texts(source) == {
+        "f": "@functools.cache\ndef f():\n    return 1\n",
+        "A.m": "    def m(self):\n        return 2\n    def m(self):\n        return 3\n"}
 
 
 # --- what changed since the weekly run, on a dated repo ------------------------------------------
@@ -1148,13 +1218,26 @@ def _dated_repo(tmp_path: Path, commits: list[tuple[str, str]]) -> Path:
                  ["config", "commit.gpgsign", "false"]):
         mutation._git(tmp_path, *args)
     for date, text in commits:
-        (tmp_path / "m.py").write_text(text, encoding="utf-8")
-        mutation._git(tmp_path, "add", "m.py")
-        env = {**mutation.os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
-        done = mutation.subprocess.run(["git", "commit", "-qm", date], cwd=tmp_path, env=env,
-                                       capture_output=True, text=True)
-        assert done.returncode == 0, done.stderr
+        _commit_m(tmp_path, date, text)
     return tmp_path
+
+
+def _commit_m(repo: Path, date: str, text: str) -> str:
+    """Commit `text` as m.py at ISO `date`; the new commit's sha."""
+    return _commit_files(repo, date, {"m.py": text})
+
+
+def _commit_files(repo: Path, date: str, files: dict[str, str]) -> str:
+    """Commit each {path: text} at ISO `date`; the new commit's sha."""
+    for path, text in files.items():
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_text(text, encoding="utf-8", newline="\n")
+        mutation._git(repo, "add", path)
+    env = {**mutation.os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+    done = mutation.subprocess.run(["git", "commit", "-qm", date], cwd=repo, env=env,
+                                   capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    return mutation._git(repo, "rev-parse", "HEAD").strip()
 
 
 @pytest.mark.process
@@ -1176,6 +1259,135 @@ def test_changed_functions_name_what_a_diff_from_the_base_touches(tmp_path):
     base = mutation._git(repo, "rev-list", "-1", "HEAD~1").strip()
 
     assert mutation.changed_functions(repo, base, ["m.py", "gone.py"]) == [("m.py", "b")]
+
+
+# `covered` once took any complete diff receipt that listed a changed function.
+# mutmut 3.8 makes no mutant of a function decorated with anything but a lone
+# staticmethod or classmethod, so a receipt listed churn_log._commit_date
+# (lru_cache) with no mutant of it judged; and a receipt from Monday covered a
+# function edited again on Tuesday, since nothing read the receipt's head.
+
+IN_THE_WEEKLY_RUN = ("import functools\n\n\ndef f():\n    return 1\n\n\n"
+                     "@functools.cache\ndef g():\n    return 2\n")
+
+
+def _covered_on(tmp_path, monkeypatch) -> tuple[Path, str, str, Path]:
+    """A repo whose m.py changed f and the decorated g after the weekly run, and
+    a complete diff receipt at that change holding one killed mutant of f."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _dated_repo(repo, [("2026-09-18T12:00:00Z", IN_THE_WEEKLY_RUN)])
+    weekly = mutation._git(repo, "rev-parse", "HEAD").strip()
+    measured = _commit_m(repo, "2026-09-20T12:00:00Z", IN_THE_WEEKLY_RUN.replace(
+        "return 1", "return 10").replace("return 2", "return 20"))
+    killed = mutation.Result("m.x_f__mutmut_1", "m.py", "f", "killed").__dict__
+    receipts = _receipts(tmp_path / "r", {"kind": "weekly", "head": weekly, "shard": 1, "of": 1},
+                         {"kind": "diff", "complete": True, "head": measured, "base": weekly,
+                          "functions": [["m.py", "f"], ["m.py", "g"]], "results": [killed]})
+    monkeypatch.setattr(mutation, "REPO", repo)
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["m.py"])
+    monkeypatch.setattr(mutation, "calc_functions", lambda root=None: {})
+    _same_scope(monkeypatch)
+    return repo, weekly, measured, receipts
+
+
+@pytest.mark.process
+def test_covered_takes_a_diff_receipt_only_for_a_function_it_mutated_as_head_holds_it(
+        tmp_path, monkeypatch, capsys):
+    repo, weekly, measured, receipts = _covered_on(tmp_path, monkeypatch)
+    no_mutant = (f"mutation: m.py:g changed since the weekly run at {weekly[:12]} and the diff "
+                 f"run at {measured[:12]} made no mutant of it\n")
+
+    assert mutation.main(["covered", "--receipts", str(receipts)]) == 1
+    assert capsys.readouterr().out == no_mutant
+
+    _commit_m(repo, "2026-09-21T12:00:00Z", (repo / "m.py").read_text(encoding="utf-8").replace(
+        "return 10", "return 100"))
+
+    assert mutation.main(["covered", "--receipts", str(receipts)]) == 1
+    assert capsys.readouterr().out == (
+        f"mutation: m.py:f changed since the weekly run at {weekly[:12]} and changed again "
+        f"after the diff run at {measured[:12]}\n" + no_mutant)
+
+
+@pytest.mark.process
+def test_covered_passes_a_function_whose_text_at_head_is_the_text_the_diff_run_mutated(
+        tmp_path, monkeypatch, capsys):
+    repo, _, _, receipts = _covered_on(tmp_path, monkeypatch)
+    _commit_m(repo, "2026-09-21T12:00:00Z", "import os\n" + (repo / "m.py").read_text(
+        encoding="utf-8") + "\n\ndef h():\n    return 3\n")
+    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [("m.py", "f")])
+
+    assert mutation.main(["covered", "--receipts", str(receipts)]) == 0
+    assert capsys.readouterr().out == ""
+
+
+# A module a calcs.tsv row brings in after the weekly run was never mutated by
+# it, whether its text changed or not: lane_freshness.py and lane_results.py
+# entered calc scope after the weekly run at f4def958, and `covered` read their
+# unchanged functions as the weekly run's.
+
+CALCS = "calc\tindependent_test\tmodules\tfunctions\n"
+ROW_M = "M\tt.py::test_m\tm.py\tm.py:f\n"
+ROW_N = "N\tt.py::test_n\tn.py\tn.py:k\n"
+CALCS_AT = "tests/accuracy/p/calcs.tsv"
+
+
+def _scope_grew(tmp_path, monkeypatch) -> tuple[Path, str]:
+    """A repo whose calcs.tsv names m.py at the weekly commit and n.py too after
+    it; n.py's text is the same at both."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _dated_repo(repo, [])
+    weekly = _commit_files(repo, "2026-09-18T12:00:00Z", {
+        "m.py": "def f():\n    return 1\n", "n.py": "def k():\n    return 2\n",
+        CALCS_AT: CALCS + ROW_M})
+    _commit_files(repo, "2026-09-20T12:00:00Z", {CALCS_AT: CALCS + ROW_M + ROW_N})
+    monkeypatch.setattr(mutation, "REPO", repo)
+    monkeypatch.setattr(mutation, "calc_modules", lambda: ["m.py", "n.py"])
+    return repo, weekly
+
+
+@pytest.mark.process
+def test_covered_asks_a_diff_run_for_a_function_that_entered_calc_scope_after_the_weekly_run(
+        tmp_path, monkeypatch, capsys):
+    repo, weekly = _scope_grew(tmp_path, monkeypatch)
+    receipts = _receipts(tmp_path / "r", {"kind": "weekly", "head": weekly, "shard": 1, "of": 1})
+
+    assert mutation.main(["covered", "--receipts", str(receipts)]) == 1
+    assert capsys.readouterr().out == (
+        f"mutation: n.py:k entered the calc scope after the weekly run at {weekly[:12]} and no "
+        "complete diff run mutated it\n")
+
+    head = mutation._git(repo, "rev-parse", "HEAD").strip()
+    killed = mutation.Result("n.x_k__mutmut_1", "n.py", "k", "killed").__dict__
+    (receipts / "diff.json").write_text(json.dumps(
+        {"kind": "diff", "complete": True, "head": head, "base": weekly,
+         "functions": [["n.py", "k"]], "results": [killed]}), encoding="utf-8")
+
+    assert mutation.main(["covered", "--receipts", str(receipts)]) == 0
+
+
+@pytest.mark.process
+def test_a_diff_run_mutates_the_functions_that_entered_calc_scope_after_its_base(
+        tmp_path, monkeypatch):
+    repo, weekly = _scope_grew(tmp_path, monkeypatch)
+    _tables(tmp_path)
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
+    recorder = _Recorder([])
+    monkeypatch.setattr(mutation, "staged_run", recorder)
+
+    assert mutation.main(["diff", "--base", weekly]) == 0
+
+    assert [call["globs"] for call in recorder.calls] == [["n.x_k__mutmut_*"]]
+    head = mutation._git(repo, "rev-parse", "HEAD").strip()
+    assert _saved(f"diff-{head[:12]}.json")["functions"] == [["n.py", "k"]]
+
+
+def test_a_change_to_a_decorator_line_is_a_change_to_its_function():
+    source = "import functools\n\n\nclass A:\n    @functools.cache\n    def f(self):\n        return 1\n"
+
+    assert mutation.touched_functions(source, {5}) == ["A.f"]
 
 
 # --- what the tools mutation run left alive in the calc functions ------------------------------------
@@ -1630,7 +1842,7 @@ CLI = "src/crapkit/cli/scoring.py"
 def _named_cli(monkeypatch) -> None:
     """A cli module whose calcs rows name one function of it, `_named`."""
     monkeypatch.setattr(mutation, "calc_modules", lambda: [CLI])
-    monkeypatch.setattr(mutation, "calc_functions", lambda: {CLI: {"_named"}})
+    monkeypatch.setattr(mutation, "calc_functions", lambda root=None: {CLI: {"_named"}})
     monkeypatch.setattr(mutation, "changed_functions",
                         lambda repo, base, modules: [(CLI, "_named"), (CLI, "_other")])
 
@@ -1657,6 +1869,7 @@ def test_a_diff_run_mutates_a_cli_module_at_its_named_functions_only(tmp_path, m
 def test_the_covered_command_asks_only_after_a_cli_module_s_named_functions(
         tmp_path, monkeypatch, capsys):
     _named_cli(monkeypatch)
+    _same_scope(monkeypatch)
     weekly = {"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 1}
 
     assert mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "r", weekly))]) == 1

@@ -13,8 +13,9 @@ mutmut 3.8.0 runs in the accuracy image (it forks, so Linux only). `weekly`
 mutates one shard of the modules every tests/accuracy/*/calcs.tsv row names
 (a cli module and the release tool only at the functions a row names, and
 never a module `tools` mutates);
-`diff` mutates only the functions changed since the last weekly run and stops
-at its cap, reporting `incomplete`, never `pass`. Both run in a detached
+`diff` mutates only the functions changed since the last weekly run, and those
+a calcs.tsv row brought into calc scope since then, and stops at its cap,
+reporting `incomplete`, never `pass`. Both run in a detached
 worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose [tool.mutmut]
 names the modules and the suite, tests/unit and tests/accuracy at the push tier
 with the dependent methods deselected, less each test an open defect row of
@@ -37,7 +38,9 @@ included: the command writes no receipt, names how mutmut ended and each
 in-process call the test kit logged as stuck in the stage's in-process-hangs.log,
 and exits 4. mutmut runs its stats pass in its own process, so every run names
 that file to the kit (HANGS_ENV), and the kit then never ends the process on a
-stuck call. `covered` refuses a receipt holding a mutant its run never judged.
+stuck call. `covered` refuses a receipt holding a mutant its run never judged,
+and a diff receipt covers a changed function only when it holds a mutant of
+that function and its head holds the function's text as HEAD does (uncovered).
 
 The gate is a survivor set, not a rate. A survivor is keyed by (module,
 function, sha256 of its mutant diff with line numbers and mutmut's numbering
@@ -80,6 +83,7 @@ from dataclasses import asdict, dataclass
 import datetime
 import fnmatch
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -87,6 +91,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 
@@ -516,12 +521,17 @@ def changed_lines(diff_text: str) -> set[int]:
 
 def _functions(tree: ast.AST):
     """(qualified name, first line, last line) of every top-level function and
-    method: the units mutmut mutates."""
+    method: the units mutmut mutates. A def starts at its first decorator, since
+    a decorator changes what the function does."""
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            yield node.name, node.lineno, node.end_lineno
+            yield node.name, _first_line(node), node.end_lineno
         elif isinstance(node, ast.ClassDef):
             yield from ((f"{node.name}.{name}", start, end) for name, start, end in _functions(node))
+
+
+def _first_line(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+    return min([node.lineno, *(decorator.lineno for decorator in node.decorator_list)])
 
 
 def touched_functions(source: str, lines: set[int]) -> list[str]:
@@ -561,9 +571,81 @@ def _covers(diff: dict) -> bool:
     return diff["complete"] and not receipt_problem(diff)
 
 
-def _covered_pairs(diffs: list[dict]) -> set[tuple]:
-    complete = [receipt for receipt in diffs if _covers(receipt)]
-    return {tuple(pair) for receipt in complete for pair in receipt["functions"]}
+def function_texts(source: str) -> dict[str, str]:
+    """The text of each top-level function and method, its decorators included,
+    by qualified name; a name defined twice holds both texts, in order."""
+    lines, texts = io.StringIO(source, newline="").readlines(), {}
+    for name, first, last in _functions(ast.parse(source)):
+        texts[name] = texts.get(name, "") + "".join(lines[first - 1:last])
+    return texts
+
+
+def function_text(repo: Path):
+    """A reader of one function's text at a commit of `repo`, as function_texts
+    gives it: "" when the module there holds no such function, None when this
+    clone cannot read the module there. One git read per commit and module."""
+    read: dict[tuple[str, str], dict[str, str] | None] = {}
+
+    def text(commit: str, module: str, name: str) -> str | None:
+        if (commit, module) not in read:
+            read[commit, module] = _texts_at(repo, commit, module)
+        texts = read[commit, module]
+        return None if texts is None else texts.get(name, "")
+    return text
+
+
+def _texts_at(repo: Path, commit: str, module: str) -> dict[str, str] | None:
+    try:
+        return function_texts(_git(repo, "cat-file", "blob", f"{commit}:{module}"))
+    except MutationError:
+        return None
+
+
+# A diff receipt's head is the full sha `git rev-parse HEAD` printed. Anything
+# else (a ref, an empty head, which git reads as the index) names no commit.
+_COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+NOT_MUTATED = "no complete diff run mutated it"
+
+
+def _mutated(receipt: dict, module: str, name: str) -> bool:
+    """Whether `receipt` holds a mutant of the function; every row of a receipt
+    that passes _covers is judged."""
+    return any((row["module"], row["function"]) == (module, name)
+               for row in receipt.get("results", []))
+
+
+def _why_not(receipt: dict, module: str, name: str, text) -> str:
+    """"" when `receipt`, complete and judged, covers the function; else why not."""
+    head = str(receipt.get("head", ""))
+    if not _mutated(receipt, module, name):
+        return f"the diff run at {head[:12]} made no mutant of it"
+    if not _COMMIT.fullmatch(head):
+        return "a diff receipt that mutated it names no head commit"
+    return _changed_since(head, module, name, text)
+
+
+def _changed_since(head: str, module: str, name: str, text) -> str:
+    """"" when the function's text at `head` is its text at HEAD; else how not."""
+    measured = text(head, module, name)
+    if measured is None:
+        return f"this clone cannot read {module} at the head of the diff run at {head[:12]}"
+    if measured and measured == text("HEAD", module, name):
+        return ""
+    return f"changed again after the diff run at {head[:12]}"
+
+
+def _why_uncovered(diffs: list[dict], module: str, name: str, text) -> str:
+    """"" when one of `diffs` covers the function; else each listing receipt's
+    reason, or NOT_MUTATED when none lists it."""
+    reasons = []
+    for receipt in diffs:
+        if (module, name) not in map(tuple, receipt["functions"]):
+            continue
+        reason = _why_not(receipt, module, name, text)
+        if not reason:
+            return ""
+        reasons.append(reason)
+    return "; ".join(dict.fromkeys(reasons)) or NOT_MUTATED
 
 
 def _of_kind(receipts: list[dict], kind: str) -> list[dict]:
@@ -604,12 +686,20 @@ def _refuse_unjudged(weeklies: list[dict]) -> None:
             raise MutationError(f"weekly shard {receipt['shard']}'s receipt proves nothing: {problem}")
 
 
-def uncovered(changed: list[tuple[str, str]], diffs: list[dict]) -> list[str]:
-    """The calc functions changed since the weekly run that no complete nightly
-    diff receipt mutated. The weekly run mutated the tree at its head, before
-    any of these changes, so it covers none of them."""
-    covered = _covered_pairs(diffs)
-    return [f"{module}:{name}" for module, name in changed if (module, name) not in covered]
+def uncovered(changed: list[tuple[str, str]], diffs: list[dict], text) -> list[tuple[str, str]]:
+    """("module:function", why) for each of the `changed` calc functions (see
+    since) that no nightly diff receipt covers. The weekly run mutated the tree
+    at its head in the scope its tables gave, so it covers none of them. A diff
+    receipt covers a function only when its run finished and judged every mutant,
+    it holds a mutant of the function, and the function's text at the receipt's
+    head, decorators included, is its text at HEAD. mutmut 3.8 makes no mutant of
+    a function decorated with anything but a lone staticmethod or classmethod, nor
+    of one with nothing it mutates, so no receipt covers such a function.
+    `text(commit, module, name)` reads a function's text (function_text)."""
+    judged = list(filter(_covers, diffs))
+    found = [(f"{module}:{name}", _why_uncovered(judged, module, name, text))
+             for module, name in changed]
+    return [(function, why) for function, why in found if why]
 
 
 # --- equivalence evidence -------------------------------------------------------------------------
@@ -796,11 +886,12 @@ def _canary_globs() -> list[str]:
 FUNCTION_SCOPED = ("src/crapkit/cli/", "tools/release/release.py")
 
 
-def calc_functions() -> dict[str, set[str]]:
-    """The functions the calcs.tsv rows name, by module path."""
+def calc_functions(root: Path | None = None) -> dict[str, set[str]]:
+    """The functions the calcs.tsv rows name, by module path: this tree's tables,
+    or the ones in `root`'s packet folders."""
     from accuracy.kit import calcs
     named: dict[str, set[str]] = {}
-    for row in calcs.load(REPO / "tests" / "accuracy"):
+    for row in calcs.load(root or REPO / "tests" / "accuracy"):
         for entry in row.functions:
             path, _, name = entry.partition(":")
             named.setdefault(path, set()).add(name)
@@ -828,6 +919,42 @@ def in_calc_scope(pairs: list[tuple[str, str]], named: dict[str, set[str]]) -> l
     """The changed (module, function) pairs a calc run mutates."""
     return [(module, name) for module, name in pairs if module not in TOOL_TARGETS
             and (not module.startswith(FUNCTION_SCOPED) or name in named.get(module, ()))]
+
+
+def scope_at(repo: Path, commit: str) -> tuple[set[str], dict[str, set[str]]]:
+    """(calc modules, the functions named in each module) as the calcs.tsv tables
+    at `commit` give them: the scope a run of this tool at `commit` mutated."""
+    from accuracy.kit import calcs
+    listed = _git(repo, "ls-tree", "-r", "--name-only", commit, "--", "tests/accuracy")
+    with tempfile.TemporaryDirectory() as folder:
+        root = Path(folder)
+        for path in re.findall(r"^tests/accuracy/[^/\n]+/calcs\.tsv$", listed, re.M):
+            (root / path).parent.mkdir(parents=True, exist_ok=True)
+            _write(root / path, _git(repo, "cat-file", "blob", f"{commit}:{path}"))
+        tables = root / "tests" / "accuracy"
+        return set(calcs.modules(calcs.load(tables))), calc_functions(tables)
+
+
+def _defined(repo: Path, modules: list[str]) -> list[tuple[str, str]]:
+    """(module, function) for every function `modules` define in this tree."""
+    return [(module, name) for module in modules if (repo / module).is_file()
+            for name, _, _ in _functions(ast.parse(_read(repo / module)))]
+
+
+def scope_gained(repo: Path, base: str) -> list[tuple[str, str]]:
+    """The functions in calc scope now that the tables at `base` left out: a run
+    at `base` mutated none of them, changed or not."""
+    modules, named = scope_at(repo, base)
+    now = in_calc_scope(_defined(repo, calc_modules()), calc_functions())
+    then = set(in_calc_scope([pair for pair in now if pair[0] in modules], named))
+    return [pair for pair in now if pair not in then]
+
+
+def since(base: str) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """What a calc run at `base` did not mutate as it stands: the calc functions a
+    diff from `base` touches, and those that entered calc scope after `base`."""
+    touched = in_calc_scope(changed_functions(REPO, base, calc_modules()), calc_functions())
+    return touched, [pair for pair in scope_gained(REPO, base) if pair not in touched]
 
 
 # --- the second config: the accuracy tools and kit.exact -----------------------------------------
@@ -1296,7 +1423,8 @@ def _diff_receipt(base: str, changed: list, rows: list[Result], complete: bool) 
 
 def _diff_run(args) -> int:
     base = args.base or weekly_base(REPO, datetime.datetime.now(datetime.timezone.utc))
-    changed = in_calc_scope(changed_functions(REPO, base, calc_modules()), calc_functions())
+    touched, gained = since(base)
+    changed = touched + gained
     rows, complete = _run_changed(changed, args.cap_minutes * 60)
     receipt = _diff_receipt(base, changed, rows, complete)
     _write_receipt(receipt, f"diff-{receipt['head'][:12]}.json")
@@ -1322,11 +1450,12 @@ def _floors_cmd(args) -> int:
 def _covered(args) -> int:
     weeklies, diffs = receipts_in(args.receipts)
     head = weekly_head(weeklies)
-    changed = changed_functions(REPO, head, calc_modules())
-    missing = uncovered(in_calc_scope(changed, calc_functions()), diffs)
-    for line in missing:
-        print(f"mutation: {line} changed since the weekly run at {head[:12]} and no "
-              "complete diff run mutated it")
+    touched, gained = since(head)
+    missing = uncovered(touched + gained, diffs, function_text(REPO))
+    entered = {f"{module}:{name}" for module, name in gained}
+    for function, why in missing:
+        how = "entered the calc scope after" if function in entered else "changed since"
+        print(f"mutation: {function} {how} the weekly run at {head[:12]} and {why}")
     return 1 if missing else 0
 
 

@@ -238,7 +238,7 @@ faster. Under Git Bash, set `MSYS_NO_PATHCONV=1` before `-e VAR=/path`.
 
 Mutation testing runs in the accuracy image, since mutmut forks and runs on Linux
 only. One shard of the weekly run, and the run over the functions changed since
-the last weekly:
+the last weekly or brought into calc scope since then:
 
 ```
 docker run --rm --network none -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py weekly --shard 1 --of 8
@@ -265,13 +265,13 @@ defect ruling names. CI still runs it on the tree.
 
 A run that mutmut ends before it judged its mutants proves nothing: a failed stats
 run, a crash, a signal (SIGHUP included). So does a serial rerun of the timeouts
-that mutmut ends that way. The command then writes no receipt,
-prints how mutmut ended and each in-process crapkit call the test kit logged as
-stuck past its bound, and exits 4. Only the `diff` run's cap stops mutmut short
-without a death, and that run reports `incomplete`. Exit 1 stays a check that
-failed, and exit 3 a receipt missing on this machine. `covered` refuses a weekly
-receipt that holds a mutant its run never judged, and a diff receipt that holds
-one covers no function.
+that mutmut ends that way. The command then writes no receipt, prints how mutmut
+ended and each in-process crapkit call the test kit logged as stuck past its
+bound, and exits 4. Only the `diff` run's cap stops mutmut short without a
+death, and that run reports `incomplete`. Exit 1 stays a check that failed, and
+exit 3 a receipt missing on this machine. `covered` refuses a weekly receipt that
+holds a mutant its run never judged, and a diff receipt that holds one covers no
+function (see [Release](#release)).
 
 mutmut runs its stats pass in its own process, so inside a stage the test kit
 never ends the process when a call is stuck in C code. It writes every thread's
@@ -287,6 +287,32 @@ python tools/accuracy/run.py --tier release --receipt .crapkit/release-accuracy-
 ```
 
 The release tool runs this in its `accuracy` stage (see [Releases](#releases)).
+
+Its mutation row, `python tools/accuracy/mutation.py covered`, reads the weekly
+and diff receipts under `.crapkit/accuracy/mutation/`. It asks for every weekly
+shard judged at one head. The weekly run mutated nothing that changed after that
+head, and nothing the `calcs.tsv` tables at that head left out of calc scope. So
+each calculation function changed since that head (a change to a decorator line
+counts), and each one a `calcs.tsv` row brought into calc scope after it, needs
+a diff receipt that covers it: a run that finished and judged every mutant, that
+holds at least one mutant of the function, and whose head holds the same text
+for the function, decorators included, as HEAD does. The `diff` run mutates both
+kinds. A function without such a receipt counts as uncovered, and `covered`
+prints why and exits 1:
+
+| Printed reason | What happened |
+|---|---|
+| `no complete diff run mutated it` | No finished, judged diff receipt lists the function |
+| `the diff run at SHA made no mutant of it` | The run listed it, and mutmut made no mutant of it |
+| `changed again after the diff run at SHA` | Its text at HEAD differs from its text at the run's head |
+| `this clone cannot read PATH at the head of the diff run at SHA` | Fetch that commit |
+
+mutmut 3.8 makes no mutant of a function decorated with anything but a lone
+`staticmethod` or `classmethod`, or of one that holds nothing it mutates (a
+bare `return x`, a lone call). Such a function, changed or brought into scope
+after the weekly head, fails `covered` until a weekly run measures a head that
+holds it. The weekly run makes no mutant of it either, so `covered` passes an
+unchanged one without any mutant behind it.
 
 ## When a check fails
 
