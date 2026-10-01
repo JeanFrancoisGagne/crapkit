@@ -15,8 +15,8 @@ model and the driver's calls, never from a producer's output. Three checks:
 
 Every producer's recording is replayed on push. In the nightly tier
 regenerate.py reruns each producer over the probes and the fresh artifact must
-equal the committed one three ways (counts_table, crapkit's parse, the
-canonical form), so the ground truth holds for the producer as installed.
+equal the committed one three ways (counts_table, crapkit's parse or its
+refusal, the canonical form), so the ground truth holds for the producer as installed.
 """
 import dataclasses
 from fractions import Fraction
@@ -369,3 +369,39 @@ def test_a_half_built_producer_venv_is_built_again(tmp_path, monkeypatch):
     regenerate.python_for(producer)
 
     assert calls == ["venv", "pip", "venv", "pip"]
+
+
+@pytest.mark.parametrize("producer", probe_repo.REFUSED)
+def test_a_rerun_crapkit_refuses_like_its_recording_differs_in_nothing(tmp_path, monkeypatch,
+                                                                       producer):
+    """crapkit refuses a coverage.py report without start_line (ruling CO-B2), so
+    for such a producer the check compares refusals: a rerun refused for the same
+    function equals its recording, read from any scratch path."""
+    from accuracy.coverage_oracles import regenerate
+    monkeypatch.syspath_prepend(str(regenerate.HERE))
+    recording = regenerate.RECORDED / producer / "call.json"
+    fresh = tmp_path / "out-call" / "canonical" / "call.json"
+    fresh.parent.mkdir(parents=True)
+    fresh.write_bytes(recording.read_bytes())
+
+    assert regenerate.differences(regenerate.PRODUCERS[producer], fresh, recording) == []
+
+
+def test_a_rerun_that_gains_start_line_differs_from_a_refused_recording(tmp_path, monkeypatch):
+    """A producer that starts writing start_line parses where its recording was
+    refused, and the check names crapkit's reading as moved."""
+    from accuracy.coverage_oracles import regenerate
+    monkeypatch.syspath_prepend(str(regenerate.HERE))
+    producer = probe_repo.REFUSED[0]
+    recording = regenerate.RECORDED / producer / "call.json"
+    artifact = json.loads(recording.read_bytes())
+    for data in artifact["files"].values():
+        for region in data.get("functions", {}).values():
+            region["start_line"] = min(region["executed_lines"] + region["missing_lines"]
+                                       + region["excluded_lines"], default=1)
+    fresh = tmp_path / "call.json"
+    fresh.write_text(json.dumps(artifact), encoding="utf-8")
+
+    found = regenerate.differences(regenerate.PRODUCERS[producer], fresh, recording)
+
+    assert "call.json: crapkit's parsed FnCoverage differs" in found

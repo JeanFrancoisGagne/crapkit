@@ -11,7 +11,8 @@ Some producers write more files (lcov, coverage xml, JUnit), recorded beside it.
 
 `check` runs them again into a temporary directory and compares each fresh
 artifact with the committed one, never as raw bytes: once as per-function counts
-(counts_table), once as crapkit's parsed FnCoverage, and once in canonical form.
+(counts_table), once as crapkit's parsed FnCoverage (or its refusal of a
+report without start_line), and once in canonical form.
 
 Exit 0 when every producer matched, 1 when one differs, 3 when a producer could
 not run here (node_modules not installed, no `uv`, no network for a venv).
@@ -275,8 +276,21 @@ def _counts(path: Path) -> list:
     return sorted(counts_table.istanbul_rows(artifact, "line"), key=repr)
 
 
-def _fn_coverage(path: Path, kind: str) -> dict:
-    """crapkit's parse, loaded at run time: an expected value here never comes from it."""
+def _fn_coverage(path: Path, kind: str) -> dict | str:
+    """crapkit's reading, loaded at run time: an expected value here never comes from it.
+
+    A report crapkit refuses (coverage.py before 7.13.1 writes no start_line,
+    ruling CO-B2) reads as the refusal's text with the artifact's own path cut,
+    so two runs that crapkit refuses for the same reason read the same."""
+    import importlib
+    errors = importlib.import_module("crapkit.errors")
+    try:
+        return _parse(path, kind)
+    except errors.ToolError as refused:
+        return str(refused).replace(str(path), "<artifact>")
+
+
+def _parse(path: Path, kind: str) -> dict:
     import importlib
     if kind == "python":
         reader = importlib.import_module("crapkit.coverage_py")
