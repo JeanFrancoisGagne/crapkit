@@ -241,3 +241,23 @@ def test_the_green_ref_moves_only_after_a_main_push_whose_accuracy_passed():
     assert green["permissions"] == {"contents": "write", "issues": "write"}
     assert all(f"needs.{job}.result == 'success'" in move["if"] for job in green["needs"])
     assert "merge-base --is-ancestor" in move["run"], "the ref never moves backwards"
+
+
+def _issue_steps() -> list[tuple[str, str]]:
+    """(workflow:job, script) for each step that opens an issue."""
+    return [(f"{path.name}:{name}", entry["run"])
+            for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
+            for name, job in _jobs(path.name).items() for entry in job.get("steps", [])
+            if "gh issue create" in entry.get("run", "")]
+
+
+def test_a_step_that_files_an_issue_under_a_label_makes_the_label_first():
+    """GitHub refuses an issue whose label the repository lacks, and neither
+    accuracy-red nor accuracy-infra existed: accuracy-green failed on 38531c54 at
+    the step that files the red run, with "could not add label: 'accuracy-red'
+    not found"."""
+    unlabelled = [name for name, run in _issue_steps()
+                  if run.find("gh label create") < 0 or run.find("gh label create") > run.find("gh issue")]
+
+    assert len(_issue_steps()) == 2
+    assert unlabelled == []

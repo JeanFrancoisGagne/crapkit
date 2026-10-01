@@ -316,6 +316,8 @@ jobs:
           RESULTS: verdict ${{ needs.verdict.result }}, accuracy-push ${{ needs.accuracy-push.result }}, accuracy-xplat ${{ needs.accuracy-xplat.result }}
         run: |
           body="main at $GITHUB_SHA: $RESULTS. Run: $RUN_URL"
+          # GitHub refuses an issue under a label the repository lacks; --force also rewrites an existing one to these same values.
+          gh label create accuracy-red --force --color B60205 --description "A push to main failed its accuracy verdict"
           number=$(gh issue list --label accuracy-red --state open --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
             gh issue comment "$number" --body "$body"

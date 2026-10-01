@@ -534,6 +534,8 @@ jobs:
           esac
           title="$label: accuracy run failed"
           body="Failed jobs: $failed. Run: $RUN_URL"
+          # GitHub refuses an issue under a label the repository lacks; --force also rewrites an existing one to these same values.
+          gh label create "$label" --force --color B60205 --description "An accuracy run on main failed"
           number=$(gh issue list --label "$label" --state open --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
             gh issue comment "$number" --body "$body"
