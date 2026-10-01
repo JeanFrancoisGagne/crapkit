@@ -26,7 +26,10 @@ on a clean tree and each COPY_BOUND test, which fails or runs for hours inside
 mutmut's copy whatever the mutant, then write a receipt under
 .crapkit/accuracy/mutation/ and run the gate. The checks that read
 crapkit's own source as data read the stage's src/crapkit, named in
-CRAPKIT_ACCURACY_SOURCE, since mutmut's copy of it holds trampolines.
+CRAPKIT_ACCURACY_SOURCE, since mutmut's copy of it holds trampolines. Run a
+stage with /tmp on tmpfs (docs/accuracy.md, Weekly): the tests keep their
+SQLite stores there, and a child stuck in D state on an overlay-disk page
+stalled a diff run for over 20 minutes.
 
 mutmut first runs the whole suite once with no mutant active (its stats run) to
 learn which tests reach which function, stops at the first test that fails, and

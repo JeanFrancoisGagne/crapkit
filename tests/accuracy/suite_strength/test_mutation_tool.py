@@ -2528,3 +2528,20 @@ def test_the_functions_named_here_include_this_packet_s_cli_entry():
 
     assert named["src/crapkit/cli/analyses.py"] == {"cmd_mutate"}
     assert "run_one" in named["src/crapkit/mutate_pool.py"]
+
+
+# --- the documented commands ------------------------------------------------------------------------
+
+def test_the_documented_mutation_commands_put_tmp_on_a_ram_disk():
+    """On 2026-10-01 a forked child sat in D state for over 20 minutes on a SQLite
+    page under the container's overlay /tmp, and the diff run stalled at 1,064 of
+    1,089 mutants. Every documented mutation command mounts /tmp as tmpfs, exec
+    allowed, since tests run what they write there."""
+    text = (REPO / "docs" / "accuracy.md").read_bytes().decode()
+    weekly = text.split("\n### Weekly\n", 1)[1].split("\n### ", 1)[0]
+    commands = [line for line in weekly.splitlines() if "tools/accuracy/mutation.py" in line
+                and line.startswith("docker run")]
+
+    assert len(commands) == 2
+    assert all("--tmpfs /tmp:exec" in line for line in commands)
+    assert "1,064 of 1,089" in weekly

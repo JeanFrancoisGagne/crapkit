@@ -244,9 +244,16 @@ are the only reader of their verdicts; the other calculation modules held
 them. One shard of the weekly run, and the run over all of them under a cap:
 
 ```
-docker run --rm --network none -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py weekly --shard 1 --of 8
-docker run --rm --network none -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py diff --cap-minutes 30
+docker run --rm --network none --tmpfs /tmp:exec -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py weekly --shard 1 --of 8
+docker run --rm --network none --tmpfs /tmp:exec -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py diff --cap-minutes 30
 ```
+
+Always give a mutation stage `/tmp` on tmpfs, with `exec`, since the tests run
+programs they write there. The tests keep their SQLite stores and repos under
+`/tmp`, which is otherwise the container's overlay disk: on 2026-10-01 a forked
+child sat in D state for over 20 minutes on a SQLite page there, and the diff
+run stalled at 1,064 of 1,089 mutants. A process in D state takes no signal
+until its read returns, so no timeout ends it.
 
 A survivor on neither `suite_strength/mutation/survivors.tsv` nor
 `equivalent.tsv` fails the run, and a capped `diff` run reports `incomplete`,
@@ -312,9 +319,10 @@ judged stores no verdict, so `covered` counts it uncovered (see
 mutmut runs its stats pass in its own process, so inside a stage the test kit
 never ends the process when a call is stuck in C code. It writes every thread's
 stack to the stage's `in-process-hangs.log` each time the grace runs out, and the
-call fails its test once it returns. Give the run a RAM disk (`--tmpfs /tmp`
-with the checkout under `/tmp`) when other jobs share the disk: a SQLite commit
-inside one test once waited 150 s on a busy disk's journal.
+call fails its test once it returns, and the run then keeps no verdict (exit 4).
+A SQLite commit inside one test once waited 150 s on a busy disk's journal; with
+`/tmp` on tmpfs as above, copy the checkout under `/tmp` too when other jobs
+share the disk, so the stage's own files sit in RAM as well.
 
 ### Release
 
