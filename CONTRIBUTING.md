@@ -171,11 +171,13 @@ a complete verdict against separate base and candidate wheel installations, and 
 accuracy push tier.
 
 **In CI** (`.github/workflows/ci.yml`), thirteen jobs. A newer push to a pull request
-cancels the run it replaces; every push to main runs to the end.
+cancels the run it replaces; every push to main runs to the end. The nightly schedule
+skips every job except `test`, since it has no pushed change to judge; `deploy-action-log`
+starts there and skips each of its steps.
 
 | Job | Runs | What fails the job |
 |---|---|---|
-| `test` | Editable dev install, console-script check and `python tools/testing/run.py --suite ...` on Python 3.11, 3.12, 3.13 and 3.14 on Ubuntu and Windows, every version pyproject's classifiers name, and on macOS with Python 3.13 for the letter-case rows; Ubuntu/Python 3.12 belongs to `dogfood`. An Ubuntu or macOS job runs both suites; each Windows suite is a job of its own. `CRAPKIT_REQUIRE_LOCALES=1` makes a Latin-1 locale row fail where localedef cannot build its locale, where elsewhere it skips. | A test failure. |
+| `test` | Editable dev install, console-script check and `python tools/testing/run.py --suite ...` on every Python pyproject's classifiers name (3.11, 3.12, 3.13 and 3.14) on Ubuntu and Windows, and on macOS for the letter-case rows; Ubuntu/Python 3.12 belongs to `dogfood`. A push or pull request runs Ubuntu on 3.11, 3.13 and 3.14, Windows on 3.11 and 3.14 and macOS on 3.13. Windows on 3.12 and 3.13 runs only on the nightly schedule at 04:41 UTC, which also runs macOS on 3.11, a macOS Python without `os.waitid`. An Ubuntu or macOS job runs both suites; each Windows suite is a job of its own. `CRAPKIT_REQUIRE_LOCALES=1` makes a Latin-1 locale row fail where localedef cannot build its locale, where elsewhere it skips. | A test failure. |
 | `verdict-measure` | One job per side: `python tools/testing/ci.py --base "$BASE_REF" --measure base` or `--measure candidate` builds and verifies that side's wheel, measures both suites and uploads the coverage evidence, the wheel and its proof. | A build, install or provenance failure. A failing suite still uploads; the join judges it. |
 | `verdict` | `python tools/testing/ci.py --base "$BASE_REF" --join` checks each uploaded wheel against the bytes and commit its proof records, installs it into a fresh venv, proves its source again, transfers the complete baseline ledger and runs `verify --no-tighten`. Then, whatever the join decided: `tools/accuracy/change_control.py` against `refs/accuracy/green`, `tools/accuracy/wheel_diff.py diff` of the two wheels on the small corpus, and the self-measurement floor over the candidate's coverage. | A candidate suite failure, incomplete evidence from either revision, a refused measurement or a failing CRAP verdict; a golden, expected value or metric that moved without a declared change; a CLI entry point the candidate's lane never ran. |
 | `accuracy-push` | The calculation-accuracy push tier from the hash-locked `tools/accuracy/requirements-push.txt`: `python tools/accuracy/run.py --tier push -n 4`, every push check on Ubuntu and the `--os-sensitive` ones on Windows. See [docs/accuracy.md](docs/accuracy.md). | A value that departs from its oracle, hand table or model; a strict xfail that passes, which means its bug is fixed and its rulings row must say so. |
@@ -189,9 +191,10 @@ cancels the run it replaces; every push to main runs to the end.
 | `deploy-action` | `tools/deploy/consumer.py` builds a consumer beside the checkout, `uses: ./crapkit` scores it with gate "true" and delta "false" under a read-only pull-request token, and `tools/deploy/assert_action.py` checks the outcome, the log line and the comment. | An assertion about what the consumer sees. |
 | `deploy-action-log` | After `deploy-action`, `tools/deploy/assert_action.py --job deploy-action` reads that job's finished log through `gh api`: the gate line, and "no pull request on this event" on a push or the 403 from posting the comment on a pull request. | A line the log does not hold, or an action outcome other than failure. |
 
-`test` also runs one macOS job, Python 3.13 with both suites in it, for the
-letter-case rows. APFS opens `SRC/a.py` for a tracked `src/a.py` under POSIX
-path rules. Ubuntu's disk keeps the two names apart, so those rows skip there,
+`test` also runs one macOS job, Python 3.13 on a push and 3.11 on the nightly, with
+both suites in it, for the letter-case rows. APFS opens `SRC/a.py` for a tracked
+`src/a.py` under POSIX path rules. Ubuntu's disk keeps the two names apart, so
+those rows skip there,
 and Windows folds case alongside its own separator and drive rules. A case row
 that fails only on the macOS job reads a path's letter case as text somewhere.
 

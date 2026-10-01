@@ -1642,6 +1642,8 @@ steps at the top of this page, which re-seed once under the current reader.
 Each release passes two suites before it ships. [The accuracy suite](accuracy.md) checks
 every number crapkit computes against outside tools and hand tables, and [the deploy
 suite](../tools/deploy/README.md) installs crapkit through each channel and into each
-agent, fresh and as an upgrade from the releases before it. Hosted CI runs the source
-suite on Python 3.11, 3.12, 3.13 and 3.14 on Ubuntu and Windows, and on Python 3.13 on
-macOS for the letter-case rows.
+agent, fresh and as an upgrade from the releases before it. On every push, hosted CI
+runs the source suite on Python 3.11, 3.12, 3.13 and 3.14 on Ubuntu, on 3.11 and 3.14 on
+Windows, and on 3.13 on macOS for the letter-case rows. A nightly run at 04:41 UTC adds
+Windows on 3.12 and 3.13 and macOS on 3.11, a macOS Python without `os.waitid`; the
+schedule skips every job except the test matrix.

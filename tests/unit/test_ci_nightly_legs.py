@@ -11,6 +11,7 @@ which has os.waitid, so the path a Python without it takes, the one that
 crashed every lane on macOS in 0.8.0, never ran in CI.
 """
 from test_ci_parallel_jobs import matrix_rows, workflow
+from test_ci_verdict import ROOT
 
 WINDOWS = "windows-latest"
 MACOS = "macos-latest"
@@ -61,3 +62,30 @@ def test_the_schedule_runs_the_test_legs_and_no_job_that_judges_a_push():
 def test_a_leg_keeps_its_check_name_whatever_its_cadence():
     """Required checks match a job by name; a cadence in the name renames every leg."""
     assert workflow()["jobs"]["test"]["name"] == "test (${{ matrix.os }}, ${{ matrix.python }}, ${{ matrix.suite }})"
+
+
+def _nightly_time():
+    minute, hour = workflow()[True]["schedule"][0]["cron"].split()[:2]
+    return f"{int(hour):02d}:{int(minute):02d} UTC"
+
+
+def _section(text, start, end):
+    """From `start` to the next `end`, or to the end of the text."""
+    begin = text.index(start)
+    stop = text.find(end, begin + len(start))
+    return text[begin:stop if stop >= 0 else None]
+
+
+def test_the_docs_say_which_legs_run_only_nightly_and_what_the_schedule_skips():
+    """CONTRIBUTING.md and docs/upgrading.md said Windows ran 3.11 to 3.14 on
+    every push after the middle two had moved to the nightly."""
+    contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    upgrading = (ROOT / "docs/upgrading.md").read_text(encoding="utf-8")
+    row = _section(contributing, "| `test` |", "\n")
+    evidence = _section(upgrading, "## Release evidence", "\n#")
+    jobs = _section(contributing, "**In CI**", "\n\n")
+
+    for text in (row, evidence):
+        assert _nightly_time() in text and "3.12 and 3.13" in text and "macOS" in text
+        assert "3.11, 3.12, 3.13 and 3.14 on Ubuntu and Windows" not in text
+    assert "skips every job except `test`" in jobs
