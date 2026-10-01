@@ -197,3 +197,19 @@ def test_a_listed_remote_problem_passes_accuracy_gate_as_an_advisory_line(accura
     assert f"advisory (accuracy-remote): {line}" in capsys.readouterr().out
     with pytest.raises(release.ReleaseError, match="GitHub holds no successful accuracy.yml run"):
         release.accuracy_gate(root, VERSION, git(root, "rev-parse", "HEAD"))
+
+
+def test_stage_2b_names_every_gate_that_refuses_at_once():
+    """With both gates refusing, a release stopped on the accuracy refusal alone
+    hid the deploy one until the next attempt."""
+    def accuracy():
+        raise release.ReleaseError("accuracy: GitHub holds no successful accuracy.yml run")
+
+    def deploy():
+        raise release.ReleaseError("deploy: the release cadence run failed")
+
+    with pytest.raises(release.ReleaseError) as refused:
+        release._gate_outcomes((accuracy, deploy))
+
+    assert str(refused.value).splitlines() == ["accuracy: GitHub holds no successful accuracy.yml run",
+                                               "deploy: the release cadence run failed"]

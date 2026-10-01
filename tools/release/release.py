@@ -645,7 +645,7 @@ def _accuracy_step(version: str) -> Step:
         note="the release tier here (30 min), then accuracy.yml's release mode on the tag "
              "commit through a scratch branch (up to 90 min); a rerun reuses a passing receipt "
              "and a run already passed or running, and after a red one reruns only its failed "
-             "cells while every receipt artifact it uploaded is unexpired. Stage 2b rereads the "
+             "cells while every receipt artifact it uploaded outlives that watch. Stage 2b rereads the "
              "run from GitHub and rehashes the pins, corpus and retro ledger; it trusts neither "
              "report")
 
@@ -1214,33 +1214,58 @@ def _watch(run: dict, root: Path, version: str, watched: Watched = ACCURACY_WATC
 # 1), and xplat compares the receipts it downloads with one another: it passes on
 # one. `gh run rerun --failed` keeps the green cells and their receipts, so after a
 # green cell's receipt expired a rerun's xplat would check the rerun cells against
-# nothing. The stage reruns a red run only while every receipt it uploaded is
-# unexpired; otherwise it dispatches a new run.
+# nothing. The stage reruns a red run only while every receipt it uploaded stays
+# unexpired past the rerun's watch, since xplat downloads them only after the
+# rerun cells finish; otherwise it dispatches a new run.
 ACCURACY_RECEIPT_ARTIFACT = "receipt-"
+
+
+def _artifact_list(run: dict) -> list | None:
+    """GitHub's artifact list for the run, or None when GitHub cannot answer it
+    (an HTTP or network error, or a body with no list)."""
+    url = f"{GITHUB_API}repos/{REPO_SLUG}/actions/runs/{run.get('id')}/artifacts?per_page=100"
+    try:
+        artifacts = _remote_json(url).get("artifacts")
+    except ReleaseError as exc:
+        print(exc)
+        return None
+    return artifacts if isinstance(artifacts, list) else None
 
 
 def _receipt_artifacts(run: dict) -> list | None:
     """The receipt artifacts the run uploaded, or None when GitHub's list is unreadable."""
-    url = f"{GITHUB_API}repos/{REPO_SLUG}/actions/runs/{run.get('id')}/artifacts?per_page=100"
-    artifacts = _remote_json(url).get("artifacts")
-    if not isinstance(artifacts, list):
+    artifacts = _artifact_list(run)
+    if artifacts is None:
         return None
     return [item for item in artifacts if isinstance(item, dict)
             and str(item.get("name", "")).startswith(ACCURACY_RECEIPT_ARTIFACT)]
 
 
+def _outlives_the_watch(item: dict) -> bool:
+    """Whether a receipt artifact is unexpired and stays so until a rerun's
+    watch ends: xplat downloads the receipts only after the rerun cells finish.
+    An expiry GitHub does not state reads as too soon."""
+    try:
+        expires = datetime.datetime.fromisoformat(str(item.get("expires_at")).replace("Z", "+00:00"))
+        left = expires - datetime.datetime.now(datetime.timezone.utc)
+    except (ValueError, TypeError):
+        return False
+    return item.get("expired") is False and left > datetime.timedelta(seconds=ACCURACY_WATCH_SECONDS)
+
+
 def _receipts_live(run: dict) -> bool:
     receipts = _receipt_artifacts(run)
-    return receipts is not None and all(item.get("expired") is False for item in receipts)
+    return receipts is not None and all(_outlives_the_watch(item) for item in receipts)
 
 
 def _live_red(runs: list) -> dict | None:
-    """The newest red release run at the tag commit, while every receipt it kept is live."""
+    """The newest red release run at the tag commit, while every receipt it kept
+    outlives a rerun's watch."""
     red = _newest_red(runs)
     if red is None or _receipts_live(red):
         return red
-    print(f"{_run_label(red)} holds a receipt artifact that expired or cannot be read; "
-          "dispatching a new run")
+    print(f"{_run_label(red)} holds a receipt artifact that expired, expires within the "
+          f"{ACCURACY_WATCH_SECONDS // 60}-minute watch or cannot be read; dispatching a new run")
     return None
 
 

@@ -13,6 +13,7 @@ objects keep the fields of a real response from
 `GET repos/JeanFrancoisGagne/crapkit/actions/workflows/ci.yml/runs?per_page=1`
 (2026-09-25); `display_title` is where the API reports a run-name.
 """
+import datetime
 import hashlib
 import json
 import subprocess
@@ -433,20 +434,27 @@ def test_a_failing_local_tier_names_its_rows_and_never_dispatches(tree, stage, m
 # nothing, so the stage reruns only while every receipt the run uploaded is
 # unexpired, and otherwise dispatches a new run.
 
-def _artifact(name, expired=False) -> dict:
-    """One entry of GET repos/OWNER/REPO/actions/runs/ID/artifacts."""
+def _stamp(minutes_from_now: float) -> str:
+    moment = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=minutes_from_now)
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _artifact(name, expired=False, expires_at=None) -> dict:
+    """One entry of GET repos/OWNER/REPO/actions/runs/ID/artifacts: uploaded
+    an hour ago with retention-days 1, unless `expires_at` says otherwise."""
     return {"id": 4200000001, "name": name, "size_in_bytes": 2048, "expired": expired,
-            "created_at": "2026-10-01T10:15:08Z", "expires_at": "2026-10-02T10:15:08Z"}
+            "created_at": _stamp(-60), "expires_at": expires_at or _stamp(23 * 60)}
 
 
 RECEIPTS = ["receipt-linux-3.12-analysis", "receipt-linux-3.12-corpus", "receipt-windows-3.11",
             "receipt-windows-3.13", "receipt-macos-3.12-corpus"]
 
 
-def _artifacts(run_id=7, expired=(), others=()) -> dict:
+def _artifacts(run_id=7, expired=(), others=(), expires=None) -> dict:
     names = [*RECEIPTS, *others]
+    expires = expires or {}
     return {str(run_id): {"total_count": len(names),
-                          "artifacts": [_artifact(name, name in expired) for name in names]}}
+                          "artifacts": [_artifact(name, name in expired, expires.get(name)) for name in names]}}
 
 
 def test_a_red_run_with_every_receipt_live_reruns_only_its_failed_cells(tree, stage):
@@ -478,6 +486,51 @@ def test_a_red_run_whose_receipt_expired_dispatches_anew(tree, stage, expired, c
 
     assert _names(fake) == ["git push -q", "gh workflow run", "git push -q"] and fake.watched == ["99"]
     assert "receipt" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("expires_at", [_stamp(10), _stamp(release.ACCURACY_WATCH_SECONDS / 60 - 1), "soon", None],
+                         ids=["in-10-min", "inside-the-watch", "unreadable", "missing"])
+def test_a_red_run_whose_receipt_expires_before_the_rerun_ends_dispatches_anew(tree, stage, expires_at, capsys):
+    """xplat downloads the receipts only after the rerun cells finish, up to the
+    90-minute watch later. A receipt live when the rerun starts but gone by then
+    leaves xplat fewer receipts to compare, and it passes on one."""
+    listing = _artifacts(expires={"receipt-windows-3.11": expires_at})
+    if expires_at is None:
+        del listing["7"]["artifacts"][2]["expires_at"]
+    fake = stage([_run(conclusion="failure", id=7)], artifacts=listing)
+
+    _accuracy(tree)
+
+    assert _names(fake) == ["git push -q", "gh workflow run", "git push -q"] and fake.watched == ["99"]
+    assert "receipt" in capsys.readouterr().out
+
+
+def test_a_red_run_whose_receipts_outlive_the_watch_reruns(tree, stage):
+    fake = stage([_run(conclusion="failure", id=7)],
+                 artifacts=_artifacts(expires={"receipt-windows-3.11": _stamp(release.ACCURACY_WATCH_SECONDS / 60 + 5)}))
+
+    _accuracy(tree)
+
+    assert "gh run rerun" in _names(fake) and "gh workflow run" not in _names(fake)
+
+
+def test_an_artifact_list_github_answers_with_an_error_dispatches_anew(tree, stage, monkeypatch, capsys):
+    """_remote_json raises on an HTTP or network error; the README and be47b39c
+    promise a new dispatch for a list GitHub cannot answer, not a stopped stage."""
+    fake = stage([_run(conclusion="failure", id=7)], artifacts=_artifacts())
+    listed = fake.remote_json
+
+    def bad_gateway(url, *, absent=False):
+        if "/artifacts" in url:
+            raise release.ReleaseError(f"cannot confirm {url}: HTTP Error 502: Bad Gateway")
+        return listed(url, absent=absent)
+
+    monkeypatch.setattr(release, "_remote_json", bad_gateway)
+
+    _accuracy(tree)
+
+    assert "gh run rerun" not in _names(fake) and fake.watched == ["99"]
+    assert "502" in capsys.readouterr().out
 
 
 def test_an_expired_artifact_that_is_no_receipt_does_not_block_the_rerun(tree, stage):

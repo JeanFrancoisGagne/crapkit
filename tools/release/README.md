@@ -97,11 +97,14 @@ A rerun reuses a receipt that still passes and a run that passed or is still run
 so it dispatches nothing new after a timeout. After a red or cancelled release run at
 the tag commit it runs `gh run rerun ID --failed` and watches that run again, so one
 red cell no longer redispatches all 14 jobs. It does so only while every `receipt-*`
-artifact the run uploaded is unexpired (`gh api repos/OWNER/REPO/actions/runs/ID/artifacts`):
-the receipts keep for one day, and xplat compares the receipts it downloads with one
-another and passes on a single one, so past that day a rerun's xplat would check the
-rerun cells against nothing. An expired receipt, an artifact list GitHub cannot
-answer, or a rerun gh refuses gets a new dispatch instead.
+artifact the run uploaded stays unexpired for longer than the 90-minute watch
+(`expired` and `expires_at` in `gh api repos/OWNER/REPO/actions/runs/ID/artifacts`):
+the receipts keep for one day, xplat downloads them only after the rerun cells finish,
+and it compares the receipts it downloads with one another and passes on a single
+one, so a receipt gone by then would leave the rerun cells checked against nothing.
+A receipt that expired or expires within the watch, an artifact list GitHub cannot
+answer (an HTTP or network error, or a body with no list), or a rerun gh refuses gets
+a new dispatch instead.
 
 Stage 2b and the registry stage believe neither report. Before each publication they
 read accuracy.yml's runs at the tag commit from GitHub and require one named
