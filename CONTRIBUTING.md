@@ -172,8 +172,7 @@ accuracy push tier.
 
 **In CI** (`.github/workflows/ci.yml`), thirteen jobs. A newer push to a pull request
 cancels the run it replaces; every push to main runs to the end. The nightly schedule
-skips every job except `test`, since it has no pushed change to judge; `deploy-action-log`
-starts there and skips each of its steps.
+skips every job except `test`, since it has no pushed change to judge.
 
 | Job | Runs | What fails the job |
 |---|---|---|

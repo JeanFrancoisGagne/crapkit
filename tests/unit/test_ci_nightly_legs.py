@@ -41,13 +41,13 @@ def test_the_schedule_runs_the_test_legs_and_no_job_that_judges_a_push():
     """verdict-measure and dogfood read the event's base commit, which a
     schedule does not have, and the other jobs judge a change a push made.
     deploy-action and its log job ran every night until they skipped too:
-    about 15 machine-min a night with no change to judge. The log job keeps
-    its job-level always(), so its steps carry the skip."""
+    about 15 machine-min a night with no change to judge. Each skips at job
+    level, so no runner boots to skip its steps: the log job once kept a bare
+    always() and booted a runner every night to skip its three steps."""
     found = workflow()
     jobs = found["jobs"]
-    skipped = {name for name, job in jobs.items() if job.get("if") == SKIPS_SCHEDULE}
-    skipped |= {name for name, job in jobs.items()
-                if all(item.get("if") == SKIPS_SCHEDULE for item in job["steps"])}
+    skipped = {name for name, job in jobs.items()
+               if SKIPS_SCHEDULE in [part.strip() for part in job.get("if", "").split("&&")]}
     skipped |= {name for name, job in jobs.items() if "github.event_name == 'push'" in job.get("if", "")}
     for name, job in jobs.items():
         needs = job.get("needs", [])

@@ -768,7 +768,8 @@ def test_the_action_log_job_reads_deploy_action_s_finished_log():
     job = CI["jobs"]["deploy-action-log"]
     check = step_named(CI, "deploy-action-log", "assert what deploy-action's log shows")
 
-    assert (job["needs"], job["if"], job["runs-on"]) == ("deploy-action", "always()", PINS["runners"]["linux"])
+    assert (job["needs"], job["if"], job["runs-on"]) == (
+        "deploy-action", "always() && github.event_name != 'schedule'", PINS["runners"]["linux"])
     assert job["permissions"] == {"contents": "read", "actions": "read"}
     assert CI["jobs"]["deploy-action"]["outputs"] == {"outcome": "${{ steps.action.outcome }}"}
     assert "--job deploy-action" in check["run"] and "needs.deploy-action.outputs.outcome" in check["run"]
