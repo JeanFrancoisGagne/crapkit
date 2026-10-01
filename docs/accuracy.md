@@ -370,9 +370,11 @@ The env key covers what the replay ran on and what judges it: the OS, the image
 tag (`run.py image-tag`, a hash of the image inputs and both locks), the hosted
 runner's `ImageOS` and `ImageVersion` (outside a runner on Windows, the Windows
 build), LIZARD, RUNNER, the venv and check Pythons, the git, node and pwsh
-versions, `CRAPKIT_ACCURACY_TIER`, and the sha256 of `tools/accuracy/retro.py`
+versions, `CRAPKIT_ACCURACY_TIER`, the sha256 of `tools/accuracy/retro.py`
 and of pyproject.toml's `[tool.pytest.ini_options]` table as parsed (a comment
-there moves nothing). A push-tier verdict never answers for the release tier,
+there moves nothing), uv's version and the patch release of a venv uv makes
+(`--python` another minor), and on Windows the ANSI and console code pages and
+whether `py` resolves on PATH, which R16, R150 and R179 test. A push-tier verdict never answers for the release tier,
 since the tier sizes Hypothesis.
 
 Each night accuracy.yml judges every public row: the `retro` job in the Linux

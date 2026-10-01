@@ -59,8 +59,9 @@ Every replay keeps its verdict in CRAPKIT_RETRO_VERDICTS under an env key: the
 OS, the image tag (run.py's hash of the image inputs and locks), the hosted
 runner's ImageOS and ImageVersion (on Windows outside a runner, the Windows
 build), LIZARD, RUNNER, the venv and check Pythons, the git, node and pwsh
-versions, the accuracy tier, and the sha256 of this tool and of pyproject.toml's
-pytest table. The row digest adds the conftest.py files pytest loads for the
+versions, the accuracy tier, the sha256 of this tool and of pyproject.toml's
+pytest table, uv's version and the patch release of a venv uv makes, and on
+Windows the code pages and whether `py` resolves on PATH. The row digest adds the conftest.py files pytest loads for the
 check, which judge only the rows under them. Only a verdict that agrees with
 the ledger is kept, so a red replays again on the next run. `nightly` and
 `release` judge a row by the verdict kept for its row digest and this env key
@@ -802,6 +803,41 @@ def _conftest_digest(test: str) -> str:
     return hashed.hexdigest()
 
 
+VERSION_CODE = "import platform; print(platform.python_version())"
+
+
+def _uv_python(python: str) -> str:
+    """The interpreter uv makes a venv of another minor from, or "" for this
+    interpreter's minor, which the standard library makes, or with no uv."""
+    uv = shutil.which("uv") if python != CURRENT else None
+    if uv is None:
+        return ""
+    found = _run([uv, "python", "find", python])
+    return found.stdout.strip() if found.returncode == 0 else ""
+
+
+def _venv_patch(python: str) -> str:
+    """The patch release of a uv-made venv's Python; checks_python names the other."""
+    interpreter = _uv_python(python)
+    return _run([interpreter, "-c", VERSION_CODE]).stdout.strip() if interpreter else ""
+
+
+def _code_pages() -> str:
+    """The ANSI code page Python's locale encoding reads, and the console's input
+    and output pages (0 with no console)."""
+    import ctypes
+    kernel32 = ctypes.windll.kernel32
+    return f"ansi {kernel32.GetACP()} console {kernel32.GetConsoleCP()}/{kernel32.GetConsoleOutputCP()}"
+
+
+def _windows_parts() -> dict:
+    """What a Windows row reads from the machine past its image: R16 and R150 read
+    text under cp1252, and R179 asks whether `py` resolves."""
+    if not WINDOWS:
+        return {}
+    return {"code_pages": _code_pages(), "py_launcher": shutil.which("py") is not None}
+
+
 def env_parts(python: str) -> dict:
     """Everything a verdict depends on past the row itself. The tier is one: it
     sizes Hypothesis (200 examples at push, 5,000 at release), so a push verdict
@@ -811,7 +847,8 @@ def env_parts(python: str) -> dict:
     return {"os": sys.platform, "image": _image_tag(), "host": _host(), "lizard": LIZARD,
             "runner": list(RUNNER), "python": python, "checks_python": platform.python_version(),
             "git": _tool_version("git"), "node": _tool_version("node"), "pwsh": _tool_version("pwsh"),
-            "tier": tiers.current_tier(), "harness": harness_parts()}
+            "tier": tiers.current_tier(), "harness": harness_parts(), "uv": _tool_version("uv"),
+            "venv_python": _venv_patch(python), **_windows_parts()}
 
 
 def env_key(python: str) -> str:

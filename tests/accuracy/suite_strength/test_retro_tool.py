@@ -975,19 +975,119 @@ def test_the_env_key_names_the_os_python_and_tier_and_hashes_every_part(tables):
     assert retro.env_key("3.12") == f"{sys.platform}-3.12-push-{hashlib.sha256(blob).hexdigest()[:12]}"
 
 
+def _windows_machine(monkeypatch, machine: dict) -> None:
+    """A Windows host as retro reads it: kernel32's code pages, what resolves on
+    PATH, and `uv python find` and the interpreter it names."""
+    monkeypatch.setattr(retro, "WINDOWS", True)
+    kernel32 = SimpleNamespace(GetACP=lambda: machine["ansi"], GetConsoleCP=lambda: machine["console"],
+                               GetConsoleOutputCP=lambda: machine["console"])
+    monkeypatch.setitem(sys.modules, "ctypes", SimpleNamespace(windll=SimpleNamespace(kernel32=kernel32)))
+    monkeypatch.setattr(retro.shutil, "which",
+                        lambda name: f"C:/bin/{name}.exe" if name in machine["on_path"] else None)
+
+    def run(argv, cwd=None, env=None):
+        found = argv[1:3] == ["python", "find"]
+        said = f"C:/uv/cpython-{machine['patch']}/python.exe" if found else machine["patch"]
+        return SimpleNamespace(returncode=0, stdout=said + "\n", stderr="")
+
+    monkeypatch.setattr(retro, "_run", run)
+
+
+def _machine() -> dict:
+    return {"ansi": 1252, "console": 437, "on_path": {"uv", "py"}, "patch": "3.12.10"}
+
+
 @pytest.mark.parametrize("windows", [True, False])
 def test_the_env_parts_are_every_input_a_verdict_depends_on_past_the_row(tables, monkeypatch, windows):
+    _windows_machine(monkeypatch, _machine())
     monkeypatch.setattr(retro, "WINDOWS", windows)
     host = platform.platform() if windows else ""
+    on_windows = {"code_pages": "ansi 1252 console 437/437", "py_launcher": True} if windows else {}
 
     assert retro.env_parts("3.12") == {
         "os": sys.platform, "image": "0a1b2c3d4e5f", "host": host, "lizard": retro.LIZARD,
         "runner": list(retro.RUNNER), "python": "3.12", "checks_python": platform.python_version(),
         "git": "git version 1", "node": "node version 1", "pwsh": "pwsh version 1", "tier": "push",
-        "harness": retro.harness_parts()}
+        "harness": retro.harness_parts(), "uv": "uv version 1",
+        "venv_python": "" if retro.CURRENT == "3.12" else "3.12.10", **on_windows}
     monkeypatch.setenv("ImageOS", "win22")
     monkeypatch.setenv("ImageVersion", "20260928.1")
     assert retro.env_parts("3.12")["host"] == "win22 20260928.1"
+
+
+def _uv_moves(machine, monkeypatch):
+    monkeypatch.setattr(retro, "_tool_version", lambda name: "uv 0.13.0" if name == "uv" else f"{name} version 1")
+
+
+def _ansi_page_moves(machine, monkeypatch):
+    machine["ansi"] = 65001
+
+
+def _console_page_moves(machine, monkeypatch):
+    machine["console"] = 1252
+
+
+def _py_leaves_path(machine, monkeypatch):
+    machine["on_path"].discard("py")
+
+
+def _venv_patch_moves(machine, monkeypatch):
+    machine["patch"] = "3.12.11"
+
+
+@pytest.mark.parametrize("move", [_uv_moves, _ansi_page_moves, _console_page_moves, _py_leaves_path,
+                                  _venv_patch_moves])
+def test_a_moved_windows_input_replays_every_row(tables, monkeypatch, move):
+    """R16 and R150 read text under cp1252, R179 asks whether `py` resolves, and uv
+    picks the patch release a venv of another minor is made from: a verdict kept
+    under one of these never answers for another."""
+    machine = _machine()
+    _windows_machine(monkeypatch, machine)
+    tables.write([_bug_row("R1"), _bug_row("R2")], [_ledger_row("R1"), _ledger_row("R2")])
+    assert retro.main(["--python", "3.98", "nightly"]) == 0
+    tables.replayed.clear()
+    assert retro.main(["--python", "3.98", "nightly"]) == 0
+    assert tables.replayed == []
+
+    move(machine, monkeypatch)
+
+    assert retro.main(["--python", "3.98", "nightly"]) == 0
+    assert sorted(tables.replayed) == ["R1", "R2"]
+
+
+def test_this_interpreter_s_venv_names_no_uv_patch_and_starts_nothing(monkeypatch):
+    """The standard library makes that venv from this Python, which checks_python names."""
+    monkeypatch.setattr(retro, "_run", lambda *args, **kwargs: pytest.fail("started a process"))
+
+    assert retro._venv_patch(retro.CURRENT) == ""
+
+
+@pytest.mark.parametrize("on_path, found, expected", [
+    ({"uv"}, 0, "3.12.10"), (set(), 0, ""), ({"uv"}, 2, ""),
+])
+def test_a_uv_venv_s_patch_is_what_the_interpreter_uv_finds_says(monkeypatch, on_path, found, expected):
+    asked = []
+    monkeypatch.setattr(retro.shutil, "which", lambda name: f"/bin/{name}" if name in on_path else None)
+
+    def run(argv, cwd=None, env=None):
+        asked.append(argv)
+        code = found if argv[1:3] == ["python", "find"] else 0
+        return SimpleNamespace(returncode=code, stdout="/uv/python3.12\n" if len(asked) == 1 else "3.12.10\n",
+                               stderr="")
+
+    monkeypatch.setattr(retro, "_run", run)
+
+    assert retro._venv_patch("3.98") == expected
+    assert asked[:1] == ([["/bin/uv", "python", "find", "3.98"]] if on_path else [])
+
+
+@pytest.mark.platform("win32")  # kernel32 answers on Windows only
+def test_the_ansi_code_page_is_the_one_python_s_locale_encoding_names():
+    import codecs
+    import locale
+    ansi = int(retro._code_pages().split()[1])
+
+    assert codecs.lookup(f"cp{ansi}").name == codecs.lookup(locale.getencoding()).name
 
 
 def test_the_image_tag_in_the_env_key_is_the_one_run_py_names():
