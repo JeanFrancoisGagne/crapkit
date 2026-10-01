@@ -153,14 +153,14 @@ already public, because nothing checked the machine first.
 pushes anything. Besides the version surfaces, the changelog heading and the size of
 that section, it reads the two rows marked `check` below, and it asks whether `gh` is on
 PATH and hands out a token (the deploy stage's two lines above). Confirm the three rows
-marked `you` yourself: `check` never looks at the PATH `python`, at what gh's login may
-reach or at the accuracy corpus.
+marked `you` yourself: `check` never looks at which python launched it, at what gh's
+login may reach or at the accuracy corpus.
 Each takes seconds. A missing credential or gh login shows up only after the push;
-a wrong PATH python or a missing build or twine stops the release before it.
+a python outside the release venv or a missing build or twine stops the release before it.
 
 | Check | Checked by | Command | Why it bites |
 | --- | --- | --- | --- |
-| The release venv is ACTIVATED | you | `which python` names this repository's `.venv` | The py lane in `crapkit.toml` runs a bare `python`, taken from PATH, not the interpreter that launched this script. Launching by absolute path is not enough. A PATH `python` without the dev extra fails the verify stage: nothing is pushed, and the release waits for a rerun. |
+| The release venv's python runs release.py | you | `.venv/bin/python tools/release/release.py ...` (`.venv\Scripts\python.exe` on Windows) | release.py starts every command with that interpreter's scripts directory first on PATH, so the py lane's bare `python` and a bare `crapkit` are the venv's. 0.8.1's stage 2a failed without it: the contract tests ran the `crapkit` that `<venv python> -m crapkit` hints stand for, and PATH did not reach the venv's. Another python without the dev extra fails the verify stage: nothing is pushed, and the release waits for a rerun. |
 | The release interpreter imports build and twine | `check` | `python -c "import build, twine"` | Stage 2b runs `python -m build` and `python -m twine` through the interpreter that launched this script, and it builds before the push. |
 | PyPI credentials reach Twine | `check` | `TWINE_USERNAME` and `TWINE_PASSWORD` are set, or the token is in keyring | Twine 7 skips the named `.pypirc` entry whenever `--repository-url` is passed, and that flag is a fixed anti-redirect control. A `.pypirc` alone authenticates nothing. |
 | `gh` is authenticated | you | `gh auth status` | Publishing uses `gh`, and every readback now sends the same credential. GitHub's Pages API answers 404, not 403, to an anonymous reader. |
@@ -181,8 +181,8 @@ python -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]" build twine
 ```
 
-On Windows use `.venv\Scripts\python.exe`, and activate the venv in the shell that
-runs the release so PATH resolves `python` to it.
+On Windows use `.venv\Scripts\python.exe`. Activating the venv is not needed: release.py
+puts the venv's scripts directory first on PATH for every command it starts.
 
 ## Expect a rerun after each publication
 

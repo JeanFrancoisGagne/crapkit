@@ -35,6 +35,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import sysconfig
 import time
 import urllib.error
 import urllib.parse
@@ -368,7 +369,8 @@ def _read_gh_token() -> str:
     if tool is None:
         return ""
     try:
-        done = subprocess.run((tool, "auth", "token"), capture_output=True, text=True, timeout=20)
+        done = subprocess.run((tool, "auth", "token"), capture_output=True, text=True, timeout=20,
+                              env=_child_env())
     except (OSError, subprocess.SubprocessError):
         return ""
     return done.stdout.strip() if done.returncode == 0 else ""
@@ -421,7 +423,7 @@ def _gh_release(root: Path, version: str) -> str:
     try:
         done = subprocess.run(["gh", "release", "view", f"v{version}", "--repo", GITHUB_REPO,
                                "--json", "url", "--jq", ".url"],
-                              cwd=root, capture_output=True, text=True)
+                              cwd=root, capture_output=True, text=True, env=_child_env())
     except OSError as exc:
         raise ReleaseError(f"cannot run gh: {exc}") from exc
     if done.returncode and "release not found" not in done.stderr:
@@ -690,7 +692,7 @@ def plan(version: str) -> list:
 # --- run one stage -------------------------------------------------------------------
 
 def _git(root: Path, *arguments: str) -> str:
-    done = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True)
+    done = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True, env=_child_env())
     if done.returncode:
         raise ReleaseError(done.stderr.strip() or f"git {' '.join(arguments)} failed")
     return done.stdout.strip()
@@ -729,7 +731,7 @@ def _guard_bump(root: Path, version: str) -> dict:
     head = _clean_main(root)
     remote = _git(root, "ls-remote", "--exit-code", "origin", "refs/heads/main")
     included = subprocess.run(["git", "merge-base", "--is-ancestor", remote.split()[0], head],
-                              cwd=root, capture_output=True)
+                              cwd=root, capture_output=True, env=_child_env())
     if included.returncode:
         raise ReleaseError("local main must include current origin/main before release preparation")
     report = check(root, version)
@@ -1092,7 +1094,7 @@ def _watch(run: dict, root: Path, version: str, watched: Watched = ACCURACY_WATC
     page = f"https://{GITHUB_REPO}/actions/runs/{run['id']}"
     rerun = _rerun(version, watched.stage)
     try:
-        done = subprocess.run(argv, cwd=root, timeout=watched.seconds)
+        done = subprocess.run(argv, cwd=root, timeout=watched.seconds, env=_child_env())
     except subprocess.TimeoutExpired as exc:
         raise ReleaseError(f"{page} still runs after {watched.seconds // 60} minutes; {rerun} to "
                            "keep waiting on it, which dispatches nothing new") from exc
@@ -1349,13 +1351,31 @@ def _check_artifacts(artifacts: list[Path]) -> None:
         raise ReleaseError("release artifacts must be regular files inside release-dist")
 
 
+def _child_env() -> dict:
+    """The environment every command release.py starts runs in: this one, with
+    this interpreter's scripts directory (the release venv's Scripts on Windows,
+    bin elsewhere) first on PATH. Launching the venv's python by absolute path
+    does not put the venv on PATH, so in 0.8.1's stage 2a the contract tests ran
+    the bare `crapkit` that crapkit's `<venv python> -m crapkit` hints stand for,
+    and it was not the venv's."""
+    scripts = sysconfig.get_path("scripts")
+    rest = [entry for entry in os.environ.get("PATH", "").split(os.pathsep)
+            if entry and not _same_directory(entry, scripts)]
+    return {**os.environ, "PATH": os.pathsep.join([scripts, *rest])}
+
+
+def _same_directory(left: str, right: str) -> bool:
+    return os.path.normcase(os.path.normpath(left)) == os.path.normcase(os.path.normpath(right))
+
+
 def _executable(name: str) -> str:
     """Windows `CreateProcess` searches PATH but appends only `.exe`, so a bare
     `claude` never resolved the npm `claude.CMD` shim and the plugin step died
     with WinError 2 once PyPI and the GitHub release were already public.
-    `shutil.which` honours PATHEXT. An unresolved name passes through, so the
+    `shutil.which` honours PATHEXT, and it searches the child's PATH, so the
+    release venv's tools come first. An unresolved name passes through, so the
     failure still names the command that is missing."""
-    return shutil.which(name) or name
+    return shutil.which(name, path=_child_env()["PATH"]) or name
 
 
 def _arguments(command: tuple, root: Path) -> list[str]:
@@ -1683,7 +1703,7 @@ def _execute(command: tuple, root: Path, dry_run: bool) -> None:
     print(f"$ {subprocess.list2cmdline(command)}")
     if dry_run:
         return
-    subprocess.run(_arguments(command, root), cwd=root, check=True)
+    subprocess.run(_arguments(command, root), cwd=root, check=True, env=_child_env())
 
 
 def _stage1_files(root: Path) -> None:
@@ -1711,7 +1731,8 @@ def _run_or_untag(step: Step, root: Path, version: str, dry_run: bool,
         _run_step(step, root, dry_run)
     except subprocess.CalledProcessError as exc:
         if step.name == "contracts":
-            subprocess.run(["git", "update-ref", "-d", f"refs/tags/v{version}", head], cwd=root)
+            subprocess.run(["git", "update-ref", "-d", f"refs/tags/v{version}", head], cwd=root,
+                           env=_child_env())
         raise ReleaseError(f"{step.name} failed: {exc}") from exc
 
 
