@@ -1,0 +1,5 @@
+old_commit	new_commit	reason
+0a3100caf908	06e2ca610351	the 2026-10-01 history rewrite gave this commit a new name; both hold tree cca7930f72ee
+8b9ffcce3603	193733722935	the 2026-10-01 history rewrite gave this commit a new name; both hold tree fe8f4be15f84
+6977cd85d70a	e775f0fb88ce	the 2026-10-01 history rewrite gave this commit a new name; both hold tree 3a5728f06753
+1a6dbe388314	a21ad1d30555	the 2026-10-01 history rewrite gave this commit a new name; both hold tree 21b3999e0e07

@@ -88,6 +88,30 @@ def test_an_open_bug_s_rows_follow_its_fix_when_it_lands():
     assert "B2" in pure_rules(LANDED_BUG, _open_bug_tree("", "", ""))
 
 
+REWRITTEN = "tests/accuracy/suite_strength/retro/rewritten.tsv"
+REWRITTEN_HEADER = "old_commit\tnew_commit\treason\n"
+
+
+def _rewritten(*pairs: tuple[str, str]) -> str:
+    return REWRITTEN_HEADER + "".join(f"{old}\t{new}\tsame tree\n" for old, new in pairs)
+
+
+def test_a_row_names_the_twin_rewritten_tsv_declares_for_a_rewritten_commit():
+    """A history rewrite gives a commit a new name, and a row that names the old one
+    replays from no clone of main. rewritten.tsv declares each old name's twin, and a
+    row may swap an old name for its twin and nothing else; the declarations only
+    grow."""
+    twin = {**LANDED_BUG, seeds.BUGS: LANDED_BUG[seeds.BUGS].replace("2222222", "4444444"),
+            REWRITTEN: _rewritten(("2222222", "4444444"))}
+    other_cell = {**twin, seeds.BUGS: twin[seeds.BUGS].replace("public", "bundle", 1)}
+
+    assert "B2" not in pure_rules(LANDED_BUG, twin)
+    assert "B2" in pure_rules(LANDED_BUG, {**twin, REWRITTEN: _rewritten()})
+    assert "B2" in pure_rules(LANDED_BUG, {**twin, REWRITTEN: _rewritten(("2222222", "5555555"))})
+    assert "B2" in pure_rules(LANDED_BUG, other_cell)
+    assert "B2" in pure_rules(twin, {**twin, REWRITTEN: _rewritten()})
+
+
 # --- the scenarios -------------------------------------------------------------------------
 
 def _edited_metric_row(tree):

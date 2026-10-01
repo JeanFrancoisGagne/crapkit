@@ -58,7 +58,8 @@ before it only the in-tree rules do, since no change can be declared yet.
   ledger.tsv is still there (a replay re-records its own row), and no rulings id
   is gone. A bug the base's bugs.tsv marks `open` waits on a fix off main, which
   lands as other commits, so its rows may change or go as long as it keeps a
-  bugs.tsv row.
+  bugs.tsv row. A history rewrite renames commits: a row may swap a commit for
+  the twin retro/rewritten.tsv declares for it, and change nothing else.
 - B3 no floor drops, no floor key is gone, each added survivor gives its reason
   and each added equivalent its evidence. Added ones are printed.
 - B4 no packet's test function count drops.
@@ -183,8 +184,9 @@ RETRO = "tests/accuracy/*/retro.tsv"
 CALCS = "tests/accuracy/*/calcs.tsv"
 BUGS = "tests/accuracy/suite_strength/retro/bugs.tsv"
 LEDGER = "tests/accuracy/suite_strength/retro/ledger.tsv"
+REWRITTEN = "tests/accuracy/suite_strength/retro/rewritten.tsv"
 GROWING = (CHANGES, SEED_CHANGES, BUGS, LEDGER,
-           "tests/accuracy/suite_strength/retro/triage.tsv", RETRO)
+           "tests/accuracy/suite_strength/retro/triage.tsv", RETRO, REWRITTEN)
 FLOORS = "tests/accuracy/**/floors.tsv"
 # Each mutation table, the column an added row must fill and how: a survivor says
 # why no test kills it, an equivalent carries mutation.py's 10,000-example line.
@@ -1355,6 +1357,25 @@ def _kept(path: str, rows_: list[str]) -> list[str]:
     return ["\t".join(row.split("\t")[:2]) for row in rows_]
 
 
+def _rewrites(tree) -> dict[str, str]:
+    """{old commit: its twin}: the commits a history rewrite renamed, from rewritten.tsv."""
+    return {row["old_commit"]: row["new_commit"] for row in rows(tree.read(REWRITTEN))}
+
+
+def _renamed(row: str, twins: dict[str, str]) -> str:
+    """The row with each commit in its cells, a cell being a comma list, named by its twin."""
+    return "	".join(",".join(twins.get(name, name) for name in cell.split(","))
+                     for cell in row.split("	"))
+
+
+def _named_by_twins(path: str, old: list[str], twins: dict[str, str]) -> list[str]:
+    """The base's rows with each renamed commit named by its twin; rewritten.tsv's own
+    rows keep the old names they declare."""
+    if path == REWRITTEN:
+        return old
+    return old[:1] + [_renamed(row, twins) for row in old[1:]]
+
+
 def _lost_rows(path: str, old: list[str], new: list[str]) -> Problem | None:
     lost = Counter(_kept(path, old[1:])) - Counter(_kept(path, new[1:]))
     if new[:1] != old[:1]:
@@ -1398,10 +1419,14 @@ def _unrowed(diff: Diff, landing: set[str]) -> list[Problem]:
             for bug in sorted(landing - kept)]
 
 
+def _held(diff: Diff, path: str, landing: set[str], twins: dict[str, str]) -> list[str]:
+    """The base's rows of `path` that B2 holds, naming commits as the head names them."""
+    return _named_by_twins(path, _settled(lines(diff.base.read(path)), landing), twins)
+
+
 def rule_b2(diff: Diff) -> list[Problem]:
-    landing = _open_bugs(diff)
-    found = [_lost_rows(path, _settled(lines(diff.base.read(path)), landing),
-                        lines(diff.head.read(path)))
+    landing, twins = _open_bugs(diff), _rewrites(diff.head)
+    found = [_lost_rows(path, _held(diff, path, landing, twins), lines(diff.head.read(path)))
              for path in _changed_matching(diff, GROWING)]
     return list(filter(None, found)) + _gone_rulings(diff) + _unrowed(diff, landing)
 
