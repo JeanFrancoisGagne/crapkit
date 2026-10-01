@@ -83,6 +83,7 @@ import argparse
 import ast
 from dataclasses import asdict, dataclass, replace
 import datetime
+from functools import lru_cache
 import hashlib
 import importlib.util
 import json
@@ -793,12 +794,33 @@ def _within(folder: Path, rootdir: Path) -> bool:
     return folder == rootdir or rootdir in folder.parents
 
 
+def _repo_name(path: Path) -> str:
+    root = REPO.resolve()
+    return path.relative_to(root).as_posix() if root in path.parents else path.as_posix()
+
+
+def conftest_files(test: str) -> list[Path]:
+    """The conftest.py files pytest loads for the check and every module under
+    tests/ and tools/ they import: their hooks judge each replay too (kit/guards.py
+    rules every skip and xfail from tests/accuracy/conftest.py), ordered by repo path."""
+    found = {path.resolve() for path in conftests(test)}
+    for conftest in conftests(test):
+        found |= _imported_by(conftest, REPO)
+    return sorted(found, key=_repo_name)
+
+
+@lru_cache(maxsize=None)
+def _imported_by(conftest: Path, repo: Path) -> frozenset:
+    """A conftest's import closure: the same few files for every row under it.
+    The digest reads their bytes afresh each time."""
+    return frozenset(_closure_files(conftest, repo))
+
+
 def _conftest_digest(test: str) -> str:
-    """sha256 over each conftest.py's path under the rootdir and its bytes."""
-    rootdir = _rootdir(test)
+    """sha256 over each of those files' repo path and bytes."""
     hashed = hashlib.sha256()
-    for path in conftests(test):
-        hashed.update(path.relative_to(rootdir).as_posix().encode() + b"\0")
+    for path in conftest_files(test):
+        hashed.update(_repo_name(path).encode() + b"\0")
         hashed.update(hashlib.sha256(path.read_bytes()).digest())
     return hashed.hexdigest()
 
@@ -861,8 +883,9 @@ def env_key(python: str) -> str:
 def row_digest(row: dict) -> str:
     """16 hex over the row's id, node id, commits and probe, its check's digest,
     which covers the check's files, the probe's bytes and the env cell, and the
-    conftest.py files pytest loads for the check. Those judge only the checks
-    under them, so they sit here and not in the env key."""
+    conftest.py files pytest loads for the check with the modules they import.
+    Those judge only the checks under them, so they sit here and not in the env
+    key."""
     bug = bug_of(row)
     check = digest(bug.test, bug.probe, env=bug.env)
     identity = "\0".join((bug.id, bug.test, bug.before, bug.fix, bug.probe, check,

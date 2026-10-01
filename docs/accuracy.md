@@ -425,7 +425,10 @@ row replays again on the next run: a red the machine caused, such as pwsh missin
 from PATH or a child limit hit under load, never sticks. The row digest covers
 the row's id, node id, commits and probe, its check's digest, and the
 `conftest.py` files pytest loads for the check (one per folder from the rootdir
-down to the check's), so a packet's conftest re-judges that packet's rows only.
+down to the check's) with every module under `tests/` and `tools/` they import,
+such as `tests/accuracy/kit/guards.py`, whose skip and xfail rules judge each
+replay. A packet's conftest re-judges that packet's rows only; a module
+`tests/conftest.py` imports re-judges every row.
 The env key covers what the replay ran on and what judges it: the OS, the image
 tag (`run.py image-tag`, a hash of the image inputs and both locks), the hosted
 runner's `ImageOS` and `ImageVersion` (outside a runner on Windows, the Windows

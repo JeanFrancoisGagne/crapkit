@@ -822,7 +822,15 @@ PACKET_NODE = ("tests/accuracy/analysis_oracles/test_decode_matrix.py::"
                "test_non_ascii_names_equal_under_cp1252_and_utf8")
 HARNESS_FILES = ("tools/accuracy/retro.py", "pyproject.toml", "tests/conftest.py",
                  "tests/accuracy/conftest.py", "tests/accuracy/analysis_oracles/conftest.py",
-                 "docs/accuracy.md")
+                 "docs/accuracy.md", "tests/accuracy/kit/exact.py")
+
+
+def _mirrored() -> set[str]:
+    """HARNESS_FILES and every module under tests/ and tools/ the conftests import."""
+    root = REPO.resolve()
+    imported = {path.relative_to(root).as_posix() for name in HARNESS_FILES if name.endswith("conftest.py")
+                for path in retro._closure_files((REPO / name).resolve(), REPO)}
+    return set(HARNESS_FILES) | imported
 
 
 @pytest.fixture
@@ -831,7 +839,7 @@ def harness(tables, tmp_path, monkeypatch):
     and R1 (a suite_strength check) and R2 (an analysis_oracles one) judged once.
     The check files and their digests stay this tree's."""
     mirror = (tmp_path / "mirror").resolve()
-    for name in HARNESS_FILES:
+    for name in _mirrored():
         (mirror / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(REPO / name, mirror / name)
     monkeypatch.setattr(retro, "REPO", mirror)
@@ -856,6 +864,16 @@ def _fixture_that_fails_every_check(mirror: Path) -> None:
           "    raise AssertionError('the harness, not the check')\n")
 
 
+def _a_guard_that_fails_every_check(mirror: Path) -> None:
+    _edit(mirror / "tests/accuracy/kit/guards.py", "def skip_problem(", "def skip_problem(*args, **kwargs):\n"
+          "    raise AssertionError('the guard, not the check')\n\n\ndef _old_skip_problem(")
+
+
+def _a_module_tests_conftest_imports_breaks(mirror: Path) -> None:
+    path = mirror / "tests/name_bytes.py"
+    path.write_bytes(path.read_bytes() + b"\nraise AssertionError('imported by tests/conftest.py')\n")
+
+
 def _warnings_become_errors(mirror: Path) -> None:
     _edit(mirror / "pyproject.toml", 'addopts = "-q', 'addopts = "-W error -q')
 
@@ -865,12 +883,14 @@ def _any_failure_is_red(mirror: Path) -> None:
 
 
 @pytest.mark.parametrize("move", [_fixture_that_fails_every_check, _warnings_become_errors,
-                                  _any_failure_is_red])
+                                  _any_failure_is_red, _a_guard_that_fails_every_check,
+                                  _a_module_tests_conftest_imports_breaks])
 def test_a_moved_harness_replays_every_row_it_judges(harness, move):
     """retro.py (the plugin and the verdict rules), the conftest.py files pytest
-    loads for a check and pyproject.toml's pytest table judge every replay. Each of
-    these edits once left every kept verdict standing, so no nightly re-judged a
-    row under the harness that now judges it."""
+    loads for a check, the modules they import (kit/guards.py rules every skip
+    and xfail from tests/accuracy/conftest.py's hook) and pyproject.toml's pytest
+    table judge every replay. Each of these edits once left every kept verdict
+    standing, so no nightly re-judged a row under the harness that now judges it."""
     move(harness.mirror)
 
     assert retro.main(["nightly"]) == 0
@@ -886,6 +906,7 @@ def test_a_packet_s_conftest_replays_only_the_rows_whose_checks_it_loads(harness
 
 @pytest.mark.parametrize("name, old, new", [
     ("docs/accuracy.md", "\n", "\n\n"),
+    ("tests/accuracy/kit/exact.py", "\n", "\n# no conftest imports this module\n"),
     ("pyproject.toml", "faulthandler_timeout = 600", "faulthandler_timeout = 600  # a comment"),
     ("pyproject.toml", 'requires-python = ">=3.11"', 'requires-python = ">=3.12"'),
 ])
