@@ -373,15 +373,27 @@ class History(RuleBasedStateMachine):
         return {key for key in changed(self.head, self.sc.world)
                 if model.hook_gate(ccn[key], vw.TARGET, key in self._marks())}
 
+    def _tracked_violations(self, ccn: dict) -> set:
+        return {key for key in ccn if model.hook_gate(ccn[key], vw.TARGET, key in self._marks())}
+
+    def _hook_violations(self, ccn: dict) -> tuple[set, bool]:
+        """(violations, whole). docs/upgrading.md, the commit gate in 0.8.1: run
+        by hand with nothing staged, the hook judges every tracked function."""
+        whole = not repos.git(self.sc.top, "diff", "--cached", "--name-only").strip()
+        return (self._tracked_violations if whole else self._staged_violations)(ccn), whole
+
     def hook(self, grant: bool = False):
+        """The hook as a hand run drives it: no commit, so GIT_INDEX_FILE is unset."""
         repos.git(self.sc.top, "add", "-A")
         ccn = _each(self.sc.world, lambda fn: fn.ccn)
-        violations = self._staged_violations(ccn)
+        violations, whole = self._hook_violations(ccn)
         reason = "the machine accepts it" if grant else None
         result = vw.drive.Driver(self.sc.root, env={"CRAPKIT_OVERRIDE_REASON": reason}).run(
             "hook-precommit")
-        assert result.code == _hook_exit(violations, grant), result.stdout + result.stderr
-        if violations and grant:
+        # Outside a commit nothing is granted: the breach is already committed.
+        granted = grant and not whole
+        assert result.code == _hook_exit(violations, granted), result.stdout + result.stderr
+        if violations and granted:
             self._hook_grant(violations, ccn)
 
     def hook_grant(self):
@@ -576,6 +588,7 @@ def test_the_run_history_follows_the_model(repo_templates, tmp_path):
 
 
 SCRIPT = (
+    (("none",), "hook_grant"),                    # nothing staged: a3 and b2 judged, no grant
     (("edit", "app", 2, 7, 4), "verify"),         # a3 touched past the ceiling: gate
     (("commit",), "coverage"),                    # the tree the gate refused, measured anyway
     (("none",), "seed"),                          # seed reads the run in front of the failure

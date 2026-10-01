@@ -400,9 +400,11 @@ def test_hook_grant_checks_reader_proof_on_the_text_it_publishes(make_repo):
 @pytest.mark.process
 def test_hook_grant_under_the_running_stamp_marks_the_callback(make_repo):
     """The control: under the running stamp the same grant goes through, and
-    the mark is the hook's worst case for ccn 3, ccn^2 + ccn = 12."""
+    the mark is the CRAP the callback's scope scores with no coverage. The web
+    scope is coverage_optional, which scores CRAP = ccn, so the mark is 3
+    (docs/ratchet.md; 0.8.0 wrote ccn^2 + ccn = 12 there)."""
     result, _, after, logged, overrides = _hook_grant_on_a_callback(make_repo, lambda running: running)
     assert result.code == 0, result.stdout + result.stderr
     marks = model.parse_marks(after.decode("utf-8")).marks
-    assert marks == {("web/a.ts", "(anonymous)"): model.mark_value(exact.crap(3, 0))}
+    assert marks == {("web/a.ts", "(anonymous)"): model.mark_value(3)}
     assert logged and [(row["path"], row["function"]) for row in overrides] == [("web/a.ts", "(anonymous)")]
