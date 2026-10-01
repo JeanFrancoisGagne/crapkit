@@ -549,6 +549,18 @@ def test_covered_with_no_stored_verdict_is_an_infra_miss_that_names_the_download
     assert "gh run download" in capsys.readouterr().err
 
 
+def test_env_prints_the_environment_key_a_run_here_stores(world, capsys):
+    """CI keys its receipt cache on this line, so a run restores only receipts
+    whose verdicts can carry to it."""
+    assert world.run("env") == 0
+    assert capsys.readouterr().out == "env-1\n"
+    assert world.judged() is None
+
+    world.run()
+
+    assert world.receipt()["env"] == "env-1"
+
+
 # --- the pieces ----------------------------------------------------------------------------------
 
 def test_a_function_key_holds_its_decorators_and_its_module_s_code_outside_functions():

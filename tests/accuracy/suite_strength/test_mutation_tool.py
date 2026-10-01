@@ -1313,9 +1313,9 @@ CPUS = mutation.os.cpu_count() or 2
      {"command": "weekly", "shard": 2, "of": 8, "max_children": 3, "cold": True}),
     (["weekly", "--shard", "1", "--of", "8"],
      {"command": "weekly", "shard": 1, "of": 8, "max_children": CPUS, "cold": False}),
-    (["diff", "--since-weekly", "--cap-minutes", "7.5", "--cold"],
-     {"command": "diff", "since_weekly": True, "cap_minutes": 7.5, "cold": True}),
-    (["diff"], {"command": "diff", "since_weekly": False, "cap_minutes": 30, "cold": False}),
+    (["diff", "--cap-minutes", "7.5", "--cold"],
+     {"command": "diff", "cap_minutes": 7.5, "cold": True}),
+    (["diff"], {"command": "diff", "cap_minutes": 60, "cold": False}),
     (["gate", "a.json", "b.json", "--update", "--no-canary"],
      {"command": "gate", "results": [Path("a.json"), Path("b.json")], "update": True,
       "no_canary": True}),
@@ -1327,6 +1327,7 @@ CPUS = mutation.os.cpu_count() or 2
     (["tools"], {"command": "tools", "max_children": CPUS}),
     (["tools", "--max-children", "4"], {"command": "tools", "max_children": 4}),
     (["key"], {"command": "key"}),
+    (["env"], {"command": "env"}),
     (["killer", "tests/unit"], {"command": "killer", "pytest": ["tests/unit"]}),
 ])
 def test_every_command_parses_to_what_its_code_reads(argv, expected):
@@ -2270,7 +2271,7 @@ def test_a_diff_run_uses_every_cpu_or_two(tmp_path, monkeypatch, cpus, children)
 
     (call,) = recorder.calls
     assert (call["children"], call["budget"], call["env"]["CRAPKIT_ACCURACY_TIER"]) == (
-        children, 1800, "push")
+        children, 3600, "push")
     assert "CRAPKIT_ACCURACY_COLLECT_ALL" not in call["env"]
 
 

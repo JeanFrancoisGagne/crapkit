@@ -442,28 +442,42 @@ jobs:
       - run: python tools/accuracy/wheel_diff.py xplat receipts/*.json
 
   mutation-diff:
-    # Nightly: only the functions changed since the last weekly run, capped at
-    # 30 minutes; a capped run reports incomplete, never pass. On the label:
-    # `crapkit mutate` over the pull request's own diff.
+    # Nightly, and on the label: every function of the calc modules whose stored
+    # verdicts do not carry to this head (tools/accuracy/mutation.py, "Carrying a
+    # verdict"), capped at 60 minutes, since the stats pass alone takes about 24;
+    # a capped run reports incomplete, never pass. The receipts carry from run
+    # to run in the actions cache, keyed by the environment key they hold.
     needs: [plan, image]
     if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'label'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan.outputs.ref }}
           fetch-depth: 0
+      - id: env
+        env:
+          REF: ${{ needs.image.outputs.ref }}
+        run: |
+          key=$(docker run --rm --network none --tmpfs /tmp:exec --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" python tools/accuracy/mutation.py env)
+          test "${#key}" = 64
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        with:
+          path: .crapkit/accuracy/mutation/*.json
+          key: mutation-receipts-${{ steps.env.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: mutation-receipts-${{ steps.env.outputs.key }}-
       - env:
           REF: ${{ needs.image.outputs.ref }}
-          MODE: ${{ needs.plan.outputs.mode }}
         run: |
-          if [ "$MODE" = "label" ]; then
-            command="crapkit mutate --base origin/main --max-mutants 30"
-          else
-            command="python tools/accuracy/mutation.py diff --since-weekly --cap-minutes 30"
-          fi
-          docker run --rm --network none --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" sh -c "$command"
+          docker run --rm --network none --tmpfs /tmp:exec --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF"             python tools/accuracy/mutation.py diff --cap-minutes 60
+      # A failed run's receipt still stores what it judged; one that died wrote none.
+      - uses: actions/cache/save@v4
+        if: always() && steps.env.outputs.key != ''
+        with:
+          path: .crapkit/accuracy/mutation/*.json
+          key: mutation-receipts-${{ steps.env.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   retro:
     # Judges every public past bug in the image. A row replays only when no
@@ -529,6 +543,8 @@ jobs:
     if: needs.plan.outputs.mode == 'weekly'
     runs-on: ubuntu-latest
     timeout-minutes: 320
+    outputs:
+      key: ${{ steps.env.outputs.key }}
     strategy:
       fail-fast: false
       max-parallel: 6
@@ -539,24 +555,55 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.ref }}
           fetch-depth: 0
-      - uses: actions/cache@v4
+      - id: env
+        env:
+          REF: ${{ needs.image.outputs.ref }}
+        run: |
+          key=$(docker run --rm --network none --tmpfs /tmp:exec --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" python tools/accuracy/mutation.py env)
+          test "${#key}" = 64
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
         with:
-          path: mutants
-          key: mutants-${{ matrix.shard }}-${{ github.run_id }}
-          restore-keys: mutants-${{ matrix.shard }}-
+          path: .crapkit/accuracy/mutation/*.json
+          key: mutation-receipts-${{ steps.env.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: mutation-receipts-${{ steps.env.outputs.key }}-
       - timeout-minutes: 300
         env:
           REF: ${{ needs.image.outputs.ref }}
         run: |
-          docker run --rm --network none --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" \
-            python tools/accuracy/mutation.py weekly --shard ${{ matrix.shard }} --of 8
-      # A cancelled shard resumes from its mutants/ meta files.
+          docker run --rm --network none --tmpfs /tmp:exec --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF"             python tools/accuracy/mutation.py weekly --shard ${{ matrix.shard }} --of 8
+      # mutation-store merges the shards' receipts into one cache entry;
+      # `mutation.py covered` names this pattern for `gh run download`.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mutants-meta-${{ matrix.shard }}
-          path: mutants/**/*.meta
-          retention-days: 7
+          name: mutation-receipt-${{ matrix.shard }}
+          path: .crapkit/accuracy/mutation/weekly-${{ matrix.shard }}.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  mutation-store:
+    # One cache entry for the whole weekly run: each shard saving its own would
+    # leave the next run only the newest shard's receipt.
+    needs: [plan, mutation-full]
+    if: always() && needs.plan.outputs.mode == 'weekly' && needs.mutation-full.outputs.key != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/cache/restore@v4
+        with:
+          path: .crapkit/accuracy/mutation/*.json
+          key: mutation-receipts-${{ needs.mutation-full.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: mutation-receipts-${{ needs.mutation-full.outputs.key }}-
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: mutation-receipt-*
+          path: .crapkit/accuracy/mutation
+          merge-multiple: true
+      - uses: actions/cache/save@v4
+        with:
+          path: .crapkit/accuracy/mutation/*.json
+          key: mutation-receipts-${{ needs.mutation-full.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
 
   summary:
     needs: [plan, image, oracles, lizard-edge, windows, macos, xplat, mutation-diff, retro, mutation-full]

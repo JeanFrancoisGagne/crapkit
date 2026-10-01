@@ -245,7 +245,7 @@ them. One shard of the weekly run, and the run over all of them under a cap:
 
 ```
 docker run --rm --network none --tmpfs /tmp:exec -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py weekly --shard 1 --of 8
-docker run --rm --network none --tmpfs /tmp:exec -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py diff --cap-minutes 30
+docker run --rm --network none --tmpfs /tmp:exec -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py diff --cap-minutes 60
 ```
 
 Always give a mutation stage `/tmp` on tmpfs, with `exec`, since the tests run
@@ -283,6 +283,15 @@ a module global) raises no audit event, so a test's reads and listings are
 every one its process made up to the end of that test: a cache holds only what
 the process read before. A run judges the canary, `score.crap`, whenever it
 judges anything. A second run at an unchanged tree judges no mutant.
+
+In CI the receipts carry from run to run through the actions cache:
+`mutation.py env` prints the environment key a run stores, and each mutation
+job restores `.crapkit/accuracy/mutation/*.json` from the newest cache entry
+under that key before it runs. The nightly and label `diff` run saves the
+receipts it leaves; each weekly shard uploads its receipt as
+`mutation-receipt-N`, and the `mutation-store` job merges them into one entry.
+A new image, or any other change to the key, starts from no receipt. The
+`diff` cap is 60 minutes, since the stats pass alone takes about 24.
 
 `--cold` carries nothing and compares what it judges with what would have
 carried. A difference fails the run, and the receipts older than it carry

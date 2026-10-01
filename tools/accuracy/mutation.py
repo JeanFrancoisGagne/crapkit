@@ -1,12 +1,13 @@
 """Mutation testing of the calculation modules, gated on a keyed survivor set.
 
     python tools/accuracy/mutation.py weekly --shard N --of M [--max-children K] [--cold]
-    python tools/accuracy/mutation.py diff [--cap-minutes 30] [--cold]
+    python tools/accuracy/mutation.py diff [--cap-minutes 60] [--cold]
     python tools/accuracy/mutation.py gate RESULTS.json... [--update]
     python tools/accuracy/mutation.py floors RESULTS.json...
     python tools/accuracy/mutation.py covered [--receipts DIR]
     python tools/accuracy/mutation.py tools [--max-children K]
     python tools/accuracy/mutation.py key < MUTANT.diff
+    python tools/accuracy/mutation.py env
     python tools/accuracy/mutation.py killer [PYTEST ARGS...]
 
 mutmut 3.8.0 runs in the accuracy image (it forks, so Linux only). The calc
@@ -54,10 +55,14 @@ Carrying a verdict. Each weekly and diff receipt stores, beside its results,
 what each function's verdicts rest on (carry_problem): the function's key (its
 text with its decorators and its module's code outside any function), the
 covering tests mutmut's stats pass mapped to it, every file those tests read,
-each folder they list, whether they start a program, and the functions they
-also run; and per run the environment key (Python, the installed packages,
-dpkg's list, the launcher and the stage's pytest and mutmut tables), the tree
-it judged and what the suite read outside any test. `covered` passes when every
+each folder they list (a test's reads include every read its process made
+before the test ended, since a cache in memory serves a later test without
+one), whether they start a program, and the functions they also run; and per
+run the environment key (Python, the installed packages, dpkg's list, the
+launcher, the stage's pytest and mutmut tables, and each environment variable
+src/ and tests/ read but those naming a scratch path), the tree it judged (each
+file's mode and blob) and what the suite read outside any test. `env` prints
+that key, which CI keys the receipts' cache on. `covered` passes when every
 function in scope holds verdicts that carry to HEAD (a timeout's only at the tree
 it was judged at), and the gate and the floors pass over them; a function mutmut
 makes no mutant of counts as covered and is listed as such. A later run carries those
@@ -2255,12 +2260,16 @@ def _judge_todo(stage: Path, head: Head, todo: list, modules: list[str], childre
     return rows, complete, judged_section(stage, head, todo, rows, complete, modules)
 
 
+def _calc_stage(targets: dict) -> Path:
+    return _prepare_stage(targets, CALC_STAGE, tuple(stage_deselected()))
+
+
 def calc_run(modules: list[str], children: int, budget: float | None = None, cold: bool = False,
              canary: bool = False) -> Outcome:
     """Judge every function of `modules` (and the canary, with `canary`) whose stored
     verdicts do not carry to HEAD, in the calc stage, and carry the rest."""
     targets = calc_targets(weekly_modules())
-    stage = _prepare_stage(targets, CALC_STAGE, tuple(stage_deselected()))
+    stage = _calc_stage(targets)
     head = Head(head_tree(REPO), env_key(stage), _now())
     functions = _with_canary(scope_functions(modules, head), canary)
     found = plan(functions, stored_verdicts(loaded(REPO / RECEIPTS)), head)
@@ -2431,6 +2440,14 @@ def _key(args) -> int:
     return 0
 
 
+def _env(args) -> int:
+    """Print the environment key a weekly or diff run here stores in its receipt:
+    CI keys the receipts' cache on it, so a run restores only receipts whose
+    verdicts can carry to it."""
+    print(env_key(_calc_stage(calc_targets(weekly_modules()))))
+    return 0
+
+
 def killer_env(cwd: Path, environ: dict) -> dict:
     """The environment the killer suite runs under: this tree's src/ and tests/ first,
     and the push tier whatever tier the caller runs."""
@@ -2460,9 +2477,8 @@ def _parser() -> argparse.ArgumentParser:
     weekly.add_argument("--max-children", type=int, default=os.cpu_count() or 2)
     weekly.add_argument("--cold", action="store_true", help="carry no stored verdict")
     diff = sub.add_parser("diff")
-    diff.add_argument("--since-weekly", action="store_true",
-                      help="no effect: every run judges what its stored verdicts do not carry")
-    diff.add_argument("--cap-minutes", type=float, default=30)
+    diff.add_argument("--cap-minutes", type=float, default=60,
+                      help="the stats pass alone took about 24 minutes at c3fa1d42")
     diff.add_argument("--cold", action="store_true", help="carry no stored verdict")
     gate_p = sub.add_parser("gate")
     gate_p.add_argument("results", nargs="+", type=Path)
@@ -2475,13 +2491,14 @@ def _parser() -> argparse.ArgumentParser:
     tools = sub.add_parser("tools")
     tools.add_argument("--max-children", type=int, default=os.cpu_count() or 2)
     sub.add_parser("key")
+    sub.add_parser("env")
     killer = sub.add_parser("killer")
     killer.add_argument("pytest", nargs=argparse.REMAINDER)
     return parser
 
 
 COMMANDS = {"weekly": _weekly, "diff": _diff_run, "gate": _gate, "floors": _floors_cmd,
-            "covered": _covered, "tools": _tools, "key": _key, "killer": _killer}
+            "covered": _covered, "tools": _tools, "key": _key, "env": _env, "killer": _killer}
 
 
 def _args(argv: list[str]) -> argparse.Namespace:
