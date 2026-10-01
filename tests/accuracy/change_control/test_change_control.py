@@ -44,9 +44,19 @@ def test_the_lock_the_changes_the_changelog_and_the_metric_digests_agree():
     assert problems == allowed, _report(problems)
 
 
-def _names_its_release(change: dict, versions: set[str]) -> bool:
+def _section(log: str, version: str) -> str:
+    """The CHANGELOG.md text from the `## <version> ` heading to the next `## `
+    heading, or '' when no heading names the version."""
+    found = re.search(rf"^## {re.escape(version)} .*?(?=^## |\Z)", log,
+                      re.MULTILINE | re.DOTALL)
+    return found.group(0) if found else ""
+
+
+def _names_its_release(key: str, change: dict, log: str) -> bool:
     cell = change.get("changelog", "")
-    return cell == "" if change.get("kind") == "none" else cell in versions
+    if change.get("kind") == "none":
+        return cell == ""
+    return f"(accuracy change {key})" in _section(log, cell)
 
 
 def test_each_change_names_the_release_whose_changelog_section_holds_its_line():
@@ -55,10 +65,9 @@ def test_each_change_names_the_release_whose_changelog_section_holds_its_line():
     (T4) and names none."""
     tree = cc.DirTree(REPO)
     log = (REPO / cc.CHANGELOG).read_bytes().decode("utf-8")
-    versions = set(re.findall(r"^## (\d+\.\d+\.\d+) ", log, re.MULTILINE))
 
     wrong = {key: change.get("changelog") for key, change in cc.changes_of(tree).items()
-             if not _names_its_release(change, versions)}
+             if not _names_its_release(key, change, log)}
 
     assert wrong == {}
 
