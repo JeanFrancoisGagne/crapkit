@@ -6,6 +6,7 @@
     python tools/accuracy/retro.py adopt [ID...] [--env-key KEY]
     python tools/accuracy/retro.py digest NODE_ID
     python tools/accuracy/retro.py stale
+    python tools/accuracy/retro.py needs-bundle
     python tools/accuracy/retro.py sync
 
 tests/accuracy/suite_strength/retro/bugs.tsv names each bug (an R id), its fix
@@ -54,6 +55,9 @@ bundle (CRAPKIT_RETRO_BUNDLE): where neither the bundle nor an earlier fetch
 holds them, a CI cell names each stale bundle row and passes, and the local
 release stage names them and exits 3. Both exit 1 when a verdict contradicts its
 ledger row: a before that is no longer red, a fix that no longer passes.
+`needs-bundle` lists the stale bundle rows `release` could judge only from the
+bundle (no verdict kept for this env key, a commit this clone lacks), so the
+release stage asks for the bundle only when one of them exists.
 
 Every replay keeps its verdict in CRAPKIT_RETRO_VERDICTS under an env key: the
 OS, the image tag (run.py's hash of the image inputs and locks), the hosted
@@ -1174,16 +1178,21 @@ def _nightly(args) -> int:
     return _replay_rows(public, ledger, args.python)
 
 
-def _bundle_here(row: dict) -> bool:
-    """Whether this clone can replay a bundle row: CRAPKIT_RETRO_BUNDLE names the
-    history bundle, or an earlier fetch left both commits here."""
+def _held(row: dict) -> bool:
+    """Whether an earlier fetch left both of the row's commits in this clone."""
     bug = bug_of(row)
-    return bool(os.environ.get(BUNDLE_ENV)) or all(map(have_commit, (bug.before, bug.fix)))
+    return all(map(have_commit, (bug.before, bug.fix)))
+
+
+def _needs_the_bundle(row: dict, key: str) -> bool:
+    """A bundle row with no verdict kept for `key` whose commits this clone lacks:
+    only the history bundle can replay it."""
+    return _bundle(row) and kept_verdict(verdict_path(row, key)) is None and not _held(row)
 
 
 def _out_of_reach(row: dict, key: str) -> bool:
-    """A bundle row with no verdict kept for `key` that this clone cannot replay."""
-    return _bundle(row) and kept_verdict(verdict_path(row, key)) is None and not _bundle_here(row)
+    """A row only the bundle can replay, where CRAPKIT_RETRO_BUNDLE names none."""
+    return _needs_the_bundle(row, key) and not os.environ.get(BUNDLE_ENV)
 
 
 def _in_ci() -> bool:
@@ -1267,6 +1276,18 @@ def _digest_cmd(args) -> int:
     return 0
 
 
+def _needs_bundle_cmd(args) -> int:
+    """The stale rows `release` could judge only from the history bundle, whatever
+    CRAPKIT_RETRO_BUNDLE names: the release stage asks before it refuses for a
+    missing bundle."""
+    bugs, ledger = _load()
+    key = env_key(args.python)
+    for row in stale(list(filter(replayable_here, bugs)), ledger):
+        if _needs_the_bundle(row, key):
+            print(f"{row['id']}\t{row['test']}")
+    return 0
+
+
 def _stale_cmd(args) -> int:
     bugs, ledger = _load()
     for row in stale(bugs, ledger):
@@ -1304,12 +1325,14 @@ def _parser() -> argparse.ArgumentParser:
     digest_p.add_argument("test")
     digest_p.add_argument("--probe", default="")
     sub.add_parser("stale")
+    sub.add_parser("needs-bundle")
     sub.add_parser("sync")
     return parser
 
 
 COMMANDS = {"run": _run_cmd, "nightly": _nightly, "release": _release, "adopt": _adopt,
-            "digest": _digest_cmd, "stale": _stale_cmd, "sync": _sync_cmd}
+            "digest": _digest_cmd, "stale": _stale_cmd,
+            "needs-bundle": _needs_bundle_cmd, "sync": _sync_cmd}
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -1317,6 +1317,40 @@ def test_a_stale_bundle_row_with_a_kept_release_verdict_is_judged_without_the_bu
     assert f"retro: R5 {NODE}: before red, fix pass (kept from " in out and "cannot replay" not in out
 
 
+
+def test_needs_bundle_names_the_stale_bundle_rows_release_cannot_judge_here(tables, monkeypatch, capsys):
+    """The release stage refused without the history bundle even when no bundle row
+    was stale, so `release` would never read it. It now asks first: R5 is stale and
+    out of reach, R2 is current, R1 is public."""
+    _no_bundle(tables, monkeypatch)
+
+    assert retro.main(["needs-bundle"]) == 0
+    assert capsys.readouterr().out == f"R5\t{NODE}\n"
+    assert tables.replayed == []
+
+
+def test_needs_bundle_names_nothing_the_clone_or_a_kept_verdict_answers_for(tables, monkeypatch, capsys):
+    monkeypatch.setenv("CRAPKIT_ACCURACY_TIER", "release")
+    _no_bundle(tables, monkeypatch, held=True)
+    assert retro.main(["needs-bundle"]) == 0
+    assert capsys.readouterr().out == ""
+
+    retro.main(["release"])
+    _no_bundle(tables, monkeypatch, held=False)
+    capsys.readouterr()
+
+    assert retro.main(["needs-bundle"]) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_needs_bundle_reads_no_bundle_the_environment_names(tables, monkeypatch, capsys):
+    """The release stage asks only when the bundle it would hand the tier is missing."""
+    _no_bundle(tables, monkeypatch)
+    monkeypatch.setenv(retro.BUNDLE_ENV, "gone.bundle")
+
+    assert retro.main(["needs-bundle"]) == 0
+    assert capsys.readouterr().out == f"R5\t{NODE}\n"
+
 def test_release_with_every_key_kept_replays_nothing(tables, monkeypatch):
     monkeypatch.setenv(retro.BUNDLE_ENV, "history.bundle")
     monkeypatch.setenv("CRAPKIT_ACCURACY_TIER", "release")

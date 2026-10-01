@@ -82,8 +82,10 @@ commit. Keep it in its own background process: it can take two hours.
    pre-2026-08-24 history bundle, so the stage sets `CRAPKIT_RETRO_BUNDLE` for the tier:
    from the environment when it is set, else from the path
    `tools/release/retro-bundle.path` names (`~` is the home directory). When that path
-   holds no file the stage refuses before the tier starts, instead of retro.py exiting 3
-   inside the tier:
+   holds no file the stage asks `retro.py needs-bundle` for the stale bundle rows the
+   tier could judge only from the bundle. With none, the tier runs without it, since
+   `retro.py release` reads the bundle only for those rows. With one, the stage refuses
+   before the tier starts, instead of retro.py exiting 3 inside the tier:
 
    ```
    the accuracy stage needs the retro history bundle: CRAPKIT_RETRO_BUNDLE names C:\gone.bundle, which is not a file. The release tier's retro row replays the bundle rows, whose commits live only in that bundle; put it there, then rerun `python tools/release/release.py run accuracy VERSION`

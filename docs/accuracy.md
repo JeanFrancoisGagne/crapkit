@@ -509,8 +509,10 @@ replayed; its ledger record answers for it. A stale bundle row replays where
 Anywhere else `release` names it ("a stale bundle row this clone cannot
 replay"). A CI cell then passes, and `retro.py release` exits 3 on the releasing
 machine. The release tool sets `CRAPKIT_RETRO_BUNDLE` for its local tier from the
-environment or from `tools/release/retro-bundle.path`, and refuses before the tier
-starts when neither names a file.
+environment or from `tools/release/retro-bundle.path`. When neither names a file it
+asks `retro.py needs-bundle`, which lists the stale bundle rows `release` could
+judge only from the bundle, and refuses before the tier starts only when that names
+one; otherwise the tier runs without the bundle.
 
 ## Change control
 

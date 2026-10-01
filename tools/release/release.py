@@ -1182,6 +1182,36 @@ def retro_bundle(root: Path, version: str) -> Path:
     return bundle
 
 
+NEEDS_BUNDLE = ("tools/accuracy/retro.py", "needs-bundle")
+
+
+def bundle_rows(root: Path, version: str) -> list[str]:
+    """The ids of the stale bundle rows the tier's retro row could judge only from
+    the history bundle, by retro.py's own rule at the release tier's env key. The
+    bundle the environment names is left out: the question is whether one is needed."""
+    env = {**_child_env(), "CRAPKIT_ACCURACY_TIER": "release"}
+    env.pop(BUNDLE_ENV, None)
+    done = subprocess.run((PY, *NEEDS_BUNDLE), cwd=root, env=env, capture_output=True)
+    said = done.stdout.decode(errors="replace").splitlines()
+    if done.returncode != 0:
+        raise ReleaseError(f"`retro.py needs-bundle` exited {done.returncode}: "
+                           f"{done.stderr.decode(errors='replace').strip()}; {_rerun(version)}")
+    return [line.partition("\t")[0] for line in said if line.strip()]
+
+
+def _tier_env(root: Path, version: str) -> dict:
+    """CRAPKIT_RETRO_BUNDLE for the tier when the bundle is there. Without it the
+    tier still runs while no stale bundle row needs it: `retro.py release` reads
+    the bundle only for those rows, and exits 3 naming any that turns stale."""
+    try:
+        return {BUNDLE_ENV: str(retro_bundle(root, version))}
+    except ReleaseError:
+        if bundle_rows(root, version):
+            raise
+    print("accuracy: no stale bundle row needs the retro history bundle; the tier runs without it")
+    return {}
+
+
 def _local_problems(root: Path, version: str, head: str) -> list:
     try:
         saved = _read_accuracy_receipt(root, version)
@@ -1195,8 +1225,7 @@ def _local_accuracy(step: Step, root: Path, version: str, head: str) -> None:
     after a remote timeout does not repeat half an hour of local checks."""
     if not _local_problems(root, version, head):
         return
-    bundle = retro_bundle(root, version)
-    failure = _attempt(root, step.commands[0], {BUNDLE_ENV: str(bundle)})
+    failure = _attempt(root, step.commands[0], _tier_env(root, version))
     problems = _local_problems(root, version, head)
     if problems or failure:
         raise ReleaseError(NL.join(problems) or f"the release tier failed: {failure}")

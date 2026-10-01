@@ -7,9 +7,15 @@ pass only with the variable set by hand in the shell that ran the stage.
 release.py now sets it for the tier from CRAPKIT_RETRO_BUNDLE, or else from the
 path tools/release/retro-bundle.path names, and refuses the stage by name before
 the tier starts when that path holds no file.
+
+`retro.py release` reads the bundle only for a stale bundle row it cannot judge
+otherwise, so the stage refused a machine whose release would pass. Without the
+bundle it now asks `retro.py needs-bundle` first, and refuses only when that names
+a row.
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -24,7 +30,15 @@ RERUN = f"rerun `python tools/release/release.py run accuracy {VERSION}`"
 
 
 @pytest.fixture
-def tree(tmp_path, monkeypatch):
+def needed(monkeypatch):
+    """The stale bundle rows `retro.py needs-bundle` names: R01 unless a test says."""
+    rows = ["R01"]
+    monkeypatch.setattr(release, "bundle_rows", lambda root, version: list(rows))
+    return rows
+
+
+@pytest.fixture
+def tree(tmp_path, monkeypatch, needed):
     """A release tree with no passing receipt yet, so the local tier must run."""
     monkeypatch.delenv("CRAPKIT_RETRO_BUNDLE", raising=False)
     root = tmp_path / "tree"
@@ -140,6 +154,56 @@ def test_no_bundle_configured_anywhere_refuses_and_says_where_to_name_one(tree, 
                     "name it in tools/release/retro-bundle.path. The release tier's retro row replays "
                     "the bundle rows, whose commits live only in that bundle; then " + RERUN)
     assert tier.ran == []
+
+
+@pytest.mark.parametrize("named", [None, "gone"], ids=["unnamed", "missing"])
+def test_with_no_stale_bundle_row_the_tier_runs_without_the_bundle(tree, tier, needed, tmp_path, named,
+                                                                     capsys):
+    """Every bundle row's ledger record is current, so `retro.py release` reads no
+    bundle: the machine without one runs the tier."""
+    needed.clear()
+    if named:
+        _config(tree, f"{tmp_path / 'gone.bundle'}\n")
+
+    _local(tree)
+
+    ((command, env),) = tier.ran
+    assert command[1:4] == ("tools/accuracy/run.py", "--tier", "release") and env == {}
+    assert "no stale bundle row" in capsys.readouterr().out
+
+
+def test_a_stale_bundle_row_still_refuses_without_the_bundle(tree, tier, needed):
+    needed[:] = ["R07"]
+
+    assert _refusal(tree).startswith("the accuracy stage needs the retro history bundle")
+    assert tier.ran == []
+
+
+def test_the_stage_asks_retro_at_the_release_tier_and_never_hands_it_a_bundle(tmp_path, monkeypatch):
+    """The answer comes from retro.py's own rule, at the release tier's env key, and
+    a bundle path the environment names (one that holds no file) is not passed on."""
+    monkeypatch.setenv("CRAPKIT_RETRO_BUNDLE", str(tmp_path / "gone.bundle"))
+    monkeypatch.setenv("CRAPKIT_ACCURACY_TIER", "push")
+    seen = tmp_path / "seen.json"
+    script = tmp_path / "tools" / "accuracy" / "retro.py"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "import json, os, sys\n"
+        f"open({str(seen)!r}, 'w').write(json.dumps([sys.argv[1:], os.environ.get('CRAPKIT_ACCURACY_TIER'),"
+        " os.environ.get('CRAPKIT_RETRO_BUNDLE')]))\n"
+        "print('R03\\tt.py::a')\nprint('R11\\tt.py::b')\n", encoding="utf-8")
+
+    assert release.bundle_rows(tmp_path, VERSION) == ["R03", "R11"]
+    assert json.loads(seen.read_text(encoding="utf-8")) == [["needs-bundle"], "release", None]
+
+
+def test_a_retro_that_cannot_answer_stops_the_stage(tmp_path):
+    script = tmp_path / "tools" / "accuracy" / "retro.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("import sys\nsys.exit('bugs.tsv: no such file')\n", encoding="utf-8")
+
+    with pytest.raises(release.ReleaseError, match="needs-bundle` exited 1: bugs.tsv: no such file"):
+        release.bundle_rows(tmp_path, VERSION)
 
 
 def test_a_passing_receipt_needs_no_bundle_and_runs_nothing(tree, tier):
