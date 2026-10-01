@@ -274,11 +274,14 @@ def test_every_command_answers_the_same_under_any_directory_name(tmp_path, paren
     assert _commands_under(tmp_path / parent) == _commands_under(tmp_path / "ascii")
 
 
+# The lane clears COVERAGE_FILE: under `run.py --coverage` it names a file in
+# .crapkit/cov, so the lane's shard lands there, not where the hint looks.
 PYTEST_COV_TOML = (b'[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n\n'
                    b'[[lane]]\nname = "unit"\n'
                    b'command = "python -m pytest -q -p no:cacheprovider --cov=src --cov-branch '
                    b'--cov-report=json:cov.json t_app.py"\n'
-                   b'artifact = "cov.json"\nparser = "coveragepy"\nscopes = ["src"]\nfull_suite = false\n')
+                   b'artifact = "cov.json"\nparser = "coveragepy"\nscopes = ["src"]\nfull_suite = false\n'
+                   b'env = { COVERAGE_FILE = "" }\n')
 PYTEST_COV_TEST = b"import sys\nsys.path.insert(0, 'src')\nimport app\n\n\ndef test_pick():\n    assert app.pick('a') == 1\n"
 NEEDS_PYTEST_COV = pytest.mark.skipif(not LINUX or not shutil.which("python"),
                                       reason="a Latin-1 directory exists only on a POSIX file system, and the "
