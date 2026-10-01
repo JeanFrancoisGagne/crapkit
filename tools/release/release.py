@@ -1,10 +1,11 @@
 """Bump, publish and verify crapkit's version surfaces from one table.
 
-Nineteen strings in eleven files say which version this is (pyproject, the
-package, four README strings, the Claude Code and Codex plugin manifests, the
-registry manifest twice, and the release tag nine Codex marketplace lines pin
-across README, adoption, upgrading, the handbook, the onboarding skill and
-agent-json.md, two of them inside doctor's quoted no-install line), and
+Twenty-one strings in eleven files say which version this is (pyproject, the
+package, five README strings, the handbook's Action pin, the Claude Code and
+Codex plugin manifests, the registry manifest twice, and the release tag nine
+Codex marketplace lines pin across README, adoption, upgrading, the handbook,
+the onboarding skill and agent-json.md, two of them inside doctor's quoted
+no-install line), and
 a release then has to reach six places (git tag, PyPI, GitHub release, plugin,
 Pages, the MCP registry, plus Glama's sync). Eight releases re-scripted that
 chain by hand and the surfaces drifted once. The table below is the one place
@@ -97,6 +98,9 @@ SURFACES = (
     Surface("README.md", "crapkit {v}" + NL, 1),
     Surface("README.md", "rev: v{v}", 1),
     Surface("README.md", REPO_SLUG + "@v{v}", 2),
+    Surface("docs/handbook.html", REPO_SLUG + "@v{v}", 1),
+    # README's Route 4 CI job installs this release by number.
+    Surface("README.md", PACKAGE + "=={v}", 1),
     Surface("plugin/.claude-plugin/plugin.json", '"version": "{v}"', 1),
     Surface("plugin/.codex-plugin/plugin.json", '"version": "{v}"', 1),
     Surface("server.json", '"version": "{v}"', 2),

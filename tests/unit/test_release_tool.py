@@ -43,10 +43,13 @@ def _tree(tmp_path: Path, version: str = "0.5.1", heading: str = "0.5.2") -> Pat
     (root / "README.md").write_text(
         f"# crapkit{NL}{NL}```{NL}$ crapkit --version{NL}crapkit {version}{NL}```{NL}{NL}"
         f"    rev: v{version}{NL}{NL}uses: JeanFrancoisGagne/crapkit@v{version}{NL}"
-        f"uses: JeanFrancoisGagne/crapkit@v{version}{NL}{NL}{_codex_add(version)}{_codex_add(version)}",
+        f"uses: JeanFrancoisGagne/crapkit@v{version}{NL}{NL}      - run: pip install \"crapkit=={version}\"{NL}{NL}"
+        f"{_codex_add(version)}{_codex_add(version)}",
         encoding="utf-8")
-    for page, lines in (("adoption.md", 1), ("upgrading.md", 1), ("handbook.html", 2)):
+    for page, lines in (("adoption.md", 1), ("upgrading.md", 1)):
         (root / "docs" / page).write_text(_codex_add(version) * lines, encoding="utf-8")
+    (root / "docs" / "handbook.html").write_text(
+        f"<code>uses: JeanFrancoisGagne/crapkit@v{version}</code>{NL}{_codex_add(version) * 2}", encoding="utf-8")
     onboard = root / "plugin" / "skills" / "crapkit-onboard" / "SKILL.md"
     onboard.parent.mkdir(parents=True)
     onboard.write_text(_codex_add(version) * 2, encoding="utf-8")
