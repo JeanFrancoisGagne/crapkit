@@ -209,7 +209,7 @@ def test_a_missing_oracle_fails_the_test_and_notes_an_infra_miss(monkeypatch, tm
     with pytest.raises(pytest.fail.Exception, match="is not installed"):
         oracles.require("tool", "push", pins)
 
-    assert '"kind": "infra"' in log.read_text(encoding="utf-8")
+    assert [note["kind"] for note in runlog.read(log)] == ["infra"]
 
 
 def test_the_fixture_hands_back_a_checked_oracle(oracle):

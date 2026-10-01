@@ -8,10 +8,17 @@ a digest the receipt should carry (an export the xplat job compares). Each
 note names the test that wrote it, so run.py can tell an infra miss from a
 real failure in the same check. Outside run.py the variable is unset and a
 note goes nowhere.
+
+Each process appends to a file of its own beside that path (`<path>.<pid>`),
+and `read` gathers them. pytest-xdist workers note at the same time, and on
+Windows appends from several processes to one file lose lines: four writers
+kept 9,257 to 9,350 of 12,000 notes and once left a line json could not read
+(2026-10-01, the Windows push job).
 """
 from __future__ import annotations
 
 from collections import Counter
+import glob
 import json
 import os
 from pathlib import Path
@@ -29,15 +36,19 @@ def note(kind: str, **fields) -> None:
         return
     test = os.environ.get(TEST_ENV, "").rsplit(" (", 1)[0]
     line = json.dumps({"kind": kind, "test": test, **fields}, sort_keys=True)
-    with Path(target).open("a", encoding="utf-8") as handle:
+    with Path(f"{target}.{os.getpid()}").open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
 
 
 def read(path: Path) -> list[dict]:
-    """Every note in a log, in order. A missing log holds none."""
-    if not path.exists():
-        return []
-    lines = path.read_text(encoding="utf-8").splitlines()
+    """Every note in a log: the file at `path` and each process's file beside it,
+    each in the order it was written. A missing log holds none."""
+    parts = [path, *sorted(path.parent.glob(glob.escape(path.name) + ".*"))]
+    return [note for part in parts if part.is_file() for note in _notes(part)]
+
+
+def _notes(part: Path) -> list[dict]:
+    lines = part.read_text(encoding="utf-8").splitlines()
     return [json.loads(line) for line in lines if line.strip()]
 
 

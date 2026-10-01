@@ -1,7 +1,31 @@
 """Notes a test hands run.py: written only when run.py asked, summed on read."""
+import os
+from pathlib import Path
+import subprocess
+import sys
+
 import pytest
 
 from accuracy.kit import runlog
+from hang_guard import HANG_SECONDS
+
+TESTS = Path(__file__).resolve().parents[2]
+WRITER = ("import sys; sys.path.insert(0, sys.argv[1])\n"
+          "from accuracy.kit import runlog\n"
+          "for _ in range(2000): runlog.note('events', counts={'n': 1}, pad='x' * 200)\n")
+
+
+def test_notes_from_processes_writing_at_once_all_come_back(tmp_path):
+    """pytest-xdist workers note at the same time. On Windows, appends from four
+    processes to one file kept 9,257 to 9,350 of 12,000 notes and once left a line
+    json could not read, which ended run.py in the Windows push job (2026-10-01)."""
+    log = tmp_path / "run.jsonl"
+    env = {**os.environ, runlog.LOG_ENV: str(log)}
+    writers = [subprocess.Popen([sys.executable, "-c", WRITER, str(TESTS)], env=env)
+               for _ in range(4)]
+
+    assert [writer.wait(timeout=HANG_SECONDS) for writer in writers] == [0, 0, 0, 0]
+    assert runlog.summarize(runlog.read(log))["events"] == {"n": 8000}
 
 
 def test_without_a_log_a_note_goes_nowhere(monkeypatch, tmp_path):

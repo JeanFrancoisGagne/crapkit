@@ -26,7 +26,7 @@ from hypothesis import given, strategies as st
 import pytest
 
 from accuracy.corpus_goldens import releases, wheels
-from accuracy.kit import repos
+from accuracy.kit import repos, runlog
 from accuracy.kit.settings import pure
 
 # A two-scope repo: src has no lane, so its rows read no-lane and score
@@ -376,7 +376,7 @@ def test_a_failed_release_fetch_is_noted_as_an_infra_miss(monkeypatch, tmp_path)
 
     with pytest.raises(wheel_diff.WheelDiffError):
         releases.last(5)
-    notes = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    notes = runlog.read(log)
     assert [(note["kind"], note["message"]) for note in notes] == [
         ("infra", "fetching https://pypi.org/pypi/crapkit/json failed: offline")]
 
