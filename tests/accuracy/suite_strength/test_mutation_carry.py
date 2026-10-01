@@ -814,6 +814,11 @@ def test_a_real_mutmut_run_carries_what_holds_and_judges_what_moved(tmp_path, mo
     first = verdicts()
     assert runs == [_globs(*REAL.values())]
     assert first and set(first.values()) <= mutation.KILLED | mutation.ALIVE
+    (frame,) = json.loads(receipt.read_bytes())["carry"]["frames"].values()
+    assert frame["modules"]["src/carrykit/score.py"]["placed"] == ["crap", "grade"]
+    stored = json.loads(receipt.read_bytes())["carry"]["functions"]
+    assert stored["src/carrykit/digest.py:totals"]["reads"] == [
+        "tests/unit/data/rows.txt", "tests/unit/test_digest.py"]
 
     assert mutation.main(weekly) in (0, 1)
     assert len(runs) == 1 and verdicts() == first
