@@ -167,6 +167,72 @@ def test_one_dispatched_retro_run_can_judge_every_linux_row_cold():
         assert inside + 120 <= step_minutes * 60 and step_minutes + 10 <= job_minutes <= 360, seconds
 
 
+RETRO_RELEASE = "retro replays for the release"
+VERDICTS = ".crapkit/accuracy/retro-verdicts"  # retro.verdicts_dir() with no CRAPKIT_RETRO_VERDICTS
+
+
+def _holds(condition, mode: str, row: dict) -> bool:
+    """A step's `if:` as the runner reads it for one mode and matrix row; the
+    operators these steps use map one to one onto Python's."""
+    text = re.sub(r"matrix\.(\w+)", lambda found: repr(str(row[found.group(1)])), condition or "true")
+    for name, value in (("needs.plan.outputs.mode", repr(mode)), ("needs.plan.outputs.tier", repr(mode)),
+                        ("always()", "True"), ("&&", " and "), ("||", " or "), ("true", "True")):
+        text = text.replace(name, value)
+    return eval(text)
+
+
+def _release_cells():
+    """(job, matrix row, sys.platform) for every cell a release run starts."""
+    jobs = _jobs("accuracy.yml")
+    for row in jobs["oracles"]["strategy"]["matrix"]["include"]:
+        yield jobs["oracles"], row, "linux"
+    for python in jobs["windows"]["strategy"]["matrix"]["python"]:
+        yield jobs["windows"], {"python": python}, "win32"
+    yield jobs["macos"], {}, "darwin"
+
+
+def _runs_retro_release(job: dict, row: dict, platform: str) -> bool:
+    """Whether the cell's release tier, read by run.py's own parser and check
+    selection, runs `retro.py release`."""
+    command = job["steps"][_tier_index(job)]["run"].replace("\\\n", " ")
+    command = command[command.index("python tools/accuracy/run.py"):].replace('"$TIER"', "release")
+    command = rendered(command.replace("${{ needs.plan.outputs.tier }}", "release"), row)
+    args = arguments(RUN_TOOL["_run_parser"]().parse_args, command, "tools/accuracy/run.py")
+    checks = RUN_TOOL["selected"](RUN_TOOL["load_checks"](), "release", args.shard, platform, args.os_sensitive)
+    return RETRO_RELEASE in {check.name for check in checks}
+
+
+def _verdict_cache_steps(job: dict, row: dict, action: str, where) -> list[dict]:
+    """The steps of `action` on the verdict cache that run at release for `row`,
+    at an index `where` accepts."""
+    return [item for index, item in enumerate(job["steps"])
+            if str(item.get("uses", "")).startswith(action) and item.get("with", {}).get("path") == VERDICTS
+            and where(index) and _holds(item.get("if"), "release", row)]
+
+
+def test_a_release_cell_judges_an_unchanged_row_by_its_kept_verdict():
+    """`retro.py release` replays a stale row with no verdict kept at the release
+    tier. Without the cache each release cell, and each re-run of one, replayed
+    every stale row again; with it a row whose digest and env key held is judged
+    by the verdict kept for them. A cell that does not run the check keeps none."""
+    keys = []
+    for job, row, platform in _release_cells():
+        tier = _tier_index(job)
+        restores = _verdict_cache_steps(job, row, "actions/cache/restore@", lambda index: index < tier)
+        saves = _verdict_cache_steps(job, row, "actions/cache/save@", lambda index: index > tier)
+        if not _runs_retro_release(job, row, platform):
+            assert restores == saves == [], row
+            continue
+        assert (len(restores), len(saves)) == (1, 1), row
+        key = rendered(restores[0]["with"]["key"], row)
+        assert key == rendered(saves[0]["with"]["key"], row) and key.endswith("${{ github.run_id }}")
+        assert key.startswith(rendered(restores[0]["with"]["restore-keys"], row))
+        assert "always()" in saves[0]["if"]
+        keys.append(key)
+
+    assert len(keys) == len(set(keys)) == 3
+
+
 def _nightly_npm_prefixes() -> list[str]:
     """The Node tool sets docs/accuracy.md's nightly recipe installs, in its order."""
     text = (ROOT / "docs" / "accuracy.md").read_text(encoding="utf-8")

@@ -425,7 +425,11 @@ a worktree there is reused with its venvs when `git worktree repair` and
 clone that never made it) or holds another commit is rebuilt with its venvs.
 
 The release tier runs `retro.py release`, which judges every stale row by the
-same verdict cache, keyed at the release tier. Rows R01 to R12 are bundle rows:
+same verdict cache, keyed at the release tier. In a release run of accuracy.yml
+the cells that run it (the Linux `verdict-score` shard and both Windows cells)
+restore and save that cache under `retro-verdicts-release-<os>-<python>-`, so a
+re-run of a cell, or the next release within GitHub's 7-day cache eviction,
+replays only the rows no earlier run kept. Rows R01 to R12 are bundle rows:
 their commits live only in `CRAPKIT_RETRO_BUNDLE`, the history bundle, and
 GitHub holds none of them. A bundle row whose digest has not moved is not
 replayed; its ledger record answers for it. A stale bundle row replays where

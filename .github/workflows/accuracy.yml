@@ -205,6 +205,15 @@ jobs:
         run: |
           folder=$(python3 tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
           echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
+      # The release tier runs `retro.py release` in this shard only. It judges a
+      # stale row by the verdict kept for it at the release tier, so a re-run of
+      # the cell replays only the rows no earlier run kept.
+      - uses: actions/cache/restore@v4
+        if: needs.plan.outputs.mode == 'release' && matrix.shard == 'verdict-score'
+        with:
+          path: .crapkit/accuracy/retro-verdicts
+          key: retro-verdicts-release-linux-${{ matrix.python }}-${{ github.run_id }}
+          restore-keys: retro-verdicts-release-linux-${{ matrix.python }}-
       # The fetched corpus goes where the image looks for it, /corpus.
       - name: run.py in the image
         env:
@@ -219,6 +228,11 @@ jobs:
             -e CRAPKIT_ACCURACY_IMAGE_DIGEST="$DIGEST" -e CRAPKIT_HYPOTHESIS_DB=/src/.hypothesis/examples \
             "$REF" python tools/accuracy/run.py --tier "$TIER" --shard ${{ matrix.shard }} -n 4 \
             --receipt .crapkit/accuracy/receipts/linux-${{ matrix.python }}-${{ matrix.shard }}.json
+      - uses: actions/cache/save@v4
+        if: always() && needs.plan.outputs.mode == 'release' && matrix.shard == 'verdict-score'
+        with:
+          path: .crapkit/accuracy/retro-verdicts
+          key: retro-verdicts-release-linux-${{ matrix.python }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -307,8 +321,21 @@ jobs:
         run: |
           folder=$(python tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
           echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
+      # At release this tier runs `retro.py release`, which judges a stale row by
+      # the verdict kept for it at the release tier and this cell's Python.
+      - uses: actions/cache/restore@v4
+        if: needs.plan.outputs.mode == 'release'
+        with:
+          path: .crapkit/accuracy/retro-verdicts
+          key: retro-verdicts-release-windows-${{ matrix.python }}-${{ github.run_id }}
+          restore-keys: retro-verdicts-release-windows-${{ matrix.python }}-
       # The checks whose os list names win32, plus every check with no os list.
       - run: python tools/accuracy/run.py --tier ${{ needs.plan.outputs.tier }} -n 4 --receipt .crapkit/accuracy/receipts/windows-${{ matrix.python }}.json
+      - uses: actions/cache/save@v4
+        if: always() && needs.plan.outputs.mode == 'release'
+        with:
+          path: .crapkit/accuracy/retro-verdicts
+          key: retro-verdicts-release-windows-${{ matrix.python }}-${{ github.run_id }}
       # The past bugs that replay on Windows only (bugs.tsv platform windows); the
       # retro job replays the others in the image. A row replays only when no
       # verdict is kept for its row digest and env key, where ImageOS and
