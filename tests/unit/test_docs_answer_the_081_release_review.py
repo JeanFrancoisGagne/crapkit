@@ -35,6 +35,13 @@ def _section(rel: str, heading: str) -> str:
     return " ".join(text[start:start + ends[0] if ends else None].split())
 
 
+def _release_section() -> str:
+    """CHANGELOG.md's 0.8.1 section, `unreleased` until stage 1 of the release dates it."""
+    heading = next(line for line in _doc("CHANGELOG.md").splitlines()
+                   if line.startswith("## 0.8.1 — "))
+    return _section("CHANGELOG.md", heading)
+
+
 def _changelog_steps() -> str:
     return _section("CHANGELOG.md", "### Upgrading from 0.8.0")
 
@@ -126,7 +133,7 @@ def test_worklist_json_rows_carry_no_unmeasured_key_and_the_guide_says_which_do(
             "reads `no-lane` or `cc-only`. `brief --json`, `next-item` and `rescore --json` keep "
             "`cov` and add `unmeasured: true`.") in values
     assert ("carries `unmeasured: true` in `brief`, `next-item` and `rescore`"
-            in _section("CHANGELOG.md", "## 0.8.1 — unreleased"))
+            in _release_section())
     detail = " ".join(_doc("docs/releases/0.8.1.md").split())
     assert ("A row no coverage measured carries `unmeasured: true` in `brief`, `next-item`, "
             "`rescore` and their MCP tools") in detail
@@ -438,7 +445,7 @@ def test_the_changelog_takes_the_upgrade_steps_in_the_guides_order():
         linked = set(re.findall(r"\]\(docs/upgrading\.md#([\w-]+)\)", entry))
         assert wanted and wanted <= linked, (number, sorted(wanted - linked))
 
-    release = _section("CHANGELOG.md", "## 0.8.1 — unreleased")
+    release = _release_section()
     assert "steps 1 and 2 come before you upgrade crapkit" in release
     assert "coverage.py 7.13.1 or newer (step 1), and several exit codes move (step 10)" in release
     assert "share the one re-seed in step 4" in release
