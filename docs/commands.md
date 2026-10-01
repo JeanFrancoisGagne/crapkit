@@ -216,10 +216,10 @@ enforcement point.
 
 It says two things: the advisory, and one line when the hook passes a flag this crapkit
 does not know. That line goes on stderr at exit 0, names the arguments as typed, and the
-edit goes unjudged, because this build cannot know what the flag asks for:
+edit goes unjudged, because this build cannot know what the flag asks for. For
+`--protocol 1 --budget 5` it prints:
 
 ```
-$ crapkit claude-hook --protocol 1 --budget 5
 crapkit claude-hook: this crapkit does not know `--budget 5`; the hook was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, then run `crapkit doctor --plugin-root`
 ```
 
