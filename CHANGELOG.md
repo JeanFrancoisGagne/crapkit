@@ -406,6 +406,9 @@ outside tools. [For contributors](docs/releases/0.8.1.md#for-contributors) and [
 and release tooling](docs/releases/0.8.1.md#ci-tests-and-release-tooling) have the
 detail. The accuracy suite's change log records this release's fixes as C2, C3, C7, C8,
 C11 and C15.
+The weekly mutation run passes both floors and fails its survivor set outside them;
+[For contributors](docs/releases/0.8.1.md#for-contributors) says what 0.9.0 does about
+it.
 
 ## 0.8.0 — 2026-09-23
 
