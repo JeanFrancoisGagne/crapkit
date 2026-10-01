@@ -499,6 +499,10 @@ def floors(results: list[Result], equivalents: list[dict], groups: list[dict]) -
 
 
 # --- what changed since the last weekly run --------------------------------------------------
+#
+# No command reads since() or uncovered() now that the calc runs carry stored
+# verdicts (carry_problem); the 0.8.1 notes still describe them
+# (tests/unit/test_081_notes_describe_the_release_and_mutation_tooling.py).
 
 def captured(argv: list, cwd: Path, stdin: str | None = None) -> subprocess.CompletedProcess:
     """argv's output as text; a byte that is not UTF-8 reads as U+FFFD, never an error."""
@@ -589,27 +593,6 @@ def function_texts(source: str) -> dict[str, str]:
     return texts
 
 
-def function_text(repo: Path):
-    """A reader of one function's text at a commit of `repo`, as function_texts
-    gives it: "" when the module there holds no such function, None when this
-    clone cannot read the module there. One git read per commit and module."""
-    read: dict[tuple[str, str], dict[str, str] | None] = {}
-
-    def text(commit: str, module: str, name: str) -> str | None:
-        if (commit, module) not in read:
-            read[commit, module] = _texts_at(repo, commit, module)
-        texts = read[commit, module]
-        return None if texts is None else texts.get(name, "")
-    return text
-
-
-def _texts_at(repo: Path, commit: str, module: str) -> dict[str, str] | None:
-    try:
-        return function_texts(_git(repo, "cat-file", "blob", f"{commit}:{module}"))
-    except MutationError:
-        return None
-
-
 # A diff receipt's head is the full sha `git rev-parse HEAD` printed. Anything
 # else (a ref, an empty head, which git reads as the index) names no commit.
 _COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
@@ -666,7 +649,9 @@ def uncovered(changed: list[tuple[str, str]], diffs: list[dict], text) -> list[t
     head, decorators included, is its text at HEAD. mutmut 3.8 makes no mutant of
     a function decorated with anything but a lone staticmethod or classmethod, nor
     of one with nothing it mutates, so no receipt covers such a function.
-    `text(commit, module, name)` reads a function's text (function_text)."""
+    `text(commit, module, name)` reads a function's text at a commit, as
+    function_texts gives it: "" when the module there holds no such function,
+    None when this clone cannot read the module there."""
     judged = list(filter(_covers, diffs))
     found = [(f"{module}:{name}", _why_uncovered(judged, module, name, text))
              for module, name in changed]
