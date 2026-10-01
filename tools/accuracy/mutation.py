@@ -1603,15 +1603,17 @@ def is_test_module(path: str) -> bool:
 
 
 class Tree:
-    """A commit's tracked files, path to git blob id, and a reader of a blob's text."""
+    """A commit's tracked files, path to "MODE BLOB" (a test that runs a tracked
+    script changes outcome on its executable bit alone), and a reader of a blob's
+    text."""
 
     def __init__(self, blobs: dict[str, str], read):
         self.blobs, self._read = blobs, read
         self.ident = _sha(json.dumps(sorted(blobs.items())))
 
     def text(self, path: str) -> str:
-        blob = self.blobs.get(path)
-        return "" if blob is None else self._read(blob)
+        entry = self.blobs.get(path)
+        return "" if entry is None else self._read(entry.rpartition(" ")[2])
 
 
 def _blob_entries(listed: str):
@@ -1619,7 +1621,7 @@ def _blob_entries(listed: str):
         meta, _, path = record.partition("\t")
         fields = meta.split()
         if fields[1:2] == ["blob"]:
-            yield path, fields[2]
+            yield path, f"{fields[0]} {fields[2]}"
 
 
 def head_tree(repo: Path) -> Tree:
@@ -1660,7 +1662,8 @@ def listings(blobs: dict[str, str]) -> dict[str, frozenset]:
 
 
 def moved_paths(then: dict[str, str], now: dict[str, str]) -> list[str]:
-    """Every path whose blob differs between two trees, added and removed ones included."""
+    """Every path whose mode or blob differs between two trees, added and removed
+    ones included."""
     return sorted(path for path in then.keys() | now.keys() if then.get(path) != now.get(path))
 
 

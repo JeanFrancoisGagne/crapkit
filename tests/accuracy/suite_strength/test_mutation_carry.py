@@ -74,10 +74,14 @@ REACH = {"outside": dict(NOTHING),
                               "spawns": []}}}
 
 
-def _tree(files: dict[str, str]):
-    blobs = {path: mutation._sha(text) for path, text in files.items()}
+def _tree(files: dict[str, str], modes: dict[str, str] | None = None):
+    """A tree of `files`, each entry its git mode (100644 unless `modes` names
+    another) and the sha256 of its text standing in for the blob id."""
+    modes = modes or {}
+    entries = {path: f"{modes.get(path, '100644')} {mutation._sha(text)}"
+               for path, text in files.items()}
     texts = {mutation._sha(text): text for text in files.values()}
-    return mutation.Tree(blobs, texts.__getitem__)
+    return mutation.Tree(entries, texts.__getitem__)
 
 
 def _put(path: Path, data) -> None:
@@ -123,7 +127,7 @@ class World:
     """A repo, a stage and receipts under tmp_path, with HEAD's files in `files`."""
 
     def __init__(self, tmp_path: Path, monkeypatch):
-        self.files, self.env = dict(FILES), "env-1"
+        self.files, self.modes, self.env = dict(FILES), {}, "env-1"
         self.now = datetime.datetime(2026, 10, 1, 12, 0, tzinfo=datetime.timezone.utc)
         self.repo, self.stage, self.mutmut = tmp_path / "repo", tmp_path / "stage", FakeMutmut()
         self.stage.mkdir(parents=True)
@@ -140,7 +144,7 @@ class World:
         monkeypatch.setattr(mutation, "calc_functions", lambda root=None: {})
         monkeypatch.setattr(mutation, "stage_deselected", lambda: [])
         monkeypatch.setattr(mutation, "_prepare_stage", lambda targets, where, deselect=(): self.stage)
-        monkeypatch.setattr(mutation, "head_tree", lambda repo: _tree(self.files))
+        monkeypatch.setattr(mutation, "head_tree", lambda repo: _tree(self.files, self.modes))
         monkeypatch.setattr(mutation, "env_key", lambda stage: self.env)
         monkeypatch.setattr(mutation, "_now", lambda: self.now)
         monkeypatch.setattr(mutation, "_git", lambda repo, *args: "f" * 40 + "\n")
@@ -328,6 +332,38 @@ def test_a_test_that_starts_a_program_voids_its_functions_on_any_change(world):
     world.run()
 
     assert world.judged() == _globs(CRAP, GRADE)
+
+
+def test_a_mode_change_alone_reruns_the_functions_of_a_test_that_starts_a_program(world):
+    """A test that runs a tracked script changes outcome on its executable bit, and
+    the tree's key held only each file's blob: a 100644 to 100755 change moved
+    nothing, and the kill carried."""
+    world.mutmut.reach["tests"][T_GRADE]["spawns"] = ["sh"]
+    world.modes["README.md"] = "100644"
+    _first_run(world)
+    world.run()
+    assert world.judged() is None
+
+    world.modes["README.md"] = "100755"
+    world.run()
+
+    assert world.judged() == _globs(CRAP, GRADE)
+
+
+def test_the_head_tree_keys_each_entry_on_its_mode_and_its_blob(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo, {"run.sh": "echo hi\n", "README.md": "readme\n"})
+    before = mutation.head_tree(repo)
+    mutation._git(repo, "commit", "-q", "--allow-empty", "-m", "same tree")
+    assert mutation.head_tree(repo).ident == before.ident
+
+    mutation._git(repo, "update-index", "--chmod=+x", "run.sh")
+    mutation._git(repo, "commit", "-qm", "executable")
+    after = mutation.head_tree(repo)
+
+    assert mutation.moved_paths(before.blobs, after.blobs) == ["run.sh"]
+    assert after.text("run.sh") == before.text("run.sh") == "echo hi\n"
 
 
 def test_a_file_the_suite_reads_outside_any_test_voids_every_function_with_mutants(world):

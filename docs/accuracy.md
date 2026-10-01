@@ -272,7 +272,7 @@ carries a function's verdicts while all of these hold:
 | The mutated modules | A change outside their functions, a function added or removed, or a change to a function mutmut made no mutant of, since no map says which tests reach it |
 | Every other `.py` file | Any change to a `.py` file that is neither a mutated module nor a test module (`src/`, `tools/`, `conftest.py`, the kit) |
 | What the suite reads outside any test | A file read or a folder listed during collection or by a fixture wider than one test; any change at all once a program was started there |
-| What the covering tests rest on | Their test modules, each file they read, each folder they list, any change at all when one starts a program other than git outside the stage, and each function they also run |
+| What the covering tests rest on | Their test modules, each file they read, each folder they list, any change at all (a file's mode alone included) when one starts a program other than git outside the stage, and each function they also run |
 | The kind of verdict | A survivor, an unreached mutant or a timeout holds only at the tree it was judged at, and a run judges every timeout again |
 
 mutmut's stats pass names the covering tests of each function. The stage's
