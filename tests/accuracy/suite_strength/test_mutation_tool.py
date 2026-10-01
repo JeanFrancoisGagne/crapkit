@@ -1052,12 +1052,25 @@ def test_a_run_without_a_timeout_reruns_nothing(tmp_path):
 
 
 @pytest.mark.nightly
-def test_mutmut_s_exit_code_comes_back_and_a_budget_that_runs_out_reads_minus_one(tmp_path):
+def test_mutmut_s_exit_code_comes_back_and_a_budget_that_runs_out_reads_as_none(tmp_path):
     (tmp_path / "exits.py").write_text("import sys, time\ntime.sleep(float(sys.argv[1]))\n"
                                        "sys.exit(7)\n", encoding="utf-8")
 
     assert mutation._run_mutmut(tmp_path, ["0"], None, ("exits.py",)) == 7
-    assert mutation._run_mutmut(tmp_path, ["5"], 0.5, ("exits.py",)) == -1
+    assert mutation._run_mutmut(tmp_path, ["5"], 0.5, ("exits.py",)) is None
+    assert mutation.died(tmp_path, None) == ""
+
+
+@pytest.mark.nightly
+@pytest.mark.platform("linux", "darwin")
+def test_a_mutmut_a_hangup_ended_reads_as_a_death(tmp_path):
+    (tmp_path / "hangs_up.py").write_text("import os, signal\nos.kill(os.getpid(), signal.SIGHUP)\n",
+                                          encoding="utf-8")
+
+    code = mutation._run_mutmut(tmp_path, [], 60, ("hangs_up.py",))
+
+    assert code == -1
+    assert "ended with signal SIGHUP before it judged its mutants" in mutation.died(tmp_path, code)
 
 
 # --- the commands that read receipts --------------------------------------------------------------
@@ -1749,6 +1762,19 @@ def test_a_run_a_signal_ended_is_named_by_its_signal(tmp_path, monkeypatch):
 
     with pytest.raises(mutation.RunDied, match="ended with signal SIGSEGV before it judged"):
         mutation.staged_run(Path("w"), {}, ["crapkit.score.*"], {}, 2)
+
+
+# subprocess reports a death by SIGHUP (signal 1) as -1. The budget stop once
+# read as -1 too, so a hung-up mutmut passed as a run its cap had stopped: a
+# weekly shard wrote its receipt, and a diff run blamed its cap.
+
+@pytest.mark.parametrize("budget", [None, 60])
+def test_a_run_a_hangup_ended_is_a_death_and_never_the_budget(tmp_path, monkeypatch, budget):
+    _fake_stage(tmp_path, monkeypatch)
+    monkeypatch.setattr(mutation, "_run_mutmut", lambda *args, **kwargs: -1)
+
+    with pytest.raises(mutation.RunDied, match=r"ended with signal \w+ before it judged"):
+        mutation.staged_run(Path("w"), {}, ["crapkit.score.*"], {}, 2, budget=budget)
 
 
 @pytest.mark.parametrize("argv", [["weekly", "--shard", "1", "--of", "1"], ["tools"],

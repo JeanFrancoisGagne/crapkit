@@ -31,8 +31,8 @@ a test that fails there fails whatever the mutant, so it is left out of every
 mutant's tests and named in the stage's stats-failures.txt, which the run prints
 and its receipt keeps under `stats_failures`.
 
-A run mutmut ends with anything but 0 (a failed stats run, a crash, a signal)
-judged nothing: the command writes no receipt, names how mutmut ended and each
+A run mutmut ends with anything but 0 (a failed stats run, a crash, a signal,
+SIGHUP included) judged nothing: the command writes no receipt, names how mutmut ended and each
 in-process call the test kit logged as stuck in the stage's in-process-hangs.log,
 and exits 4. mutmut runs its stats pass in its own process, so every run names
 that file to the kit (HANGS_ENV), and the kit then never ends the process on a
@@ -663,20 +663,22 @@ HANGS_FILE = "in-process-hangs.log"
 
 
 def _run_mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple = LAUNCH,
-            env: dict | None = None) -> int:
+            env: dict | None = None) -> int | None:
+    """mutmut's exit status, or None when `budget` seconds ran out first. None is
+    no exit status: subprocess reports a death by signal N as -N, so -1 is SIGHUP."""
     argv = [sys.executable, *mutmut, *args]
     env = {**(os.environ if env is None else env), HANGS_ENV: str(Path(repo).resolve() / HANGS_FILE)}
     try:
         return subprocess.run(argv, cwd=repo, timeout=budget, env=env).returncode
     except subprocess.TimeoutExpired:
-        return -1
+        return None
 
 
-def died(repo: Path, code: int) -> str:
+def died(repo: Path, code: int | None) -> str:
     """Why mutmut's run in `repo` proves nothing, or "". mutmut ends a run it
-    finished with 0, and -1 is the budget stopping it; any other end (a failed
+    finished with 0, and None is the budget stopping it; any other end (a failed
     stats run, a crash, a signal) leaves its mutants unjudged."""
-    if code in (0, -1):
+    if code is None or code == 0:
         return ""
     return (f"mutmut's run in {repo} ended with {_ending(code)} before it judged its mutants, "
             f"so the run proves nothing and writes no receipt{_stuck_calls(repo)}")
@@ -1180,7 +1182,7 @@ def staged_run(where: Path, targets: dict, globs: list[str], env: dict, children
     if problem:
         raise RunDied(problem)
     rows = collect(stage, globs)
-    if code == -1:
+    if code is None:
         return rows, False
     return _rerun_timeouts(stage, rows, env=env), True
 

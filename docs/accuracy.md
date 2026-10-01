@@ -264,11 +264,13 @@ with its reason, and the stage leaves it out, as it leaves out the tests an open
 defect ruling names. CI still runs it on the tree.
 
 A run that mutmut ends before it judged its mutants proves nothing: a failed stats
-run, a crash, a signal. The command then writes no receipt, prints how mutmut
-ended and each in-process crapkit call the test kit logged as stuck past its
-bound, and exits 4. Exit 1 stays a check that failed, and exit 3 a receipt missing
-on this machine. `covered` refuses a weekly receipt that holds a mutant its run
-never judged, and a diff receipt that holds one covers no function.
+run, a crash, a signal (SIGHUP included). The command then writes no receipt,
+prints how mutmut ended and each in-process crapkit call the test kit logged as
+stuck past its bound, and exits 4. Only the `diff` run's cap stops mutmut short
+without a death, and that run reports `incomplete`. Exit 1 stays a check that
+failed, and exit 3 a receipt missing on this machine. `covered` refuses a weekly
+receipt that holds a mutant its run never judged, and a diff receipt that holds
+one covers no function.
 
 mutmut runs its stats pass in its own process, so inside a stage the test kit
 never ends the process when a call is stuck in C code. It writes every thread's
