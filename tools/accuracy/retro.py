@@ -333,7 +333,10 @@ def _closure_files(test_file: Path, repo: Path) -> set[Path]:
 
 
 def _is_data(path: Path, packet: Path) -> bool:
-    return path.is_file() and bool(set(DATA_DIRS) & set(path.relative_to(packet).parts[:-1]))
+    """A file under one of the packet's data folders. Bytecode under __pycache__ is
+    not: Python writes it wherever a module is imported, and no checkout holds it."""
+    folders = set(path.relative_to(packet).parts[:-1])
+    return path.is_file() and "__pycache__" not in folders and bool(set(DATA_DIRS) & folders)
 
 
 def _packet_data(test_file: Path, repo: Path) -> set[Path]:

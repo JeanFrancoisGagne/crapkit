@@ -510,6 +510,22 @@ def test_the_digest_does_not_depend_on_where_the_tree_sits(small_tree, tmp_path_
     assert retro.digest(TEST, repo=moved) == retro.digest(TEST, repo=small_tree)
 
 
+@pytest.mark.parametrize("generated", [
+    "tests/accuracy/pkt/fixtures/__pycache__/data.cpython-312.pyc",
+    "tests/accuracy/pkt/fixtures/__pycache__/data.cpython-312.pyc.64312",
+])
+def test_bytecode_beside_a_data_file_leaves_the_digest_alone(small_tree, generated):
+    """Python writes __pycache__ beside a module a check imports from a data folder,
+    and leaves a .pyc.<pid> while it writes one. No checkout holds either, so two
+    worktrees of one commit gave the check two digests, and a row recorded in one
+    read stale in the other."""
+    before = retro.digest(TEST, repo=small_tree)
+    (small_tree / generated).parent.mkdir(parents=True, exist_ok=True)
+    (small_tree / generated).write_bytes(b"\x00bytecode")
+
+    assert retro.digest(TEST, repo=small_tree) == before
+
+
 # --- choosing rows -----------------------------------------------------------------------------------
 
 # A check this file holds: a row replays only when its test function exists.
