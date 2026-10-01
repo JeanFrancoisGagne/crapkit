@@ -639,12 +639,15 @@ def _accuracy_step(version: str) -> Step:
         ("git", "push", "-q", "origin", f"v{version}^{{commit}}:refs/heads/{branch}"),
         ("gh", "workflow", "run", "accuracy.yml", "--repo", GITHUB_REPO, "--ref", branch,
          "-f", "mode=release", "-f", f"release_key={version}"),
+        ("gh", "run", "rerun", ACCURACY_RUN_ARG, "--failed", "--repo", GITHUB_REPO),
         ("gh", "run", "watch", ACCURACY_RUN_ARG, "--repo", GITHUB_REPO, "--exit-status"),
         ("git", "push", "-q", "origin", "--delete", branch)), background=True,
         note="the release tier here (30 min), then accuracy.yml's release mode on the tag "
              "commit through a scratch branch (up to 90 min); a rerun reuses a passing receipt "
-             "and a run already passed or running. Stage 2b rereads the run from GitHub and "
-             "rehashes the pins, corpus and retro ledger; it trusts neither report")
+             "and a run already passed or running, and after a red one reruns only its failed "
+             "cells while every receipt artifact it uploaded is unexpired. Stage 2b rereads the "
+             "run from GitHub and rehashes the pins, corpus and retro ledger; it trusts neither "
+             "report")
 
 
 def plan(version: str) -> list:
@@ -1207,12 +1210,55 @@ def _watch(run: dict, root: Path, version: str, watched: Watched = ACCURACY_WATC
                            f"{rerun}")
 
 
+# Every receipt artifact accuracy.yml uploads keeps for one day (retention-days:
+# 1), and xplat compares the receipts it downloads with one another: it passes on
+# one. `gh run rerun --failed` keeps the green cells and their receipts, so after a
+# green cell's receipt expired a rerun's xplat would check the rerun cells against
+# nothing. The stage reruns a red run only while every receipt it uploaded is
+# unexpired; otherwise it dispatches a new run.
+ACCURACY_RECEIPT_ARTIFACT = "receipt-"
+
+
+def _receipt_artifacts(run: dict) -> list | None:
+    """The receipt artifacts the run uploaded, or None when GitHub's list is unreadable."""
+    url = f"{GITHUB_API}repos/{REPO_SLUG}/actions/runs/{run.get('id')}/artifacts?per_page=100"
+    artifacts = _remote_json(url).get("artifacts")
+    if not isinstance(artifacts, list):
+        return None
+    return [item for item in artifacts if isinstance(item, dict)
+            and str(item.get("name", "")).startswith(ACCURACY_RECEIPT_ARTIFACT)]
+
+
+def _receipts_live(run: dict) -> bool:
+    receipts = _receipt_artifacts(run)
+    return receipts is not None and all(item.get("expired") is False for item in receipts)
+
+
+def _live_red(runs: list) -> dict | None:
+    """The newest red release run at the tag commit, while every receipt it kept is live."""
+    red = _newest_red(runs)
+    if red is None or _receipts_live(red):
+        return red
+    print(f"{_run_label(red)} holds a receipt artifact that expired or cannot be read; "
+          "dispatching a new run")
+    return None
+
+
 def _run_to_watch(step: Step, root: Path, version: str, head: str, runs: list) -> dict:
-    """A release run already going at the tag commit, else a new dispatch's run."""
-    run = _unfinished(release_runs(runs, version, head))
+    """A release run already going at the tag commit, else the newest red one
+    rerun (failed and cancelled cells only), else a new dispatch's run."""
+    mine = release_runs(runs, version, head)
+    run = _unfinished(mine)
     if run is not None:
         return run
-    _run_or_untag(step._replace(commands=step.commands[1:3]), root, version, False)
+    _run_or_untag(step._replace(commands=step.commands[1:2]), root, version, False)
+    listed = lambda: release_runs(_accuracy_runs(head), version, head)  # noqa: E731
+    rerun = _rerun_red(root, step.commands[3], _live_red(mine), listed, _rerun(version))
+    return rerun or _dispatch_accuracy(step, root, version, head, runs)
+
+
+def _dispatch_accuracy(step: Step, root: Path, version: str, head: str, runs: list) -> dict:
+    _run_or_untag(step._replace(commands=step.commands[2:3]), root, version, False)
     return _dispatched(lambda: release_runs(_accuracy_runs(head), version, head),
                        {old.get("id") for old in runs},
                        f"accuracy.yml was dispatched but no run named `{accuracy_title(version)}` "
@@ -1371,11 +1417,11 @@ def deploy_gate(root: Path, version: str, receipt: dict, advisory: frozenset = f
 
 
 def _for_run(command: tuple, run: dict) -> tuple:
-    return tuple(str(run["id"]) if arg == DEPLOY_RUN_ARG else arg for arg in command)
+    return tuple(str(run["id"]) if arg in (DEPLOY_RUN_ARG, ACCURACY_RUN_ARG) else arg for arg in command)
 
 
 def _newest_red(runs: list) -> dict | None:
-    """The newest finished run under the record's key that did not pass."""
+    """The newest finished run under the stage's key that did not pass."""
     red = [run for run in runs if run.get("status") == "completed" and run.get("conclusion") != "success"]
     return max(red, key=lambda run: run.get("id") or 0, default=None)
 

@@ -288,18 +288,30 @@ def test_stage2b_publishes_past_a_passing_accuracy_proof(tmp_path, monkeypatch):
 class Stage:
     """The commands the stage runs, GitHub's runs, and what `gh run watch` answers."""
 
-    def __init__(self, root, runs, watch=0, appear=True):
+    def __init__(self, root, runs, watch=0, appear=True, artifacts=None, refuse=None):
         self.root, self.runs, self.watch, self.appear = root, runs, watch, appear
-        self.commands, self.watched = [], []
+        self.artifacts, self.refuse = artifacts or {}, refuse
+        self.commands, self.watched, self.asked = [], [], []
 
     def execute(self, command, root, dry_run, env=None):
         self.commands.append(command)
         if command[:2] == ("gh", "workflow") and self.appear:
             self.runs.append(_run(status="queued", conclusion=None, id=99))
+        if command[:3] == ("gh", "run", "rerun"):
+            self.rerun(command[3])
         if "--tier" in command:
             _receipt(root, _saved())
 
+    def rerun(self, run_id):
+        if self.refuse:
+            raise subprocess.CalledProcessError(1, ("gh", "run", "rerun", run_id), stderr=self.refuse)
+        self.runs = [{**run, "status": "queued", "conclusion": None, "run_attempt": run.get("run_attempt", 1) + 1}
+                     if str(run["id"]) == run_id else run for run in self.runs]
+
     def remote_json(self, url, *, absent=False):
+        self.asked.append(url)
+        if "/artifacts" in url:
+            return self.artifacts.get(url.split("/runs/")[1].split("/")[0], {"total_count": 0, "artifacts": []})
         return {"total_count": len(self.runs), "workflow_runs": list(self.runs)}
 
     def run(self, argv, **kwargs):
@@ -409,3 +421,105 @@ def test_a_failing_local_tier_names_its_rows_and_never_dispatches(tree, stage, m
         _accuracy(tree)
 
     assert len(fake.commands) == 1
+
+
+# --- a red release run: rerun its failed cells while the receipts it kept live ----------------
+#
+# A red release run reruns only its failed and cancelled cells (`gh run rerun
+# ID --failed`), so one red cell no longer redispatches all 14 jobs. Every
+# receipt artifact uploads with retention-days: 1, and xplat compares the
+# receipts it downloads with one another and passes on a single one. A rerun
+# after a green cell's receipt expired would check the rerun cells against
+# nothing, so the stage reruns only while every receipt the run uploaded is
+# unexpired, and otherwise dispatches a new run.
+
+def _artifact(name, expired=False) -> dict:
+    """One entry of GET repos/OWNER/REPO/actions/runs/ID/artifacts."""
+    return {"id": 4200000001, "name": name, "size_in_bytes": 2048, "expired": expired,
+            "created_at": "2026-10-01T10:15:08Z", "expires_at": "2026-10-02T10:15:08Z"}
+
+
+RECEIPTS = ["receipt-linux-3.12-analysis", "receipt-linux-3.12-corpus", "receipt-windows-3.11",
+            "receipt-windows-3.13", "receipt-macos-3.12-corpus"]
+
+
+def _artifacts(run_id=7, expired=(), others=()) -> dict:
+    names = [*RECEIPTS, *others]
+    return {str(run_id): {"total_count": len(names),
+                          "artifacts": [_artifact(name, name in expired) for name in names]}}
+
+
+def test_a_red_run_with_every_receipt_live_reruns_only_its_failed_cells(tree, stage):
+    fake = stage([_run(conclusion="failure", id=7)], artifacts=_artifacts())
+
+    _accuracy(tree)
+
+    assert _names(fake) == ["git push -q", "gh run rerun", "git push -q"]
+    assert fake.commands[1] == ("gh", "run", "rerun", "7", "--failed", "--repo",
+                                "github.com/JeanFrancoisGagne/crapkit")
+    assert fake.watched == ["7"]
+    assert ("https://api.github.com/repos/JeanFrancoisGagne/crapkit/actions/runs/7/artifacts?per_page=100"
+            in fake.asked)
+
+
+def test_a_cancelled_run_with_every_receipt_live_reruns(tree, stage):
+    fake = stage([_run(conclusion="cancelled", id=7)], artifacts=_artifacts())
+
+    _accuracy(tree)
+
+    assert "gh run rerun" in _names(fake) and "gh workflow run" not in _names(fake)
+
+
+@pytest.mark.parametrize("expired", [["receipt-linux-3.12-corpus"], RECEIPTS], ids=["one", "all"])
+def test_a_red_run_whose_receipt_expired_dispatches_anew(tree, stage, expired, capsys):
+    fake = stage([_run(conclusion="failure", id=7)], artifacts=_artifacts(expired=expired))
+
+    _accuracy(tree)
+
+    assert _names(fake) == ["git push -q", "gh workflow run", "git push -q"] and fake.watched == ["99"]
+    assert "receipt" in capsys.readouterr().out
+
+
+def test_an_expired_artifact_that_is_no_receipt_does_not_block_the_rerun(tree, stage):
+    fake = stage([_run(conclusion="failure", id=7)],
+                 artifacts=_artifacts(others=["mutants-meta-1"], expired=["mutants-meta-1"]))
+
+    _accuracy(tree)
+
+    assert "gh run rerun" in _names(fake)
+
+
+@pytest.mark.parametrize("answer", [{}, {"artifacts": None}, {"artifacts": "none"}], ids=["no-key", "null", "text"])
+def test_an_unreadable_artifact_list_dispatches_anew(tree, stage, answer):
+    fake = stage([_run(conclusion="failure", id=7)], artifacts={"7": answer})
+
+    _accuracy(tree)
+
+    assert "gh run rerun" not in _names(fake) and "gh workflow run" in _names(fake)
+
+
+def test_a_rerun_gh_refuses_dispatches_anew(tree, stage):
+    fake = stage([_run(conclusion="failure", id=7)], artifacts=_artifacts(),
+                 refuse="run 7 cannot be rerun: it was created more than 30 days ago")
+
+    _accuracy(tree)
+
+    assert _names(fake) == ["git push -q", "gh run rerun", "gh workflow run", "git push -q"]
+    assert fake.watched == ["99"]
+
+
+def test_a_red_run_at_another_commit_is_not_rerun(tree, stage):
+    fake = stage([_run(conclusion="failure", id=7, head_sha=OTHER)], artifacts=_artifacts())
+
+    _accuracy(tree)
+
+    assert "gh run rerun" not in _names(fake) and fake.watched == ["99"]
+
+
+def test_the_newest_red_run_is_the_one_rerun(tree, stage):
+    fake = stage([_run(conclusion="failure", id=7), _run(conclusion="failure", id=12)],
+                 artifacts={**_artifacts(7), **_artifacts(12)})
+
+    _accuracy(tree)
+
+    assert fake.commands[1][3] == "12" and fake.watched == ["12"]

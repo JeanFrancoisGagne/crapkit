@@ -315,6 +315,7 @@ def test_the_accuracy_stage_publishes_no_release_ref():
                                         ".crapkit/release-accuracy-0.5.2.json")
     assert pushed == ["v0.5.2^{commit}:refs/heads/accuracy-release/0.5.2", "accuracy-release/0.5.2"]
     assert accuracy.commands[2][-4:] == ("-f", "mode=release", "-f", "release_key=0.5.2")
+    assert accuracy.commands[3][:3] == ("gh", "run", "rerun") and "--failed" in accuracy.commands[3]
 
 
 def test_the_verify_step_is_marked_as_its_own_background_command():

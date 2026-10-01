@@ -92,7 +92,14 @@ commit. Keep it in its own background process: it can take two hours.
    remote, and the tag itself stays local until stage 2b pushes it.
 
 A rerun reuses a receipt that still passes and a run that passed or is still running,
-so it dispatches nothing new after a timeout.
+so it dispatches nothing new after a timeout. After a red or cancelled release run at
+the tag commit it runs `gh run rerun ID --failed` and watches that run again, so one
+red cell no longer redispatches all 14 jobs. It does so only while every `receipt-*`
+artifact the run uploaded is unexpired (`gh api repos/OWNER/REPO/actions/runs/ID/artifacts`):
+the receipts keep for one day, and xplat compares the receipts it downloads with one
+another and passes on a single one, so past that day a rerun's xplat would check the
+rerun cells against nothing. An expired receipt, an artifact list GitHub cannot
+answer, or a rerun gh refuses gets a new dispatch instead.
 
 Stage 2b and the registry stage believe neither report. Before each publication they
 read accuracy.yml's runs at the tag commit from GitHub and require one named
