@@ -15,7 +15,7 @@ QUITS = [sys.executable, "-c", "import sys; print('no such flag', file=sys.stder
 
 def test_a_server_that_exits_before_reading_is_reported_with_its_code_and_stderr(tmp_path):
     with pytest.raises(AssertionError) as missed:
-        mcp_stdio.run(QUITS, cwd=tmp_path, frames=BIG, env=dict(os.environ), timeout=60)
+        mcp_stdio.run(QUITS, cwd=tmp_path, frames=BIG, env=dict(os.environ))
 
     report = str(missed.value)
     assert "never saw a reply from the MCP server before the child exited with code 2" in report
