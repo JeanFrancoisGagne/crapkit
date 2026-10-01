@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The Windows legs on Python 3.12 and 3.13, which no push runs (see `test`).
+  schedule:
+    - cron: "41 4 * * *"
 
 # A newer push to a pull request cancels the run it replaces: three pushes in
 # four minutes used to keep three full sets of jobs busy. A push to main takes a
@@ -13,9 +16,13 @@ concurrency:
 
 jobs:
   test:
+    # Required checks match a leg by name, so the cadence stays out of it.
+    name: test (${{ matrix.os }}, ${{ matrix.python }}, ${{ matrix.suite }})
     strategy:
       fail-fast: false
       matrix:
+        # A push or pull request runs the push legs, the nightly schedule the rest.
+        cadence: ${{ fromJSON(github.event_name == 'schedule' && '["nightly"]' || '["push"]') }}
         os: [ubuntu-latest, windows-latest, macos-latest]
         # Every version pyproject's classifiers name. 3.14 is where argparse
         # colours help, so its legs are the ones that run the colour tests.
@@ -34,6 +41,26 @@ jobs:
             suite: e2e
           - os: windows-latest
             suite: unit e2e
+          # Windows on 3.12 and 3.13 showed no failure of its own in 3 weeks
+          # (gate audit 2026-10-01) and cost 91.7 machine-min per push. 3.11
+          # and 3.14, the ends of the classified range, stay on every push;
+          # the middle two run nightly, and the nightly runs nothing else.
+          - cadence: push
+            os: windows-latest
+            python: "3.12"
+          - cadence: push
+            os: windows-latest
+            python: "3.13"
+          - cadence: nightly
+            os: ubuntu-latest
+          - cadence: nightly
+            os: macos-latest
+          - cadence: nightly
+            os: windows-latest
+            python: "3.11"
+          - cadence: nightly
+            os: windows-latest
+            python: "3.14"
           # macOS is here for the letter-case rows: APFS opens SRC/a.py for a
           # tracked src/a.py under POSIX path rules, a pairing no other job
           # has. The rows read paths, not the interpreter, so one Python and
@@ -101,12 +128,17 @@ jobs:
           echo "$engines" >> "$GITHUB_PATH"
       - run: python tools/testing/run.py --suite ${{ matrix.suite }}
 
+  # On the nightly schedule only the test legs run, with deploy-action and its
+  # log job, which runs whatever deploy-action concluded: a schedule has no
+  # event base for the verdict or dogfood, and nothing pushed to judge.
+
   # The verdict compares installed base and candidate wheels. Each side builds,
   # installs and measures its own wheel in a job of its own, the two side by
   # side, and hands off its coverage evidence, the wheel and a proof of both. A
   # failing suite still hands off; the join decides what it means. A measurement
   # that stops hands off failure.json instead, with the phase and the error.
   verdict-measure:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 40  # the candidate measured 19.7 min on 2026-10-01
     permissions:
@@ -256,6 +288,7 @@ jobs:
   # the gates in a temporary repo, argv splitting, printed commands and the
   # small-corpus exports. Both hand their receipt to accuracy-xplat.
   accuracy-push:
+    if: github.event_name != 'schedule'
     strategy:
       fail-fast: false
       matrix:
@@ -368,6 +401,7 @@ jobs:
   # .claude-plugin/marketplace.json, which is what a `claude plugin marketplace
   # add JeanFrancoisGagne/crapkit` fetches, and nothing else checks it.
   plugin:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -410,6 +444,7 @@ jobs:
   # the composite action and owns Ubuntu/Python 3.12 source tests. The explicit
   # JUnit check below rejects failures even though the action stays advisory.
   dogfood:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 40  # 18.1 min measured on 2026-10-01
     permissions:
@@ -483,6 +518,7 @@ jobs:
   # restoring and loading the image adds 3 to 4, past the 10 minutes a push
   # may take. Each part restores the image on its own runner.
   deploy-linux:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
@@ -555,6 +591,7 @@ jobs:
   # lin-native-start on the bare runner: the same start and Route 1 commit a
   # container cell runs, with no container guard in the way.
   deploy-linux-native:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -614,6 +651,7 @@ jobs:
   # PortableGit, the cp1252 console. The timeout holds until a first run is
   # measured; then it is 1.5 times that run (tests/deploy/MAP.toml [budget]).
   deploy-windows:
+    if: github.event_name != 'schedule'
     runs-on: windows-2025
     timeout-minutes: 20
     permissions:

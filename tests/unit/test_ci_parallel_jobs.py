@@ -8,6 +8,7 @@ row's command goes through the argument parser of the script it calls.
 """
 from collections import defaultdict
 import itertools
+import json
 from pathlib import Path
 import re
 import runpy
@@ -26,13 +27,32 @@ def workflow():
     return yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
 
 
-def matrix_rows(matrix):
-    """Every job a matrix expands to: the product of its axes less each row an exclude matches."""
+EVENTS = ("push", "pull_request", "schedule")
+
+
+def matrix_rows(matrix, events=EVENTS):
+    """Every job a matrix expands to on any of `events`: the product of its axes
+    less each row an exclude matches."""
     assert "include" not in matrix, "this expansion handles exclude rows only"
-    axes = dict(matrix)
-    rules = axes.pop("exclude", [])
+    rows = []
+    for event in events:
+        rows += [row for row in _expanded(matrix, event) if row not in rows]
+    return rows
+
+
+def _expanded(matrix, event):
+    axes = {name: _axis(values, event) for name, values in matrix.items() if name != "exclude"}
     rows = (dict(zip(axes, values)) for values in itertools.product(*axes.values()))
-    return [row for row in rows if not _excluded(row, rules)]
+    return [row for row in rows if not _excluded(row, matrix.get("exclude", []))]
+
+
+def _axis(values, event):
+    """An axis as listed, or the list its `${{ fromJSON(...) }}` gives on `event`."""
+    if not isinstance(values, str):
+        return values
+    expression = values.removeprefix("${{").removesuffix("}}").strip()
+    inner = expression.removeprefix("fromJSON(").removesuffix(")")
+    return json.loads(evaluate(inner, SimpleNamespace(event_name=event)))
 
 
 def _excluded(row, rules):
