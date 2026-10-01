@@ -130,6 +130,13 @@ def _newest_marks(root: Path, base: str, ratchet_file: str):
     return None
 
 
+def head_revision(root: Path, ratchet_file: str) -> str | None:
+    """The text HEAD's revision of the marks file holds, or None when HEAD holds
+    none or only blank lines."""
+    held = _held(root, "HEAD", ratchet_file)
+    return None if held is None else held.text
+
+
 def _held(root: Path, commit: str, path: str) -> RatchetFile | None:
     """The marks file `commit` held at `path`, or None when it held none or
     only blank lines. Blank reads as it does for the file on disk

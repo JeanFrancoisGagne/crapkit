@@ -490,7 +490,20 @@ def _report_basis(root: Path, ratchet_file: str) -> tuple[list, dict | None]:
 
     if RatchetFile.read(root / ratchet_file).blank:
         return held_history(root, ratchet_file), None
-    return marks_history(root, ratchet_file), _working_marks(root, ratchet_file)
+    history = _with_head_revision(root, ratchet_file, marks_history(root, ratchet_file))
+    return history, _working_marks(root, ratchet_file)
+
+
+def _with_head_revision(root: Path, ratchet_file: str, history: list) -> list:
+    """The newest entry also carries the text HEAD's revision of the file holds,
+    read as a "held" event, so the report counts as uncommitted only the marks
+    the working tree and HEAD disagree on. The replay of the patches cannot
+    stand in for HEAD: `git log -p` prints no patch for a merge, and a mark a
+    conflicted merge repaid replays as open."""
+    from ..marks_history import head_revision
+
+    text = head_revision(root, ratchet_file) if history else None
+    return history if text is None else history[:-1] + [history[-1] + (text,)]
 
 
 def _warn_marks_stand_in(root: Path, ratchet_file: str, report: dict, working) -> None:

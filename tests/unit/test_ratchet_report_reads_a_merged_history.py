@@ -188,3 +188,15 @@ def test_a_mark_a_merge_resolved_as_repaid_stays_repaid_after_a_delete(repo, mon
     assert after["dropped_total"] == before["dropped_total"], "deleting the file repays none"
     assert "reads the 5 mark(s) its history last committed" in out.err, out.err
 
+
+
+def test_a_clean_tree_after_a_conflicted_merge_holds_no_uncommitted_mark(repo, monkeypatch, capsys):  # noqa: F811
+    """The replay ends with k3 open, since the merge that repaid it prints no
+    patch, while HEAD's file and the file on disk agree. The report counted k3
+    as a mark the working tree changed and not committed yet."""
+    _merge_resolved_as_repaid(repo, monkeypatch)
+    assert git(repo, "status", "--porcelain").strip() == ""
+
+    report = _report(repo, capsys)
+
+    assert (report["open"], report["uncommitted"]) == (5, 0), report
