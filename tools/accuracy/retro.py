@@ -516,7 +516,9 @@ def _packages(interpreter: Path, packages: list[str]) -> None:
         _checked(["uv", "pip", "install", "-q", "--python", interpreter, *packages])
 
 
-BUILT = "retro-built"  # written last: the packages a venv finished installing, one per line
+# Written last: the Python patch a venv was made from, then the packages it
+# finished installing, one per line.
+BUILT = "retro-built"
 
 
 def _built(venv: Path, manifest: str) -> bool:
@@ -527,11 +529,13 @@ def _built(venv: Path, manifest: str) -> bool:
 def build_venv(tree: Path, python: str, site: Site = Site(), extra: tuple = ()) -> Path:
     """A venv beside the worktree holding its crapkit, the site's packages and `extra`.
     A venv whose BUILT marker is missing (a failed or killed install) or names other
-    packages is removed and built again."""
+    packages, or a patch other than the one the env key names, is removed and built
+    again."""
     venv = tree.parent / f"{tree.name}-venv-{python}-{site.install}"
     interpreter = venv_python(venv)
     packages = [*site.packages, *extra]
-    manifest = "".join(f"{package}\n" for package in packages)
+    made_from = _venv_patch(python) or platform.python_version()
+    manifest = "".join(f"{line}\n" for line in (f"python {made_from}", *packages))
     if not _built(venv, manifest):
         shutil.rmtree(venv, ignore_errors=True)
         _create_venv(venv, python)

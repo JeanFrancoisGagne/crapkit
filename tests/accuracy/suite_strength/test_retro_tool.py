@@ -1913,7 +1913,8 @@ def test_a_venv_already_built_is_reused(tmp_path, monkeypatch):
     venv = tmp_path / "abc-venv-3.12-wheel"
     retro.venv_python(venv).parent.mkdir(parents=True)
     retro.venv_python(venv).write_bytes(b"")
-    (venv / retro.BUILT).write_bytes("".join(f"{package}\n" for package in retro.Site().packages).encode())
+    built = [f"python {retro.platform.python_version()}", *retro.Site().packages]
+    (venv / retro.BUILT).write_bytes("".join(f"{line}\n" for line in built).encode())
     monkeypatch.setattr(retro, "_create_venv", lambda *args: pytest.fail("built again"))
 
     assert retro.build_venv(tmp_path / "abc", "3.12", retro.Site(work=tmp_path)) == retro.venv_python(venv)
@@ -1945,6 +1946,27 @@ def test_a_venv_built_with_other_packages_is_built_again(tmp_path, monkeypatch):
     retro.build_venv(tmp_path / "abc", "3.12", old)
     retro.build_venv(tmp_path / "abc", "3.12", old)
     retro.build_venv(tmp_path / "abc", "3.12", new)
+
+    assert len(built) == 2
+
+
+def test_a_venv_is_built_again_when_the_interpreter_uv_finds_moves_patch(tmp_path, monkeypatch):
+    """The env key names the patch `uv python find` reports. A venv kept from an
+    older patch, reused, would replay on an interpreter its verdict's key does
+    not name."""
+    built, patch = [], ["3.98.1"]
+    monkeypatch.setattr(retro, "_create_venv", lambda venv, python: built.append(venv) or
+                        venv.mkdir(parents=True, exist_ok=True))
+    monkeypatch.setattr(retro, "_install", lambda interpreter, tree, how: None)
+    monkeypatch.setattr(retro, "_packages", lambda interpreter, packages: None)
+    monkeypatch.setattr(retro, "_venv_patch", lambda python: patch[0])
+    site = retro.Site(work=tmp_path)
+
+    retro.build_venv(tmp_path / "abc", "3.98", site)
+    retro.build_venv(tmp_path / "abc", "3.98", site)
+    assert len(built) == 1
+    patch[0] = "3.98.2"
+    retro.build_venv(tmp_path / "abc", "3.98", site)
 
     assert len(built) == 2
 
