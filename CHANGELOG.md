@@ -9,129 +9,134 @@ C++, Objective-C, Java, Swift, Rust, Go, Zig, shell and PowerShell, so scores mo
 analysis version 13, where 0.8.0 wrote 11, and every repo re-seeds its marks once. Others
 name a value nobody measured, where 0.8.0 read it as zero, empty or passing.
 
-Python lanes need coverage.py 7.13.1 or newer (step 2), and several exit codes move (step
-3). The twelve MCP tools keep their names, JSON schema version 1 stays, and `flag`
+Python lanes need coverage.py 7.13.1 or newer (step 1), and several exit codes move (step
+10). The twelve MCP tools keep their names, JSON schema version 1 stays, and `flag`
 gains the value `excluded`. crapkit supports Python 3.14, and lizard is capped at
 `lizard>=1.24.0,<1.25`. Each line below links to its full entry in [crapkit 0.8.1 in
 detail](docs/releases/0.8.1.md).
 
 ### Upgrading from 0.8.0
 
-Take these steps in order; steps 1 to 6 come before you upgrade crapkit. Each step links
-the part of the upgrade guide that explains it, and [the detail
+Take these steps in order, the order of [the upgrade guide's
+list](docs/upgrading.md#080-to-081-in-order); steps 1 and 2 come before you upgrade
+crapkit. Each step links the part of the upgrade guide that explains it, and [the detail
 page](docs/releases/0.8.1.md#upgrading-from-080) keeps the full upgrade notes.
 
-1. Run `crapkit doctor --show-files > before-doctor.txt` and `crapkit coverage --export
+1. Upgrade coverage.py where each Python lane runs: `pip install -U "coverage>=7.13.1"`.
+   Coverage 7.6 to 7.13.0 writes no function `start_line`, and 0.8.1 refuses that report
+   at exit 5. [0.8.1 on coverage 7.6 to 7.13.0](docs/upgrading.md#081-on-coverage-76-to-7130)
+2. Run `crapkit doctor --show-files > before-doctor.txt` and `crapkit coverage --export
    before.tsv`, then run both again after the upgrade and compare the per-scope file
    counts. 0.8.1 reads every `crapkit.toml` path the same on every OS, so an `[exclude]`
    glob spelled `src\gen\**` and a `path_prefix` spelled `./api/` now match, a scope path
    in another letter case matches on a disk that ignores case, and an absolute scope path
    exits 3.
    [Config paths](docs/upgrading.md#config-paths-that-081-reads-on-every-os)
-2. Upgrade coverage.py where each Python lane runs: `pip install -U "coverage>=7.13.1"`.
-   Coverage 7.6 to 7.13.0 writes no function `start_line`, and 0.8.1 refuses that report
-   at exit 5. [0.8.1 on coverage 7.6 to 7.13.0](docs/upgrading.md#081-on-coverage-76-to-7130)
-3. Read what moves an exit code before you move a CI job:
-   [missing values](docs/upgrading.md#missing-values-that-081-names),
-   [the commit gate](docs/upgrading.md#the-commit-gate-in-081),
-   [text that is not UTF-8](docs/upgrading.md#text-that-is-not-utf-8) and
-   [the rest](docs/upgrading.md#other-exit-codes-that-move-in-081). Three config-path
-   exit codes change. A root on a Windows network share exits 3, a lane whose `cwd` names
-   no directory fails, and a lane fed another checkout's coverage report fails where it
-   passed. A `bash -c` lane that narrows its suite exits 3 at load: drop the positional or
-   set `full_suite = false`. So do a lane name Windows cannot use and two lane names that
-   differ only in case (rename the lane), and an `artifact` that is empty or `.` or a
-   `results_artifact` of `.` (name the report file). The commit hook now scores a staged
-   file with an upper-case extension, such as `src/Tool.PY`, and exits 6 on a function
-   over its ceiling there, where 0.8.0 passed at 0. `test-scoped` refuses a test-named
-   file outside every scope and every test directory at exit 3: move it under a scope's
-   `paths` or into `tests/`. `verify` rounds a hand-typed mark to four decimals.
-   `verify --override` in a repo whose `crapkit.toml` sets no `alert_command` exits 3
-   before any lane runs, where 0.8.0 exited with the verdict's code: set `alert_command`
-   or drop `--override`.
-4. Check what reads crapkit's output. Messages spell a dash as ` - `, `worklist` ends with
-   a `-> next:` line, a no-lane row prints `cov -`, a run with no scored function prints a
-   load of `0.0`, a partial run's `crap_load` counts only the scopes it measured, and
-   SARIF's `$schema` names the docs.oasis-open.org copy. `flag` can read `excluded`, and
-   the coverage summary gains an `excluded` count. An agent loop written against the
-   three-clause stop rule needs a fourth, `scored_changes == 0`; anything else, `null`
-   included, means refresh and ask again. A lane's `artifact` and `results_artifact` sit
-   under `.crapkit/aside/` while it runs, so a lane command that reads or appends to its
-   previous report finds nothing there: write the report fresh each run.
-   [Values that move without an exit code](docs/upgrading.md#values-that-move-without-an-exit-code),
-   [Freshness in 0.8.1](docs/upgrading.md#freshness-in-081)
-5. An MCP client that parses answers meets five JSON-RPC answers that move: `params` that
-   are not an object get `-32602`, a `method` that is not a string gets `-32601`, a
-   message with an `id` and nothing to do gets `-32600`, a response the server never
-   asked for gets no reply, and `arguments` that are not an object get a tool result with
-   `isError: true`. A client on MCP `2024-11-05` or `2025-03-26` no longer gets
-   `structuredContent`, and an answer over 7,500 characters carries `truncated`.
-   [MCP answers in 0.8.1](docs/upgrading.md#mcp-answers-in-081)
-6. Library callers: `lanes.suite_drops`, `lanes.lane_sources_unchanged` and
-   `lanes.staleness_reads` warn until 0.9.0, and `lanes.uncommitted_changes` raises
-   `GitError` where it returned `[]`. `mutate_pool.run_one` and `run_mutants` return
-   `MutantVerdict`, and a survivor is truthy, so compare with the enum. Other names moved
-   with no warning. [Library callers](docs/upgrading.md#library-callers)
-7. On Windows, first stop every crapkit MCP server by closing the agent sessions that run
+3. On Windows, first stop every crapkit MCP server by closing the agent sessions that run
    it: a running `crapkit.exe mcp` holds the launcher, and `uv tool upgrade`, `pipx
    upgrade` under uv and pip 22.3.1 then fail. Upgrade the CLI in every clone with the
    installer that owns it: the [upgrade table](docs/upgrading.md) has a row for each. The
-   CI install pin, the Action's `uses:` pin and the pre-commit `rev` wait for step 12.
+   CI install pin, the Action's `uses:` pin and the pre-commit `rev` wait for step 6.
    [Windows launcher locks](docs/upgrading.md#windows-launcher-locks)
-8. A commit hook written from the 0.8.0 README runs `python -m crapkit` alone and refuses
+4. Re-seed each repo once: `crapkit coverage`, then `crapkit ratchet prune`, then
+   `crapkit ratchet seed`. When a failed verify pins the baseline, pass the new run to
+   both: `crapkit ratchet prune --baseline N`, then `crapkit ratchet seed --baseline N`.
+   Until the re-seed, `verify` refuses marks stamped with analysis version 11 at exit 3.
+   The first run analyzes every file again. Once no 0.8.0 runs in a checkout, delete
+   `.crapkit/churn-cache-v2.json`, `.crapkit/churn-log-v2.z`, `.crapkit/churn-log-v2.json`
+   and `.crapkit/coupling-cache-v1.json`, which 0.8.1 never reads.
+   [Measure before changing marks](docs/upgrading.md#measure-before-changing-marks),
+   [Analysis version 13](docs/upgrading.md#analysis-version-13)
+5. Run `crapkit hook-precommit` with nothing staged. Under `pre-commit run --all-files`,
+   the form pre-commit.ci and pre-commit/action run, the hook now judges every tracked
+   file and exits 6 on a function over its ceiling that no mark signs, where 0.8.0 passed
+   at 0. Record the debt it names with `crapkit coverage` and `crapkit ratchet seed`, or
+   decompose those functions, before you move the pre-commit `rev`.
+   [The commit gate in 0.8.1](docs/upgrading.md#the-commit-gate-in-081)
+6. Commit the new marks together with every pin that runs crapkit: the CI install pin,
+   the Action's `uses:` pin and the pre-commit `rev`. 0.8.1's `verify` refuses marks
+   stamped 11 and 0.8.0's refuses marks stamped 13, so a pin that moves alone turns CI
+   red until the other lands.
+   [A team upgrades every reader first](docs/upgrading.md#a-team-upgrades-every-reader-before-the-re-seed-lands)
+7. Before you push that commit, run `crapkit verify`. `ratchet seed` never raises a mark,
+   so each marked function whose CRAP rose under version 13 prints a `RATCHET` line and
+   verify exits 7, even where no diff touched it. An override cannot accept a ratchet
+   regression: raise each such mark in `crapkit-ratchet.tsv` by hand to the score verify
+   prints, and commit it where a reviewer sees it. Once the commit lands, emit any
+   committed `verify --emit-baseline` file again on the default branch: a file 0.8.0
+   wrote holds no failure list, so `verify --baseline-tsv` forgives none of its failures.
+   [0.8.1 on coverage 7.6 to 7.13.0](docs/upgrading.md#081-on-coverage-76-to-7130),
+   [Measure before changing marks](docs/upgrading.md#measure-before-changing-marks)
+8. A config that 0.8.0's `init` wrote names one OS's python. Swap the venv launcher,
+   `.venv\Scripts\python.exe` or `.venv/bin/python`, for `{python:.venv}`, and a bare
+   `python` for `{python}`. 0.8.0 does not know the token and hands it to the shell, where
+   the lane fails at exit 5, so commit the swap only once every clone, the Action's
+   `uses:` pin and the pre-commit `rev` run 0.8.1. To go back to 0.8.0 later, write each
+   token back as its launcher first ([Downgrading](docs/upgrading.md#downgrading)).
+   [The launcher token](docs/configuration.md#the-launcher-token),
+   [Config paths](docs/upgrading.md#config-paths-that-081-reads-on-every-os)
+9. A commit hook written from the 0.8.0 README runs `python -m crapkit` alone and refuses
    every commit under a pipx or uv tool install. Write it again from
    [Route 1](README.md#route-1-githookspre-commit-local-not-committed) or
    [Route 2](README.md#route-2-a-committed-hooks-directory).
-9. Upgrade the plugin. In Claude Code, run `claude plugin marketplace update crapkit`,
-   then `claude plugin update crapkit@crapkit --scope user`; a marketplace added with
-   0.8.0's line clones the whole repository, so remove it, add it back with `--sparse
-   .claude-plugin plugin`, and install the plugin again. 0.8.0's README added the Codex
-   marketplace with no `--ref`, so it follows main, and Codex updates the plugin from it
-   when it starts, while a marketplace added at a tag stays at that tag. Move either one:
-   run `codex plugin marketplace remove crapkit`, the README's `codex plugin marketplace
-   add` line at the release's `--ref` and `codex plugin add crapkit@crapkit`, start a new
-   thread, then run `crapkit doctor --plugin-root PATH`. Then restart every MCP session,
-   and start any running `crapkit watch` again: a 0.8.0 watch can end in a traceback at
-   its next rescore.
-   [Plugin and MCP clients](docs/upgrading.md#plugin-and-mcp-clients)
-10. Re-seed each repo once: `crapkit coverage`, then `crapkit ratchet prune`, then
-    `crapkit ratchet seed`. When a failed verify pins the baseline, pass the new run to
-    both: `crapkit ratchet prune --baseline N`, then `crapkit ratchet seed --baseline N`.
-    Until the re-seed, `verify` refuses marks stamped with analysis version 11 at exit 3.
-    The first run analyzes every file again. Once no 0.8.0 runs in a checkout, delete
-    `.crapkit/churn-cache-v2.json`, `.crapkit/churn-log-v2.z`, `.crapkit/churn-log-v2.json`
-    and `.crapkit/coupling-cache-v1.json`, which 0.8.1 never reads.
-    [Analysis version 13](docs/upgrading.md#analysis-version-13)
-11. Run `crapkit hook-precommit` with nothing staged. Under `pre-commit run --all-files`,
-    the form pre-commit.ci and pre-commit/action run, the hook now judges every tracked
-    file and exits 6 on a function over its ceiling that no mark signs, where 0.8.0 passed
-    at 0. Record the debt it names with `crapkit coverage` and `crapkit ratchet seed`, or
-    decompose those functions, before you move the pre-commit `rev`.
-    [The commit gate in 0.8.1](docs/upgrading.md#the-commit-gate-in-081)
-12. Commit the new marks together with every pin that runs crapkit: the CI install pin,
-    the Action's `uses:` pin and the pre-commit `rev`. 0.8.1's `verify` refuses marks
-    stamped 11 and 0.8.0's refuses marks stamped 13, so a pin that moves alone turns CI
-    red until the other lands.
-    [A team upgrades every reader first](docs/upgrading.md#a-team-upgrades-every-reader-before-the-re-seed-lands)
-13. Before you push that commit, run `crapkit verify`. `ratchet seed` never raises a mark,
-    so each marked function whose CRAP rose under version 13 prints a `RATCHET` line and
-    verify exits 7, even where no diff touched it. An override cannot accept a ratchet
-    regression: raise each such mark in `crapkit-ratchet.tsv` by hand to the score verify
-    prints, and commit it where a reviewer sees it. Once the commit lands, emit any
-    committed `verify --emit-baseline` file again on the default branch: a file 0.8.0
-    wrote holds no failure list, so `verify --baseline-tsv` forgives none of its failures.
-    [Measure before changing marks](docs/upgrading.md#measure-before-changing-marks)
-14. A config that 0.8.0's `init` wrote names one OS's python. Swap the venv launcher,
-    `.venv\Scripts\python.exe` or `.venv/bin/python`, for `{python:.venv}`, and a bare
-    `python` for `{python}`. 0.8.0 does not know the token and hands it to the shell, where
-    the lane fails at exit 5, so commit the swap only once every clone, the Action's
-    `uses:` pin and the pre-commit `rev` run 0.8.1. To go back to 0.8.0 later, write each
-    token back as its launcher first ([Downgrading](docs/upgrading.md#downgrading)).
-    [The launcher token](docs/configuration.md#the-launcher-token)
+   [Teammates' clones](docs/upgrading.md#teammates-clones)
+10. Read what moves an exit code before you move a CI job:
+    [missing values](docs/upgrading.md#missing-values-that-081-names),
+    [the commit gate](docs/upgrading.md#the-commit-gate-in-081),
+    [text that is not UTF-8](docs/upgrading.md#text-that-is-not-utf-8) and
+    [the rest](docs/upgrading.md#other-exit-codes-that-move-in-081). Three config-path
+    exit codes change. A root on a Windows network share exits 3, a lane whose `cwd` names
+    no directory fails, and a lane fed another checkout's coverage report fails where it
+    passed. A `bash -c` lane that narrows its suite exits 3 at load: drop the positional or
+    set `full_suite = false`. So do a lane name Windows cannot use and two lane names that
+    differ only in case (rename the lane), and an `artifact` that is empty or `.` or a
+    `results_artifact` of `.` (name the report file). The commit hook now scores a staged
+    file with an upper-case extension, such as `src/Tool.PY`, and exits 6 on a function
+    over its ceiling there, where 0.8.0 passed at 0. `test-scoped` refuses a test-named
+    file outside every scope and every test directory at exit 3: move it under a scope's
+    `paths` or into `tests/`. `verify` rounds a hand-typed mark to four decimals.
+    `verify --override` in a repo whose `crapkit.toml` sets no `alert_command` exits 3
+    before any lane runs, where 0.8.0 exited with the verdict's code: set `alert_command`
+    or drop `--override`.
+11. Check what reads crapkit's output. Messages spell a dash as ` - `, `worklist` ends with
+    a `-> next:` line, a no-lane row prints `cov -`, a run with no scored function prints a
+    load of `0.0`, a partial run's `crap_load` counts only the scopes it measured, and
+    SARIF's `$schema` names the docs.oasis-open.org copy. `flag` can read `excluded`, and
+    the coverage summary gains an `excluded` count. An agent loop written against the
+    three-clause stop rule needs a fourth, `scored_changes == 0`; anything else, `null`
+    included, means refresh and ask again. A lane's `artifact` and `results_artifact` sit
+    under `.crapkit/aside/` while it runs, so a lane command that reads or appends to its
+    previous report finds nothing there: write the report fresh each run.
+    [Values that move without an exit code](docs/upgrading.md#values-that-move-without-an-exit-code),
+    [Freshness in 0.8.1](docs/upgrading.md#freshness-in-081)
+12. Upgrade the plugin. In Claude Code, run `claude plugin marketplace update crapkit`,
+    then `claude plugin update crapkit@crapkit --scope user`; a marketplace added with
+    0.8.0's line clones the whole repository, so remove it, add it back with `--sparse
+    .claude-plugin plugin`, and install the plugin again. 0.8.0's README added the Codex
+    marketplace with no `--ref`, so it follows main, and Codex updates the plugin from it
+    when it starts, while a marketplace added at a tag stays at that tag. Move either one:
+    run `codex plugin marketplace remove crapkit`, the README's `codex plugin marketplace
+    add` line at the release's `--ref` and `codex plugin add crapkit@crapkit`, start a new
+    thread, then run `crapkit doctor --plugin-root PATH`. Then restart every MCP session,
+    and start any running `crapkit watch` again: a 0.8.0 watch can end in a traceback at
+    its next rescore. An MCP client that parses answers meets five JSON-RPC answers that
+    move: `params` that are not an object get `-32602`, a `method` that is not a string
+    gets `-32601`, a message with an `id` and nothing to do gets `-32600`, a response the
+    server never asked for gets no reply, and `arguments` that are not an object get a
+    tool result with `isError: true`. A client on MCP `2024-11-05` or `2025-03-26` no
+    longer gets `structuredContent`, and an answer over 7,500 characters carries
+    `truncated`.
+    [Plugin and MCP clients](docs/upgrading.md#plugin-and-mcp-clients),
+    [MCP answers in 0.8.1](docs/upgrading.md#mcp-answers-in-081)
+13. Library callers: `lanes.suite_drops`, `lanes.lane_sources_unchanged` and
+    `lanes.staleness_reads` warn until 0.9.0, and `lanes.uncommitted_changes` raises
+    `GitError` where it returned `[]`. `mutate_pool.run_one` and `run_mutants` return
+    `MutantVerdict`, and a survivor is truthy, so compare with the enum. Other names moved
+    with no warning. [Library callers](docs/upgrading.md#library-callers)
 
 ### Scores that move: analysis version 13
 
-These changes move scores and share the one re-seed in step 10. [Analysis version
+These changes move scores and share the one re-seed in step 4. [Analysis version
 13](docs/releases/0.8.1.md#analysis-version-13) sums them up.
 
 - [`nesting`](docs/releases/0.8.1.md#nesting-reads-block-depth-in-every-language) comes

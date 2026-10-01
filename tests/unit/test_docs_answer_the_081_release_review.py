@@ -415,3 +415,32 @@ def test_a_stamp_commit_no_longer_behind_head_is_no_rerun_reason(tmp_path):
     assert "no longer behind HEAD" not in reruns
     assert "`HEAD is X and its artifact was built at Y`" in reruns
 
+
+# --- one order for the upgrade steps (docs[8]) --------------------------------------
+
+def _steps(text: str) -> list[str]:
+    """Each numbered step of a Markdown list, its continuation lines joined."""
+    return [" ".join(step.split()) for step in re.split(r"(?m)^\d+\. ", text)[1:]]
+
+
+def test_the_changelog_takes_the_upgrade_steps_in_the_guides_order():
+    """Both lists called themselves the order: the CHANGELOG put doctor first and
+    the exit-code, output, MCP and library reads before the CLI upgrade, the
+    guide put coverage.py first and those reads after the re-seed. Step N of the
+    CHANGELOG now links every guide section step N of the guide links."""
+    guide = _doc(GUIDE).split("\n## 0.8.0 to 0.8.1, in order\n", 1)[1].split("\n## ", 1)[0]
+    changelog = _doc("CHANGELOG.md").split("\n### Upgrading from 0.8.0\n", 1)[1].split("\n### ", 1)[0]
+    theirs, ours = _steps(guide), _steps(changelog)
+
+    assert len(ours) == len(theirs) == 13
+    for number, (step, entry) in enumerate(zip(theirs, ours), 1):
+        wanted = set(re.findall(r"\]\(#([\w-]+)\)", step))
+        linked = set(re.findall(r"\]\(docs/upgrading\.md#([\w-]+)\)", entry))
+        assert wanted and wanted <= linked, (number, sorted(wanted - linked))
+
+    release = _section("CHANGELOG.md", "## 0.8.1 — unreleased")
+    assert "steps 1 and 2 come before you upgrade crapkit" in release
+    assert "coverage.py 7.13.1 or newer (step 1), and several exit codes move (step 10)" in release
+    assert "share the one re-seed in step 4" in release
+    assert "the pre-commit `rev` wait for step 6" in ours[2]
+    assert ours[3].startswith("Re-seed each repo once") and ours[5].startswith("Commit the new marks")

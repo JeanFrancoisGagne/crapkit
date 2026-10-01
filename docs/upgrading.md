@@ -61,6 +61,8 @@ Each step links the section that explains it.
    `crapkit coverage --export before.tsv`, to compare the per-scope file counts after.
    [Config paths that 0.8.1 reads on every OS](#config-paths-that-081-reads-on-every-os)
 3. Upgrade the CLI in every clone with the installer that owns it, from the table above.
+   On Windows, stop every crapkit MCP server first: a running `crapkit.exe mcp` holds the
+   launcher. [Windows launcher locks](#windows-launcher-locks)
 4. Measure with the new release and re-seed each repo once: `crapkit coverage`, then
    `crapkit ratchet prune`, then `crapkit ratchet seed`. When a failed verify pins the
    baseline, pass the new run to both: `crapkit ratchet prune --baseline N`, then
