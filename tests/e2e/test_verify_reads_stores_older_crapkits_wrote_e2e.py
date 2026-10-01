@@ -40,6 +40,11 @@ from crapkit.store import SnapshotStore
 ROOT = Path(__file__).resolve().parents[2]
 PY = sys.executable.replace("\\", "/")
 THIS_TREE = "this tree"
+# 0.7.6's verify stops its flake retry with killpg, which Darwin refuses with EPERM
+# for a group whose only member is its unreaped leader: that release fails there
+# with `[Errno 1] Operation not permitted` and writes no store. 0.8.1 fixed it.
+OLD_RETEST_STOP = pytest.mark.skipif(
+    sys.platform == "darwin", reason="crapkit 0.7.6's verify fails its retest stop on macOS (EPERM)")
 
 run_cli = cli_runner(encoding="utf-8", errors="replace",
                      env_extra={"CRAPKIT_OVERRIDE_REASON": None})
@@ -175,7 +180,7 @@ def version_of(writer: str) -> str:
     return __version__ if writer == THIS_TREE else writer.lstrip("v")
 
 
-@pytest.mark.parametrize("writer", ["v0.7.6", THIS_TREE])
+@pytest.mark.parametrize("writer", [pytest.param("v0.7.6", marks=OLD_RETEST_STOP), THIS_TREE])
 def test_a_failure_a_passing_verify_retried_is_new_when_it_fails_its_retry(
         tmp_path, tmp_path_factory, writer):
     """The writer's verify sees t::c0 fail and then pass its flake retry, and
@@ -202,6 +207,7 @@ def test_a_failure_a_passing_verify_retried_is_new_when_it_fails_its_retry(
     assert (payload["new_failures"], payload["forgiven_failures"]) == (["t::c0"], [])
 
 
+@OLD_RETEST_STOP
 def test_the_verify_0_7_6_wrote_is_named_as_the_reason_its_list_is_passed_over(
         tmp_path, tmp_path_factory):
     repo = build(tmp_path, retest=True)

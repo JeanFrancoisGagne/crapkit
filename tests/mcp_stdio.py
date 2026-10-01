@@ -63,11 +63,23 @@ def _reply(process, replies, deadline):
     return response
 
 
+def _send(process, line, deadline):
+    """Write one frame. A server that exited before reading it closed the pipe
+    (EPIPE on POSIX, EINVAL on Windows): no reply can come, and its exit is
+    awaited so the miss can say how it ended. macOS starts the server late
+    enough that `mcp --no-such-flag` exited before the first write."""
+    try:
+        process.stdin.write(line + '\n')
+        process.stdin.flush()
+    except OSError:
+        _exit_code(process, deadline)
+        raise _Missed(REPLY) from None
+
+
 def _exchange(process, frames, replies, deadline):
     output = []
     for line in frames.splitlines():
-        process.stdin.write(line + '\n')
-        process.stdin.flush()
+        _send(process, line, deadline)
         if _expects_reply(line):
             output.append(_reply(process, replies, deadline))
     return ''.join(output)
@@ -83,7 +95,10 @@ def _close(process):
     if process.poll() is None:
         process.kill()
     process.wait()
-    process.stdin.close()
+    try:
+        process.stdin.close()
+    except OSError:
+        pass  # the frame a closed pipe refused is still buffered; the server is gone
 
 
 def run(argv, *, cwd, frames, env, timeout=None, encoding=None, errors=None):
