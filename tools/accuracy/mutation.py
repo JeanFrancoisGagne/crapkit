@@ -1733,7 +1733,7 @@ def _env_problem(stored: Stored, head: Head) -> str:
     if stored.frame["env"] == head.env:
         return ""
     return ("the environment changed: Python, the installed or system packages, mutmut, the "
-            "launcher, or the stage's pytest and mutmut tables")
+            "launcher, the stage's pytest and mutmut tables, or a variable the suite reads")
 
 
 def _age_problem(stored: Stored, head: Head) -> str:
@@ -2145,13 +2145,45 @@ def system_packages() -> str:
     return captured([dpkg, "-W", "-f=${Package}=${Version}\n"], Path.cwd()).stdout
 
 
+# A variable named in src/ or tests/ where os.environ or os.getenv reads it, or
+# held in a constant whose name says ENV (GUARD_PROBES_ENV = "...").
+_ENV_READ = re.compile(r"""(?:environ(?:\.get|\.pop|\.setdefault)?\s*[\[(]\s*|getenv\(\s*)"""
+                       r"""["']([A-Za-z_]\w*)["']""")
+_ENV_NAMED = re.compile(r"""^\s*\w*ENV\w*\s*=\s*["']([A-Za-z_]\w*)["']""", re.M)
+# Variables the suite reads whose value only names a scratch folder or file: the
+# stage's own path, the temp folder, a run's log. Keyed, they would give every
+# machine and every checkout path a key of its own, and nothing would carry.
+SCRATCH_ENV = frozenset({SOURCE_ENV, "HOME", "TMPDIR", "TMP", "TEMP", "USERPROFILE",
+                         "LOCALAPPDATA", "APPDATA", "RUNNER_TEMP", "GITHUB_STEP_SUMMARY",
+                         "CRAPKIT_ACCURACY_LOG", "CRAPKIT_ACCURACY_CHECKOUT",
+                         "CRAPKIT_HYPOTHESIS_DB"})
+
+
+def suite_env_names(stage: Path) -> list[str]:
+    """Every environment variable the stage's src/ and tests/ read, scratch paths
+    left out."""
+    names: set[str] = set()
+    for path in [*(stage / "src").rglob("*.py"), *(stage / "tests").rglob("*.py")]:
+        text = path.read_bytes().decode("utf-8", "replace")
+        names.update(_ENV_READ.findall(text), _ENV_NAMED.findall(text))
+    return sorted(names - SCRATCH_ENV)
+
+
+def suite_env(stage: Path, environ: dict) -> dict:
+    """Each variable the suite reads, with its value in the calc runs' environment
+    (None when unset)."""
+    seen = calc_env(environ)
+    return {name: seen.get(name) for name in suite_env_names(stage)}
+
+
 def env_key(stage: Path) -> str:
     """sha256 over what judges a mutant beside the tree: Python, the installed and
-    system packages (mutmut among them), the launcher, and the stage's pytest and
-    mutmut tables."""
+    system packages (mutmut among them), the launcher, the stage's pytest and
+    mutmut tables, and the variables the suite reads."""
     tool = tomllib.loads(_read(stage / "pyproject.toml")).get("tool", {})
     facts = {"python": sys.version, "packages": installed(), "system": system_packages(),
-             "launcher": LAUNCHER, "mutmut": tool.get("mutmut", {}), "pytest": tool.get("pytest", {})}
+             "launcher": LAUNCHER, "mutmut": tool.get("mutmut", {}), "pytest": tool.get("pytest", {}),
+             "environ": suite_env(stage, dict(os.environ))}
     return _sha(json.dumps(facts, sort_keys=True))
 
 

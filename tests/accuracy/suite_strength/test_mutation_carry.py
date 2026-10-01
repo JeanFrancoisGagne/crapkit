@@ -595,6 +595,65 @@ def test_no_receipt_older_than_a_cold_mismatch_is_trusted_and_tools_receipts_nev
     assert mutation.trusted(receipts) == receipts[1:3]
 
 
+# --- the environment key: the variables the suite reads --------------------------------------------
+
+READERS = {
+    "src/crapkit/timing.py": 'import os\nSTRICT = os.environ.get("CRAPKIT_STRICT_TIMING")\n',
+    "tests/accuracy/kit/tiers.py": 'GUARD_PROBES_ENV = "CRAPKIT_ACCURACY_GUARD_PROBES"\n',
+    "tests/unit/test_seed.py": 'import os\n\n\ndef test_seed():\n    os.getenv("PYTHONHASHSEED")\n',
+    "tests/unit/test_scratch.py": ('import os\n\n\ndef test_scratch():\n'
+                                   '    os.environ["TMPDIR"], os.environ["CRAPKIT_ACCURACY_SOURCE"]\n'),
+    "docs/example.py": 'import os\nos.environ.get("CRAPKIT_ONLY_IN_DOCS")\n',
+}
+READ_BY_THE_SUITE = ["CRAPKIT_STRICT_TIMING", "CRAPKIT_ACCURACY_GUARD_PROBES", "PYTHONHASHSEED"]
+NOT_KEYED = ["CRAPKIT_NOBODY_READS", "CRAPKIT_ONLY_IN_DOCS", "TMPDIR", "CRAPKIT_ACCURACY_SOURCE",
+             "CRAPKIT_ACCURACY_TIER"]
+
+
+@pytest.fixture
+def keyed_stage(tmp_path, monkeypatch):
+    """A stage whose src/ and tests/ read READ_BY_THE_SUITE, with every one of those
+    and NOT_KEYED unset, and the package lists held still."""
+    (tmp_path / "pyproject.toml").write_bytes(b"[tool.mutmut]\n")
+    for path, text in READERS.items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_bytes(text.encode())
+    for name in READ_BY_THE_SUITE + NOT_KEYED:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(mutation, "installed", lambda: ["pytest==9"])
+    monkeypatch.setattr(mutation, "system_packages", lambda: "")
+    return tmp_path
+
+
+@pytest.mark.parametrize("name", READ_BY_THE_SUITE)
+def test_a_variable_the_suite_reads_moves_the_environment_key(keyed_stage, monkeypatch, name):
+    """A run with CRAPKIT_ACCURACY_GUARD_PROBES set, or another Hypothesis seed,
+    judges other tests than the run its verdicts carry from."""
+    unset = mutation.env_key(keyed_stage)
+    monkeypatch.setenv(name, "1")
+    one = mutation.env_key(keyed_stage)
+    monkeypatch.setenv(name, "2")
+
+    assert len({unset, one, mutation.env_key(keyed_stage)}) == 3
+
+
+@pytest.mark.parametrize("name", NOT_KEYED)
+def test_a_variable_no_test_reads_or_one_naming_a_scratch_path_keeps_the_key(
+        keyed_stage, monkeypatch, name):
+    """Hashing a variable that only names a scratch folder (the stage's path, the
+    temp folder) would give every machine its own key and carry nothing; the tier
+    is the push tier whatever the caller's."""
+    before = mutation.env_key(keyed_stage)
+    monkeypatch.setenv(name, str(keyed_stage / "elsewhere"))
+
+    assert mutation.env_key(keyed_stage) == before
+
+
+def test_the_suite_s_variables_are_read_from_its_src_and_tests(keyed_stage):
+    assert set(READ_BY_THE_SUITE) <= set(mutation.suite_env_names(keyed_stage))
+    assert not set(NOT_KEYED) & set(mutation.suite_env_names(keyed_stage))
+
+
 def test_a_stats_map_made_at_another_tree_is_dropped_before_mutmut_runs(tmp_path):
     head = mutation.Head(_tree(FILES), "env-1", datetime.datetime.now(datetime.timezone.utc))
     for name in (mutation.STATS_MAP, mutation.REACH_FILE):
