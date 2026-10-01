@@ -127,11 +127,11 @@ TOOLS: tuple[dict, ...] = (
         "description": ("Lists every run in the store, oldest first by id. Use it to see which "
         "commit the other tools answer from, get_trend for totals and "
         "get_function_history for one function. Marking the baseline run costs one git "
-        "ancestry check per trusted run's commit, newest first, down to that run: two "
-        "or more after a branch switch, none with no trusted run. repo may be any "
-        "directory under the checkout, and a relative path resolves from the server's "
-        "start directory. With no crapkit.toml above it, or no snapshot store yet, it "
-        "answers isError true with the command to run."),
+        "ancestry check per trusted run's commit, newest first, down to it: one when it is "
+        "the newest, on any branch, none with no trusted run. repo may be any directory "
+        "under the checkout, and a relative path resolves from the server's start "
+        "directory. With no crapkit.toml above it, or no snapshot store yet, it answers "
+        "isError true with the command to run."),
         "properties": {},
         "output": PAYLOADS["runs --json"],
     },

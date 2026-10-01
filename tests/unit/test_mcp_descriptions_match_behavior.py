@@ -101,8 +101,8 @@ def test_a_brief_miss_is_the_tool_error_the_description_names(scored, exits):
 # --- list_runs: one ancestry check per commit down to the baseline -----------------
 
 RUNS_GIT = ("Marking the baseline run costs one git ancestry check per trusted run's commit, "
-            "newest first, down to that run: two or more after a branch switch, none with "
-            "no trusted run.")
+            "newest first, down to it: one when it is the newest, on any branch, none with no "
+            "trusted run.")
 
 
 def _ancestry_checks(ran: list[str]) -> list[str]:
@@ -138,6 +138,24 @@ def test_list_runs_after_a_branch_switch_asks_down_to_the_baseline(scored, exits
     assert len(_ancestry_checks(ran)) == 2, ran
     assert _baseline_ids(replies[0]) == [1], replies[0]
     assert RUNS_GIT in _tool("list_runs")["description"]
+
+
+def test_a_branch_switch_that_keeps_the_newest_run_in_head_asks_once(scored, exits,
+                                                                     monkeypatch, tmp_path):
+    """The description said a branch switch makes two or more checks. A new
+    branch at the same commit still holds the newest trusted run's commit, so
+    the first check finds the baseline."""
+    git(scored, "checkout", "-q", "-b", "side")
+    replies = []
+
+    ran = _git_commands(monkeypatch, tmp_path,
+                        lambda: replies.append(_call(scored, "list_runs")))
+
+    assert len(_ancestry_checks(ran)) == 1, ran
+    assert _baseline_ids(replies[0]) == [1], replies[0]
+    description = _tool("list_runs")["description"]
+    assert "two or more after a branch switch" not in description
+    assert RUNS_GIT in description
 
 
 def test_list_runs_with_no_trusted_run_asks_git_nothing(repo, exits, monkeypatch,  # noqa: F811
