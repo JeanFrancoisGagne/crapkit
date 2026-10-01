@@ -205,14 +205,23 @@ def profile_path(env: dict[str, str]) -> Path:
 
 def zed_on_windows(profile, box, templates, candidate) -> None:
     """Zed starts a context server through `powershell -C` without -NoProfile,
-    so what the user's profile prints lands on the server's stdout first. The
-    cell writes the runner's own profile, so it runs only where CI=true."""
-    if os.environ.get("CI") != "true":
-        pytest.skip("writes the machine's real PowerShell profile; runs only on a CI runner (CI=true)")
+    so what the user's profile prints lands on the server's stdout first.
+
+    The spawn's USERPROFILE is the box's home. Where Windows maps Documents
+    below USERPROFILE, as a hosted runner does, $PROFILE sits in that home's
+    Documents, and with no such folder PowerShell names no profile at all: the
+    first CI run read an empty $PROFILE. Where Documents is mapped elsewhere
+    (OneDrive), the spawn reads the machine's real profile, which the cell
+    writes only on a CI runner."""
     repo = adopted_repo(box, templates)
     started = profiles.launch(profile, configured_server(profile, box, repo), box, repo)
+    home = Path(started.env["USERPROFILE"])
+    (home / "Documents").mkdir(exist_ok=True)
     path = profile_path(started.env)
-    assert path == profile_path(dict(os.environ)), "the spawn's $PROFILE is not the runner's profile"
+    assert path.name == "Microsoft.PowerShell_profile.ps1", f"the spawn under {home} reads no profile: {path}"
+    if not path.is_relative_to(home) and os.environ.get("CI") != "true":
+        pytest.skip(f"the spawn reads this machine's real PowerShell profile ({path}); "
+                    "the cell writes that one only on a CI runner (CI=true)")
     saved = path.read_bytes() if path.exists() else None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

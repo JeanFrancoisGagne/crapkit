@@ -5,11 +5,14 @@ stamped tree is what `release.py check` would see at release time. check has
 to find the candidate's version on every surface, the Codex manifest among
 them, and still refuse: no green release-cadence run of deploy.yml exists at
 that commit, and gh cannot say otherwise from a sandbox.
+
+check reads files and asks gh, nothing of git, so it reads the staged tree in
+place. The cell used to copy that tree into a fresh repository first; on a
+hosted Windows runner the copy's `git add -A` outlived the 120 s bound.
 """
 from __future__ import annotations
 
 import json
-import shutil
 
 from kit.cells import cell
 
@@ -23,21 +26,12 @@ def next_patch(version: str) -> str:
     return f"{major}.{minor}.{patch + 1}"
 
 
-def _stamped_repo(box, candidate):
-    """The stamped candidate tree as the one commit of a repository."""
-    tree = box.root / "release-tree"
-    shutil.copytree(candidate.staged, tree)
-    box.run(["git", "init", "-q", "-b", "main"], cwd=tree, expect=0)
-    box.run(["git", "add", "-A"], cwd=tree, expect=0)
-    box.run(["git", "commit", "-q", "-m", f"candidate {candidate.version}"], cwd=tree,
-            env=box.commit_env(), expect=0)
-    return tree
-
-
 def _check_the_stamped_tree(box, candidate):
-    tree = _stamped_repo(box, candidate)
+    tree = candidate.staged
+    # Every cell shares the staged tree: no bytecode lands in it.
     step = box.run([box.toolchain.python("3.12"), "tools/release/release.py", "check",
-                    next_patch(candidate.version), "--repo", str(tree)], cwd=tree, expect=1)
+                    next_patch(candidate.version), "--repo", str(tree)], cwd=tree,
+                   env={"PYTHONDONTWRITEBYTECODE": "1"}, expect=1)
     lines = step.stdout.splitlines()
     codex = json.loads((tree / "plugin" / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
 
