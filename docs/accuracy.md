@@ -380,8 +380,11 @@ item a `python` marker keeps for a newer Python than the replay's is left out, s
 it cannot run there. A row's `env` cell may set
 `CRAPKIT_ACCURACY_LANGUAGES` and `CRAPKIT_ACCURACY_ROOT_PATHS` for a commit that
 read fewer languages or refused a root scope of `.`. `CRAPKIT_RETRO_WORK` moves
-the worktrees and venvs (default `.crapkit/accuracy/retro`), and rows R01 to R12
-need `CRAPKIT_RETRO_BUNDLE`, the history bundle their commits live in.
+the worktrees and venvs (default `.crapkit/accuracy/retro`). Keep it between runs:
+a worktree there is reused with its venvs when `git worktree repair` and
+`git rev-parse HEAD` say it holds its commit, and one that dangles (copied into a
+clone that never made it) or holds another commit is rebuilt with its venvs. Rows
+R01 to R12 need `CRAPKIT_RETRO_BUNDLE`, the history bundle their commits live in.
 
 ## Change control
 

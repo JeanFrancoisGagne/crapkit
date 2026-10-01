@@ -24,6 +24,9 @@ crapkit first on the check's PYTHONPATH, so a check that calls crapkit in its
 own process reads the old crapkit too. For a wheel install that entry is a copy
 of crapkit alone (import_root): the rest of the venv's site-packages would
 reach every python the check starts.
+A worktree already in CRAPKIT_RETRO_WORK is reused with its venvs when git, after
+`git worktree repair`, says its HEAD is the commit; one restored into a clone that
+never made it is removed with its venvs and built again.
 CRAPKIT_ACCURACY_CHECKOUT names the commit's worktree, where a check finds the
 files a wheel does not carry, such as the Action's action.yml. A probe runs with
 the venv's interpreter directly, with the worktree as its argument.
@@ -419,11 +422,32 @@ def fetch_bundle(sha: str, repo: Path = REPO) -> None:
         raise RetroError(f"{sha} is in neither this clone nor {bundle}")
 
 
+def _at_commit(path: Path, sha: str, repo: Path) -> bool:
+    """Whether git, after `git worktree repair`, says the worktree at `path` holds
+    `sha`. A work directory restored from a cache into a fresh clone has a .git
+    file naming a .git/worktrees entry that clone never made: git then names no
+    HEAD, and the tree is not trusted."""
+    if not (path / ".git").exists():
+        return False
+    _run(["git", "worktree", "repair", path], cwd=repo)
+    head = _run(["git", "-C", path, "rev-parse", "HEAD"])
+    return head.returncode == 0 and head.stdout.strip().startswith(sha)
+
+
+def _discard(path: Path) -> None:
+    """A worktree git cannot vouch for, and every venv built from it."""
+    for folder in [path, *path.parent.glob(f"{path.name}-venv-*")]:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def worktree(sha: str, site: Site = Site()) -> Path:
-    """A detached worktree at `sha`, reused when it is already there."""
+    """A detached worktree at `sha`. One already there is reused, venvs and all,
+    when git says it is at `sha`; a dangling or wrong one is removed with its
+    venvs and added again."""
     path = site.work / sha[:12]
-    if (path / ".git").exists():
+    if _at_commit(path, sha, site.repo):
         return path
+    _discard(path)
     if not have_commit(sha, site.repo):
         fetch_bundle(sha, site.repo)
     site.work.mkdir(parents=True, exist_ok=True)

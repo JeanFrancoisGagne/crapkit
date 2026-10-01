@@ -1159,13 +1159,73 @@ def test_a_commit_missing_from_the_clone_is_fetched_before_its_worktree_is_added
     assert fetched == [(SHA, tmp_path / "repo")]
 
 
-def test_a_worktree_already_there_is_reused(tmp_path, monkeypatch):
-    seen = _commands(monkeypatch)
-    (tmp_path / "0123456789ab").mkdir()
-    (tmp_path / "0123456789ab" / ".git").write_bytes(b"gitdir: elsewhere\n")
+def _cached_tree(work: Path) -> Path:
+    """A worktree folder a cache restored, its venv and another commit's venv beside it."""
+    tree = work / "0123456789ab"
+    for folder in (tree, work / "0123456789ab-venv-3.12-wheel", work / "fedcba987654-venv-3.12-wheel"):
+        folder.mkdir(parents=True)
+        (folder / "kept").write_bytes(b"")
+    (tree / ".git").write_bytes(b"gitdir: /src/.git/worktrees/0123456789ab\n")
+    return tree
 
-    assert retro.worktree(SHA, retro.Site(repo=tmp_path, work=tmp_path)) == tmp_path / "0123456789ab"
+
+def _git_answers(monkeypatch, head: SimpleNamespace) -> list[list[str]]:
+    """Stand in for _run: `git worktree repair` succeeds and rev-parse answers `head`."""
+    asked = []
+
+    def run(argv, cwd=None, env=None):
+        asked.append([str(part) for part in argv])
+        return head if "rev-parse" in argv else SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(retro, "_run", run)
+    return asked
+
+
+def test_a_cached_worktree_git_puts_at_its_commit_is_reused_with_its_venv(tmp_path, monkeypatch):
+    """A restored CRAPKIT_RETRO_WORK saves the worktree and venv builds (85 s a row
+    cold in the image, 10 s warm), but only for a tree git says is at its commit."""
+    seen = _commands(monkeypatch)
+    tree = _cached_tree(tmp_path / "work")
+    asked = _git_answers(monkeypatch, SimpleNamespace(returncode=0, stdout=SHA + "\n", stderr=""))
+
+    assert retro.worktree(SHA, retro.Site(repo=tmp_path, work=tmp_path / "work")) == tree
+
+    assert asked == [["git", "worktree", "repair", str(tree)], ["git", "-C", str(tree), "rev-parse", "HEAD"]]
     assert seen == []
+    assert (tree / "kept").is_file() and (tree.parent / "0123456789ab-venv-3.12-wheel" / "kept").is_file()
+
+
+@pytest.mark.parametrize("head", [
+    SimpleNamespace(returncode=128, stdout="", stderr="fatal: not a git repository"),  # dangling gitdir
+    SimpleNamespace(returncode=0, stdout="f" * 40 + "\n", stderr=""),                # another commit
+])
+def test_a_cached_worktree_that_is_dangling_or_elsewhere_is_rebuilt_with_its_venvs(tmp_path, monkeypatch,
+                                                                                   head):
+    """A fresh clone holds no .git/worktrees entry for a restored tree, so git cannot
+    say which commit it holds: the tree and every venv built from it go, and the
+    tree is added again. Another commit's venv stays."""
+    seen = _commands(monkeypatch)
+    tree = _cached_tree(tmp_path / "work")
+    _git_answers(monkeypatch, head)
+    monkeypatch.setattr(retro, "have_commit", lambda sha, repo: True)
+
+    assert retro.worktree(SHA, retro.Site(repo=tmp_path, work=tmp_path / "work")) == tree
+
+    assert seen == [(["git", "worktree", "add", "-f", "--detach", str(tree), SHA], tmp_path)]
+    assert not tree.exists() and not (tree.parent / "0123456789ab-venv-3.12-wheel").exists()
+    assert (tree.parent / "fedcba987654-venv-3.12-wheel" / "kept").is_file()
+
+
+def test_a_venv_left_without_its_worktree_is_removed_before_the_tree_is_added(tmp_path, monkeypatch):
+    seen = _commands(monkeypatch)
+    venv = tmp_path / "0123456789ab-venv-3.12-wheel"
+    venv.mkdir()
+    monkeypatch.setattr(retro, "have_commit", lambda sha, repo: True)
+
+    retro.worktree(SHA, retro.Site(repo=tmp_path / "repo", work=tmp_path))
+
+    assert not venv.exists()
+    assert len(seen) == 1
 
 
 @pytest.mark.parametrize("windows, expected", [(True, "Scripts/python.exe"), (False, "bin/python")])
@@ -1791,6 +1851,28 @@ def test_a_commit_only_the_bundle_holds_gets_a_worktree_at_it(tmp_path, monkeypa
     assert retro.have_commit(sha, clone)
     assert retro._checked(["git", "rev-parse", "HEAD"], tree).strip() == sha
     assert (tree / "f.txt").read_bytes() == b"source"
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_a_restored_worktree_is_reused_at_its_commit_and_rebuilt_when_its_gitdir_dangles(tmp_path):
+    """The accuracy.yml cache restores CRAPKIT_RETRO_WORK into a fresh clone, whose
+    .git/worktrees has no entry for it: real git, both ways."""
+    repo, sha = _git_repo(tmp_path, "repo")
+    site = retro.Site(repo=repo, work=tmp_path / "work")
+    tree = retro.worktree(sha, site)
+    (tree / "warm").write_bytes(b"")
+    venv = tmp_path / "work" / f"{sha[:12]}-venv-3.12-wheel"
+    venv.mkdir()
+
+    assert retro.worktree(sha, site) == tree
+    assert (tree / "warm").is_file() and venv.is_dir()
+
+    shutil.rmtree(repo / ".git" / "worktrees")
+    assert retro.worktree(sha, site) == tree
+
+    assert not (tree / "warm").exists() and not venv.exists()
+    assert retro._checked(["git", "rev-parse", "HEAD"], tree).strip() == sha
 
 
 # --- a row's env, its check's node id, and what the commands say ---------------------------------
