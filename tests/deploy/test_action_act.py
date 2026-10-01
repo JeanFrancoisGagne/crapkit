@@ -569,6 +569,24 @@ def test_assert_action_fetches_a_finished_jobs_log_through_gh(box):
 
 
 @pytest.mark.kit
+def test_assert_action_names_why_it_could_not_read_the_jobs_log(box):
+    """CI's deploy-action-log failed on 0.8.1's first two pushes with three
+    "no line matches" lines: gh's error on the log call was swallowed."""
+    state = box.root / "gh-state"
+    (state / "logs").mkdir(parents=True)
+    box.prepend_path(act.install_stub(box.root / "gh-bin"))
+    jobs = [{"id": 11, "name": "deploy-action", "status": "completed"}]
+    (state / "jobs.json").write_text(json.dumps({"total_count": 1, "jobs": jobs}), encoding="utf-8")
+    env = {"STUB_GH_STATE": str(state), "GH_TOKEN": act.TOKEN, "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "5"}
+    script = wheels.SRC / "tools" / "deploy" / "assert_action.py"
+
+    step = box.run([box.toolchain["runner_python"], str(script), "--job", "deploy-action", "--wait", "0", *PUSH_ARGS],
+                   env=env, expect=1)
+    assert "assert_action: deploy-action's log could not be read: gh: Not Found (HTTP 404)" in step.stderr
+    assert "no line matches" not in step.stdout
+
+
+@pytest.mark.kit
 def test_the_act_job_is_readmes_job_with_the_cells_edits():
     job = act.crapkit_job("./crapkit", install=False, permission="read", gate="true", delta="false")
     text = job.text()

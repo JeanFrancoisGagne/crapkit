@@ -262,22 +262,28 @@ def job_id(repo: str, run: str, name: str) -> int | None:
 
 def fetch_log(name: str, wait: float) -> str:
     """The finished job's log. A job that just completed can take a few seconds
-    to publish it, so a miss is retried until `wait` runs out."""
+    to publish it, so a miss is retried until `wait` runs out. Then the last
+    reason ends the run: an empty log failed every line check with no word of
+    why, on each of 0.8.1's first two pushes to main."""
     repo, run = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_RUN_ID"]
     until = time.monotonic() + wait
     while True:
         found = job_id(repo, run, name)
-        text = _log_of(repo, found) if found is not None else ""
-        if text or time.monotonic() >= until:
+        text, why = _log_of(repo, found) if found is not None else ("", f"run {run} holds no completed job {name!r}")
+        if text:
             return text
+        if time.monotonic() >= until:
+            raise SystemExit(f"assert_action: {name}'s log could not be read: {why}")
         time.sleep(5)
 
 
-def _log_of(repo: str, job: int) -> str:
+def _log_of(repo: str, job: int) -> tuple[str, str]:
+    """The log, or "" and why there is none: gh's own error, or an empty answer."""
     try:
-        return gh_api(f"repos/{repo}/actions/jobs/{job}/logs")
-    except subprocess.CalledProcessError:
-        return ""
+        text = gh_api(f"repos/{repo}/actions/jobs/{job}/logs")
+    except subprocess.CalledProcessError as failed:
+        return "", (failed.stderr or "").strip() or f"gh exited {failed.returncode}"
+    return text, "" if text else f"gh answered job {job}'s log with nothing"
 
 
 # --- output ------------------------------------------------------------------------------
