@@ -3,8 +3,11 @@
 `init --help` described `--repo` with the shared "nearest crapkit.toml at or
 above cwd" line, and init never walks up. Three help strings said "the latest
 run" where the command reads the baseline run: verify's `--baseline` default,
-`ratchet seed`, and `rescore`. `clean --help` listed `--json` with no words, and
-the root help named four `--version --json` keys where the object holds five.
+`ratchet seed`, and `rescore`. rescore's then said "the baseline run", the run
+`crapkit runs` marks, and rescore reads the newest trusted run with no
+behind-HEAD rule: after a branch switch, the other branch's run. `clean --help`
+listed `--json` with no words, and the root help named four `--version --json`
+keys where the object holds five.
 The editor schema called retest_command a `{tests}` template, and the lane fills
 `{files}` and `{names}` too.
 """
@@ -16,7 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from cli_inproc_repo import add_knotty, repo, seed_artifacts, template_repo  # noqa: F401
+from cli_inproc_repo import (add_knotty, commit_all, git, repo, seed_artifacts,  # noqa: F401
+                            template_repo)
 from crapkit.cli import main
 from crapkit.cli.parser import _help_topics, build_parser
 
@@ -57,13 +61,43 @@ def test_init_below_a_config_writes_nothing_and_adopts_nothing(repo, monkeypatch
     ("verify", "--baseline BASELINE baseline run id (default: the trusted run `crapkit runs` "
                "marks `baseline`)"),
     ("ratchet", "seed: mark over-target functions from the run verify would compare against;"),
-    ("crapkit", "rescore fresh complexity for named files overlaid on the baseline run's coverage"),
 ])
 def test_help_names_the_baseline_run_the_command_reads(topic, said):
     words = _screen(topic)
 
     assert said in words, words
     assert "latest run" not in words and "latest scored run" not in words, words
+
+
+RESCORE_READS = ("rescore fresh complexity for named files overlaid on the newest trusted run's "
+                 "coverage, from any branch")
+
+
+def test_rescore_help_names_the_newest_trusted_run():
+    words = _screen("crapkit")
+
+    assert RESCORE_READS in words, words
+    assert "the baseline run's coverage" not in words, words
+
+
+def test_rescore_reads_the_other_branchs_run_after_a_branch_switch(repo, capsys):  # noqa: F811
+    """`crapkit runs` marks run 1, the run behind HEAD, as baseline; rescore
+    overlays run 2, the newest trusted run, as its help says."""
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    git(repo, "checkout", "-q", "-b", "side")
+    (repo / "src" / "extra.ts").write_text("export const a = 1;\n", encoding="utf-8")
+    commit_all(repo, "side work")
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    git(repo, "checkout", "-q", "-")
+    capsys.readouterr()
+
+    assert main(["runs", "--json", "--repo", str(repo)]) == 0
+    marked = [run["id"] for run in json.loads(capsys.readouterr().out)["runs"] if run["baseline"]]
+    assert main(["rescore", "src/app.ts", "--repo", str(repo)]) == 0
+
+    assert (marked, capsys.readouterr().out.split(" @ ")[0]) == ([1], "rescore vs run 2")
+    assert RESCORE_READS in _screen("crapkit")
 
 
 @pytest.fixture()
@@ -77,8 +111,7 @@ def failed_verify_on_top(repo, capsys):  # noqa: F811
     return repo
 
 
-def test_rescore_and_seed_read_the_baseline_under_a_newer_failed_verify(failed_verify_on_top,
-                                                                          capsys):
+def test_rescore_and_seed_pass_over_a_newer_failed_verify(failed_verify_on_top, capsys):
     root = str(failed_verify_on_top)
     assert main(["rescore", "src/app.ts", "--repo", root]) == 0
     assert capsys.readouterr().out.startswith("rescore vs run 1 ")

@@ -452,7 +452,8 @@ def build_parser() -> argparse.ArgumentParser:
     brf.add_argument("--json", action="store_true", help="machine output (default: a short summary)")
     brf.set_defaults(func=_Handler("queue", "cmd_brief"))
 
-    rsc = sub.add_parser("rescore", help="fresh complexity for named files overlaid on the baseline run's coverage")
+    rsc = sub.add_parser("rescore", help="fresh complexity for named files overlaid on the newest "
+                                         "trusted run's coverage, from any branch")
     rsc.add_argument("files", nargs="+", help="source files to re-analyze" + _WHERE)
     rsc.add_argument("--repo", **_REPO_FLAG)
     rsc.add_argument("--json", action="store_true", help="machine output (default: table)")
