@@ -1290,7 +1290,8 @@ def _deploy_step(version: str) -> Step:
              "150 min), named for the commit's git tree id; its scope job refuses a checkout "
              "whose tree differs. The receipt keeps the record, keyed on the commit and the tree "
              "id. A rerun reuses a run already passed or running, and after a red or cancelled "
-             "run under that key reruns only its failed and cancelled jobs")
+             "run under that key that began within 3 days reruns only its failed and cancelled "
+             "jobs; an older one, or one gh refuses to rerun, gets a new dispatch")
 
 
 def _is_tree_id(value) -> bool:
@@ -1377,29 +1378,69 @@ def _newest_red(runs: list) -> dict | None:
     return max(red, key=lambda run: run.get("id") or 0, default=None)
 
 
-def _rerun_failed(step: Step, root: Path, version: str, record: dict, red: dict) -> dict:
-    """Rerun only the failed and cancelled jobs of a red run under the same key.
-    Every deploy entry needs only the scope job and downloads nothing another
-    job wrote, so a green entry from the earlier attempt still holds for this
-    tree. The branch goes back first: the rerun checks the commit out again."""
-    commands = (step.commands[0], _for_run(step.commands[2], red))
-    _run_or_untag(step._replace(commands=commands), root, version, False)
-    return _dispatched(lambda: [run for run in _record_runs(_deploy_runs(record["sha"]), record)
+# A rerun keeps the green entries of the earlier attempts. The weekly entries
+# install the harnesses at their newest release and read PyPI and npm, which the
+# tree id does not cover, so a red run that began longer ago than this is not
+# rerun: a new dispatch runs every entry again.
+DEPLOY_RERUN_DAYS = 3
+
+
+def _began_within(run: dict, days: int) -> bool:
+    """Whether the run's first attempt began less than `days` days ago; an
+    unreadable created_at reads as old."""
+    try:
+        began = datetime.datetime.fromisoformat(str(run.get("created_at")).replace("Z", "+00:00"))
+        age = datetime.datetime.now(datetime.timezone.utc) - began
+    except (ValueError, TypeError):
+        return False
+    return age < datetime.timedelta(days=days)
+
+
+def _recent_red(runs: list) -> dict | None:
+    """The newest red run under the key, when it began within DEPLOY_RERUN_DAYS."""
+    red = _newest_red(runs)
+    if red is None or _began_within(red, DEPLOY_RERUN_DAYS):
+        return red
+    print(f"{_run_label(red)} began more than {DEPLOY_RERUN_DAYS} days ago; dispatching a new run")
+    return None
+
+
+def _rerun_red(root: Path, command: tuple, red: dict | None, listed: Callable, redo: str) -> dict | None:
+    """Rerun only the failed and cancelled jobs of `red` and return the run as
+    GitHub lists it again. None when there is no red run, or when gh refuses the
+    rerun: a run past GitHub's 30-day rerun window, one with no failed job, or a
+    startup_failure. `listed` reads the stage's runs under the key."""
+    if red is None:
+        return None
+    failure = _attempt(root, _for_run(command, red))
+    if failure is not None:
+        print(f"{_run_label(red)} could not be rerun ({failure}); dispatching a new run")
+        return None
+    return _rerun_seen(red, listed, redo)
+
+
+def _rerun_seen(red: dict, listed: Callable, redo: str) -> dict:
+    """The rerun run as GitHub lists it once the rerun took."""
+    return _dispatched(lambda: [run for run in listed()
                                 if run.get("id") == red.get("id") and run.get("status") != "completed"],
-                       set(), f"{_run_label(red)} was rerun but never left its finished state; "
-                              f"{_rerun(version, 'deploy')}")
+                       set(), f"{_run_label(red)} was rerun but never left its finished state; {redo}")
 
 
 def _deploy_to_watch(step: Step, root: Path, version: str, record: dict, runs: list) -> dict:
     """A release run already going for this record, else the newest red one
-    rerun, else a new dispatch's run."""
+    rerun (failed and cancelled jobs only), else a new dispatch's run. The
+    scratch branch goes back first: a rerun checks the commit out again."""
     run = _unfinished(runs)
     if run is not None:
         return run
-    red = _newest_red(runs)
-    if red is not None:
-        return _rerun_failed(step, root, version, record, red)
-    _run_or_untag(step._replace(commands=step.commands[:2]), root, version, False)
+    _run_or_untag(step._replace(commands=step.commands[:1]), root, version, False)
+    listed = lambda: _record_runs(_deploy_runs(record["sha"]), record)  # noqa: E731
+    rerun = _rerun_red(root, step.commands[2], _recent_red(runs), listed, _rerun(version, "deploy"))
+    return rerun or _dispatch_deploy(step, root, version, record, runs)
+
+
+def _dispatch_deploy(step: Step, root: Path, version: str, record: dict, runs: list) -> dict:
+    _run_or_untag(step._replace(commands=step.commands[1:2]), root, version, False)
     return _dispatched(lambda: _record_runs(_deploy_runs(record["sha"]), record),
                        {old.get("id") for old in runs},
                        f"{DEPLOY_WORKFLOW} was dispatched but no run named "

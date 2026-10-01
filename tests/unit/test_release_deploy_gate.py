@@ -21,6 +21,7 @@ the accuracy gate's tests do; `display_title` is where the API puts a run-name.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import subprocess
 from pathlib import Path
@@ -43,12 +44,18 @@ RUNS_URL = ("https://api.github.com/repos/JeanFrancoisGagne/crapkit/actions/work
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "deploy.yml"
 
 
+def _made(days_ago: float) -> str:
+    """A created_at stamp in the listing's form, `days_ago` days before now."""
+    made = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days_ago)
+    return made.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _run(head=HEAD, tree=TREE, **changes) -> dict:
     """A release-cadence dispatch of deploy.yml as the runs listing reports it."""
     return {"id": 36011909180, "name": "deploy", "path": ".github/workflows/deploy.yml",
             "event": "workflow_dispatch", "head_branch": f"deploy-release/{VERSION}",
             "head_sha": head, "display_title": f"deploy release {tree}", "status": "completed",
-            "conclusion": "success",
+            "conclusion": "success", "run_attempt": 1, "created_at": _made(1 / 24),
             "html_url": "https://github.com/JeanFrancoisGagne/crapkit/actions/runs/36011909180",
             **changes}
 
@@ -321,8 +328,9 @@ def test_the_deploy_stage_refuses_a_tree_verify_never_passed(tmp_path, monkeypat
 class Stage:
     """The commands the stage runs, GitHub's runs, and what `gh run watch` answers."""
 
-    def __init__(self, runs, watch=0, appear=True, tree=TREE):
+    def __init__(self, runs, watch=0, appear=True, tree=TREE, refuse=None, rerun_ends=False):
         self.runs, self.watch, self.appear, self.tree = runs, watch, appear, tree
+        self.refuse, self.rerun_ends = refuse, rerun_ends
         self.commands, self.watched = [], []
 
     def key(self, root, version):
@@ -334,9 +342,19 @@ class Stage:
         self.commands.append(command)
         if command[:3] == ("gh", "workflow", "run") and self.appear:
             self.runs.append(_run(status="queued", conclusion=None, id=99))
-        if command[:3] == ("gh", "run", "rerun") and self.appear:
-            self.runs = [{**run, "status": "queued", "conclusion": None} if str(run["id"]) == command[3]
-                         else run for run in self.runs]
+        if command[:3] == ("gh", "run", "rerun"):
+            self.rerun(command[3])
+
+    def rerun(self, run_id):
+        """gh refuses, or GitHub lists the run's next attempt: queued, or already
+        finished red when `rerun_ends` (a scope job that fails again in seconds)."""
+        if self.refuse:
+            raise subprocess.CalledProcessError(1, ("gh", "run", "rerun", run_id), stderr=self.refuse)
+        if not self.appear:
+            return
+        state = {"status": "completed", "conclusion": "failure"} if self.rerun_ends else             {"status": "queued", "conclusion": None}
+        self.runs = [{**run, **state, "run_attempt": run["run_attempt"] + 1} if str(run["id"]) == run_id
+                     else run for run in self.runs]
 
     def remote_json(self, url, *, absent=False):
         return {"total_count": len(self.runs), "workflow_runs": list(self.runs)}
@@ -454,6 +472,55 @@ def test_a_rerun_that_never_leaves_its_finished_state_stops_the_stage(kit, stage
 
     with pytest.raises(release.ReleaseError, match="was rerun but never left its finished state"):
         _deploy(kit)
+
+
+# --- a rerun only while the green entries it keeps are recent ---------------------------------
+#
+# `gh run rerun --failed` keeps every green entry of the earlier attempts. The
+# weekly entries install the harnesses at their newest release and read PyPI
+# and npm, none of which the tree id covers, so a red run older than three days
+# is not rerun: a new dispatch runs every entry again.
+
+def test_a_red_run_four_days_old_dispatches_anew(kit, stage, capsys):
+    fake = stage([_run(conclusion="failure", id=7, created_at=_made(4))])
+
+    receipt = _deploy(kit)
+
+    assert _names(fake) == ["git push -q", "gh workflow run", "git push -q"]
+    assert fake.watched == [("99", 150 * 60)] and receipt["deploy"] == {"sha": HEAD, "tree": TREE}
+    assert "began more than 3 days ago" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("created_at", [None, "", "yesterday", "2026-09-30T10:00:00"])
+def test_a_red_run_whose_age_cannot_be_read_dispatches_anew(kit, stage, created_at):
+    fake = stage([_run(conclusion="failure", id=7, created_at=created_at)])
+
+    _deploy(kit)
+
+    assert _names(fake) == ["git push -q", "gh workflow run", "git push -q"]
+
+
+@pytest.mark.parametrize("conclusion, said", [
+    ("failure", "run 7 cannot be rerun: it was created more than 30 days ago"),
+    ("cancelled", "run 7 cannot be rerun: no failed jobs"),
+    ("startup_failure", "run 7 cannot be rerun: its workflow file may be broken"),
+], ids=["30-day-window", "no-failed-job", "startup-failure"])
+def test_a_rerun_gh_refuses_dispatches_anew(kit, stage, conclusion, said, capsys):
+    fake = stage([_run(conclusion=conclusion, id=7)], refuse=said)
+
+    receipt = _deploy(kit)
+
+    assert _names(fake) == ["git push -q", "gh run rerun", "gh workflow run", "git push -q"]
+    assert fake.watched == [("99", 150 * 60)] and receipt["deploy"] == {"sha": HEAD, "tree": TREE}
+    assert "could not be rerun" in capsys.readouterr().out
+
+
+def test_a_red_run_under_three_days_old_reruns(kit, stage):
+    fake = stage([_run(conclusion="failure", id=7, created_at=_made(2.9))])
+
+    _deploy(kit)
+
+    assert _names(fake) == ["git push -q", "gh run rerun", "git push -q"] and fake.watched == [("7", 150 * 60)]
 
 
 @pytest.mark.parametrize("watch, says", [("timeout", "still runs after 150 minutes"),

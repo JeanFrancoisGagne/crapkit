@@ -128,7 +128,11 @@ commit's sha and its tree id. A rerun of the stage reuses a run under that key t
 passed or is still running. After a red or cancelled run under the key it runs
 `gh run rerun ID --failed` and watches that run again: every deploy entry needs only the
 scope job and downloads nothing another job wrote, so the green entries of the earlier
-attempt still hold for the same tree. A different tree id dispatches a new run.
+attempt still hold for the same tree. It reruns only a run that began less than 3 days
+ago: the weekly entries install the harnesses at their newest release and read PyPI and
+npm, which the tree id does not cover. An older red run, or one gh refuses to rerun (past
+GitHub's 30-day window, no failed job, a startup_failure), gets a new dispatch under the
+same key instead. A different tree id dispatches a new run.
 
 Stage 2b and the registry stage require the record's sha to be the receipt's head. They
 then read deploy.yml's runs at that commit from GitHub and require one named
