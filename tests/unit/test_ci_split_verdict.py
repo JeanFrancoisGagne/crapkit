@@ -41,6 +41,7 @@ def measuring(ci, monkeypatch, *, lost_coverage=False, failing=()):
 
     monkeypatch.setattr(ci, "install_revision", install)
     monkeypatch.setattr(ci, "_measure", measure)
+    monkeypatch.setattr(ci, "_packages", lambda python, environment: ["coverage==7.13.1"])
 
 
 def reinstalling(ci, monkeypatch):
@@ -225,8 +226,10 @@ def test_the_join_refuses_a_measurement_of_another_commit(tmp_path, monkeypatch)
     measured, output = tmp_path / "measured", tmp_path / "verdict"
     hand_offs(ci, repo, base, measured)
     candidate = git(repo, "rev-parse", "HEAD")
+    measured_inputs = json.loads((measured / "candidate/proof.json").read_text())["inputs"]
     proof = measured / "base/proof.json"
-    proof.write_text(json.dumps(dict(json.loads(proof.read_text()), commit=candidate)))
+    proof.write_text(json.dumps(dict(json.loads(proof.read_text()), commit=candidate,
+                                     inputs=measured_inputs)))
     reinstalling(ci, monkeypatch)
 
     code = ci.main(["--repo", str(repo), "--base", base, "--join",

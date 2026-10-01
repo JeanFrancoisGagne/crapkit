@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -25,6 +26,13 @@ PROOF_FIELDS = ("wheel", "wheel_sha256", "commit", "suite_exit")
 # The CI job that measures one side, in .github/workflows/ci.yml. Its log holds
 # the error of a hand-off that arrives without its coverage report.
 MEASURE_JOB = "verdict-measure"
+# The driver's own bytes are a measurement input: they install, map and run it.
+DRIVER = Path(__file__)
+# Tracked files that decide a measurement, besides every *.py file: the package,
+# its build and crapkit's config, and what the suite reads from its fixture trees.
+KEYED_PREFIXES = ("src/",)
+KEYED_FILES = ("pyproject.toml", "crapkit.toml")
+FIXTURE_TREE = "/fixtures/"
 _OWNER = ContextVar("ci_command_owner", default=None)
 JUNIT_PROBE = (
     "from pathlib import Path\nimport json\n"
@@ -154,6 +162,54 @@ def _read_proof(measured: Path) -> dict:
     return proof
 
 
+def _keyed(path: str) -> bool:
+    """Whether a tracked file is a measurement input. Docs, CI text and other
+    data stay out: dogfood runs the tests that read them on every tree."""
+    if path.startswith("tests/") and FIXTURE_TREE in path:
+        return True
+    return path.endswith(".py") or path.startswith(KEYED_PREFIXES) or path in KEYED_FILES
+
+
+def tree_key(repo: Path, ref: str) -> str:
+    """sha256 over the mode, blob id and path of each keyed file `ref` tracks.
+
+    One ls-tree and no file reads, so an empty commit keeps its parent's key
+    and a checkout's line endings cannot move it."""
+    listing = _git(repo, "ls-tree", "-r", "-z", "--full-tree", "--end-of-options", ref)
+    digest = hashlib.sha256()
+    for entry in filter(None, listing.split("\0")):
+        if _keyed(entry.split("\t", 1)[1]):
+            digest.update(entry.encode("utf-8", "surrogateescape") + b"\0")
+    return digest.hexdigest()
+
+
+def _requirement_name(line: str) -> str:
+    return re.split(r"[\s=@<>!~;\[]", line, maxsplit=1)[0].lower().replace("_", "-")
+
+
+def _frozen_lines(frozen: str) -> list[str]:
+    """pip freeze less crapkit itself, which it names by the wheel's temp path,
+    new on every run; the tree key already holds the wheel's source."""
+    return [line for line in frozen.splitlines() if line and _requirement_name(line) != "crapkit"]
+
+
+def _packages(python: Path, environment: dict) -> list[str]:
+    frozen = _run([str(python), "-m", "pip", "freeze"], env=environment, capture_output=True,
+                  check=True).stdout
+    return _frozen_lines(frozen)
+
+
+def measurement_inputs(root: Path, python: Path, environment: dict) -> dict:
+    """What decides a measurement's coverage: the keyed tree, this driver, the
+    Python (the venv is made from this interpreter) and the venv's packages."""
+    return {"tree": tree_key(root, "HEAD"), "driver": _sha(DRIVER), "python": sys.version,
+            "packages": _packages(python, environment)}
+
+
+def _inputs_key(inputs: dict) -> str:
+    return hashlib.sha256(json.dumps(inputs, sort_keys=True).encode("utf-8")).hexdigest()
+
+
 def _require_coverage_report(measured: Path, proof: dict) -> None:
     """Refuse a hand-off whose suite wrote no py.json, and say where its error is.
 
@@ -170,7 +226,7 @@ def _measured_wheel(root: Path, measured: Path, proof: dict) -> Path:
     if _sha(wheel) != proof["wheel_sha256"]:
         raise ValueError(f"{wheel.name} is not the wheel its measurement recorded")
     commit = _git(root, "rev-parse", "HEAD")
-    if proof["commit"] != commit:
+    if proof["commit"] != commit and proof.get("inputs", {}).get("tree") != tree_key(root, "HEAD"):
         raise ValueError(f"measurement of {proof['commit']} cannot stand for checkout {commit}")
     return wheel
 
@@ -324,6 +380,9 @@ def _join_checkouts(repo: Path, base_ref: str, measured: Path, scratch: Path, ev
     roots = _checkouts(repo, base_ref, scratch)
     installs = _installed(roots, evidence, lambda side, root: reinstall_revision(
         root, measured / side, scratch / (side + "-install")))
+    if evidence["candidate"]["suite_exit"] is None:
+        raise ValueError("the candidate hand-off holds no suite result: a reused measurement "
+                         "ran an earlier tree's suite, and the join judges this commit's")
     return _judge(roots, installs, [evidence[side]["suite_exit"] for side in SIDES], evidence)
 
 
@@ -331,18 +390,22 @@ def _join_checkouts(repo: Path, base_ref: str, measured: Path, scratch: Path, ev
 _FAILURES = (OSError, ValueError, subprocess.CalledProcessError)
 
 
-def measure(repo: Path, base_ref: str, side: str, measured: Path) -> int:
+def measure(repo: Path, base_ref: str, side: str, measured: Path, cache: Path | None = None) -> int:
     """Measure one side's installed wheel and hand the join what it needs to judge it.
 
     A failing suite still hands off: whether a baseline failure stands and a
     candidate failure fails is the join's call, the same one compare makes. A
     step that stops the measurement hands off failure.json instead, naming the
     phase it reached and the error, because the join never runs after it.
+
+    With a `cache`, a passing measurement with its coverage report is kept
+    there under its inputs key, and the base side hands off the kept one when
+    its own inputs key is equal, without running the suite.
     """
     record = {"phase": "checkout"}
     try:
         with tempfile.TemporaryDirectory(prefix="crapkit-ci-") as directory:
-            _measure_side(repo, base_ref, side, Path(directory), measured / side, record)
+            _measure_side(repo, base_ref, side, Path(directory), measured / side, record, cache)
     except _FAILURES as exc:
         _record_failure(measured / side, dict(record, error=str(exc)))
         raise
@@ -350,15 +413,54 @@ def measure(repo: Path, base_ref: str, side: str, measured: Path) -> int:
 
 
 def _measure_side(repo: Path, base_ref: str, side: str, scratch: Path, destination: Path,
-                  record: dict) -> None:
+                  record: dict, cache: Path | None) -> None:
     with _commands():
         root = _checkout(repo, scratch / side, _side_ref(side, base_ref))
         record["phase"] = "install"
         python, environment, proof = install_revision(root, scratch / "install")
+        proof["inputs"] = measurement_inputs(root, python, environment)
+        proof["inputs_key"] = _inputs_key(proof["inputs"])
+        if side == "base" and _reused(cache, proof, destination):
+            return
         record["phase"] = "measure"
         proof["suite_exit"] = _measure(root, python, environment, proof)
     record["phase"] = "hand-off"
-    _hand_off(root, scratch / "install/dist" / proof["wheel"], proof, destination)
+    wheel = scratch / "install/dist" / proof["wheel"]
+    _hand_off(root, wheel, proof, destination)
+    if cache is not None and _storable(destination, proof):
+        _hand_off(root, wheel, proof, cache)
+
+
+def _storable(directory: Path, proof: dict) -> bool:
+    """Only a suite that passed and wrote its report is a result to carry on."""
+    return proof.get("suite_exit") == 0 and (directory / "cov/py.json").is_file()
+
+
+def _stored(cache: Path | None, inputs_key: str) -> dict | None:
+    """The kept measurement of these exact inputs, or None."""
+    if cache is None or not (cache / "proof.json").is_file():
+        return None
+    stored = json.loads((cache / "proof.json").read_text(encoding="utf-8"))
+    if stored.get("inputs_key") != inputs_key or not _storable(cache, stored):
+        return None
+    return stored
+
+
+def _reused(cache: Path | None, proof: dict, destination: Path) -> bool:
+    """Hand off the kept measurement of equal inputs in place of a suite run.
+
+    Its suite exit is the earlier tree's, so the hand-off records none."""
+    stored = _stored(cache, proof["inputs_key"])
+    if stored is None:
+        return False
+    _clear_hand_off(destination)
+    shutil.copytree(cache / "cov", destination / "cov")
+    shutil.copyfile(cache / stored["wheel"], destination / stored["wheel"])
+    reused = dict(stored, suite_exit=None, reused_for=proof["commit"])
+    (destination / "proof.json").write_text(json.dumps(reused, indent=2) + "\n", encoding="utf-8")
+    print(f"reused the measurement of {stored['commit']}: its inputs key {stored['inputs_key'][:12]} "
+          f"is this checkout's, so the suite did not run", file=sys.stderr)
+    return True
 
 
 def _hand_off(root: Path, wheel: Path, proof: dict, destination: Path) -> None:
@@ -430,6 +532,11 @@ def parse_arguments(argv=None) -> argparse.Namespace:
                        help="measure one side's installed wheel and hand it off, one CI job per side")
     split.add_argument("--join", action="store_true",
                        help="judge both hand-offs after proving each wheel again")
+    split.add_argument("--tree-key", choices=SIDES,
+                       help="print key=<the tree part of one side's measurement inputs>, a cache key")
+    parser.add_argument("--cache", type=Path,
+                        help="with --measure: keep a passing measurement here, and on the base side "
+                             "hand off the kept one when its inputs are equal")
     return parser.parse_args(argv)
 
 
@@ -444,8 +551,12 @@ def main(argv=None) -> int:
 
 def _dispatch(args: argparse.Namespace) -> int:
     repo = args.repo.resolve()
+    if args.tree_key:
+        print("key=" + tree_key(repo, _side_ref(args.tree_key, args.base)))
+        return 0
     if args.measure:
-        return measure(repo, args.base, args.measure, args.measured.resolve())
+        cache = args.cache.resolve() if args.cache else None
+        return measure(repo, args.base, args.measure, args.measured.resolve(), cache)
     if args.join:
         return join(repo, args.base, args.measured.resolve(), args.output.resolve())
     return compare(repo, args.base, args.output.resolve())

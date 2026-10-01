@@ -75,7 +75,7 @@ def test_each_windows_session_is_a_job_and_every_platform_runs_each_suite_once()
 def measurement_hand_offs(jobs):
     """Each measurement row's side and the artifact name and path it uploads."""
     job = jobs["verdict-measure"]
-    command = step(job, "run", "python tools/testing/ci.py")["run"]
+    command = step(job, "run", 'python tools/testing/ci.py --base "$BASE_REF" --measure')["run"]
     upload = step(job, "uses", "actions/upload-artifact@")
     assert upload["if"] == "always()", "a failed measurement still hands off what it has"
     assert upload["with"]["include-hidden-files"] is True

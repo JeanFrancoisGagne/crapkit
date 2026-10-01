@@ -123,11 +123,43 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install build
+      # A push's base is the commit the previous push measured as its candidate,
+      # so the base job measured that tree again: 16.4 machine-min per push. A
+      # measurement is kept under its inputs: the blob of every tracked *.py,
+      # src/**, pyproject.toml, crapkit.toml and the test fixture trees (the
+      # tree key below), plus ci.py, the Python and the measuring venv's pip
+      # freeze, which ci.py compares once it has built the venv. The base hands
+      # off a kept measurement of equal inputs and runs no suite; the candidate
+      # always measures, since the join judges its suite exit.
+      - name: the tree key of this side's measurement inputs
+        id: tree
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python tools/testing/ci.py --base "$BASE_REF" --tree-key ${{ matrix.side }} >> "$GITHUB_OUTPUT"
+      - if: matrix.side == 'base'
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .crapkit/measure-cache
+          key: verdict-measure-${{ steps.tree.outputs.key }}
+          restore-keys: verdict-measure-${{ steps.tree.outputs.key }}-
       - name: measure one installed wheel
         shell: bash
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python tools/testing/ci.py --base "$BASE_REF" --measure ${{ matrix.side }}
+        run: python tools/testing/ci.py --base "$BASE_REF" --measure ${{ matrix.side }} --cache .crapkit/measure-cache
+      # ci.py keeps only a passing measurement with its coverage report. A
+      # reused one leaves the restored proof as it was, so its key is the one
+      # restored and there is nothing new to save.
+      - if: >-
+          hashFiles('.crapkit/measure-cache/proof.json') != '' &&
+          steps.restore.outputs.cache-matched-key != format('verdict-measure-{0}-{1}',
+          steps.tree.outputs.key, hashFiles('.crapkit/measure-cache/proof.json'))
+        uses: actions/cache/save@v4
+        with:
+          path: .crapkit/measure-cache
+          key: verdict-measure-${{ steps.tree.outputs.key }}-${{ hashFiles('.crapkit/measure-cache/proof.json') }}
       - name: hand the measurement to the verdict
         if: always()
         uses: actions/upload-artifact@v4
