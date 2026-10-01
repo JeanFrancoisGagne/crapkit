@@ -347,10 +347,13 @@ The release tool runs this in its `accuracy` stage (see [Releases](#releases)).
 runs `retro.py release` whatever cells its row names, so the bundle rows replay
 there.
 
-The mutation row is one of them, and it runs only on Linux. A CI checkout holds
-no receipt, and `covered` exits 3 until a stored receipt carries verdicts, which
-no receipt does before the first carrying weekly, so a release from Windows
-skips it.
+The mutation row is one of them. A CI checkout holds no receipt, so no CI cell
+runs it, and the releasing machine runs it on any OS: `covered` runs outside the
+image and takes the newest receipt's environment key. A local row names no `os`,
+since an os list would drop it from a release on another OS with nothing in the
+receipt to say so. `covered` exits 3 until a stored receipt carries verdicts,
+which no receipt does before the first carrying weekly, and the release stops at
+that row until the receipts are downloaded (the command it prints).
 
 Its mutation row, `python tools/accuracy/mutation.py covered`, reads the verdicts
 the weekly and diff receipts under `.crapkit/accuracy/mutation/` store (see

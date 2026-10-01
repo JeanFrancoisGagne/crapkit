@@ -75,7 +75,7 @@ commit. Keep it in its own background process: it can take two hours.
 
 1. Here: `python tools/accuracy/run.py --tier release --local --receipt .crapkit/release-accuracy-VERSION.json`,
    about 30 minutes. It runs the push tier, both wheel diffs, the store upgrade check,
-   the consumer replay, the retro replays and, on Linux, the mutation coverage check.
+   the consumer replay, the retro replays and the mutation coverage check.
    `--local` selects the two rows no CI cell runs because they read this machine's
    state: the bundle replays and the mutation receipts.
    The retro replays include the bundle rows, whose commits live only in the

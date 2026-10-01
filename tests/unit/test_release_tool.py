@@ -305,15 +305,15 @@ def test_the_accuracy_stage_follows_verify():
     assert accuracy.background
 
 
-@pytest.mark.parametrize("platform, python, expected", [
-    ("linux", "3.12", {"retro replays for the release", "mutation receipts cover the release"}),
-    ("win32", "3.11", {"retro replays for the release"}),
-])
-def test_the_local_tier_runs_the_rows_that_read_this_machine_s_state(platform, python, expected):
+@pytest.mark.parametrize("platform, python", [("linux", "3.12"), ("win32", "3.12"), ("win32", "3.11")])
+def test_the_local_tier_runs_the_rows_that_read_this_machine_s_state(platform, python):
     """The bundle rows replay only where the history bundle is, and the mutation
     receipts live only here: the stage's own command, read by run.py's parser
-    and check selection, runs both rows, the mutation one on Linux only, since
-    `covered` exits 3 until a stored receipt carries verdicts."""
+    and check selection, runs both rows on every OS a release runs from. The
+    mutation row was Linux only, so a Windows release dropped the coverage gate
+    and nothing in its receipt said so; `covered` runs outside the image and
+    takes the newest receipt's environment, so it judges the same on Windows."""
+    expected = {"retro replays for the release", "mutation receipts cover the release"}
     import runpy
     tool = runpy.run_path(str(ROOT / "tools" / "accuracy" / "run.py"))
     args = tool["_run_parser"]().parse_args(list(_accuracy_step().commands[0][2:]))

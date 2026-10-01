@@ -41,7 +41,8 @@ interpreters a CI cell runs the check under, so a check that judges the same
 thing on every Python of one OS runs in one cell of it. `local: True` marks a
 check that reads state only the releasing machine holds (mutation receipts):
 it runs only with `--local`, which release.py's accuracy stage passes, and
-`--local` runs every other selected check whatever `cells` it names. A
+`--local` runs every other selected check whatever `cells` it names. A local
+check names no `os`, since a release runs from any OS. A
 pytest check names test files or directories, and the tier's markers pick what
 runs inside them (tests/accuracy/kit/tiers.py). One pytest session runs every
 selected pytest check, at -n WORKERS when given, and a check's measured time is
@@ -194,7 +195,14 @@ def _cell_names(row: dict) -> str | None:
     return f"names cell {odd[0]!r}; a cell is <sys.platform>-<minor>, as in win32-3.13" if odd else None
 
 
-ROW_RULES = (_unknown, _no_seconds, _targets, _node_ids, _argv_tiers, _flags, _cell_names)
+def _local_os(row: dict) -> str | None:
+    """The release tool runs the local checks on whatever OS releases, and an os
+    list would drop one there with nothing in the receipt to say so."""
+    named = row.get("local") and row.get("os")
+    return "is local and names an os: a local check runs on every OS a release runs from" if named else None
+
+
+ROW_RULES = (_unknown, _no_seconds, _targets, _node_ids, _argv_tiers, _flags, _cell_names, _local_os)
 
 
 def _check(key: str, shard: str, row: dict) -> Check:

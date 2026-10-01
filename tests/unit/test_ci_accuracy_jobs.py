@@ -298,6 +298,7 @@ def _verdict_cache_steps(job: dict, row: dict, action: str, where) -> list[dict]
     ({"cells": ["windows-3.13"]}, "names cell 'windows-3.13'; a cell is <sys.platform>-<minor>"),
     ({"cells": ["win32"]}, "names cell 'win32'"),
     ({"local": "yes"}, "sets local to something other than True or False"),
+    ({"local": True, "os": ["linux"]}, "is local and names an os"),
 ])
 def test_a_check_that_names_a_cell_run_py_cannot_match_is_refused(field, problem):
     """A misspelled cell would leave the check out of every cell without a word."""
