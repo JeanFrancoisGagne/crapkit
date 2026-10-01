@@ -133,12 +133,20 @@ def _program(pin: Pin) -> str | None:
     return shutil.which(pin.name if "{bin}" in pin.command else pin.command[0])
 
 
+_IMAGE = "it ships in the accuracy image built from tools/accuracy/image/Dockerfile"
+
+
 def _binary(pin: Pin) -> Found:
+    """An empty answer is a missing oracle: `gem list --exact bugspots` prints
+    nothing where Ruby is installed and the gem is not."""
     binary = _program(pin)
     if binary is None:
-        raise OracleMissing(f"oracle {pin.name} {pin.version} is not on PATH; it ships in the "
-                            "accuracy image built from tools/accuracy/image/Dockerfile")
-    return Found(pin.name, _answer(pin, binary), binary)
+        raise OracleMissing(f"oracle {pin.name} {pin.version} is not on PATH; {_IMAGE}")
+    answer = _answer(pin, binary)
+    if not answer:
+        raise OracleMissing(f"oracle {pin.name} {pin.version} is not installed: "
+                            f"`{' '.join(pin.command)}` answers nothing; {_IMAGE}")
+    return Found(pin.name, answer, binary)
 
 
 def _producer(pin: Pin) -> Found:

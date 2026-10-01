@@ -166,6 +166,19 @@ def test_a_binary_pinned_by_digest_hashes_its_file(tmp_path):
     assert oracles.locate("tool", {"tool": pin}).version == "another build"
 
 
+@pytest.mark.process
+def test_a_binary_its_asking_program_knows_nothing_about_is_missing():
+    """bugspots's version comes from `gem list --exact bugspots`, which prints
+    nothing and exits 0 where Ruby is installed and the gem is not (a bare
+    GitHub Ubuntu runner). That is a missing oracle, an infra miss, not a
+    drift to an empty version ("oracle bugspots is , pins.toml says ...")."""
+    pins = {"tool": _pin(kind="binary", command=(sys.executable, "-c", ""),
+                         version_line="tool (1.0)")}
+
+    with pytest.raises(oracles.OracleMissing, match="answers nothing.*accuracy image"):
+        oracles.locate("tool", pins)
+
+
 def test_a_binary_off_the_path_names_the_image():
     pins = {"tool": _pin(kind="binary", command=("crapkit-no-such-binary", "--version"))}
 
