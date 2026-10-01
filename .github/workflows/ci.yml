@@ -128,9 +128,8 @@ jobs:
           echo "$engines" >> "$GITHUB_PATH"
       - run: python tools/testing/run.py --suite ${{ matrix.suite }}
 
-  # On the nightly schedule only the test legs run, with deploy-action and its
-  # log job, which runs whatever deploy-action concluded: a schedule has no
-  # event base for the verdict or dogfood, and nothing pushed to judge.
+  # On the nightly schedule only the test legs run: a schedule has no event
+  # base for the verdict or dogfood, and nothing pushed to judge.
 
   # The verdict compares installed base and candidate wheels. Each side builds,
   # installs and measures its own wheel in a job of its own, the two side by
@@ -716,6 +715,7 @@ jobs:
   # on a pull request it is gha-action-readonly-token (the comment post fails
   # with 403 and the gate still decides the job).
   deploy-action:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -763,12 +763,17 @@ jobs:
     permissions:
       contents: read
       actions: read
+    # always() runs this job even when deploy-action skipped, as it does on a
+    # schedule; there it has no log to read, so every step skips.
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+      - if: github.event_name != 'schedule'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - if: github.event_name != 'schedule'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
       - name: assert what deploy-action's log shows
+        if: github.event_name != 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-

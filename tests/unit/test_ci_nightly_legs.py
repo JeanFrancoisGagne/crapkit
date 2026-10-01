@@ -9,6 +9,7 @@ version-specific break still shows within a day.
 from test_ci_parallel_jobs import matrix_rows, workflow
 
 WINDOWS = "windows-latest"
+SKIPS_SCHEDULE = "github.event_name != 'schedule'"
 
 
 def _legs(event):
@@ -32,10 +33,14 @@ def test_the_nightly_runs_windows_on_3_12_and_3_13_and_nothing_a_push_already_ra
 def test_the_schedule_runs_the_test_legs_and_no_job_that_judges_a_push():
     """verdict-measure and dogfood read the event's base commit, which a
     schedule does not have, and the other jobs judge a change a push made.
-    deploy-action runs, because deploy-action-log runs whatever it concluded."""
+    deploy-action and its log job ran every night until they skipped too:
+    about 15 machine-min a night with no change to judge. The log job keeps
+    its job-level always(), so its steps carry the skip."""
     found = workflow()
     jobs = found["jobs"]
-    skipped = {name for name, job in jobs.items() if job.get("if") == "github.event_name != 'schedule'"}
+    skipped = {name for name, job in jobs.items() if job.get("if") == SKIPS_SCHEDULE}
+    skipped |= {name for name, job in jobs.items()
+                if all(item.get("if") == SKIPS_SCHEDULE for item in job["steps"])}
     skipped |= {name for name, job in jobs.items() if "github.event_name == 'push'" in job.get("if", "")}
     for name, job in jobs.items():
         needs = job.get("needs", [])
@@ -43,7 +48,7 @@ def test_the_schedule_runs_the_test_legs_and_no_job_that_judges_a_push():
         if "always()" not in job.get("if", "") and set(needs) & skipped:
             skipped.add(name)
 
-    assert set(jobs) - skipped == {"test", "deploy-action", "deploy-action-log"}
+    assert set(jobs) - skipped == {"test"}
     assert [entry["cron"] for entry in found[True]["schedule"]] == ["41 4 * * *"]
 
 
