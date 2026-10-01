@@ -246,8 +246,11 @@ jobs:
   lizard-edge:
     # lizard is capped below 1.25: its readers decide every ccn crapkit
     # stores. This cell scores the corpus under the newest lizard and under the
-    # 1.24.0 floor, so a move is known before anyone lifts the cap.
-    needs: plan
+    # 1.24.0 floor, so a move is known before anyone lifts the cap. It runs in
+    # the image like the oracle cells: the corpus shard holds oracle checks
+    # (tests/accuracy/kit/test_oracles_non_ascii.py among them) whose tools only
+    # the image installs, and on the bare runner each one failed as missing.
+    needs: [plan, image]
     if: needs.plan.outputs.mode == 'nightly'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -255,10 +258,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan.outputs.ref }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt && pip install --no-deps -e .
       - uses: actions/cache@v4
         with:
           path: .crapkit/corpus
@@ -268,12 +267,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          folder=$(python tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
+          folder=$(python3 tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
           echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
-      - run: python tools/accuracy/run.py --tier nightly --shard corpus --receipt edge/floor.json
-      - run: pip install --no-deps --upgrade lizard && python -m lizard --version
-      - run: python tools/accuracy/run.py --tier nightly --shard corpus --receipt edge/newest.json
-      - run: python tools/accuracy/run.py xplat edge/floor.json edge/newest.json
+      # Each container starts from the image's 3.12 venv, which holds lizard
+      # 1.24.0 from the nightly lock; the second one upgrades it first.
+      - name: run.py in the image, under the floor and the newest lizard
+        env:
+          REF: ${{ needs.image.outputs.ref }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          set -eu
+          docker pull --quiet "$REF"
+          in_image() {
+            docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src \
+              ${CRAPKIT_ACCURACY_CORPUS:+-v "$CRAPKIT_ACCURACY_CORPUS:/corpus:ro"} \
+              -e CRAPKIT_ACCURACY_PY=3.12 -e CRAPKIT_ACCURACY_IMAGE="$REF" \
+              -e CRAPKIT_ACCURACY_IMAGE_DIGEST="$DIGEST" "$REF" "$@"
+          }
+          in_image python tools/accuracy/run.py --tier nightly --shard corpus -n 4 --receipt edge/floor.json
+          in_image sh -c 'uv pip install --quiet --python "$VIRTUAL_ENV/bin/python" --no-deps --upgrade lizard \
+            && python -m lizard --version \
+            && python tools/accuracy/run.py --tier nightly --shard corpus -n 4 --receipt edge/newest.json'
+          in_image python tools/accuracy/run.py xplat edge/floor.json edge/newest.json
 
   windows:
     needs: plan

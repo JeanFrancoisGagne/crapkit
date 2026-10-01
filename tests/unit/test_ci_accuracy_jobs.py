@@ -472,10 +472,42 @@ def test_every_cell_that_reads_the_full_corpus_fetches_it_before_its_tier():
         assert (found["continue-on-error"], found["env"]["GH_TOKEN"]) == (True, "${{ github.token }}")
 
 
-def test_the_image_cells_mount_the_fetched_corpus_where_the_image_looks():
-    run = step(_jobs("accuracy.yml")["oracles"], "name", "run.py in the image")["run"]
+def _tier_steps(job: dict) -> list[dict]:
+    return [item for item in job["steps"]
+            if "tools/accuracy/run.py --tier" in str(item.get("run", ""))]
 
-    assert '${CRAPKIT_ACCURACY_CORPUS:+-v "$CRAPKIT_ACCURACY_CORPUS:/corpus:ro"}' in run
+
+def _linux_tier_steps() -> dict[str, list[dict]]:
+    """Each Linux cell of accuracy.yml that runs a tier, with the steps that run it."""
+    linux = {name: job for name, job in _jobs("accuracy.yml").items()
+             if job["runs-on"] == "ubuntu-latest"}
+    return {name: _tier_steps(job) for name, job in linux.items() if _tier_steps(job)}
+
+
+def test_every_linux_cell_runs_its_tier_in_the_accuracy_image():
+    """The nightly oracles (pylint, the Node tools, the Go, Rust, Java, C and
+    Swift binaries, shellmetrics, bugspots) are installed in the accuracy image
+    and nowhere else on Linux, and their tests carry platform("linux") for that
+    reason. A Linux cell that runs a tier on the bare runner fails each of them
+    as missing: lizard-edge's first nightly failed 16 of the 21 tests in
+    tests/accuracy/kit/test_oracles_non_ascii.py that way."""
+    jobs = _jobs("accuracy.yml")
+    cells = _linux_tier_steps()
+
+    assert {"oracles", "lizard-edge"} <= set(cells)
+    for name, steps in cells.items():
+        needs = jobs[name]["needs"]
+        assert "image" in ([needs] if isinstance(needs, str) else needs), name
+        for item in steps:
+            assert item["env"]["REF"] == "${{ needs.image.outputs.ref }}", name
+            assert "docker run" in item["run"] and '"$REF"' in item["run"], name
+
+
+def test_the_image_cells_mount_the_fetched_corpus_where_the_image_looks():
+    for name, steps in _linux_tier_steps().items():
+        for item in steps:
+            assert '${CRAPKIT_ACCURACY_CORPUS:+-v "$CRAPKIT_ACCURACY_CORPUS:/corpus:ro"}' in (
+                item["run"]), name
 
 
 def _verdict_steps() -> tuple[list, int]:
