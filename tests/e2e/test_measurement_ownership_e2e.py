@@ -3,7 +3,6 @@ from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -13,6 +12,7 @@ import pytest
 
 from hang_guard import communicate, exited, wait_for, wait_until
 from test_measurement_inputs_e2e import measured_repo, run_cli  # noqa: F401
+from repo_copy import copy_repo
 
 
 @pytest.fixture(autouse=True)
@@ -111,7 +111,7 @@ def test_one_owner_spans_execution_parsing_and_stamp_publication(measured_repo, 
 @pytest.mark.parametrize('different_resources', [False, True])
 def test_shared_absolute_artifacts_have_one_owner_across_checkouts(measured_repo, paused_measurement, tmp_path, different_temp, different_resources):
     other = tmp_path / 'other'
-    shutil.copytree(measured_repo, other)
+    copy_repo(measured_repo, other)
     config = other / 'crapkit.toml'
     text = config.read_text()
     for name in ('cov.json', 'junit.xml'):

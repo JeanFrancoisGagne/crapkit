@@ -41,6 +41,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_copy import copy_repo
 
 run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace", spawn=True)
 
@@ -369,7 +370,7 @@ def test_inventory_rows_hold_on_every_interpreter_and_locale(python_tree, tmp_pa
     """The rows are pinned, not compared between runs, so each Python in the CI
     matrix is held to the same bytes."""
     repo = tmp_path / "repo"
-    shutil.copytree(python_tree, repo)
+    copy_repo(python_tree, repo)
 
     done = run_cli(repo, "inventory", "--export", "inventory.tsv", env_extra=env)
 

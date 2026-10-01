@@ -1,7 +1,6 @@
 """Release commands require current repository proof before side effects."""
 import json
 import shlex
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +10,7 @@ import pytest
 
 from crapkit.store import SnapshotStore
 from test_release_tool import _tree, release
+from repo_copy import copy_repo
 
 
 def git(root, *arguments):
@@ -26,8 +26,8 @@ def repo(tmp_path, *, bumped=False):
             _fresh_repo(Path(directory), bumped=bumped)
             Path(directory).rename(seed)
     root = tmp_path / "repo"
-    shutil.copytree(seed / "repo", root)
-    shutil.copytree(seed / "remote.git", tmp_path / "remote.git")
+    copy_repo(seed / "repo", root)
+    copy_repo(seed / "remote.git", tmp_path / "remote.git")
     git(root, "remote", "set-url", "origin", str(tmp_path / "remote.git"))
     return root
 

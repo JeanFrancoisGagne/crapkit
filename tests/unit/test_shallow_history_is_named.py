@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from contextlib import closing
 from pathlib import Path
@@ -34,6 +33,7 @@ from crapkit.gitio import is_shallow
 from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
+from repo_copy import copy_repo
 
 ROOT = Path(__file__).resolve().parents[2]
 OLD, MID, NEW = ("2025-06-01T12:00:00+00:00", "2026-09-01T12:00:00+00:00",
@@ -315,7 +315,7 @@ def renamed(checkouts, tmp_path) -> Path:
     """The full history with the marks file moved by `git mv` on 2026-09-21,
     after old_debt had stood 457 days and one mark was repaid."""
     root = tmp_path / "renamed"
-    shutil.copytree(checkouts["full"], root)
+    copy_repo(checkouts["full"], root)
     git(root, "mv", "crapkit-ratchet.tsv", "debt.tsv")
     set_policy(root, "max-age", ratchet_file="debt.tsv")
     commit(root, "rename the marks file", RENAMED_AT)

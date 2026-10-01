@@ -16,6 +16,7 @@ import pytest
 
 from conftest import cli_runner, git_commit_all, git_init_repo
 from crapkit.hook import _HOOK_POOL_THRESHOLD
+from repo_copy import copy_repo
 
 # PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
 run_cli = cli_runner(spawn=True)
@@ -41,7 +42,7 @@ def mini_repo(tmp_path: Path) -> Path:
             git_commit_all(prepared, "init")
             prepared.rename(seed)
     repo = tmp_path / "mini"
-    shutil.copytree(seed, repo)
+    copy_repo(seed, repo)
     return repo
 
 

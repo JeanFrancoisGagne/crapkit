@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from conftest import run_cli
+from repo_copy import copy_repo
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -109,7 +110,7 @@ def _copy_checkout(repo: Path) -> Path:
     """A copy of the whole checkout that keeps no times; the copy is where
     the next command runs."""
     copy = repo.parent / "copy"
-    shutil.copytree(repo, copy, copy_function=shutil.copy)
+    copy_repo(repo, copy, copy_function=shutil.copy)
     return copy
 
 
