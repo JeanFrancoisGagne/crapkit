@@ -58,8 +58,9 @@ Exit codes: 0 when every check passed, 1 when any check failed, 3 when the only
 problems were infra misses (an oracle not installed, a fetch that failed)
 after one retry of the whole run.
 
-The receipt (.crapkit/accuracy/<tier>[-<shard>]-<os>-<python>.json) holds each
-check's declared and measured seconds and outcome, the oracle versions the
+The receipt (.crapkit/accuracy/<tier>[-<shard>]-<os>-<python>.json) holds the
+selection (`shard`, `local`, `os_sensitive`; release.py takes a release receipt
+only from the stage's own `--local` run of the whole tier), each check's declared and measured seconds and outcome, the oracle versions the
 tests read, the image tag and digest, the sha256 of the pins, locks and corpus
 files, the digests tests noted, the Hypothesis seed, event counts, skipped-file
 counts and infra messages. With GITHUB_STEP_SUMMARY set, the time table is
@@ -480,15 +481,17 @@ def _attempt(checks: list[Check], tier: str, workers: int, seed) -> tuple[list, 
         return records, runlog.summarize(runlog.read(Path(env[runlog.LOG_ENV])))
 
 
-def run_tier(checks: list[Check], tier: str, shard: str | None, workers: int = 0) -> dict:
-    """Run the checks, once more when the first run met only infra misses."""
+def run_tier(checks: list[Check], tier: str, shard: str | None, workers: int = 0,
+             local: bool = False, os_sensitive: bool = False) -> dict:
+    """Run the checks, once more when the first run met only infra misses. `local`
+    and `os_sensitive` say how they were selected, for the receipt."""
     seed = _seed(tier)
     records, notes = _attempt(checks, tier, workers, seed)
     attempts = 1
     if overall(records) == "infra":
         records, notes = _attempt(checks, tier, workers, seed)
         attempts = 2
-    return receipt(tier, shard, records, notes, seed, attempts)
+    return receipt(tier, shard, records, notes, seed, attempts, local, os_sensitive)
 
 
 # --- receipts ------------------------------------------------------------------------
@@ -525,9 +528,10 @@ def _check_key(record: dict) -> tuple:
     return record["key"], record["name"]
 
 
-def receipt(tier: str, shard, records: list, notes: dict, seed, attempts: int) -> dict:
+def receipt(tier: str, shard, records: list, notes: dict, seed, attempts: int,
+            local: bool = False, os_sensitive: bool = False) -> dict:
     return {
-        "schema": 1, "tier": tier, "shard": shard,
+        "schema": 1, "tier": tier, "shard": shard, "local": local, "os_sensitive": os_sensitive,
         "os": OS_NAMES.get(sys.platform, sys.platform), "python": _python(), "head": _head(),
         "image": {"tag": os.environ.get("CRAPKIT_ACCURACY_IMAGE", ""),
                   "digest": os.environ.get("CRAPKIT_ACCURACY_IMAGE_DIGEST", "")},
@@ -543,7 +547,7 @@ def default_receipt(tier: str, shard: str | None) -> Path:
     return REPO / ".crapkit" / "accuracy" / ("-".join(filter(None, parts)) + ".json")
 
 
-SAME = ("tier", "os", "python", "head", "hypothesis_seed", "image", "digests")
+SAME = ("tier", "local", "os_sensitive", "os", "python", "head", "hypothesis_seed", "image", "digests")
 
 
 def _agree(receipts: list[dict]) -> None:
@@ -635,7 +639,7 @@ def _run_main(argv: list[str]) -> int:
     args = _run_parser().parse_args(argv)
     checks = selected(load_checks(args.checks), args.tier, args.shard, sys.platform,
                       args.os_sensitive, local=args.local)
-    saved = run_tier(checks, args.tier, args.shard, args.workers)
+    saved = run_tier(checks, args.tier, args.shard, args.workers, args.local, args.os_sensitive)
     _publish(saved, args.receipt or default_receipt(args.tier, args.shard))
     return EXIT[saved["outcome"]]
 

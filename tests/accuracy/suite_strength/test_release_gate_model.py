@@ -5,6 +5,10 @@ not the release head, when any row failed, when GitHub holds no release-mode
 run of accuracy.yml that succeeded at the tag commit, or when a file the
 receipt vouches for no longer hashes to the digest it records. The receipt is
 a claim; the digest is recomputed from the tree with hashlib, never read back.
+It also refuses a receipt the stage's own command did not select: the whole
+release tier with --local (no shard, local true, os_sensitive false). A receipt
+made without --local on the releasing Windows machine held neither the retro
+row nor the mutation row and passed.
 
 `_expected` below is that rule as a boolean over the drawn case. Hypothesis
 draws receipts, trees and GitHub answers; release.accuracy_gate must pass
@@ -51,7 +55,8 @@ release = _load()
 # rule and some do not (an `empty` row, a missing file the receipt does not
 # vouch for, one more failed run beside the good one); the model decides which
 # from the drawn values alone.
-CHANGES = ("no receipt", "other head", "push tier", "failed outcome", "no rows", "row fail",
+CHANGES = ("no receipt", "other head", "push tier", "failed outcome", "no rows", "not local",
+           "a shard", "os sensitive", "row fail",
            "row infra", "row unreadable", "row empty", "no runs", "run title", "run version",
            "run head", "run running", "run failed", "run unfinished", "failed run beside",
            *(f"{kind} {name}" for kind in ("claim other", "claim absent", "file absent")
@@ -65,7 +70,10 @@ RUN_CHANGES = {"run title": {"display_title": f"accuracy nightly {VERSION}"},
                "run failed": {"conclusion": "failure"}, "run unfinished": {"conclusion": None}}
 ROW_CHANGES = {"row fail": "fail", "row infra": "infra", "row unreadable": None, "row empty": "empty"}
 CASE_CHANGES = {"other head": ("head", OTHER), "push tier": ("tier", "push"),
-                "failed outcome": ("outcome", "fail"), "no rows": ("rows", [])}
+                "failed outcome": ("outcome", "fail"), "no rows": ("rows", []),
+                "not local": ("local", False), "a shard": ("shard", "corpus"),
+                "os sensitive": ("os_sensitive", True)}
+STAGE_SELECTION = (None, True, False)  # shard, local, os_sensitive
 
 
 def _named(changes: set, kind: str) -> set:
@@ -82,7 +90,8 @@ def _claims(changes: set) -> dict:
 def _case(changes: set) -> dict | None:
     if "no receipt" in changes:
         return None
-    case = {"head": HEAD, "tier": "release", "outcome": "pass", "claims": _claims(changes)}
+    case = {"head": HEAD, "tier": "release", "outcome": "pass", "claims": _claims(changes),
+            "shard": None, "local": True, "os_sensitive": False}
     case["rows"] = ["pass"] + [ROW_CHANGES[change] for change in sorted(changes & set(ROW_CHANGES))]
     case.update(dict(CASE_CHANGES[change] for change in changes & set(CASE_CHANGES)))
     return case
@@ -127,7 +136,9 @@ def _receipt_holds(case: dict | None, tree: dict) -> bool:
     if case is None:
         return False
     fields = (case["head"], case["tier"], case["outcome"])
-    return fields == (HEAD, "release", "pass") and _rows_hold(case) and _digests_hold(case, tree)
+    selection = (case["shard"], case["local"], case["os_sensitive"])
+    return (fields == (HEAD, "release", "pass") and selection == STAGE_SELECTION and _rows_hold(case)
+            and _digests_hold(case, tree))
 
 
 RUN_FIELDS = ("display_title", "head_sha", "status", "conclusion")
@@ -145,6 +156,7 @@ def _expected(case: dict | None, tree: dict, answers: list[dict]) -> bool:
 def _receipt_json(case: dict, tree: dict) -> dict:
     digests = {name: _claim(case["claims"][name], tree[name]) for name in VOUCHED}
     return {"head": case["head"], "tier": case["tier"], "outcome": case["outcome"],
+            "shard": case["shard"], "local": case["local"], "os_sensitive": case["os_sensitive"],
             "checks": [{"key": "k", "name": f"row {index}", "outcome": outcome}
                        for index, outcome in enumerate(case["rows"])],
             "digests": {name: digest for name, digest in digests.items() if digest is not None}}

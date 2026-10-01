@@ -111,7 +111,9 @@ Stage 2b and the registry stage believe neither report. Before each publication 
 read accuracy.yml's runs at the tag commit from GitHub and require one named
 `accuracy release VERSION` that completed with success. They require the receipt's
 head to be the release HEAD, its tier `release` and every row `pass` (or `empty`, a row
-with no test in that tier). They also hash `tools/accuracy/pins.toml`,
+with no test in that tier), and its selection the stage's own: the whole tier with
+`--local`, no shard and no `--os-sensitive`. A receipt made without `--local` holds no
+retro or mutation row on the releasing machine. They also hash `tools/accuracy/pins.toml`,
 `tests/accuracy/corpus_goldens/corpus.toml` and
 `tests/accuracy/suite_strength/retro/ledger.tsv` themselves and compare the result with
 the receipt. Each refusal names the row, the file or the run, and ends with the rerun:

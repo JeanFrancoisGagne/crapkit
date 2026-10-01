@@ -54,7 +54,8 @@ def _sha(raw: bytes) -> str:
 
 
 def _saved(**changes) -> dict:
-    saved = {"head": HEAD, "tier": "release", "outcome": "pass",
+    saved = {"head": HEAD, "tier": "release", "shard": None, "local": True, "os_sensitive": False,
+             "outcome": "pass",
              "digests": {name: _sha(FILES[name]) for name in (PINS, CORPUS, LEDGER)},
              "checks": [{"key": "kit", "name": "the contract", "outcome": "pass"}]}
     return {**saved, **changes}
@@ -116,7 +117,7 @@ def test_every_receipt_problem_and_the_missing_run_are_one_line_each(tree, githu
     github["answer"] = {"workflow_runs": []}
     changed = b"# another corpus\n"
     (tree / CORPUS).write_bytes(changed)
-    _receipt(tree, _saved(head=OTHER, tier="push", outcome="fail",
+    _receipt(tree, _saved(head=OTHER, tier="push", outcome="fail", local=False,
                           checks=[{"key": "kit", "name": "the contract", "outcome": "fail"}]))
 
     assert _lines(tree) == [
@@ -124,6 +125,9 @@ def test_every_receipt_problem_and_the_missing_run_are_one_line_each(tree, githu
         f"8fb7b45c7248; {RERUN}",
         f"the release accuracy receipt records the push tier with outcome fail, not a passing "
         f"release tier; {RERUN}",
+        'the release accuracy receipt was selected with {"local": false, "os_sensitive": false, '
+        '"shard": null}, not the release tier\'s own selection {"local": true, "os_sensitive": '
+        f'false, "shard": null}}; {RERUN}',
         f"release accuracy row `kit: the contract` fail: fix what it names, then {RERUN}",
         f"{CORPUS} hashes to {_sha(changed)[:12]} here and the release accuracy receipt says "
         f"{_sha(FILES[CORPUS])[:12]}; {RERUN}",

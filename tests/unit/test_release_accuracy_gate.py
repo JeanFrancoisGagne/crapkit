@@ -17,6 +17,7 @@ import datetime
 import hashlib
 import json
 import subprocess
+import sys
 
 import pytest
 
@@ -54,8 +55,8 @@ def _write(root, files=FILES):
 
 def _saved(head=HEAD, **changes) -> dict:
     """A passing release-tier receipt as run.py writes one."""
-    saved = {"schema": 1, "tier": "release", "shard": None, "os": "windows", "python": "3.12",
-             "head": head, "outcome": "pass", "attempts": 1,
+    saved = {"schema": 1, "tier": "release", "shard": None, "local": True, "os_sensitive": False,
+             "os": "windows", "python": "3.12", "head": head, "outcome": "pass", "attempts": 1,
              "digests": {name: _sha(FILES[name]) for name in VOUCHED},
              "checks": [{"key": "suite_strength", "name": "retro replays", "outcome": "pass",
                          "declared": 0, "seconds": 41.0, "tests": None},
@@ -157,6 +158,44 @@ def test_a_receipt_that_proves_no_passing_release_tier_refuses(tree, github, cha
     _receipt(tree, _saved(**changes))
 
     assert RERUN in _refusal(tree)
+
+
+@pytest.mark.parametrize("changes", [{"local": False}, {"local": None}, {"local": "true"},
+                                     {"shard": "verdict-score"}, {"os_sensitive": True},
+                                     {"os_sensitive": None}])
+def test_a_receipt_of_a_narrower_selection_than_the_stage_s_refuses(tree, github, changes):
+    """A release receipt made without --local on the releasing Windows 3.12
+    machine holds no retro row and no mutation row, and a shard or an
+    --os-sensitive receipt holds fewer still; each passed the head, tier,
+    outcome, row and digest checks."""
+    saved = {key: value for key, value in _saved(**changes).items() if value is not None}
+    _receipt(tree, saved)
+
+    said = _refusal(tree)
+
+    assert "not the release tier's own selection" in said and RERUN in said
+
+
+def test_a_receipt_written_by_the_stage_s_own_command_passes(tree, github, monkeypatch):
+    """run.py's receipt, from the stage's argv through run.py's parser and main."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "accuracy_run_for_the_gate", release.Path(__file__).resolve().parents[2] / "tools/accuracy/run.py")
+    tool = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, tool)
+    spec.loader.exec_module(tool)
+    record = {"key": "suite_strength", "name": "retro replays", "outcome": "pass", "declared": 0,
+              "seconds": 1.0, "tests": None}
+    notes = {"exports": {}, "oracles": {}, "events": {}, "skipped_files": {}, "infra": []}
+    monkeypatch.setattr(tool, "load_checks", lambda checks=None: [])
+    monkeypatch.setattr(tool, "_attempt", lambda checks, tier, workers, seed: ([record], notes))
+    monkeypatch.setattr(tool, "_head", lambda: HEAD)
+    monkeypatch.setattr(tool, "file_digests", lambda: {name: _sha(FILES[name]) for name in VOUCHED})
+    monkeypatch.chdir(tree)
+    (tree / ".crapkit" / f"release-accuracy-{VERSION}.json").unlink()
+
+    assert tool._run_main(list(_step().commands[0][2:])) == 0
+    release.accuracy_gate(tree, VERSION, HEAD)
 
 
 @pytest.mark.parametrize("runs", [

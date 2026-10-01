@@ -1023,12 +1023,31 @@ def _head_problems(saved: dict, head: str, version: str) -> list:
             f"{head[:12]}; {_rerun(version)}"]
 
 
+# How the stage's own command selects the release tier: every row, the local ones
+# included. A receipt made without --local holds no retro or mutation row on the
+# releasing machine, and a shard or an --os-sensitive run holds fewer rows still.
+ACCURACY_SELECTION = {"shard": None, "local": True, "os_sensitive": False}
+
+
 def _tier_problems(saved: dict, version: str) -> list:
+    return _outcome_problems(saved, version) + _selection_problems(saved, version)
+
+
+def _outcome_problems(saved: dict, version: str) -> list:
     tier = saved.get("tier")
     if tier == "release" and saved.get("outcome") == "pass":
         return []
     return [f"the release accuracy receipt records the {tier} tier with outcome "
             f"{saved.get('outcome')}, not a passing release tier; {_rerun(version)}"]
+
+
+def _selection_problems(saved: dict, version: str) -> list:
+    made = {field: saved.get(field) for field in ACCURACY_SELECTION}
+    if all(made[field] is wanted for field, wanted in ACCURACY_SELECTION.items()):
+        return []
+    return [f"the release accuracy receipt was selected with {json.dumps(made, sort_keys=True)}, "
+            f"not the release tier's own selection {json.dumps(ACCURACY_SELECTION, sort_keys=True)}; "
+            f"{_rerun(version)}"]
 
 
 def _row_line(row, version: str) -> str | None:
