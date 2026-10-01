@@ -1100,8 +1100,9 @@ _INSTRUCTIONS = (
     "read scores and source without running test suites or editing source files. Calls can "
     "write caches, initialize or migrate the snapshot store, and fill rollups. "
     "get_next_item takes no claim; check_gate runs rescore and records no verification run. "
-    "They need a repo measured once (crapkit init, then crapkit "
-    "coverage); an unmeasured repo answers with a one-line pointer instead of data. Start "
+    "Most need a repo measured once (crapkit init, then crapkit coverage) and answer an "
+    "unmeasured one with a one-line pointer instead of data, while check_config and "
+    "get_ratchet_report need no run. Start "
     "with get_next_item for one function to fix, list_worklist for the whole ranking, "
     "get_function_brief for everything about one function, and check_gate after an edit to "
     "learn whether the file clears rescore --gate, which is stricter than the commit hook.")

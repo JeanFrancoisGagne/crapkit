@@ -346,3 +346,18 @@ def test_no_file_and_no_history_reports_zeros(repo, exits, monkeypatch, tmp_path
     assert (_counts(report), report["oldest"]) == ((0, 0, 0), []), report
     assert _words(ran) <= REPORT_GIT, ran
     assert REPORT_OPEN in _tool("get_ratchet_report")["description"]
+
+
+# --- the server instructions: what an unmeasured repo answers ------------------------
+
+def test_the_instructions_name_the_tools_an_unmeasured_repo_still_answers(repo, exits):  # noqa: F811
+    """The instructions said every tool answers an unmeasured repo with a
+    pointer instead of data; get_ratchet_report reads only the marks file and
+    git, and answers with data before any run."""
+    assert _call(repo, "get_next_item")["isError"] is True
+    assert _call(repo, "get_ratchet_report")["isError"] is False
+
+    assert "an unmeasured repo answers with a one-line pointer" not in mcp_server._INSTRUCTIONS
+    assert ("Most need a repo measured once (crapkit init, then crapkit coverage) and answer "
+            "an unmeasured one with a one-line pointer instead of data, while check_config and "
+            "get_ratchet_report need no run.") in mcp_server._INSTRUCTIONS
