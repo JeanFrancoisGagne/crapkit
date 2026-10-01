@@ -529,6 +529,14 @@ def test_the_session_argv(tmp_path):
         "-n", "3", "--hypothesis-seed=12"]
 
 
+def test_only_the_push_tier_loads_the_push_lock_guard(tmp_path):
+    junit = tmp_path / "j.xml"
+    argv = {tier: run_tool._pytest_argv(["a.py"], REPO, 0, junit, 1, tier) for tier in run_tool.tiers.TIERS}
+
+    assert [tier for tier, words in argv.items() if "accuracy.kit.push_only" in words] == ["push"]
+    assert argv["push"][-2:] == ["-p", "accuracy.kit.push_only"]
+
+
 JUNIT = ('<testsuites><testsuite>'
          '<testcase file="t/a.py" name="test_x" time="1.5"/>'
          '<testcase file="t/a.py" name="test_y" time="0.5"><failure/></testcase>'

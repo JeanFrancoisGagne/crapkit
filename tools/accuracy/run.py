@@ -289,7 +289,10 @@ def _directory(path: Path) -> Path:
     return path if path.is_dir() else path.parent
 
 
-def _pytest_argv(targets: list[str], root: Path, workers: int, junit: Path, seed) -> list[str]:
+def _pytest_argv(targets: list[str], root: Path, workers: int, junit: Path, seed,
+                 tier: str | None = None) -> list[str]:
+    """The push tier loads kit.push_only, so it sees the push lock's packages alone
+    wherever it runs, as CI's accuracy-push job does."""
     argv = [sys.executable, "-m", "pytest", *targets, "--rootdir", str(root), "-q",
             "-p", "no:cacheprovider", "-p", "no:randomly", "-o", "junit_family=xunit1",
             "--junitxml", str(junit)]
@@ -297,6 +300,8 @@ def _pytest_argv(targets: list[str], root: Path, workers: int, junit: Path, seed
         argv += ["-n", str(workers)]
     if isinstance(seed, int):
         argv.append(f"--hypothesis-seed={seed}")
+    if tier == "push":
+        argv += ["-p", "accuracy.kit.push_only"]
     return argv
 
 
@@ -382,8 +387,8 @@ def _session(targets: list[str], env: dict, junit: Path, workers: int, seed) -> 
     if not targets:
         return 0, [], REPO
     root = session_root(targets)
-    code = subprocess.run(_pytest_argv(targets, root, workers, junit, seed), cwd=REPO,
-                          env=env).returncode
+    code = subprocess.run(_pytest_argv(targets, root, workers, junit, seed, env.get(tiers.TIER_ENV)),
+                          cwd=REPO, env=env).returncode
     return code, _cases(junit, root), root
 
 

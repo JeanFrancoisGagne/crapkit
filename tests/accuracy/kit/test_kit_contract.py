@@ -19,7 +19,7 @@ import tomllib
 import pytest
 
 import hang_guard
-from accuracy.kit import calcs, closure, docrange, rulings, strategies, tiers
+from accuracy.kit import calcs, closure, docrange, push_only, rulings, strategies, tiers
 
 KIT_CLOSED = True
 KIT = Path(__file__).resolve().parent
@@ -507,12 +507,6 @@ for module in sys.argv[2:]:
 """
 
 
-def _pinned(path: Path) -> set[str]:
-    """The import names of the packages a requirements lock pins."""
-    names = re.findall(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==", path.read_text(encoding="utf-8"), re.M)
-    return {name.lower().replace("-", "_").replace(".", "_") for name in names}
-
-
 def _dotted(path: Path) -> str:
     return ".".join(path.relative_to(REPO / "tests").with_suffix("").parts)
 
@@ -537,9 +531,9 @@ def test_every_module_the_push_tier_collects_imports_with_the_push_packages_alon
     analysis_oracles/conftest.py reached tree_sitter, which only the nightly lock
     pins, through analysis_tstests, ts_shapes_objc and treesitter_counters: the
     first push of 0.8.1 to main failed every push row on Ubuntu and Windows,
-    while every machine that held the nightly packages passed."""
-    nightly_only = sorted(_pinned(TOOLS / "requirements-nightly.txt")
-                          - _pinned(TOOLS / "requirements-push.txt"))
+    while every machine that held the nightly packages passed. kit.push_only
+    holds the push tier to the same packages at run time."""
+    nightly_only = sorted(push_only.nightly_only())
     paths = [REPO / "tests", REPO / "src", TOOLS, REPO / "tools", os.environ.get("PYTHONPATH", "")]
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, map(str, paths)))}
 
@@ -548,5 +542,24 @@ def test_every_module_the_push_tier_collects_imports_with_the_push_packages_alon
                            *_push_modules(_run_tool())], cwd=REPO, env=env,
                           capture_output=True, text=True, encoding="utf-8", errors="replace")
 
-    assert "tree_sitter" in nightly_only, nightly_only
+    assert "mutmut" in nightly_only, nightly_only
     assert done.stdout.splitlines() == [], done.stdout + done.stderr[-2000:]
+
+
+def test_the_push_tier_refuses_a_package_only_the_nightly_lock_pins(tmp_path, monkeypatch):
+    for name in ("nightly_pkg", "push_pkg"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "__init__.py").write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setattr(sys, "meta_path", [push_only.NightlyOnly(frozenset({"nightly_pkg"})), *sys.meta_path])
+
+    with pytest.raises(ModuleNotFoundError, match="only requirements-nightly.txt pins it"):
+        importlib.import_module("nightly_pkg")
+    assert importlib.import_module("push_pkg").VALUE == 1
+
+
+def test_a_nightly_package_the_session_already_imported_stays_importable():
+    """A pytest plugin the venv auto-loads is imported before the finder exists."""
+    assert "mutmut" in push_only.finder(loaded=set()).blocked
+    assert "mutmut" not in push_only.finder(loaded={"mutmut.__main__"}).blocked
+    assert not push_only.nightly_only() & push_only.pinned(TOOLS / "requirements-push.txt")
