@@ -292,7 +292,9 @@ exit.
   `is_test`](docs/releases/0.8.1.md#brief-marks-a-coupled-test-file-by-the-rule-init-and-doctor-read)
   follows the test-file rule `init` and `doctor` read.
 - [A lane on Linux](docs/releases/0.8.1.md#a-process-that-exits-while-a-lane-stops-no-longer-fails-the-lane)
-  no longer fails when another process exits while it stops, and [a refused analysis
+  no longer fails when another process exits while it stops, [a lane on
+  macOS](docs/releases/0.8.1.md#a-lane-on-macos-stops-without-a-permission-error) no
+  longer fails with `Operation not permitted` after its tests pass, and [a refused analysis
   worker](docs/releases/0.8.1.md#a-refused-analysis-worker-no-longer-hangs-the-commands-cleanup)
   no longer hangs cleanup.
 
