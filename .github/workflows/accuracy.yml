@@ -658,7 +658,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&status=success&per_page=7" --jq '.workflow_runs[].id')
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=7" --jq '.workflow_runs[].id')
           seconds=""
           for run in $runs; do
             seconds="$seconds $(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs" --jq '[.jobs[] | select(.name | startswith("accuracy-push")) | select(.name | test("ubuntu")) | ((.completed_at | fromdate) - (.started_at | fromdate))] | max // empty')"

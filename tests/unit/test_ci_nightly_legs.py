@@ -89,3 +89,16 @@ def test_the_docs_say_which_legs_run_only_nightly_and_what_the_schedule_skips():
         assert _nightly_time() in text and "3.12 and 3.13" in text and "macOS" in text
         assert "3.11, 3.12, 3.13 and 3.14 on Ubuntu and Windows" not in text
     assert "skips every job except `test`" in jobs
+
+
+def test_the_push_median_samples_only_push_runs_while_ci_runs_nightly():
+    """accuracy.yml's nightly takes the accuracy-push median over ci.yml's last 7
+    successful main runs. The 04:41 schedule adds a successful main run every
+    night with accuracy-push skipped, and a skipped matrix job lists under its
+    bare name, with no 'ubuntu' to sample. At about 3 pushes a week the 7 newest
+    were mostly nightlies, and a window of only nightlies passed the 6-minute
+    check without a measurement."""
+    accuracy = (ROOT / ".github/workflows/accuracy.yml").read_text(encoding="utf-8")
+    query = next(line for line in accuracy.splitlines() if "workflows/ci.yml/runs?" in line)
+
+    assert "event=push" in query.split("?", 1)[1].split('"', 1)[0].split("&")
