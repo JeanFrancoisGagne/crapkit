@@ -1708,6 +1708,7 @@ def _calc_on(tmp_path, monkeypatch, rows, complete=True, sources=SHARD_SOURCES) 
     monkeypatch.setattr(mutation, "head_tree", lambda repo: _source_tree(sources))
     monkeypatch.setattr(mutation, "env_key", lambda stage: "env")
     monkeypatch.setattr(mutation, "calc_modules", lambda: sorted(sources))
+    monkeypatch.setattr(mutation, "weekly_modules", lambda: sorted(sources))
     monkeypatch.setattr(mutation, "mutmut_in", recorder)
     return recorder
 
@@ -2489,11 +2490,29 @@ def test_a_changed_release_function_is_in_scope_only_when_named():
     assert mutation.in_calc_scope(changed, {RELEASE: {"accuracy_gate"}}) == [(RELEASE, "accuracy_gate")]
 
 
-def test_the_weekly_shards_leave_the_second_config_s_modules_to_it(monkeypatch):
+def test_the_calc_runs_mutate_only_the_modules_a_floor_reads(tmp_path, monkeypatch):
+    """The floors are the only reader of a calc run's verdicts: 9,683 of the weekly
+    run's 31,691 mutants sat in modules a floors.tsv group names, and the other
+    22,008 fed a survivor rule nothing gated. A module the second config mutates
+    stays out whatever group names it."""
     monkeypatch.setattr(mutation, "calc_modules", lambda: [
-        "src/crapkit/mutate.py", "tools/accuracy/retro.py", "tools/release/release.py"])
+        "src/crapkit/score.py", "src/crapkit/lizardjava.py", "src/crapkit/mutate.py",
+        "tools/accuracy/retro.py", "tools/release/release.py"])
+    _tables(tmp_path, floors=[
+        {"group": "core", "paths": "src/crapkit/score.py", "floor": "95", "source": "s"},
+        {"group": "readers", "paths": "src/crapkit/lizard*.py", "floor": "85", "source": "s"},
+        {"group": "tools", "paths": "tools/accuracy/retro.py", "floor": "90", "source": "s"}])
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
 
-    assert mutation.weekly_modules() == ["src/crapkit/mutate.py", "tools/release/release.py"]
+    assert mutation.weekly_modules() == ["src/crapkit/score.py", "src/crapkit/lizardjava.py"]
+
+
+def test_the_calc_runs_mutate_the_core_and_readers_floors_modules_here():
+    modules = mutation.weekly_modules()
+
+    assert {"src/crapkit/score.py", "src/crapkit/lizardjava.py", "src/crapkit/verify.py"} <= set(modules)
+    assert not {"src/crapkit/mutate.py", "src/crapkit/cli/analyses.py",
+                "tools/release/release.py", "tools/accuracy/retro.py"} & set(modules)
 
 
 def test_a_changed_function_is_in_scope_unless_tools_or_an_unnamed_cli_function_holds_it():

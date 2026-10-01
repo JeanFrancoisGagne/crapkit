@@ -237,8 +237,11 @@ faster. Under Git Bash, set `MSYS_NO_PATHCONV=1` before `-e VAR=/path`.
 ### Weekly
 
 Mutation testing runs in the accuracy image, since mutmut forks and runs on Linux
-only. One shard of the weekly run, and the run over every calculation module
-under a cap:
+only. Both runs mutate the calculation modules a `suite_strength/mutation/floors.tsv`
+group names (the core and readers groups today, 18 modules), since the floors
+are the only reader of their verdicts; the other calculation modules held
+22,008 of the 31,691 mutants of the weekly run at c3fa1d42, and no gate read
+them. One shard of the weekly run, and the run over all of them under a cap:
 
 ```
 docker run --rm --network none -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py weekly --shard 1 --of 8

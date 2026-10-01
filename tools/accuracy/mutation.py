@@ -10,20 +10,21 @@
     python tools/accuracy/mutation.py killer [PYTEST ARGS...]
 
 mutmut 3.8.0 runs in the accuracy image (it forks, so Linux only). The calc
-runs mutate the modules every tests/accuracy/*/calcs.tsv row names (a cli
-module and the release tool only at the functions a row names, and never a
-module `tools` mutates; weekly_modules). `weekly` judges one shard of them, and
-`diff` all of them under a cap, reporting `incomplete`, never `pass`, when the
-cap stops it. Neither judges a function whose stored verdicts still hold (see
-"Carrying a verdict" below): a second run at an unchanged tree judges no
-mutant. Both run
-in a detached worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose
-[tool.mutmut] names every one of those modules, so one stats pass maps the
-tests of all of them, and the suite, tests/unit and tests/accuracy at the push
-tier with the dependent methods deselected, less each test an open defect row
-of rulings.tsv names as failing on a clean tree and each COPY_BOUND test, which
-fails or runs for hours inside mutmut's copy whatever the mutant, then write a
-receipt under .crapkit/accuracy/mutation/ and run the gate. The checks that read
+runs mutate the modules a floors.tsv group names among those a
+tests/accuracy/*/calcs.tsv row names, since the floors are the only reader of
+their verdicts (a cli module and the release tool only at the functions a row
+names, and never a module `tools` mutates; weekly_modules). `weekly` judges one
+shard of them, and `diff` all of them under a cap, reporting `incomplete`,
+never `pass`, when the cap stops it. Neither judges a function whose stored
+verdicts still hold (see "Carrying a verdict" below): a second run at an
+unchanged tree judges no mutant. Both run in a detached worktree of HEAD
+(.crapkit/accuracy/mutation/calc-stage) whose [tool.mutmut] names every one of
+those modules, so one stats pass maps the tests of all of them, and the suite,
+tests/unit and tests/accuracy at the push tier with the dependent methods
+deselected, less each test an open defect row of rulings.tsv names as failing
+on a clean tree and each COPY_BOUND test, which fails or runs for hours inside
+mutmut's copy whatever the mutant, then write a receipt under
+.crapkit/accuracy/mutation/ and run the gate. The checks that read
 crapkit's own source as data read the stage's src/crapkit, named in
 CRAPKIT_ACCURACY_SOURCE, since mutmut's copy of it holds trampolines.
 
@@ -899,9 +900,18 @@ def calc_functions(root: Path | None = None) -> dict[str, set[str]]:
     return named
 
 
+def floor_modules(modules: list[str], groups: list[dict]) -> list[str]:
+    """The `modules` a floors.tsv group names."""
+    return [module for module in modules
+            if any(_member(module, _patterns(group)) for group in groups)]
+
+
 def weekly_modules() -> list[str]:
-    """The calc modules the weekly shards split, less the ones `tools` mutates."""
-    return [module for module in calc_modules() if module not in TOOL_TARGETS]
+    """The modules the calc runs mutate: the calc modules a floors.tsv group names,
+    since the floors are the only reader of their verdicts, less the ones `tools`
+    mutates."""
+    groups = read_table(TABLES / "floors.tsv", FLOOR_COLUMNS)
+    return [module for module in floor_modules(calc_modules(), groups) if module not in TOOL_TARGETS]
 
 
 def in_calc_scope(pairs: list[tuple[str, str]], named: dict[str, set[str]]) -> list[tuple[str, str]]:
