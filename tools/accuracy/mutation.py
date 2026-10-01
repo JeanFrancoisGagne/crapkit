@@ -2156,29 +2156,44 @@ _ENV_READ = re.compile(r"""(?:environ(?:\.get|\.pop|\.setdefault)?\s*[\[(]\s*|ge
                        r"""["']([A-Za-z_]\w*)["']""")
 _ENV_NAMED = re.compile(r"""^\s*\w*ENV\w*\s*=\s*["']([A-Za-z_]\w*)["']""", re.M)
 # Variables the suite reads whose value only names a scratch folder or file: the
-# stage's own path, the temp folder, a run's log. Keyed, they would give every
-# machine and every checkout path a key of its own, and nothing would carry.
+# stage's own path, the temp folder, a run's log. Keyed by value, they would give
+# every machine and every checkout path a key of its own, and nothing would
+# carry. They key on whether they are set: CRAPKIT_ACCURACY_CHECKOUT, once set,
+# sends action_path() to that checkout's code.
 SCRATCH_ENV = frozenset({SOURCE_ENV, "HOME", "TMPDIR", "TMP", "TEMP", "USERPROFILE",
                          "LOCALAPPDATA", "APPDATA", "RUNNER_TEMP", "GITHUB_STEP_SUMMARY",
                          "CRAPKIT_ACCURACY_LOG", "CRAPKIT_ACCURACY_CHECKOUT",
                          "CRAPKIT_HYPOTHESIS_DB"})
+# Variables Python and pytest read themselves. calc_env passes the whole
+# environment to mutmut's pytest, so PYTHONWARNINGS=error or a PYTEST_ADDOPTS
+# -p, -o or -W changes what a run judges with no line of src/ or tests/ reading it.
+RUNTIME_ENV = frozenset({"PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+                         "PYTHONWARNINGS", "PYTHONOPTIMIZE", "PYTHONDEVMODE", "PYTHONSAFEPATH",
+                         "PYTHONIOENCODING", "PYTHONUTF8", "LANG", "LC_ALL", "LC_CTYPE"})
 
 
 def suite_env_names(stage: Path) -> list[str]:
-    """Every environment variable the stage's src/ and tests/ read, scratch paths
-    left out."""
-    names: set[str] = set()
+    """Every environment variable the stage's src/ and tests/ read, and the ones
+    Python and pytest read."""
+    names = set(RUNTIME_ENV)
     for path in [*(stage / "src").rglob("*.py"), *(stage / "tests").rglob("*.py")]:
         text = path.read_bytes().decode("utf-8", "replace")
         names.update(_ENV_READ.findall(text), _ENV_NAMED.findall(text))
-    return sorted(names - SCRATCH_ENV)
+    return sorted(names)
+
+
+def _keyed_value(name: str, value: str | None) -> str | None:
+    """A scratch path keys on whether it is set; any other variable on its value."""
+    if name in SCRATCH_ENV and value is not None:
+        return "set"
+    return value
 
 
 def suite_env(stage: Path, environ: dict) -> dict:
-    """Each variable the suite reads, with its value in the calc runs' environment
-    (None when unset)."""
+    """Each variable the suite reads, with its keyed value in the calc runs'
+    environment (None when unset)."""
     seen = calc_env(environ)
-    return {name: seen.get(name) for name in suite_env_names(stage)}
+    return {name: _keyed_value(name, seen.get(name)) for name in suite_env_names(stage)}
 
 
 def env_key(stage: Path) -> str:

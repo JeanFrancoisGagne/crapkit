@@ -266,7 +266,7 @@ carries a function's verdicts while all of these hold:
 
 | Condition | What breaks it |
 |---|---|
-| The environment key | Python, an installed or system package (mutmut among them), the launcher, the stage's pytest and mutmut tables, or the value of any environment variable `src/` or `tests/` reads through `os.environ` or `os.getenv` (a constant named `*ENV*` counts); variables that only name a scratch path, such as `TMPDIR` or `CRAPKIT_ACCURACY_SOURCE`, are left out (`SCRATCH_ENV` in `tools/accuracy/mutation.py`) |
+| The environment key | Python, an installed or system package (mutmut among them), the launcher, the stage's pytest and mutmut tables, or the value of any environment variable `src/` or `tests/` reads through `os.environ` or `os.getenv` (a constant named `*ENV*` counts), or of one Python or pytest reads (`PYTEST_ADDOPTS`, `PYTHONWARNINGS`, `LANG` and the rest of `RUNTIME_ENV` in `tools/accuracy/mutation.py`); a variable that only names a scratch path, such as `TMPDIR` or `CRAPKIT_ACCURACY_CHECKOUT`, counts only by whether it is set (`SCRATCH_ENV`) |
 | Age | Verdicts judged more than 28 days ago |
 | The function's key | Its text with its decorators, or its module's code outside any function |
 | The mutated modules | A change outside their functions, a function added or removed, or a change to a function mutmut made no mutant of, since no map says which tests reach it |

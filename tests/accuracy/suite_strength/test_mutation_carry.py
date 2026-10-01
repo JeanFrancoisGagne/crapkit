@@ -614,12 +614,18 @@ READERS = {
     "tests/accuracy/kit/tiers.py": 'GUARD_PROBES_ENV = "CRAPKIT_ACCURACY_GUARD_PROBES"\n',
     "tests/unit/test_seed.py": 'import os\n\n\ndef test_seed():\n    os.getenv("PYTHONHASHSEED")\n',
     "tests/unit/test_scratch.py": ('import os\n\n\ndef test_scratch():\n'
-                                   '    os.environ["TMPDIR"], os.environ["CRAPKIT_ACCURACY_SOURCE"]\n'),
+                                   '    os.environ["TMPDIR"], os.environ["CRAPKIT_ACCURACY_SOURCE"]\n'
+                                   '    os.environ.get("CRAPKIT_ACCURACY_CHECKOUT")\n'),
     "docs/example.py": 'import os\nos.environ.get("CRAPKIT_ONLY_IN_DOCS")\n',
 }
 READ_BY_THE_SUITE = ["CRAPKIT_STRICT_TIMING", "CRAPKIT_ACCURACY_GUARD_PROBES", "PYTHONHASHSEED"]
-NOT_KEYED = ["CRAPKIT_NOBODY_READS", "CRAPKIT_ONLY_IN_DOCS", "TMPDIR", "CRAPKIT_ACCURACY_SOURCE",
-             "CRAPKIT_ACCURACY_TIER"]
+# Read by Python and pytest themselves, never by a line of src/ or tests/.
+READ_BY_THE_RUNTIME = ["PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+                       "PYTHONWARNINGS", "PYTHONOPTIMIZE", "PYTHONDEVMODE", "PYTHONSAFEPATH",
+                       "PYTHONIOENCODING", "PYTHONUTF8", "LANG", "LC_ALL", "LC_CTYPE"]
+NOT_KEYED = ["CRAPKIT_NOBODY_READS", "CRAPKIT_ONLY_IN_DOCS", "CRAPKIT_ACCURACY_TIER"]
+# Scratch paths key on whether they are set, never on where they point.
+SCRATCH = ["TMPDIR", "CRAPKIT_ACCURACY_CHECKOUT"]
 
 
 @pytest.fixture
@@ -630,17 +636,19 @@ def keyed_stage(tmp_path, monkeypatch):
     for path, text in READERS.items():
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).write_bytes(text.encode())
-    for name in READ_BY_THE_SUITE + NOT_KEYED:
+    for name in READ_BY_THE_SUITE + READ_BY_THE_RUNTIME + NOT_KEYED + SCRATCH:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(mutation, "installed", lambda: ["pytest==9"])
     monkeypatch.setattr(mutation, "system_packages", lambda: "")
     return tmp_path
 
 
-@pytest.mark.parametrize("name", READ_BY_THE_SUITE)
+@pytest.mark.parametrize("name", READ_BY_THE_SUITE + READ_BY_THE_RUNTIME)
 def test_a_variable_the_suite_reads_moves_the_environment_key(keyed_stage, monkeypatch, name):
     """A run with CRAPKIT_ACCURACY_GUARD_PROBES set, or another Hypothesis seed,
-    judges other tests than the run its verdicts carry from."""
+    judges other tests than the run its verdicts carry from. So does one where
+    PYTHONWARNINGS=error or PYTEST_ADDOPTS reaches mutmut's pytest: calc_env
+    passes the whole environment through."""
     unset = mutation.env_key(keyed_stage)
     monkeypatch.setenv(name, "1")
     one = mutation.env_key(keyed_stage)
@@ -650,20 +658,40 @@ def test_a_variable_the_suite_reads_moves_the_environment_key(keyed_stage, monke
 
 
 @pytest.mark.parametrize("name", NOT_KEYED)
-def test_a_variable_no_test_reads_or_one_naming_a_scratch_path_keeps_the_key(
-        keyed_stage, monkeypatch, name):
-    """Hashing a variable that only names a scratch folder (the stage's path, the
-    temp folder) would give every machine its own key and carry nothing; the tier
-    is the push tier whatever the caller's."""
+def test_a_variable_no_test_reads_keeps_the_key(keyed_stage, monkeypatch, name):
+    """The tier is the push tier whatever the caller's."""
     before = mutation.env_key(keyed_stage)
     monkeypatch.setenv(name, str(keyed_stage / "elsewhere"))
 
     assert mutation.env_key(keyed_stage) == before
 
 
+@pytest.mark.parametrize("name", [*SCRATCH, "CRAPKIT_ACCURACY_SOURCE"])
+def test_a_scratch_path_moving_elsewhere_keeps_the_key(keyed_stage, monkeypatch, name):
+    """Hashing where a scratch folder sits (the stage's path, the temp folder)
+    would give every machine its own key and carry nothing."""
+    monkeypatch.setenv(name, str(keyed_stage / "here"))
+    before = mutation.env_key(keyed_stage)
+    monkeypatch.setenv(name, str(keyed_stage / "elsewhere"))
+
+    assert mutation.env_key(keyed_stage) == before
+
+
+@pytest.mark.parametrize("name", SCRATCH)
+def test_a_scratch_path_set_or_unset_moves_the_key(keyed_stage, monkeypatch, name):
+    """CRAPKIT_ACCURACY_CHECKOUT, once set, sends action_path() to that checkout's
+    action.yml and code: a run with it set exercises other code than one without."""
+    unset = mutation.env_key(keyed_stage)
+    monkeypatch.setenv(name, str(keyed_stage / "here"))
+
+    assert mutation.env_key(keyed_stage) != unset
+
+
 def test_the_suite_s_variables_are_read_from_its_src_and_tests(keyed_stage):
-    assert set(READ_BY_THE_SUITE) <= set(mutation.suite_env_names(keyed_stage))
-    assert not set(NOT_KEYED) & set(mutation.suite_env_names(keyed_stage))
+    names = set(mutation.suite_env_names(keyed_stage))
+
+    assert set(READ_BY_THE_SUITE + READ_BY_THE_RUNTIME + SCRATCH) <= names
+    assert not set(NOT_KEYED) & names
 
 
 def test_a_stats_map_made_at_another_tree_is_dropped_before_mutmut_runs(tmp_path):
