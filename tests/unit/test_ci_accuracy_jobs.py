@@ -196,7 +196,7 @@ def test_every_windows_cell_that_runs_uv_has_it_before_its_tier():
     assert windows["steps"].index(setup) < first
 
 
-# The Windows nightly cell, measured 2026-10-01 at f3794e4a natively on one
+# The Windows nightly cell, measured 2026-10-01 at 2263b2c5 natively on one
 # machine: the nightly tier at -n 4 in seven parts took 2961 s summed, and the
 # 24 Windows past-bug rows replayed cold in 434 s. The push tier's
 # --os-sensitive run took 101 s on windows-latest and 70 s on that machine at
@@ -513,6 +513,32 @@ def test_every_cell_that_reads_the_full_corpus_fetches_it_before_its_tier():
         assert cache < fetch < _tier_index(jobs[name]), name
         assert "corpus.py fetch --dest .crapkit/corpus" in found["run"], name
         assert (found["continue-on-error"], found["env"]["GH_TOKEN"]) == (True, "${{ github.token }}")
+
+
+NODE_PUSH = "npm ci --prefix tools/accuracy/node/push"
+
+
+def _native(job: dict) -> bool:
+    """A cell that runs its tier on the runner itself; the accuracy image carries
+    the node tools, a runner does not."""
+    return not any("docker run" in str(item.get("run", "")) for item in job["steps"])
+
+
+def test_every_native_cell_installs_the_push_node_tools_before_its_tier():
+    """The change-control checks ask ESLint and SonarJS for each JS and TS column.
+    The macOS nightly cell ran them with no node tools, and four rows failed in
+    run 36940595657 with 'oracle eslint 10.11.0 is not installed'."""
+    jobs = _jobs("accuracy.yml")
+    native = [name for name, job in jobs.items()
+              if any("tools/accuracy/run.py --tier" in str(item.get("run", "")) for item in job.get("steps", []))
+              and _native(job)]
+    assert sorted(native) == ["macos", "windows"]
+    for name in native:
+        install = next((index for index, item in enumerate(jobs[name]["steps"])
+                        if NODE_PUSH in str(item.get("run", ""))), None)
+
+        assert install is not None and install < _tier_index(jobs[name]), name
+        assert step(jobs[name], "uses", "actions/setup-node@")["with"]["node-version"] == "22", name
 
 
 def _tier_steps(job: dict) -> list[dict]:

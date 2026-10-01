@@ -422,6 +422,16 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install --require-hashes --no-deps -r tools/accuracy/requirements-push.txt && pip install --no-deps -e .
+      # The change-control checks in the corpus shard ask ESLint and SonarJS, which
+      # a runner lacks and the accuracy image carries.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/cache@v4
+        with:
+          path: tools/accuracy/node/push/node_modules
+          key: node-push-${{ runner.os }}-${{ hashFiles('tools/accuracy/node/push/package-lock.json') }}
+      - run: npm ci --prefix tools/accuracy/node/push --ignore-scripts --no-audit --no-fund
       - uses: actions/cache@v4
         with:
           path: .crapkit/corpus
