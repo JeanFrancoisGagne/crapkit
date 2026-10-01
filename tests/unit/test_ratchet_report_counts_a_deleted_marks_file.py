@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from cli_inproc_repo import commit_all, git, repo, template_repo  # noqa: F401
+from cli_inproc_repo import commit_all, git, repo, seed_artifacts, template_repo  # noqa: F401
 from crapkit.cli import main
 from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
 
@@ -120,3 +120,54 @@ def test_a_repo_that_never_committed_marks_reports_zeros(repo, capsys):  # noqa:
 
     assert (code, _counts(report), err) == (0, (0, 0, 0), "")
 
+
+
+# --- what the warning says verify does -------------------------------------------
+# verify's stand-in searches from its baseline run's commit to HEAD. The warning
+# called the open marks "the marks verify judges against", and once a coverage
+# run measured the deleting commit, verify judged against none and passed
+# (exit 0) while the report still read the mark as open. Making the two agree
+# is 0.9.0's work; the warning now says when verify reads them.
+
+ONLY_WHILE = ("verify judges against them only while its baseline run measured a commit "
+              "from before the file was deleted")
+
+
+def _mark_plain_then_delete(root: Path) -> None:
+    (root / MARKS).write_text(dump_ratchet([RatchetEntry("src/app.ts", "plain ( x )", 0.1)],
+                                           stamp=metric_version()), encoding="utf-8", newline="\n")
+    commit_all(root, "mark plain at 0.1")
+    _delete(root)
+
+
+def _verify(root: Path, capsys) -> tuple[int, str]:
+    code = main(["verify", "--reuse-artifacts", "--repo", str(root)])
+    return code, capsys.readouterr().err
+
+
+def test_a_baseline_from_before_the_deletion_judges_the_open_marks(repo, capsys):  # noqa: F811
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    _mark_plain_then_delete(repo)
+    capsys.readouterr()
+
+    _, report, err = _report(repo, capsys)
+    code, verify_err = _verify(repo, capsys)
+
+    assert report["open"] == 1 and ONLY_WHILE in err, err
+    assert code != 0 and f"warning: {MARKS} is missing, but commit" in verify_err, verify_err
+
+
+def test_a_baseline_on_the_deleting_commit_judges_none_and_the_warning_says_so(repo, capsys):  # noqa: F811
+    _mark_plain_then_delete(repo)
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+
+    code, verify_err = _verify(repo, capsys)
+    _, report, err = _report(repo, capsys)
+
+    assert (code, "is missing, but commit" in verify_err) == (0, False), verify_err
+    assert report["open"] == 1, "deleting the file still repays nothing"
+    assert "the marks verify judges against" not in err, err
+    assert ONLY_WHILE in err, err

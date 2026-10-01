@@ -481,9 +481,10 @@ def _report_basis(root: Path, ratchet_file: str) -> tuple[list, dict | None]:
     """The history the report replays and the marks it reads as open.
 
     A marks file that is missing or holds only blank lines is not a repo that
-    repaid every mark: verify judges it against the newest committed marks, so
-    the report reads those as open (working None, the committed state) and the
-    commit that deleted or emptied the file repays none (held_history)."""
+    repaid every mark: the report reads the marks the newest commit that held
+    any held as open (working None, the committed state), and the commit that
+    deleted or emptied the file repays none (held_history). verify reads the
+    same marks only while its baseline run comes from before that commit."""
     from ..marks_history import held_history, marks_history
     from ..ratchetfile import RatchetFile
 
@@ -493,13 +494,20 @@ def _report_basis(root: Path, ratchet_file: str) -> tuple[list, dict | None]:
 
 
 def _warn_marks_stand_in(root: Path, ratchet_file: str, report: dict, working) -> None:
-    """One line when the open marks came from history, not from the file."""
+    """One line when the open marks came from history, not from the file.
+
+    verify's stand-in searches from its baseline run's commit to HEAD, so a
+    coverage run on the deleting commit or a later one leaves verify no marks
+    while the report still reads them as open. The line says when verify
+    reads them; making the two agree is a change to verify, not to this line."""
     if working is not None or not report["open"]:
         return
-    state, act = ("empty", "emptying") if (root / ratchet_file).exists() else ("missing", "deleting")
+    state, act, done = (("empty", "emptying", "emptied") if (root / ratchet_file).exists()
+                        else ("missing", "deleting", "deleted"))
     print(f"warning: {ratchet_file} is {state}, so the report reads the {report['open']} "
-          "mark(s) its history last committed as open, the marks verify judges against, and "
-          f"{act} the file repays none. `git log -- {ratchet_file}` shows the commits that "
+          f"mark(s) its history last committed as open, and {act} the file repays none. "
+          "verify judges against them only while its baseline run measured a commit from "
+          f"before the file was {done}. `git log -- {ratchet_file}` shows the commits that "
           "held them", file=sys.stderr)
 
 
