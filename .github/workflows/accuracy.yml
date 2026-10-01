@@ -303,14 +303,43 @@ jobs:
           echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
       # The checks whose os list names win32, plus every check with no os list.
       - run: python tools/accuracy/run.py --tier ${{ needs.plan.outputs.tier }} -n 4 --receipt .crapkit/accuracy/receipts/windows-${{ matrix.python }}.json
-      # The past bugs that replay on Windows only (bugs.tsv platform windows), a
-      # seventh a night; the retro job replays the others in the image.
+      # The past bugs that replay on Windows only (bugs.tsv platform windows); the
+      # retro job replays the others in the image. A row replays only when no
+      # verdict is kept for its row digest and env key, where ImageOS and
+      # ImageVersion name the runner image, so a new runner image replays the
+      # Windows rows once. The verdicts are saved even when the step fails, and
+      # uploaded for `retro.py adopt --env-key`.
       - uses: astral-sh/setup-uv@v6
         if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
         with:
           version: "0.12.17"  # tools/accuracy/pins.toml, [oracle.uv]
+          enable-cache: true
+          cache-dependency-glob: tests/accuracy/suite_strength/retro/bugs.tsv
+      - uses: actions/cache/restore@v4
+        if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
+        with:
+          path: .crapkit/accuracy/retro-verdicts
+          key: retro-verdicts-windows-${{ github.run_id }}
+          restore-keys: retro-verdicts-windows-
       - if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
-        run: python tools/accuracy/retro.py nightly --slice-of 7 --platform-only
+        timeout-minutes: 30
+        env:
+          CRAPKIT_RETRO_WORK: ${{ github.workspace }}/.crapkit/accuracy/retro
+          CRAPKIT_RETRO_VERDICTS: ${{ github.workspace }}/.crapkit/accuracy/retro-verdicts
+        run: python tools/accuracy/retro.py nightly --platform-only
+      - uses: actions/cache/save@v4
+        if: always() && matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
+        with:
+          path: .crapkit/accuracy/retro-verdicts
+          key: retro-verdicts-windows-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
+        with:
+          name: retro-verdicts-windows
+          path: .crapkit/accuracy/retro-verdicts/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -404,12 +433,19 @@ jobs:
           docker run --rm --network none --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" sh -c "$command"
 
   retro:
-    # Changed ledger rows plus a rotating slice of ceil(rows/7): every past
-    # bug replays at least once a week.
+    # Judges every public past bug in the image. A row replays only when no
+    # verdict is kept for its row digest and env key (the image tag, LIZARD,
+    # RUNNER, the Pythons and the tier); every replay keeps one. The weekly
+    # slice is gone: it re-judged about 26 unchanged rows a night, about 22
+    # container-minutes. The verdicts are saved even when the job fails, so a
+    # night that runs out of time keeps what it judged, and they are uploaded
+    # for `retro.py adopt --env-key`. uv's cache is kept; CRAPKIT_RETRO_WORK is
+    # not, since 254 commits at about 50 MB of worktree and venv each would
+    # outgrow the 10 GB repository cache.
     needs: [plan, image]
     if: needs.plan.outputs.mode == 'nightly'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -420,11 +456,36 @@ jobs:
           path: .crapkit/accuracy/wheelhouse
           key: retro-wheelhouse-${{ hashFiles('tests/accuracy/suite_strength/retro/bugs.tsv') }}
           restore-keys: retro-wheelhouse-
+      - uses: actions/cache/restore@v4
+        with:
+          path: .crapkit/accuracy/retro-verdicts
+          key: retro-verdicts-linux-${{ github.run_id }}
+          restore-keys: retro-verdicts-linux-
+      # `timeout` ends the replays inside the container: the step's own timeout
+      # would stop only the docker client and leave the container writing
+      # verdicts while the save step reads them.
       - env:
           REF: ${{ needs.image.outputs.ref }}
+        timeout-minutes: 45
         run: |
-          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" \
-            python tools/accuracy/retro.py nightly --slice-of 7
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src \
+            -e UV_CACHE_DIR=/src/.crapkit/accuracy/wheelhouse \
+            -e CRAPKIT_RETRO_WORK=/src/.crapkit/accuracy/retro \
+            -e CRAPKIT_RETRO_VERDICTS=/src/.crapkit/accuracy/retro-verdicts \
+            "$REF" timeout 2400 python tools/accuracy/retro.py nightly
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .crapkit/accuracy/retro-verdicts
+          key: retro-verdicts-linux-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: retro-verdicts-linux
+          path: .crapkit/accuracy/retro-verdicts/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
 
   mutation-full:
     needs: [plan, image]

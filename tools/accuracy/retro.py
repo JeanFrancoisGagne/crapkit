@@ -1,8 +1,9 @@
 """Replay every past calculation bug's check on the commit before its fix and on the fix.
 
     python tools/accuracy/retro.py run ID...|all [--record] [--python 3.12]
-    python tools/accuracy/retro.py nightly --slice-of 7 [--day N] [--platform-only]
+    python tools/accuracy/retro.py nightly [--platform-only]
     python tools/accuracy/retro.py release
+    python tools/accuracy/retro.py adopt [ID...] [--env-key KEY]
     python tools/accuracy/retro.py digest NODE_ID
     python tools/accuracy/retro.py stale
     python tools/accuracy/retro.py sync
@@ -46,12 +47,21 @@ replay is no evidence.
 The ledger row carries a digest over the check's file, its static import
 closure under tests/ and tools/, and the data files of its packet, taken in
 repo path order with case so every OS computes the same one, so a replay
-that no longer matches the code it recorded shows as stale. `nightly` replays
-the stale rows plus one seventh of the rest (every row once a week); `release`
-replays every row whose digest changed plus the bundle rows, whose commits live
-only in the pre-2026-08-24 history bundle (CRAPKIT_RETRO_BUNDLE). Both exit 1
-when a replay contradicts its ledger row: a before that is no longer red, a fix
-that no longer passes.
+that no longer matches the code it recorded shows as stale. `nightly` judges
+every public row; `release` judges every row whose digest changed plus the bundle
+rows, whose commits live only in the pre-2026-08-24 history bundle
+(CRAPKIT_RETRO_BUNDLE). Both exit 1 when a verdict contradicts its ledger row: a
+before that is no longer red, a fix that no longer passes.
+
+Every replay keeps its verdict in CRAPKIT_RETRO_VERDICTS under an env key: the
+OS, the image tag (run.py's hash of the image inputs and locks), the hosted
+runner's ImageOS and ImageVersion (on Windows outside a runner, the Windows
+build), LIZARD, RUNNER, the venv and check Pythons, the git and node versions
+and the accuracy tier. `nightly` and `release` judge a row by the verdict kept
+for its row digest and this env key and replay only a row with none, so an
+unchanged row is not replayed twice on one env, and a moved key replays every
+row of that platform once. `run` always replays. `adopt` writes the kept
+verdicts into ledger.tsv as `run --record` would, without a replay.
 
 Each packet confirms the check names bugs.tsv proposed and lists the ones it
 landed in its own tests/accuracy/<packet>/retro.tsv. `sync` rewrites a landed
@@ -64,12 +74,14 @@ from __future__ import annotations
 
 import argparse
 import ast
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 import datetime
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import subprocess
@@ -96,6 +108,9 @@ LIZARD = "1.24.0"  # every commit on main was built against it (pyproject's comm
 RUNNER = ("pytest==9.1.1", "pytest-cov==7.1.0", "coverage==7.16.1")
 OUTCOMES_ENV = "CRAPKIT_RETRO_OUTCOMES"
 BUNDLE_ENV = "CRAPKIT_RETRO_BUNDLE"
+VERDICTS_ENV = "CRAPKIT_RETRO_VERDICTS"
+# Set on GitHub's hosted runners: the runner image a native cell replays on.
+RUNNER_IMAGE = ("ImageOS", "ImageVersion")
 PYTHON_ENV = "CRAPKIT_ACCURACY_PYTHON"
 # The commit's checkout: a check that runs files beside the package (action.yml,
 # tools/action/comment.py) reads them there, since a wheel install carries only src/.
@@ -684,13 +699,99 @@ def replay(bug: Bug, python: str, site: Site = Site()) -> tuple[Outcome, Outcome
     return before, fix
 
 
-def ledger_row(bug: Bug, before: Outcome, fix: Outcome, note: str = "") -> dict:
-    today = datetime.date.today().isoformat()
+def ledger_row(bug: Bug, before: Outcome, fix: Outcome, note: str = "", day: str = "") -> dict:
+    """The row a replay on `day` (default today) leaves in ledger.tsv."""
+    today = day or datetime.date.today().isoformat()
     return {"id": bug.id, "test": bug.test, "before_commit": bug.before, "fix_commit": bug.fix,
             "lizard": LIZARD, "before": before.verdict, "failure_class": before.failure_class,
             "before_evidence": before.evidence, "fix": fix.verdict,
             "fix_evidence": fix.evidence, "digest": digest(bug.test, bug.probe, env=bug.env),
             "replayed": today, "note": note}
+
+
+# --- the verdict cache --------------------------------------------------------------------------------
+#
+# A replay's verdict is kept under CRAPKIT_RETRO_VERDICTS/<env key>/<id>/<row digest>.json.
+# The row digest covers what the row replays (its node id, commits, probe and check
+# files); the env key covers what it replays on. A row whose verdict is kept for both
+# is judged by it and not replayed again.
+
+def verdicts_dir() -> Path:
+    """CRAPKIT_RETRO_VERDICTS, else beside the default work directory."""
+    return Path(os.environ.get(VERDICTS_ENV) or REPO / ".crapkit" / "accuracy" / "retro-verdicts")
+
+
+def _image_tag() -> str:
+    """run.py's image tag: a hash of the image's Dockerfile, the requirements and
+    package locks and pins.toml. It names the Linux image, and on a native cell the
+    locks that cell installed from."""
+    name = "accuracy_run_for_retro"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, REPO / "tools" / "accuracy" / "run.py")
+        sys.modules[name] = importlib.util.module_from_spec(spec)  # its dataclasses look it up
+        spec.loader.exec_module(sys.modules[name])
+    return sys.modules[name].image_tag(REPO)
+
+
+def _tool_version(name: str) -> str:
+    """What `name --version` prints, or "" when the tool is missing or will not say."""
+    found = shutil.which(name)
+    if found is None:
+        return ""
+    done = _run([found, "--version"])
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def _host() -> str:
+    """The hosted runner's image (ImageOS and ImageVersion); outside a runner, the
+    Windows build a native replay runs on. In the Linux image its tag says the rest."""
+    named = " ".join(filter(None, (os.environ.get(name, "") for name in RUNNER_IMAGE)))
+    return named or (platform.platform() if WINDOWS else "")
+
+
+def env_parts(python: str) -> dict:
+    """Everything a verdict depends on past the row itself. The tier is one: it
+    sizes Hypothesis (200 examples at push, 5,000 at release), so a push verdict
+    never answers for the release tier."""
+    from accuracy.kit import tiers
+    return {"os": sys.platform, "image": _image_tag(), "host": _host(), "lizard": LIZARD,
+            "runner": list(RUNNER), "python": python, "checks_python": platform.python_version(),
+            "git": _tool_version("git"), "node": _tool_version("node"), "tier": tiers.current_tier()}
+
+
+def env_key(python: str) -> str:
+    """`<os>-<venv python>-<tier>-<12 hex over every env part>`."""
+    parts = env_parts(python)
+    hashed = hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()[:12]
+    return f"{sys.platform}-{python}-{parts['tier']}-{hashed}"
+
+
+def row_digest(row: dict) -> str:
+    """16 hex over the row's id, node id, commits and probe, and its check's digest,
+    which covers the check's files, the probe's bytes and the env cell."""
+    bug = bug_of(row)
+    check = digest(bug.test, bug.probe, env=bug.env)
+    identity = "\0".join((bug.id, bug.test, bug.before, bug.fix, bug.probe, check))
+    return hashlib.sha256(identity.encode()).hexdigest()[:16]
+
+
+def verdict_path(row: dict, key: str) -> Path:
+    return verdicts_dir() / key / row["id"] / f"{row_digest(row)}.json"
+
+
+def kept_verdict(path: Path) -> tuple[Outcome, Outcome, str] | None:
+    """(before, fix, the day it was replayed) kept at `path`, or None."""
+    if not path.is_file():
+        return None
+    kept = json.loads(_read(path))
+    return Outcome(**kept["before"]), Outcome(**kept["fix"]), kept["replayed"]
+
+
+def keep_verdict(path: Path, bug: Bug, before: Outcome, fix: Outcome) -> None:
+    kept = {"id": bug.id, "test": bug.test, "before_commit": bug.before, "fix_commit": bug.fix,
+            "before": asdict(before), "fix": asdict(fix), "replayed": datetime.date.today().isoformat()}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write(path, json.dumps(kept, indent=1) + "\n")
 
 
 # --- choosing rows -------------------------------------------------------------------------------------
@@ -729,12 +830,6 @@ def stale(bugs: list[dict], ledger: dict) -> list[dict]:
     """Rows whose check this tree holds and that were never replayed, or whose
     check changed since the recorded replay."""
     return [row for row in bugs if check_exists(row) and _is_stale(row, ledger)]
-
-
-def weekly_slice(rows: list[dict], of: int, day: int) -> list[dict]:
-    """Slice `day % of` of the rows in id order: `of` nights replay every row once."""
-    ordered = sorted(rows, key=lambda row: (int(row["id"][1:]), row["test"]))
-    return ordered[day % of::of]
 
 
 def _bundle(row: dict) -> bool:
@@ -840,34 +935,71 @@ def _load() -> tuple[list[dict], dict]:
     return bugs, ledger
 
 
-def _replay_one(row: dict, ledger: dict, python: str) -> tuple[str, dict]:
-    """(what contradicts the ledger, or "", the fresh ledger row) for one bugs row."""
+def _say(row: dict, verdict: tuple, kept: bool) -> None:
+    before, fix, day = verdict
+    note = f" (kept from {day})" if kept else ""
+    print(f"retro: {row['id']} {row['test']}: before {before.verdict}, fix {fix.verdict}{note}")
+
+
+def _judged(row: dict, ledger: dict, verdict: tuple) -> tuple[str, dict]:
+    """(what contradicts the ledger, or "", the ledger row the verdict leaves)."""
+    before, fix, day = verdict
+    problem = contradiction(ledger.get(row_key(row), {"id": row["id"]}), before, fix)
+    return problem, recorded_row(row, before, fix, problem, day)
+
+
+def _replay_one(row: dict, ledger: dict, python: str, path: Path | None = None) -> tuple[str, dict]:
+    """(what contradicts the ledger, or "", the fresh ledger row) for one bugs row,
+    replayed now; the verdict is kept at `path` when one is named."""
     bug = bug_of(row)
     before, fix = replay(bug, python)
-    print(f"retro: {bug.id} {bug.test}: before {before.verdict}, fix {fix.verdict}")
-    problem = contradiction(ledger.get(row_key(row), {"id": bug.id}), before, fix)
-    return problem, recorded_row(row, before, fix, problem)
+    if path is not None:
+        keep_verdict(path, bug, before, fix)
+    verdict = (before, fix, datetime.date.today().isoformat())
+    _say(row, verdict, kept=False)
+    return _judged(row, ledger, verdict)
+
+
+def _kept_one(row: dict, ledger: dict, verdict: tuple) -> tuple[str, dict]:
+    _say(row, verdict, kept=True)
+    return _judged(row, ledger, verdict)
+
+
+def _one(row: dict, ledger: dict, python: str, key: str, reuse: bool) -> tuple[str, dict]:
+    """A row judged by the verdict kept for its digest and `key`, else by a replay
+    that keeps one."""
+    path = verdict_path(row, key)
+    kept = kept_verdict(path) if reuse else None
+    if kept is None:
+        return _replay_one(row, ledger, python, path)
+    return _kept_one(row, ledger, kept)
 
 
 PROBE_NOTE = "not replayable before the fix: the row needs an API-level probe under retro/probes/"
 
 
-def recorded_row(row: dict, before: Outcome, fix: Outcome, problem: str) -> dict:
-    """The ledger row a replay leaves. A refused replay is no evidence, so the row
-    stays pending and its note says why; a not-replayable before names the probe it needs."""
+def recorded_row(row: dict, before: Outcome, fix: Outcome, problem: str, day: str = "") -> dict:
+    """The ledger row a replay on `day` (default today) leaves. A refused replay is
+    no evidence, so the row stays pending and its note says why; a not-replayable
+    before names the probe it needs."""
+    day = day or datetime.date.today().isoformat()
     if problem:
-        return {**_waiting(row), "note": f"refused {datetime.date.today().isoformat()}: {problem}"}
+        return {**_waiting(row), "note": f"refused {day}: {problem}"}
     note = PROBE_NOTE if before.verdict == "not replayable" else ""
-    return ledger_row(bug_of(row), before, fix, note=note)
+    return ledger_row(bug_of(row), before, fix, note=note, day=day)
 
 
-def _replay_rows(rows: list[dict], ledger: dict, python: str, record: bool = False) -> int:
-    """Replay each row, print what contradicts the ledger, and rewrite the ledger
-    only when asked: nightly and release judge, `run --record` records."""
+def _replay_rows(rows: list[dict], ledger: dict, python: str, record: bool = False,
+                 reuse: bool = True) -> int:
+    """Judge each row, print what contradicts the ledger, and rewrite the ledger
+    only when asked: nightly and release judge, `run --record` records. A row with
+    a verdict kept for its digest and this env key is judged by it (unless `reuse`
+    is off, as for `run`); every replay keeps its verdict."""
+    key = env_key(python)
     fresh = dict(ledger)
     problems = []
     for row in rows:
-        problem, fresh[row_key(row)] = _replay_one(row, ledger, python)
+        problem, fresh[row_key(row)] = _one(row, ledger, python, key, reuse)
         problems.append(problem)
     if record:
         write_table(LEDGER, LEDGER_COLUMNS, sorted(fresh.values(), key=_ledger_order))
@@ -895,7 +1027,7 @@ def _run_cmd(args) -> int:
     rows = chosen(bugs, wanted)
     if not rows:
         raise RetroError(f"no replayable bugs.tsv row for {', '.join(sorted(wanted))} here")
-    return _replay_rows(rows, ledger, args.python, args.record)
+    return _replay_rows(rows, ledger, args.python, args.record, reuse=False)
 
 
 def _union(*groups: list[dict]) -> list[dict]:
@@ -917,9 +1049,7 @@ def _nightly(args) -> int:
     public = _public(bugs)
     if args.platform_only:
         public = list(filter(_names_its_platform, public))
-    day = datetime.date.today().toordinal() if args.day is None else args.day
-    chosen = _union(stale(public, ledger), weekly_slice(public, args.slice_of, day))
-    return _replay_rows(chosen, ledger, args.python)
+    return _replay_rows(public, ledger, args.python)
 
 
 def _release(args) -> int:
@@ -927,6 +1057,43 @@ def _release(args) -> int:
     rows = [row for row in bugs if replayable_here(row)]
     chosen = _union(stale(rows, ledger), [row for row in rows if _bundle(row)])
     return _replay_rows(chosen, ledger, args.python)
+
+
+def _named(row: dict, ids: list[str]) -> bool:
+    return not ids or row["id"] in ids
+
+
+def _closed_and_held(row: dict) -> bool:
+    return row["replay"] != "open" and check_exists(row)
+
+
+def _adoptable(bugs: list[dict], ids: list[str]) -> list[dict]:
+    """The rows `ids` name (every row when none) whose check this tree holds."""
+    return [row for row in bugs if _named(row, ids) and _closed_and_held(row)]
+
+
+def _adopted(rows: list[dict], ledger: dict, key: str) -> tuple[dict, list[str], int]:
+    """(the ledger with each kept verdict recorded, what contradicts it, how many rows
+    had a verdict) for `rows` under `key`."""
+    fresh, problems = dict(ledger), []
+    for row in rows:
+        kept = kept_verdict(verdict_path(row, key))
+        if kept is not None:
+            problem, fresh[row_key(row)] = _kept_one(row, ledger, kept)
+            problems.append(problem)
+    return fresh, problems, len(problems)
+
+
+def _adopt(args) -> int:
+    """Record the kept verdicts of an env key in ledger.tsv as `run --record` would,
+    with no replay."""
+    bugs, ledger = _load()
+    key = args.env_key or env_key(args.python)
+    rows = _adoptable(bugs, args.ids)
+    fresh, problems, count = _adopted(rows, ledger, key)
+    write_table(LEDGER, LEDGER_COLUMNS, sorted(fresh.values(), key=_ledger_order))
+    print(f"retro: adopted {count} row(s) from {key}; {len(rows) - count} row(s) have no verdict there")
+    return _report(list(filter(None, problems)))
 
 
 def _digest_cmd(args) -> int:
@@ -959,12 +1126,14 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("ids", nargs="+")
     run.add_argument("--record", action="store_true", help="rewrite the replayed ledger rows")
     nightly = sub.add_parser("nightly")
-    nightly.add_argument("--slice-of", type=int, default=7)
-    nightly.add_argument("--day", type=int)
     nightly.add_argument("--platform-only", action="store_true",
                          help="replay only the rows whose platform is this OS (a Windows or "
                               "macOS cell); the Linux job replays the `any` rows")
     sub.add_parser("release")
+    adopt = sub.add_parser("adopt")
+    adopt.add_argument("ids", nargs="*", help="the rows to adopt; every row when none is named")
+    adopt.add_argument("--env-key", default="",
+                       help="the env key whose verdicts to adopt; this machine's when not named")
     digest_p = sub.add_parser("digest")
     digest_p.add_argument("test")
     digest_p.add_argument("--probe", default="")
@@ -973,8 +1142,8 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-COMMANDS = {"run": _run_cmd, "nightly": _nightly, "release": _release, "digest": _digest_cmd,
-            "stale": _stale_cmd, "sync": _sync_cmd}
+COMMANDS = {"run": _run_cmd, "nightly": _nightly, "release": _release, "adopt": _adopt,
+            "digest": _digest_cmd, "stale": _stale_cmd, "sync": _sync_cmd}
 
 
 def main(argv: list[str] | None = None) -> int:

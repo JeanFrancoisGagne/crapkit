@@ -355,15 +355,33 @@ python tools/accuracy/retro.py run R57 --record
 A replay counts only when the check fails on an AssertionError at the commit
 before the fix and passes at the fix. A check that passes before the fix catches
 nothing, and one that fails at the fix proves nothing; both are refused, the row
-stays `pending`, and its ledger note says why. Each night accuracy.yml replays the
-rows whose check changed and a seventh of the rest: the `retro` job in the Linux
+stays `pending`, and its ledger note says why. A row whose test is not written
+yet never replays and stays `pending`.
+
+Every replay keeps its verdict in `CRAPKIT_RETRO_VERDICTS` (default
+`.crapkit/accuracy/retro-verdicts`), as `<env key>/<id>/<row digest>.json`. The
+row digest covers the row's id, node id, commits and probe and its check's
+digest. The env key covers what the replay ran on: the OS, the image tag
+(`run.py image-tag`, a hash of the image inputs and both locks), the hosted
+runner's `ImageOS` and `ImageVersion` (outside a runner on Windows, the Windows
+build), LIZARD, RUNNER, the venv and check Pythons, the git and node versions,
+and `CRAPKIT_ACCURACY_TIER`. A push-tier verdict never answers for the release
+tier, since the tier sizes Hypothesis.
+
+Each night accuracy.yml judges every public row: the `retro` job in the Linux
 image, and the Windows cell the rows whose `platform` is `windows`
-(`retro.py nightly --platform-only`). The nightly job judges and never records,
-so a row whose check changed replays every night until someone records it:
-after changing a check, or anything it imports, list those rows with
-`python tools/accuracy/retro.py stale`, replay them with `run <id> --record`
-and commit `ledger.tsv`. A row whose test is not written yet never replays and
-stays `pending`.
+(`retro.py nightly --platform-only`). A row with a verdict kept for its row
+digest and env key is judged by it, and only a row with none replays, so an
+unchanged row replays once per env key and a new image or runner image replays
+every row of its platform once. Both places keep the verdicts in the actions
+cache, saved even when the job fails, and upload them as `retro-verdicts-linux`
+and `retro-verdicts-windows`. The nightly job judges and never records: after
+changing a check, or anything it imports, list the rows with
+`python tools/accuracy/retro.py stale` and replay them with `run <id> --record`
+(`run` always replays), or download a night's verdicts into
+`CRAPKIT_RETRO_VERDICTS` and run `retro.py adopt --env-key <key>`, which writes
+them into `ledger.tsv` as `run --record` would, with no replay. Then commit
+`ledger.tsv`.
 
 When the check cannot ask its question of the old commit (it reads a field the fix
 added, or a later bug fails it too), write a probe: a script in `retro/probes/`

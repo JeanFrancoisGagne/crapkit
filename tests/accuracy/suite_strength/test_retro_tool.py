@@ -19,6 +19,8 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import platform
+import runpy
 import shutil
 import sys
 import sysconfig
@@ -537,15 +539,6 @@ def _row(number: int, platform: str = "any", replay: str = "public") -> dict:
             "platform": platform, "replay": replay}
 
 
-@given(st.integers(1, 60), st.integers(1, 9), st.integers(0, 10_000))
-@pure
-def test_the_nightly_slices_replay_every_row_once_in_a_cycle(count, of, start):
-    rows = [_row(number) for number in range(1, count + 1)]
-    seen = [row["id"] for day in range(start, start + of) for row in retro.weekly_slice(rows, of, day)]
-
-    assert sorted(seen) == sorted(row["id"] for row in rows)
-
-
 @pytest.mark.parametrize("row, platform, here", [
     (_row(1), "linux", True),
     (_row(1, "windows"), "linux", False),
@@ -636,10 +629,19 @@ def test_a_table_cell_names_no_local_path(evidence, cell):
 
 @pytest.fixture
 def tables(tmp_path, monkeypatch):
-    """bugs.tsv and ledger.tsv under tmp_path, and a replay that answers from `answers`."""
+    """bugs.tsv and ledger.tsv under tmp_path, a replay that answers from `answers`,
+    the verdict cache under tmp_path, and an env key whose image tag `env` names,
+    with git and node versions that start no process."""
     bugs, ledger = tmp_path / "bugs.tsv", tmp_path / "ledger.tsv"
     monkeypatch.setattr(retro, "BUGS", bugs)
     monkeypatch.setattr(retro, "LEDGER", ledger)
+    monkeypatch.setenv(retro.VERDICTS_ENV, str(tmp_path / "verdicts"))
+    monkeypatch.setenv("CRAPKIT_ACCURACY_TIER", "push")
+    for name in retro.RUNNER_IMAGE:
+        monkeypatch.delenv(name, raising=False)
+    env = {"image": "0a1b2c3d4e5f"}
+    monkeypatch.setattr(retro, "_image_tag", lambda: env["image"])
+    monkeypatch.setattr(retro, "_tool_version", lambda name: f"{name} version 1")
     answers, replayed = {}, []
 
     def replay(bug, python, site=None):
@@ -653,7 +655,8 @@ def tables(tmp_path, monkeypatch):
         retro.write_table(bugs, retro.BUG_COLUMNS, bug_rows)
         retro.write_table(ledger, retro.LEDGER_COLUMNS, ledger_rows)
 
-    return SimpleNamespace(write=write, answers=answers, replayed=replayed, ledger=ledger)
+    return SimpleNamespace(write=write, answers=answers, replayed=replayed, ledger=ledger, env=env,
+                           verdicts=tmp_path / "verdicts")
 
 
 def test_run_record_rewrites_the_replayed_rows_and_keeps_the_rest(tables):
@@ -692,27 +695,289 @@ def test_run_refuses_ids_with_no_replayable_row(tables, capsys):
     assert "no replayable bugs.tsv row for R1, R9 here" in capsys.readouterr().err
 
 
-def test_nightly_replays_stale_rows_and_its_slice_and_never_a_bundle_row(tables):
+def test_nightly_replays_every_public_row_with_no_verdict_for_its_key_and_never_a_bundle_row(tables):
     rows = [_bug_row("R1"), _bug_row("R2"), _bug_row("R3", replay="bundle"), _bug_row("R4")]
     tables.write(rows, [_ledger_row("R1"), _ledger_row("R2"), _ledger_row("R3"),
                         _ledger_row("R4", digest="0" * 64)])
 
-    assert retro.main(["nightly", "--slice-of", "3", "--day", "0"]) == 0
-    # R4's digest moved; slice 0 of the public rows R1, R2, R4 in id order is R1.
-    assert sorted(tables.replayed) == ["R1", "R4"]
+    assert retro.main(["nightly"]) == 0
+    assert sorted(tables.replayed) == ["R1", "R2", "R4"]
+
+
+def test_a_nightly_with_every_verdict_kept_replays_nothing(tables):
+    """The weekly slice re-judged a seventh of 178 unchanged rows every night, about
+    22 container-minutes; a kept verdict for the same row digest and env key is that
+    replay's answer already."""
+    tables.write([_bug_row("R1"), _bug_row("R2")], [_ledger_row("R1"), _ledger_row("R2")])
+    assert retro.main(["nightly"]) == 0
+    tables.replayed.clear()
+
+    assert retro.main(["nightly"]) == 0
+    assert tables.replayed == []
+
+
+@pytest.mark.parametrize("moved", [
+    {"before_commit": "c" * 12},
+    {"fix_commits": "b" * 12 + "," + "d" * 12},
+    {"env": "CRAPKIT_ACCURACY_LANGUAGES=python"},
+])
+def test_a_nightly_replays_exactly_the_row_whose_inputs_moved(tables, moved):
+    ledger = [_ledger_row("R1"), _ledger_row("R2")]
+    tables.write([_bug_row("R1"), _bug_row("R2")], ledger)
+    retro.main(["nightly"])
+    tables.replayed.clear()
+    tables.write([_bug_row("R1"), {**_bug_row("R2"), **moved}], ledger)
+
+    retro.main(["nightly"])
+
+    assert tables.replayed == ["R2"]
+
+
+def test_a_kept_verdict_judges_its_row_as_the_fresh_replay_did(tables, capsys):
+    """A nightly that reuses a contradicting verdict still exits 1 with the same
+    words: a red night stays red until the row or its ledger changes."""
+    tables.write([_bug_row("R1"), _bug_row("R2")], [_ledger_row("R1"), _ledger_row("R2")])
+    tables.answers["R1"] = (retro.Outcome("not replayable", "KeyError", "k"), retro.Outcome("pass"))
+    assert retro.main(["nightly"]) == 1
+    fresh = capsys.readouterr()
+    tables.replayed.clear()
+
+    assert retro.main(["nightly"]) == 1
+
+    kept = capsys.readouterr()
+    assert tables.replayed == []
+    assert kept.err == fresh.err != ""
+    today = datetime.date.today().isoformat()
+    assert kept.out == fresh.out.replace(", fix pass\n", f", fix pass (kept from {today})\n") != fresh.out
+
+
+def _moves_the_image(tables, monkeypatch):
+    tables.env["image"] = "ffffffffffff"
+    return []
+
+
+def _moves_the_tier(tables, monkeypatch):
+    monkeypatch.setenv("CRAPKIT_ACCURACY_TIER", "release")
+    return []
+
+
+def _moves_the_runner_image(tables, monkeypatch):
+    monkeypatch.setenv("ImageOS", "win25")
+    monkeypatch.setenv("ImageVersion", "20261001.1")
+    return []
+
+
+def _moves_lizard(tables, monkeypatch):
+    monkeypatch.setattr(retro, "LIZARD", "1.25.0")
+    return []
+
+
+def _moves_the_runner(tables, monkeypatch):
+    monkeypatch.setattr(retro, "RUNNER", (*retro.RUNNER[:-1], "coverage==7.17.0"))
+    return []
+
+
+def _moves_node(tables, monkeypatch):
+    monkeypatch.setattr(retro, "_tool_version", lambda name: f"{name} version 2")
+    return []
+
+
+def _moves_the_python(tables, monkeypatch):
+    return ["--python", "3.99"]
+
+
+@pytest.mark.parametrize("move", [_moves_the_image, _moves_the_tier, _moves_the_runner_image,
+                                  _moves_lizard, _moves_the_runner, _moves_node, _moves_the_python])
+def test_a_moved_env_key_replays_every_row_of_that_platform(tables, monkeypatch, move):
+    tables.write([_bug_row("R1"), _bug_row("R2")], [_ledger_row("R1"), _ledger_row("R2")])
+    retro.main(["nightly"])
+    tables.replayed.clear()
+
+    retro.main([*move(tables, monkeypatch), "nightly"])
+
+    assert sorted(tables.replayed) == ["R1", "R2"]
+
+
+def test_a_push_tier_verdict_does_not_serve_a_release_lookup(tables, monkeypatch):
+    """kit/settings.py sizes Hypothesis at 200 examples at push and 5,000 at release:
+    a nightly verdict never answers for the release tier."""
+    tables.write([_bug_row("R1")], [_ledger_row("R1", digest="0" * 16)])
+    retro.main(["nightly"])
+    monkeypatch.setenv("CRAPKIT_ACCURACY_TIER", "release")
+    tables.replayed.clear()
+
+    assert retro.main(["release"]) == 0
+    assert tables.replayed == ["R1"]
+    tables.replayed.clear()
+    assert retro.main(["release"]) == 0
+    assert tables.replayed == []
+
+
+def test_run_replays_a_row_with_a_kept_verdict_and_keeps_the_new_one(tables):
+    tables.write([_bug_row("R1")], [])
+    retro.main(["run", "R1"])
+    tables.answers["R1"] = (retro.Outcome("red", "AssertionError", "other"), retro.Outcome("pass", "", "p"))
+
+    retro.main(["run", "R1"])
+    retro.main(["nightly"])
+
+    assert tables.replayed == ["R1", "R1"]
+    kept = retro.kept_verdict(retro.verdict_path(_bug_row("R1"), retro.env_key(retro.CURRENT)))
+    assert kept == (tables.answers["R1"][0], tables.answers["R1"][1], datetime.date.today().isoformat())
+
+
+def test_a_replay_keeps_its_verdict_under_the_env_key_the_row_id_and_the_row_digest(tables):
+    tables.write([_bug_row("R1")], [])
+
+    retro.main(["run", "R1"])
+
+    key = retro.env_key(retro.CURRENT)
+    path = tables.verdicts / key / "R1" / f"{retro.row_digest(_bug_row('R1'))}.json"
+    assert retro.verdict_path(_bug_row("R1"), key) == path
+    assert json.loads(path.read_bytes()) == {
+        "id": "R1", "test": NODE, "before_commit": "a" * 12, "fix_commit": "b" * 12,
+        "before": {"verdict": "red", "failure_class": "AssertionError", "evidence": "wrong"},
+        "fix": {"verdict": "pass", "failure_class": "", "evidence": "1 item(s) passed"},
+        "replayed": datetime.date.today().isoformat()}
+
+
+def test_with_no_verdict_cache_named_the_verdicts_sit_beside_the_work_directory(monkeypatch):
+    monkeypatch.delenv(retro.VERDICTS_ENV, raising=False)
+
+    assert retro.verdicts_dir() == REPO / ".crapkit" / "accuracy" / "retro-verdicts"
+
+
+def test_a_row_with_no_kept_verdict_reads_none(tmp_path):
+    assert retro.kept_verdict(tmp_path / "R1" / "0.json") is None
+
+
+@pytest.mark.parametrize("moved", [
+    {"id": "R2"}, {"test": f"{NODE}[case]"}, {"before_commit": "c" * 12},
+    {"fix_commits": "d" * 12}, {"env": "CRAPKIT_ACCURACY_LANGUAGES=python"}, {"probe": "R97.py"},
+])
+def test_the_row_digest_moves_with_each_part_of_the_row_s_identity(moved):
+    row = _bug_row("R1")
+
+    assert retro.row_digest(row) == retro.row_digest(dict(row))
+    assert retro.row_digest({**row, **moved}) != retro.row_digest(row)
+
+
+def test_the_row_digest_covers_the_check_s_files(monkeypatch):
+    row = _bug_row("R1")
+    before = retro.row_digest(row)
+    monkeypatch.setattr(retro, "digest", lambda test, probe="", repo=retro.REPO, env="": "moved")
+
+    assert retro.row_digest(row) != before
+
+
+def test_the_env_key_names_the_os_python_and_tier_and_hashes_every_part(tables):
+    parts = retro.env_parts("3.12")
+    blob = json.dumps(parts, sort_keys=True).encode()
+
+    assert retro.env_key("3.12") == f"{sys.platform}-3.12-push-{hashlib.sha256(blob).hexdigest()[:12]}"
+
+
+@pytest.mark.parametrize("windows", [True, False])
+def test_the_env_parts_are_every_input_a_verdict_depends_on_past_the_row(tables, monkeypatch, windows):
+    monkeypatch.setattr(retro, "WINDOWS", windows)
+    host = platform.platform() if windows else ""
+
+    assert retro.env_parts("3.12") == {
+        "os": sys.platform, "image": "0a1b2c3d4e5f", "host": host, "lizard": retro.LIZARD,
+        "runner": list(retro.RUNNER), "python": "3.12", "checks_python": platform.python_version(),
+        "git": "git version 1", "node": "node version 1", "tier": "push"}
+    monkeypatch.setenv("ImageOS", "win22")
+    monkeypatch.setenv("ImageVersion", "20260928.1")
+    assert retro.env_parts("3.12")["host"] == "win22 20260928.1"
+
+
+def test_the_image_tag_in_the_env_key_is_the_one_run_py_names():
+    run_tool = runpy.run_path(str(REPO / "tools" / "accuracy" / "run.py"))
+
+    assert retro._image_tag() == run_tool["image_tag"]()
+
+
+def test_a_tool_s_version_is_what_it_prints_and_a_missing_tool_has_none(monkeypatch):
+    asked = []
+    monkeypatch.setattr(retro.shutil, "which", lambda name: None if name == "node" else f"/bin/{name}")
+    monkeypatch.setattr(retro, "_run", lambda argv, cwd=None, env=None: asked.append(argv)
+                        or SimpleNamespace(returncode=0, stdout="git version 2.43.0\n", stderr=""))
+
+    assert (retro._tool_version("git"), retro._tool_version("node")) == ("git version 2.43.0", "")
+    assert asked == [["/bin/git", "--version"]]
+
+
+def test_a_tool_that_fails_to_say_its_version_has_none(monkeypatch):
+    monkeypatch.setattr(retro.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(retro, "_run", lambda argv, cwd=None, env=None:
+                        SimpleNamespace(returncode=1, stdout="1.0\n", stderr="no"))
+
+    assert retro._tool_version("git") == ""
+
+
+def test_adopt_writes_kept_verdicts_into_the_ledger_as_a_fresh_record_would(tables, capsys):
+    pending = [retro._waiting(_bug_row("R1")), retro._waiting(_bug_row("R2"))]
+    tables.write([_bug_row("R1")], pending)
+    retro.main(["nightly"])
+    tables.write([_bug_row("R1"), _bug_row("R2")], pending)
+    tables.replayed.clear()
+    capsys.readouterr()
+
+    assert retro.main(["adopt"]) == 0
+
+    assert tables.replayed == []
+    adopted = retro.read_table(tables.ledger, retro.LEDGER_COLUMNS)
+    today = datetime.date.today().isoformat()
+    assert capsys.readouterr().out == (
+        f"retro: R1 {NODE}: before red, fix pass (kept from {today})\n"
+        f"retro: adopted 1 row(s) from {retro.env_key(retro.CURRENT)}; 1 row(s) have no verdict there\n")
+    assert adopted[1] == pending[1]
+    tables.write([_bug_row("R1"), _bug_row("R2")], pending)
+    retro.main(["run", "R1", "--record"])
+    assert adopted == retro.read_table(tables.ledger, retro.LEDGER_COLUMNS)
+
+
+def test_adopt_reads_the_env_key_it_is_named(tables, capsys):
+    tables.write([_bug_row("R1")], [retro._waiting(_bug_row("R1"))])
+    tables.env["image"] = "ffffffffffff"
+    retro.main(["nightly"])
+    elsewhere = retro.env_key(retro.CURRENT)
+    tables.env["image"] = "0a1b2c3d4e5f"
+
+    assert retro.main(["adopt"]) == 0
+    assert retro.read_table(tables.ledger, retro.LEDGER_COLUMNS)[0]["before"] == "pending"
+    assert retro.main(["adopt", "R1", "--env-key", elsewhere]) == 0
+    assert retro.read_table(tables.ledger, retro.LEDGER_COLUMNS)[0]["before"] == "red"
+    assert tables.replayed == ["R1"]
+
+
+def test_adopt_keeps_a_contradicting_verdict_pending_and_exits_one(tables, capsys):
+    tables.write([_bug_row("R1")], [_ledger_row("R1")])
+    tables.answers["R1"] = (retro.Outcome("green", "", "1 item(s) passed"), retro.Outcome("pass"))
+    retro.main(["nightly"])
+    capsys.readouterr()
+
+    assert retro.main(["adopt"]) == 1
+
+    (row,) = retro.read_table(tables.ledger, retro.LEDGER_COLUMNS)
+    assert (row["before"], row["fix"]) == ("pending", "pending")
+    assert "R1: the check passes on its before commit, so it catches nothing" in capsys.readouterr().err
 
 
 THIS_OS = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
 
 
-def test_a_platform_only_nightly_replays_the_rows_that_name_this_os(tables):
+def test_a_platform_only_nightly_replays_this_os_rows_with_no_verdict(tables):
     """The Windows cell replays the Windows rows; the Linux job, which replays
     every `any` row, is not run twice."""
     rows = [_bug_row("R1"), _bug_row("R2", platform=THIS_OS), _bug_row("R3", platform=THIS_OS)]
     tables.write(rows, [_ledger_row(bug) for bug in ("R1", "R2", "R3")])
 
-    assert retro.main(["nightly", "--slice-of", "1", "--day", "0", "--platform-only"]) == 0
+    assert retro.main(["nightly", "--platform-only"]) == 0
     assert sorted(tables.replayed) == ["R2", "R3"]
+    tables.replayed.clear()
+    assert retro.main(["nightly", "--platform-only"]) == 0
+    assert tables.replayed == []
 
 
 def test_release_replays_stale_rows_and_every_bundle_row(tables):
@@ -1719,7 +1984,7 @@ def _replays(monkeypatch, before: str = "red") -> list[str]:
     return pythons
 
 
-@pytest.mark.parametrize("argv", [["run", "R1"], ["nightly", "--day", "0"], ["release"]])
+@pytest.mark.parametrize("argv", [["run", "R1"], ["nightly"], ["release"]])
 def test_every_replaying_command_hands_on_its_python_and_leaves_the_ledger(tables, monkeypatch, argv):
     tables.write([_bug_row("R1")], [_ledger_row("R1", digest="stale")])
     before = tables.ledger.read_bytes()
@@ -1762,17 +2027,6 @@ def test_an_accepted_red_replay_is_recorded_with_no_note(monkeypatch):
     assert (problem, row["before"], row["fix"], row["note"]) == ("", "red", "pass", "")
 
 
-@pytest.mark.parametrize("day, expected", [(None, "today"), (4, 4)])
-def test_the_nightly_slice_is_today_s_unless_a_day_is_named(tables, monkeypatch, day, expected):
-    tables.write([_bug_row("R1")], [_ledger_row("R1")])
-    days = []
-    monkeypatch.setattr(retro, "weekly_slice", lambda rows, of, day: days.append((of, day)) or [])
-
-    retro._nightly(SimpleNamespace(day=day, slice_of=3, python=retro.CURRENT, platform_only=False))
-
-    assert days == [(3, datetime.date.today().toordinal() if expected == "today" else expected)]
-
-
 def test_digest_with_a_probe_prints_the_digest_that_covers_it(capsys):
     assert retro.main(["digest", OTHER, "--probe", "R97.py"]) == 0
 
@@ -1784,10 +2038,12 @@ def test_digest_with_a_probe_prints_the_digest_that_covers_it(capsys):
      {"python": retro.CURRENT, "command": "run", "ids": ["R1", "R2"], "record": True}),
     (["--python", "3.13", "run", "R1"],
      {"python": "3.13", "command": "run", "ids": ["R1"], "record": False}),
-    (["nightly"], {"python": retro.CURRENT, "command": "nightly", "slice_of": 7, "day": None,
-                   "platform_only": False}),
-    (["nightly", "--slice-of", "3", "--day", "4", "--platform-only"],
-     {"python": retro.CURRENT, "command": "nightly", "slice_of": 3, "day": 4, "platform_only": True}),
+    (["nightly"], {"python": retro.CURRENT, "command": "nightly", "platform_only": False}),
+    (["nightly", "--platform-only"], {"python": retro.CURRENT, "command": "nightly", "platform_only": True}),
+    (["adopt"], {"python": retro.CURRENT, "command": "adopt", "ids": [], "env_key": ""}),
+    (["adopt", "R1", "R2", "--env-key", "linux-3.12-push-0a1b2c3d4e5f"],
+     {"python": retro.CURRENT, "command": "adopt", "ids": ["R1", "R2"],
+      "env_key": "linux-3.12-push-0a1b2c3d4e5f"}),
     (["release"], {"python": retro.CURRENT, "command": "release"}),
     (["digest", "t::x", "--probe", "R1.py"],
      {"python": retro.CURRENT, "command": "digest", "test": "t::x", "probe": "R1.py"}),
