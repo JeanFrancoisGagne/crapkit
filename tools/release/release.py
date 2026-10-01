@@ -1212,6 +1212,27 @@ def _tier_env(root: Path, version: str) -> dict:
     return {}
 
 
+# tools/accuracy/mutation.py's AT_ENV: the commit `mutation.py covered` judges.
+COVERED_AT_ENV = "CRAPKIT_COVERED_AT"
+
+
+def covered_at(root: Path) -> str:
+    """The commit the tier's mutation row judges. Stage 1 commits the version bump,
+    src/crapkit/__init__.py among it, as the tag commit, which no mutation run can
+    judge: it exists only here. When that commit changes only RELEASE_FILES, the
+    row judges its parent's tree, the code the release ships; else the tag commit."""
+    try:
+        changed = set(_git(root, "diff", "--name-only", "HEAD~1", "HEAD").splitlines())
+    except ReleaseError:
+        return "HEAD"
+    return "HEAD~1" if changed and changed <= set(RELEASE_FILES) else "HEAD"
+
+
+def _covered_env(root: Path) -> dict:
+    at = covered_at(root)
+    return {} if at == "HEAD" else {COVERED_AT_ENV: at}
+
+
 def _local_problems(root: Path, version: str, head: str) -> list:
     try:
         saved = _read_accuracy_receipt(root, version)
@@ -1225,7 +1246,7 @@ def _local_accuracy(step: Step, root: Path, version: str, head: str) -> None:
     after a remote timeout does not repeat half an hour of local checks."""
     if not _local_problems(root, version, head):
         return
-    failure = _attempt(root, step.commands[0], _tier_env(root, version))
+    failure = _attempt(root, step.commands[0], {**_tier_env(root, version), **_covered_env(root)})
     problems = _local_problems(root, version, head)
     if problems or failure:
         raise ReleaseError(NL.join(problems) or f"the release tier failed: {failure}")

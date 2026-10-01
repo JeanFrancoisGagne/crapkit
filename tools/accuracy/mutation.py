@@ -4,7 +4,7 @@
     python tools/accuracy/mutation.py diff [--cap-minutes 60] [--cold]
     python tools/accuracy/mutation.py gate RESULTS.json... [--update]
     python tools/accuracy/mutation.py floors RESULTS.json...
-    python tools/accuracy/mutation.py covered [--receipts DIR]
+    python tools/accuracy/mutation.py covered [--receipts DIR] [--at REV]
     python tools/accuracy/mutation.py tools [--max-children K]
     python tools/accuracy/mutation.py key < MUTANT.diff
     python tools/accuracy/mutation.py env
@@ -63,8 +63,10 @@ launcher, the stage's pytest and mutmut tables, and each environment variable
 src/ and tests/ read but those naming a scratch path), the tree it judged (each
 file's mode and blob) and what the suite read outside any test. `env` prints
 that key, which CI keys the receipts' cache on. `covered` passes when every
-function in scope holds verdicts that carry to HEAD (a timeout's only at the tree
-it was judged at), and the gate and the floors pass over them; a function mutmut
+function in scope holds verdicts that carry to HEAD, or to the commit --at (or
+CRAPKIT_COVERED_AT) names (a timeout's only at the tree it was judged at), and the
+gate and the floors pass over them; the release stage names the tag commit's
+parent when the tag commit only bumps the version; a function mutmut
 makes no mutant of counts as covered and is listed as such. A later run carries those
 verdicts only while every one of those still holds, any .py file outside the
 mutated modules and the test modules is unchanged, and the verdicts are under
@@ -130,6 +132,11 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tests"))
 TABLES = REPO / "tests" / "accuracy" / "suite_strength" / "mutation"
 RECEIPTS = Path(".crapkit") / "accuracy" / "mutation"
+# The commit `covered` judges when --at names none. The release stage sets it to the
+# tag commit's parent when the tag commit changes only the release files: stage 1's
+# version bump moves src/crapkit/__init__.py, which voids every carry, and no mutation
+# run can judge a commit that exists only on the releasing machine.
+AT_ENV = "CRAPKIT_COVERED_AT"
 SURVIVOR_COLUMNS = ("module", "function", "diff_sha256", "reason", "added")
 EQUIVALENT_COLUMNS = ("module", "function", "diff_sha256", "evidence", "strategy", "checked")
 FLOOR_COLUMNS = ("group", "paths", "floor", "source")
@@ -1629,9 +1636,9 @@ def _blob_entries(listed: str):
             yield path, f"{fields[0]} {fields[2]}"
 
 
-def head_tree(repo: Path) -> Tree:
-    """HEAD's tracked files: what the stage checks out."""
-    blobs = dict(_blob_entries(_git(repo, "ls-tree", "-r", "-z", "HEAD")))
+def head_tree(repo: Path, rev: str = "HEAD") -> Tree:
+    """The tracked files of `rev`, HEAD unless named: what the stage checks out."""
+    blobs = dict(_blob_entries(_git(repo, "ls-tree", "-r", "-z", rev)))
     return Tree(blobs, lambda blob: _git(repo, "cat-file", "blob", blob))
 
 
@@ -2439,10 +2446,12 @@ def _say_covered(found: Plan) -> None:
 
 def _covered(args) -> int:
     """Pass when every function of the calc modules holds stored verdicts that carry
-    to HEAD (see carry_problem; a timeout's only at the tree it was judged at) and
-    the gate and the floors pass over them."""
+    to HEAD, or to the commit --at names (see carry_problem; a timeout's only at the
+    tree it was judged at), and the gate and the floors pass over them."""
     receipts = stored_receipts(args.receipts)
-    head = Head(head_tree(REPO), newest_env(receipts), _now())
+    if args.at != "HEAD":
+        print(f"mutation: covered judges the tree of {args.at}, not HEAD's")
+    head = Head(head_tree(REPO, args.at), newest_env(receipts), _now())
     found = plan(scope_functions(weekly_modules(), head), stored_verdicts(receipts), head,
                  select=False)
     _say_covered(found)
@@ -2503,6 +2512,8 @@ def _parser() -> argparse.ArgumentParser:
     floors_p.add_argument("results", nargs="+", type=Path)
     covered = sub.add_parser("covered")
     covered.add_argument("--receipts", type=Path, default=REPO / RECEIPTS)
+    covered.add_argument("--at", default=os.environ.get(AT_ENV) or "HEAD",
+                         help=f"the commit whose tree to judge (default {AT_ENV}, else HEAD)")
     tools = sub.add_parser("tools")
     tools.add_argument("--max-children", type=int, default=os.cpu_count() or 2)
     sub.add_parser("key")

@@ -77,7 +77,11 @@ commit. Keep it in its own background process: it can take two hours.
    about 30 minutes. It runs the push tier, both wheel diffs, the store upgrade check,
    the consumer replay, the retro replays and the mutation coverage check.
    `--local` selects the two rows no CI cell runs because they read this machine's
-   state: the bundle replays and the mutation receipts.
+   state: the bundle replays and the mutation receipts. When the tag commit changes
+   only the release files (stage 1's version bump), the stage sets
+   `CRAPKIT_COVERED_AT=HEAD~1`, so `mutation.py covered` judges the code the release
+   ships at the commit the mutation runs could judge; the bump alone would void every
+   stored verdict.
    The retro replays include the bundle rows, whose commits live only in the
    pre-2026-08-24 history bundle, so the stage sets `CRAPKIT_RETRO_BUNDLE` for the tier:
    from the environment when it is set, else from the path

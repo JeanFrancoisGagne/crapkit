@@ -371,7 +371,14 @@ mutation: src/crapkit/score.py:grade has no stored verdict that carries to HEAD:
 ```
 
 and exits 1. It exits 1 too on a survivor on neither table or a group below its
-floor, and 3 when no receipt here stores a verdict. mutmut 3.8 makes no mutant
+floor, and 3 when no receipt here stores a verdict.
+
+`covered --at REV` judges REV's tree in place of HEAD's (`CRAPKIT_COVERED_AT` sets
+the default). The release tool's stage passes the tag commit's parent when the tag
+commit changes only the release files: stage 1's version bump moves
+`src/crapkit/__init__.py`, a `.py` outside the mutated modules, which voids every
+carried verdict, and no mutation run can judge a commit that exists only on the
+releasing machine. A tag commit that changes anything else is judged itself. mutmut 3.8 makes no mutant
 of a function decorated with anything but a lone `staticmethod` or
 `classmethod`, or of one that holds nothing it mutates (a bare `return x`, a
 lone call, a `property`). Such a function counts as covered once a run that

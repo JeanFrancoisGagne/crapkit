@@ -69,6 +69,7 @@ class Tier:
 @pytest.fixture
 def tier(monkeypatch):
     fake = Tier()
+    monkeypatch.setattr(release, "covered_at", lambda root: "HEAD")
     monkeypatch.setattr(release, "_execute", fake.execute)
     monkeypatch.setattr(release, "_remote_json",
                         lambda url, *, absent=False: {"workflow_runs": [_run()]})

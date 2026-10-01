@@ -128,6 +128,7 @@ class World:
 
     def __init__(self, tmp_path: Path, monkeypatch):
         self.files, self.modes, self.env = dict(FILES), {}, "env-1"
+        self.trees: dict[str, dict] = {}  # another commit's files, by the revision that names it
         self.now = datetime.datetime(2026, 10, 1, 12, 0, tzinfo=datetime.timezone.utc)
         self.repo, self.stage, self.mutmut = tmp_path / "repo", tmp_path / "stage", FakeMutmut()
         self.stage.mkdir(parents=True)
@@ -144,7 +145,8 @@ class World:
         monkeypatch.setattr(mutation, "calc_functions", lambda root=None: {})
         monkeypatch.setattr(mutation, "stage_deselected", lambda: [])
         monkeypatch.setattr(mutation, "_prepare_stage", lambda targets, where, deselect=(): self.stage)
-        monkeypatch.setattr(mutation, "head_tree", lambda repo: _tree(self.files, self.modes))
+        monkeypatch.setattr(mutation, "head_tree",
+                            lambda repo, rev="HEAD": _tree(self.trees.get(rev, self.files), self.modes))
         monkeypatch.setattr(mutation, "env_key", lambda stage: self.env)
         monkeypatch.setattr(mutation, "_now", lambda: self.now)
         monkeypatch.setattr(mutation, "_git", lambda repo, *args: "f" * 40 + "\n")
@@ -443,8 +445,8 @@ def test_a_cold_run_that_judges_a_carried_verdict_otherwise_voids_every_older_re
 # receipts held 1,017 survivors on neither table and the row passed. It also read
 # 3 of 93 functions as gaps only because mutmut makes no mutant of them.
 
-def _covered(world: World) -> int:
-    return mutation.main(["covered", "--receipts", str(world.repo / mutation.RECEIPTS)])
+def _covered(world: World, *more: str) -> int:
+    return mutation.main(["covered", "--receipts", str(world.repo / mutation.RECEIPTS), *more])
 
 
 def test_covered_passes_when_every_function_holds_a_verdict_that_carries(world, capsys):
@@ -542,6 +544,32 @@ def test_covered_reads_the_environment_of_the_newest_run(world):
     world.run("diff")
     assert world.judged() == _globs(CRAP, SIZE)
     assert _covered(world) == 0
+
+
+
+def test_covered_at_the_parent_judges_a_release_commit_by_its_code(world, capsys, monkeypatch):
+    """Stage 1 bumps __version__ in src/crapkit/__init__.py and the version lines of
+    README.md on the tag commit, which no mutation run can judge: it exists only on
+    the releasing machine. Judged at that commit, the moved .py voided every function
+    with mutants. The release stage names the parent, whose tree the verdicts were
+    judged at, when the tag commit changes only the release files."""
+    world.files["src/crapkit/__init__.py"] = '__version__ = "0.8.1"\n'
+    _first_run(world)
+    world.trees["HEAD~1"] = dict(world.files)
+    world.files.update({"src/crapkit/__init__.py": '__version__ = "0.9.0"\n', "README.md": "crapkit 0.9.0\n"})
+    capsys.readouterr()
+
+    assert _covered(world) == 1
+    assert "src/crapkit/__init__.py changed, and no map says which tests reach its code" in capsys.readouterr().out
+    assert _covered(world, "--at", "HEAD~1") == 0
+    monkeypatch.setenv(mutation.AT_ENV, "HEAD~1")
+    assert _covered(world) == 0
+    capsys.readouterr()
+
+    world.trees["HEAD~1"]["src/crapkit/score.py"] = SCORE.replace("value > 5", "value >= 5")
+
+    assert _covered(world) == 1
+    assert "score.py:grade has no stored verdict" in capsys.readouterr().out
 
 
 def test_covered_with_no_stored_verdict_is_an_infra_miss_that_names_the_download(world, capsys):

@@ -373,6 +373,7 @@ def stage(tree, monkeypatch, tmp_path):
 
     def make(runs, **kwargs):
         fake = Stage(tree, runs, **kwargs)
+        monkeypatch.setattr(release, "covered_at", lambda root: "HEAD")
         monkeypatch.setattr(release, "_execute", fake.execute)
         monkeypatch.setattr(release, "_remote_json", fake.remote_json)
         monkeypatch.setattr(release.subprocess, "run", fake.run)
@@ -461,6 +462,66 @@ def test_a_failing_local_tier_names_its_rows_and_never_dispatches(tree, stage, m
         _accuracy(tree)
 
     assert len(fake.commands) == 1
+
+
+# --- the commit `mutation.py covered` judges --------------------------------------------------
+#
+# Stage 1 commits the version bump, src/crapkit/__init__.py among it, as the tag
+# commit. No mutation run can judge that commit, which exists only on the
+# releasing machine, and a moved .py outside the mutated modules voids every
+# carried verdict, so `covered` exited 1 at every release.
+
+def _committed(root, files: dict) -> None:
+    _write(root, {name: text.encode() for name, text in files.items()})
+    git(root, "add", "-A")
+    git(root, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "c")
+
+
+@pytest.fixture
+def history(tmp_path):
+    root = tmp_path / "history"
+    root.mkdir()
+    git(root, "init", "-q")
+    _committed(root, {"pyproject.toml": 'version = "0.5.1"\n', "src/crapkit/__init__.py": '__version__ = "0.5.1"\n',
+                      "src/crapkit/score.py": "def crap():\n    return 1\n", "CHANGELOG.md": "# 0.5.1\n"})
+    return root
+
+
+def test_covered_judges_the_parent_of_a_tag_commit_that_changes_only_release_files(history):
+    _committed(history, {"pyproject.toml": 'version = "0.5.2"\n', "src/crapkit/__init__.py": '__version__ = "0.5.2"\n',
+                         "CHANGELOG.md": "# 0.5.2\n"})
+
+    assert release.covered_at(history) == "HEAD~1"
+
+
+def test_covered_judges_a_tag_commit_that_changes_code_itself(history):
+    _committed(history, {"pyproject.toml": 'version = "0.5.2"\n', "src/crapkit/score.py": "def crap():\n    return 2\n"})
+
+    assert release.covered_at(history) == "HEAD"
+
+
+def test_covered_judges_a_commit_with_no_parent_itself(history):
+    assert release.covered_at(history) == "HEAD"
+
+
+def test_the_local_tier_hands_covered_the_parent_through_mutation_s_own_variable(history, monkeypatch):
+    _committed(history, {"pyproject.toml": 'version = "0.5.2"\n', "src/crapkit/__init__.py": '__version__ = "0.5.2"\n'})
+    _write(history)
+    head = git(history, "rev-parse", "HEAD")
+    monkeypatch.setenv("CRAPKIT_RETRO_BUNDLE", str(history / "pyproject.toml"))
+    handed = []
+
+    def tier(command, root, dry_run, env=None):
+        handed.append(env)
+        _receipt(root, _saved(head=head))
+
+    monkeypatch.setattr(release, "_execute", tier)
+
+    release._local_accuracy(_step(), history, VERSION, head)
+
+    mutation = (release.Path(__file__).resolve().parents[2] / "tools/accuracy/mutation.py").read_text(encoding="utf-8")
+    assert handed == [{"CRAPKIT_RETRO_BUNDLE": str(history / "pyproject.toml"), "CRAPKIT_COVERED_AT": "HEAD~1"}]
+    assert 'AT_ENV = "CRAPKIT_COVERED_AT"' in mutation
 
 
 # --- a red release run: rerun its failed cells while the receipts it kept live ----------------
