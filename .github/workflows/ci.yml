@@ -94,6 +94,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: git starts no maintenance writer while tests copy repositories
+        shell: bash
+        run: |
+          # git 2.47+ detaches `git maintenance run --auto` after a commit, and the
+          # writer holds .git/objects/maintenance.lock while a test copies the repo.
+          # System config, because a test may swap HOME or drop the GIT_* variables.
+          as_admin=""; [ "$RUNNER_OS" = Windows ] || as_admin=sudo
+          $as_admin git config --system maintenance.auto false
+          $as_admin git config --system gc.auto 0
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -155,6 +164,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: git starts no maintenance writer while tests copy repositories
+        shell: bash
+        run: |
+          # git 2.47+ detaches `git maintenance run --auto` after a commit, and the
+          # writer holds .git/objects/maintenance.lock while a test copies the repo.
+          # System config, because a test may swap HOME or drop the GIT_* variables.
+          as_admin=""; [ "$RUNNER_OS" = Windows ] || as_admin=sudo
+          $as_admin git config --system maintenance.auto false
+          $as_admin git config --system gc.auto 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -227,6 +245,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: git starts no maintenance writer while tests copy repositories
+        shell: bash
+        run: |
+          # git 2.47+ detaches `git maintenance run --auto` after a commit, and the
+          # writer holds .git/objects/maintenance.lock while a test copies the repo.
+          # System config, because a test may swap HOME or drop the GIT_* variables.
+          as_admin=""; [ "$RUNNER_OS" = Windows ] || as_admin=sudo
+          $as_admin git config --system maintenance.auto false
+          $as_admin git config --system gc.auto 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -311,6 +338,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: git starts no maintenance writer while tests copy repositories
+        shell: bash
+        run: |
+          # git 2.47+ detaches `git maintenance run --auto` after a commit, and the
+          # writer holds .git/objects/maintenance.lock while a test copies the repo.
+          # System config, because a test may swap HOME or drop the GIT_* variables.
+          as_admin=""; [ "$RUNNER_OS" = Windows ] || as_admin=sudo
+          $as_admin git config --system maintenance.auto false
+          $as_admin git config --system gc.auto 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -416,6 +452,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: git starts no maintenance writer while tests copy repositories
+        shell: bash
+        run: |
+          # git 2.47+ detaches `git maintenance run --auto` after a commit, and the
+          # writer holds .git/objects/maintenance.lock while a test copies the repo.
+          # System config, because a test may swap HOME or drop the GIT_* variables.
+          as_admin=""; [ "$RUNNER_OS" = Windows ] || as_admin=sudo
+          $as_admin git config --system maintenance.auto false
+          $as_admin git config --system gc.auto 0
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -466,6 +511,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: git starts no maintenance writer while tests copy repositories
+        shell: bash
+        run: |
+          # git 2.47+ detaches `git maintenance run --auto` after a commit, and the
+          # writer holds .git/objects/maintenance.lock while a test copies the repo.
+          # System config, because a test may swap HOME or drop the GIT_* variables.
+          as_admin=""; [ "$RUNNER_OS" = Windows ] || as_admin=sudo
+          $as_admin git config --system maintenance.auto false
+          $as_admin git config --system gc.auto 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

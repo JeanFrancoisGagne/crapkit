@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -24,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from repo_copy import copy_repo
 
 PY = sys.executable
 GEN = "gen_cov.py"
@@ -129,7 +129,7 @@ def template(tmp_path_factory) -> Path:
 
 @pytest.fixture()
 def repo(template: Path, tmp_path: Path) -> Path:
-    return Path(shutil.copytree(template, tmp_path / "repo"))
+    return Path(copy_repo(template, tmp_path / "repo"))
 
 
 def runs(repo: Path) -> list[tuple]:
