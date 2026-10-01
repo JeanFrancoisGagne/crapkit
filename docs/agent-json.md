@@ -1803,8 +1803,8 @@ negotiates the protocol revision: a client's offer of `2025-06-18`, `2025-03-26`
 `2024-11-05` is spoken verbatim, and anything else gets `2025-06-18`, the newest this
 server implements. Read-only, and declared so: every tool carries `readOnlyHint`,
 `idempotentHint` and `destructiveHint: false` annotations, a `title` and, for a
-`2025-06-18` client, an `outputSchema` whose fields are described one by one, `initialize` returns `instructions` naming the
-two-command prerequisite and the four tools a session starts with, and a tool whose text
+`2025-06-18` client, an `outputSchema` whose fields are described one by one, `initialize` returns `instructions` saying which
+tools need `crapkit init` alone, a snapshot store or a coverage run, and naming the four tools a session starts with, and a tool whose text
 is a JSON object also carries it parsed as `structuredContent`. Every tool shells to the CLI's own surface, so the MCP
 view cannot drift from what the CLI reports, and nothing here writes a baseline, a
 ratchet, or a mutant.

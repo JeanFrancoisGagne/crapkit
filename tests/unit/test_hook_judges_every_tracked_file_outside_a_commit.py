@@ -5,8 +5,8 @@ pre-commit.ci. It starts no commit and stages nothing, and the hook read only
 the staged diff, so it passed a breach committed from a clone that never ran
 `pre-commit install`. git sets GIT_INDEX_FILE for the hooks a commit runs; with
 it unset and nothing staged, the hook now judges every tracked file's indexed
-content: a function over its ceiling fails unless the committed ratchet marks
-it. Inside a commit, nothing staged still passes in silence.
+content: a function over its ceiling fails unless the marks file in the working
+tree marks it. Inside a commit, nothing staged still passes in silence.
 """
 import re
 from pathlib import Path

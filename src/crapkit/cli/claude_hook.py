@@ -44,7 +44,7 @@ Two constraints shape the code rather than the contract:
   module before the body runs, so anything imported here is paid by every edit
   on the machine, including the ones in repos crapkit never measures.
 - The snapshot store is never opened. The advisory needs source, configuration
-  and committed ratchet marks; opening a store would add schema inspection and
+  and the marks file in the working tree; opening a store would add schema inspection and
   database I/O to every edit. Old stores can still need a migration. The hook
   stays independent of that lifecycle. The one thing it writes is its session
   memory, under the git directory, so the working tree stays byte-identical.
