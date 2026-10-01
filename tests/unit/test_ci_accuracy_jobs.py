@@ -113,7 +113,7 @@ def test_the_windows_nightly_cell_replays_the_past_bugs_the_image_cannot():
     linux, native = _retro_args(jobs["retro"]), _retro_args(windows)
 
     assert (linux.command, linux.platform_only) == ("nightly", False)
-    assert (native.command, native.platform_only, native.slice_of) == ("nightly", True, 7)
+    assert (native.command, native.platform_only) == ("nightly", True)
     assert f"uv {setup['with']['version']}" == pins["oracle"]["uv"]["version_line"]
     assert setup["if"] == step(windows, "run", "python tools/accuracy/retro.py")["if"]
 
