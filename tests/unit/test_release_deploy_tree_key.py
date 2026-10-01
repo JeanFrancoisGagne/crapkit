@@ -184,6 +184,8 @@ def test_the_run_is_named_for_the_tree_the_release_dispatched_with():
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     on = workflow.get("on", workflow.get(True))
 
-    assert workflow["run-name"] == "deploy ${{ inputs.cadence || github.event_name }} ${{ inputs.tree }}"
+    from test_release_deploy_gate import render
+    tree = "3f" * 20
+    assert render(workflow["run-name"], "workflow_dispatch", {"cadence": "release", "tree": tree}) ==         f"deploy release {tree}"
     assert on["workflow_dispatch"]["inputs"]["tree"]["default"] == ""
     assert "source_hash" not in on["workflow_dispatch"]["inputs"]

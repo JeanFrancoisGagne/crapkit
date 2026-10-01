@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -97,10 +98,20 @@ def _refusal(root, receipt) -> str:
 
 # --- the workflow names the run the gate reads ---------------------------------------------------
 
+def render(title: str, event: str, inputs: dict) -> str:
+    """GitHub's run-name: each ${{ }} with `||`, `&&` and quoted strings evaluated
+    the way GitHub does (an empty string is false, `a || b` is the first true one)."""
+    def value(match):
+        code = re.sub(r"inputs\.(\w+)", lambda name: repr(inputs.get(name.group(1), "")), match.group(1))
+        code = code.replace("github.event_name", repr(event)).replace("||", " or ").replace("&&", " and ")
+        # eval of the workflow's own expression, with no builtins: names are already replaced by literals.
+        return str(eval(code, {"__builtins__": {}}))  # noqa: S307
+    return re.sub(r"\$\{\{(.*?)\}\}", value, title)
+
+
 def _rendered(cadence: str, tree: str) -> str:
     title = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["run-name"]
-    return (title.replace("${{ inputs.cadence || github.event_name }}", cadence)
-            .replace("${{ inputs.tree }}", tree))
+    return render(title, "workflow_dispatch", {"cadence": cadence, "tree": tree})
 
 
 def test_a_release_dispatch_is_named_for_the_tree_it_was_given():
@@ -630,9 +641,9 @@ def test_the_surfaces_stage_dispatches_the_published_cadence_after_the_readback(
     assert [step.name for step in steps] == ["surfaces", "published"]
     (command,) = steps[1].commands
     assert command[:4] == ("gh", "workflow", "run", "deploy.yml")
-    assert command[command.index("--ref") + 1] == "main"
-    assert ("-f", "cadence=published") == command[-4:-2]
-    assert ("-f", f"ref=v{VERSION}") == command[-2:]
+    assert command[command.index("--ref") + 1] == f"v{VERSION}"
+    assert command[-6:] == ("-f", "cadence=published", "-f", f"ref=v{VERSION}",
+                            "-f", f"files={release.PUBLISHED_FILES_ARG}")
 
 
 def test_a_dry_run_of_the_surfaces_stage_prints_the_dispatch(tmp_path, capsys):

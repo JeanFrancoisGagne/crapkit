@@ -26,9 +26,16 @@ python tools/release/release.py run surfaces VERSION
 
 `run surfaces` reads every surface back (`release.py verify VERSION`) and then
 dispatches deploy.yml's published cadence, which installs vVERSION from PyPI, the
-tag, pre-commit and the MCP registry the way a user does. The dispatch returns at
-once: find the run with `gh run list --workflow deploy.yml --limit 1` and wait on it
-with `gh run watch RUN_ID --exit-status`. A red run fails the release.
+tag, pre-commit and the MCP registry the way a user does. It dispatches on the tag
+and names the run `deploy published vVERSION FILES`, where FILES is the sha256 over
+the sorted `<filename> <sha256>` lines of the files PyPI serves for the version. A
+rerun of the stage dispatches nothing when a run by that name, at the commit
+`git ls-remote origin refs/tags/vVERSION` returns, passed or is still running; a
+red run, a moved tag or another PyPI file gets a new dispatch. Pushing the tag
+starts no deploy run: deploy.yml has no tag trigger, because that run raced the
+PyPI upload and repeated this one. The dispatch returns at once: find the run with
+`gh run list --workflow deploy.yml --limit 1` and wait on it with
+`gh run watch RUN_ID --exit-status`. A red run fails the release.
 
 Preview the GitHub release body with `python tools/release/release.py notes VERSION > notes.md`.
 It prints the changelog section as UTF-8 whatever the console's code page, and it is the

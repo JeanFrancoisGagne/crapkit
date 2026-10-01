@@ -9,7 +9,10 @@
 #   release    push, nightly and weekly together, on the tag commit:
 #              `release.py run deploy` dispatches it on a scratch branch with
 #              that commit's git tree id, and stage 2b wants this run green
-#   published  after a version is on PyPI: the real surfaces at that version
+#   published  after a version is on PyPI: the real surfaces at that version.
+#              The surfaces stage dispatches it on the tag once every surface
+#              reads back, at most once per release key (version, PyPI files,
+#              tag commit). No tag push starts it: that run raced the upload.
 #
 # The scope job turns the event into one cadence and schedules the entries of
 # tests/deploy/MAP.toml [jobs] whose `when` holds it. A pull request gets the
@@ -18,9 +21,10 @@
 # runs the scope job alone. Every other job reads the scope job's output.
 name: deploy
 # The title GitHub lists for each run: "deploy release <tree id>" for the
-# release cadence `release.py run deploy` dispatches. Stage 2b finds the run at
-# the tag commit by that name.
-run-name: deploy ${{ inputs.cadence || github.event_name }} ${{ inputs.tree }}
+# release cadence `release.py run deploy` dispatches, "deploy published
+# vVERSION <files digest>" for the published one. release.py finds each run at
+# its commit by that name.
+run-name: deploy ${{ inputs.cadence || github.event_name }} ${{ inputs.tree || inputs.ref }}${{ inputs.files && ' ' || '' }}${{ inputs.files }}
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
@@ -42,8 +46,10 @@ on:
         description: the git tree id of the commit under test (git rev-parse vVERSION^{tree}); the scope job fails when the checkout's tree differs
         type: string
         default: ""
-  push:
-    tags: ["v*"]
+      files:
+        description: the published cadence's key, sha256 over the PyPI files of the version under test; it only names the run
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -101,7 +107,6 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SCHEDULE: ${{ github.event.schedule }}
           CADENCE_INPUT: ${{ inputs.cadence }}
-          REF_NAME: ${{ github.ref_name }}
         run: |
           import json
           import os
@@ -145,9 +150,7 @@ jobs:
                   return pull_request()
               if event == "schedule":
                   return SCOPE["schedules"][os.environ["SCHEDULE"]], "schedule " + os.environ["SCHEDULE"]
-              if event == "workflow_dispatch":
-                  return os.environ["CADENCE_INPUT"], "dispatched"
-              return "published", "tag " + os.environ.get("REF_NAME", "")
+              return os.environ["CADENCE_INPUT"], "dispatched"
 
 
           def entry(name, job, chosen):

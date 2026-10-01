@@ -699,10 +699,12 @@ def plan(version: str) -> list:
                   "release with the GitHub notes on its own"),
         Step("surfaces", "surfaces", ((*tool, "verify", version),)),
         Step("published", "surfaces", (("gh", "workflow", "run", DEPLOY_WORKFLOW, "--repo", GITHUB_REPO,
-                                        "--ref", "main", "-f", f"cadence={DEPLOY_PUBLISHED_CADENCE}",
-                                        "-f", f"ref=v{version}"),),
+                                        "--ref", f"v{version}", "-f", f"cadence={DEPLOY_PUBLISHED_CADENCE}",
+                                        "-f", f"ref=v{version}", "-f", f"files={PUBLISHED_FILES_ARG}"),),
              note=f"the deploy suite installs v{version} from PyPI, the tag, pre-commit and the MCP "
-                  "registry the way a user does; a red run there fails the release"),
+                  "registry the way a user does; a red run there fails the release. One run per key "
+                  "(the version, its PyPI files, the commit origin's tag names): a green or running "
+                  "one under the key means no dispatch"),
     ]
 
 
@@ -1476,6 +1478,73 @@ def _run_deploy(step: Step, root: Path, version: str, receipt: dict) -> None:
     _write_receipt(root, receipt)
 
 
+# --- the published cadence ----------------------------------------------------------------------
+#
+# deploy.yml's published cadence installs the version from PyPI, the tag, the
+# pre-commit hook and the MCP registry. It once ran twice per release: on the
+# tag push stage 2b makes, racing the PyPI upload, and when the surfaces stage
+# dispatches it after every surface reads back. The tag trigger is gone. The
+# run is keyed on what the cadence installs: the version, the sha256 of each
+# file PyPI serves for it, and the commit origin's tag names. The stage
+# dispatches on the tag, so the run's head_sha is that commit, and names the
+# run for the version and the files digest; a moved tag or another PyPI file
+# keys a new run.
+
+PUBLISHED_FILES_ARG = "$(sha256 of the PyPI files)"
+
+
+def published_title(version: str, files: str) -> str:
+    """deploy.yml's run-name for a published dispatch: `deploy published vVERSION FILES`."""
+    return f"deploy {DEPLOY_PUBLISHED_CADENCE} v{version} {files}"
+
+
+def pypi_digest(files: dict) -> str:
+    """sha256 over the sorted `<filename> <sha256>` lines of a version's PyPI files."""
+    lines = NL.join(f"{name} {digest}" for name, digest in sorted(files.items()))
+    return hashlib.sha256(lines.encode("utf-8")).hexdigest()
+
+
+def _remote_refs(listed: str) -> dict:
+    """`git ls-remote` output as {ref: sha}."""
+    return {ref: sha for sha, ref in (line.split("\t", 1) for line in listed.splitlines() if "\t" in line)}
+
+
+def _remote_tag_commit(root: Path, version: str) -> str:
+    """The commit origin's vVERSION names, peeled when the tag is annotated."""
+    tag = f"refs/tags/v{version}"
+    refs = _remote_refs(_git(root, "ls-remote", "origin", tag, f"{tag}^{{}}"))
+    commit = refs.get(f"{tag}^{{}}") or refs.get(tag)
+    if not commit:
+        raise ReleaseError(f"origin holds no tag v{version}; stage 2b pushes it, then {_rerun(version, 'surfaces')}")
+    return commit
+
+
+def _published_files(version: str) -> str:
+    files = _pypi_files(version)
+    if not files:
+        raise ReleaseError(f"PyPI lists no file for {PACKAGE} {version}; {_rerun(version, 'surfaces')} "
+                           "once the upload reads back")
+    return pypi_digest(files)
+
+
+def _kept(runs: list, title: str) -> dict | None:
+    """A run by that name that passed or is still running."""
+    return next((run for run in runs if run.get("display_title") == title
+                 and (run.get("status") != "completed" or run.get("conclusion") == "success")), None)
+
+
+def _run_published(step: Step, root: Path, version: str, receipt: dict) -> None:
+    """Dispatch the published cadence unless a run under the key passed or is running."""
+    commit, files = _remote_tag_commit(root, version), _published_files(version)
+    kept = _kept(_deploy_runs(commit), published_title(version, files))
+    if kept is not None:
+        print(f"the published cadence reuses {_run_label(kept)}: it ran v{version} at {commit[:12]} "
+              "with the files PyPI serves now")
+        return
+    command = tuple(arg.replace(PUBLISHED_FILES_ARG, files) for arg in step.commands[0])
+    _run_or_untag(step._replace(commands=(command,)), root, version, False)
+
+
 def _write_receipt(root: Path, receipt: dict) -> None:
     path = _receipt_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1944,14 +2013,17 @@ def _check_ratchet(step: Step, root: Path, receipt: dict, before: int, committed
         raise ReleaseError(_marks_stop(receipt["version"], run, saved))
 
 
+def _remote_handler(name: str) -> Callable:
+    """The step that runs a workflow on GitHub and reuses a run under its key."""
+    return {"accuracy": _run_accuracy, "deploy": _run_deploy, "published": _run_published}[name]
+
+
 def _stage_step(step: Step, root: Path, version: str, receipt: dict, before: int,
                 marks: bytes | None = None) -> None:
     if step.stage == "stage2b":
         _publish_step(step, root, receipt)
-    elif step.name == "accuracy":
-        _run_accuracy(step, root, version, receipt)
-    elif step.name == "deploy":
-        _run_deploy(step, root, version, receipt)
+    elif step.name in ("accuracy", "deploy", "published"):
+        _remote_handler(step.name)(step, root, version, receipt)
     elif step.name == "ratchet":
         _check_ratchet(step, root, receipt, before, marks)
     else:

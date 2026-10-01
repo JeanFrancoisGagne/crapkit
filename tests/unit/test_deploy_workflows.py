@@ -130,7 +130,9 @@ def test_deploy_yml_has_one_pull_request_trigger_with_no_path_filter_and_the_oth
     assert on["pull_request"] == {"types": ["opened", "synchronize", "reopened", "labeled"]}
     assert [entry["cron"] for entry in on["schedule"]] == list(MAP["scope"]["schedules"])
     assert on["workflow_dispatch"]["inputs"]["cadence"]["options"] == ["nightly", "weekly", "release", "published"]
-    assert on["push"] == {"tags": ["v*"]}
+    # No tag-push trigger: the surfaces stage dispatches the published cadence once
+    # every surface holds the version (tests/unit/test_release_published_reuse.py).
+    assert set(on) == {"pull_request", "schedule", "workflow_dispatch"}
 
 
 def test_the_scope_job_comes_first_and_every_other_job_gates_on_its_output():
@@ -175,7 +177,7 @@ def test_every_function_the_workflow_scripts_define_stays_at_ccn_5(script):
 
 def _clean_env(extra):
     keep = {key: value for key, value in os.environ.items() if key.upper() not in {
-        "EVENT_NAME", "ACTION", "LABEL", "LABELS", "BASE_SHA", "SCHEDULE", "CADENCE_INPUT", "REF_NAME"}}
+        "EVENT_NAME", "ACTION", "LABEL", "LABELS", "BASE_SHA", "SCHEDULE", "CADENCE_INPUT"}}
     return {**keep, **extra}
 
 
@@ -237,10 +239,8 @@ def test_a_release_dispatch_runs_nightly_and_weekly_entries_with_the_release_cad
                for args in entry["runs"])
 
 
-@pytest.mark.parametrize("env", [{"EVENT_NAME": "push", "REF_NAME": "v0.8.1"},
-                                 {"EVENT_NAME": "workflow_dispatch", "CADENCE_INPUT": "published"}])
-def test_a_tag_push_or_a_published_dispatch_runs_only_the_published_smoke(tmp_path, env):
-    plan = scope(tmp_path, **env)
+def test_a_published_dispatch_runs_only_the_published_smoke(tmp_path):
+    plan = scope(tmp_path, EVENT_NAME="workflow_dispatch", CADENCE_INPUT="published")
 
     assert plan["cadence"] == "published"
     assert set(plan["jobs"]) == scheduled("published") == {"published-online", "published-action-tag"}
