@@ -69,9 +69,10 @@ upload_artifact = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6
 cache = "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"  # v6.1.0
 
 [wheelhouse]
-# Old releases the upgrade cells start from. The newest release on PyPI (N-1
-# to the candidate) is added by lock.py and named in wheelhouse.lock, never here.
-crapkit = ["0.4.0", "0.4.2", "0.4.4", "0.4.5", "0.4.15", "0.5.1", "0.6.0", "0.7.6"]
+# Old releases the upgrade cells start from, and the downgrade target
+# docs/upgrading.md names (0.8.0). The newest release on PyPI (N-1 to the
+# candidate) is added by lock.py and named in wheelhouse.lock, never here.
+crapkit = ["0.4.0", "0.4.2", "0.4.4", "0.4.5", "0.4.15", "0.5.1", "0.6.0", "0.7.6", "0.8.0"]
 lizard = "1.24.0"
 # One resolution per set, so conflicting pins (three pytest-cov majors, two
 # coverage lines) each land their own files.

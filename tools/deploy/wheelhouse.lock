@@ -708,6 +708,14 @@ sha256 = "4bfaa90b3dc8253fb8d2f35f7ef9a17347a24a92f6adaf6128468d2aa3d3738b"
 rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
+name = "crapkit-0.8.0-py3-none-any.whl"
+project = "crapkit"
+version = "0.8.0"
+url = "https://files.pythonhosted.org/packages/85/84/60662fce50b3911ca3165251e9950daf4311f35cc9b4d42aa66fa59cb4f2/crapkit-0.8.0-py3-none-any.whl"
+sha256 = "548983a8c511a1340d828b9ac705ebd4e42dc1e6d073cd7525fcdfbc09bebb6f"
+rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
+
+[[file]]
 name = "crapkit-0.8.1-py3-none-any.whl"
 project = "crapkit"
 version = "0.8.1"
@@ -1444,11 +1452,11 @@ sha256 = "8da889c636a8cab59a435c1366f30d252ecee465372341eb8cd4da43b055ad9d"
 rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
-name = "pipx-1.17.8-py3-none-any.whl"
+name = "pipx-1.17.9-py3-none-any.whl"
 project = "pipx"
-version = "1.17.8"
-url = "https://files.pythonhosted.org/packages/b2/64/4649099e1de01a9cfd05de30f53a525ee2adffc0b48d284f92474344b908/pipx-1.17.8-py3-none-any.whl"
-sha256 = "19387d1ef29f9192dfb084f22a68f5f663c2e80c6c814bef193b3203a4fc2dc3"
+version = "1.17.9"
+url = "https://files.pythonhosted.org/packages/e2/cc/99bdc86cc545205273105bd8dfd14c5a416adf92eff8c6a048fe3e3307d3/pipx-1.17.9-py3-none-any.whl"
+sha256 = "c4403d78c9ac8563348f504ae0f0149610c0156a1105962b2e42ec0886243b5c"
 rows = ["linux-x86_64-cp311", "linux-x86_64-cp312", "linux-x86_64-cp313", "linux-x86_64-cp314", "linux-x86_64-cp315", "linux-aarch64-cp311", "linux-aarch64-cp312", "linux-aarch64-cp313", "linux-aarch64-cp314", "linux-aarch64-cp315", "windows-amd64-cp311", "windows-amd64-cp312", "windows-amd64-cp313", "windows-amd64-cp314", "macos-arm64-cp311", "macos-arm64-cp312", "macos-arm64-cp313", "macos-arm64-cp314"]
 
 [[file]]
