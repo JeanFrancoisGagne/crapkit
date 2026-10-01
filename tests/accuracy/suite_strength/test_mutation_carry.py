@@ -18,6 +18,7 @@ from __future__ import annotations
 import copy
 import datetime
 import fnmatch
+import functools
 import importlib.util
 import json
 from pathlib import Path
@@ -605,13 +606,13 @@ def _saved(reach, whole=True) -> dict:
 
 
 def test_each_read_goes_to_the_test_that_made_it_as_a_repo_path(reach):
-    reach.audit("open", ("README.md", "r", 0))
     reach.recorder.enter("mutants/tests/unit/test_score.py::test_crap")
     reach.audit("open", (str(reach.root / "mutants" / "tests" / "data.txt"), "r", 0))
     reach.audit("open", (str(reach.root / "src" / "crapkit" / "score.py"), "r", 0))
     reach.audit("open", (str(reach.root.parent / "elsewhere.txt"), "r", 0))
     reach.audit("open", (3, "r", 0))
     reach.recorder.leave()
+    reach.audit("open", ("README.md", "r", 0))
 
     saved = _saved(reach)
 
@@ -627,6 +628,64 @@ def test_a_test_that_reads_nothing_is_still_recorded(reach):
     reach.recorder.leave()
 
     assert _saved(reach)["tests"] == {"tests/unit/test_score.py::test_grade": NOTHING}
+
+
+def test_a_test_s_record_holds_every_file_and_folder_its_process_read_before_it_ended(reach):
+    """A read served from a cache in process memory (lru_cache, a module global, a
+    module imported once) raises no event, so it went on record only for the first
+    test that made it. Each test's record takes every read and listing its process
+    made up to its own end, and a cache can only hold what was read by then."""
+    reach.audit("open", ("README.md", "r", 0))
+    reach.recorder.enter(T_TOTALS)
+    reach.audit("open", ("tests/unit/data/rows.txt", "r", 0))
+    reach.audit("os.listdir", ("tests/unit/data",))
+    reach.audit("subprocess.Popen", (None, ["node"], None, None))
+    reach.recorder.leave()
+    reach.recorder.enter(T_GRADE)
+    reach.recorder.leave()
+    reach.audit("open", ("docs/late.md", "r", 0))
+
+    saved = _saved(reach)
+
+    assert saved["tests"][T_GRADE] == {"reads": ["README.md", "tests/unit/data/rows.txt"],
+                                       "dirs": ["tests/unit/data"], "spawns": []}
+    assert saved["tests"][T_TOTALS]["reads"] == ["README.md", "tests/unit/data/rows.txt"]
+    assert saved["outside"]["reads"] == ["README.md", "docs/late.md"]
+
+
+SHARED_LAUNCHER = _launcher()
+
+
+def test_a_function_whose_test_reads_a_file_through_a_cache_reruns_when_the_file_changes(
+        world, tmp_path, monkeypatch):
+    """Two tests share an lru_cache reader of rows.txt, and only the second covers
+    grade: an edit to rows.txt reruns grade, an edit to a file no test read reruns
+    nothing. The reads come from the launcher's real audit hook."""
+    data = tmp_path / "mutants" / "tests" / "unit" / "data" / "rows.txt"
+    data.parent.mkdir(parents=True)
+    data.write_bytes(b"1\n2\n")
+    monkeypatch.chdir(tmp_path / "mutants")
+    rows = functools.lru_cache(maxsize=None)(lambda: data.read_text())
+    recorder = SHARED_LAUNCHER["Reach"]((tmp_path / "mutants", tmp_path))
+    SHARED_LAUNCHER["listen"](recorder)
+    try:
+        for node in (T_TOTALS, T_GRADE, T_CRAP):
+            recorder.enter(node)
+            rows()
+            recorder.leave()
+    finally:
+        SHARED_LAUNCHER["listen"](None)
+    recorder.save(tmp_path / mutation.REACH_FILE, True)
+    world.mutmut.reach = json.loads((tmp_path / mutation.REACH_FILE).read_bytes())
+    _first_run(world)
+
+    world.files["README.md"] = "changed\n"
+    world.run()
+    assert world.judged() is None
+
+    world.files["tests/unit/data/rows.txt"] = "1\n2\n3\n"
+    world.run()
+    assert world.judged() == _globs(CRAP, GRADE, TOTALS)
 
 
 def test_pytest_s_and_mutmut_s_own_reads_are_not_a_test_s(reach):
@@ -687,7 +746,7 @@ def test_a_fixture_wider_than_one_test_reads_for_every_test(reach):
 
     assert saved["outside"]["reads"] == ["README.md"]
     assert saved["tests"]["tests/unit/test_score.py::test_crap"]["reads"] == [
-        "tests/unit/data/rows.txt"]
+        "README.md", "tests/unit/data/rows.txt"]
 
 
 def test_an_event_it_cannot_read_breaks_the_record_and_never_the_test(reach):
@@ -780,8 +839,9 @@ def _commit(root: Path, files: dict[str, str]) -> None:
 def test_a_real_mutmut_run_carries_what_holds_and_judges_what_moved(tmp_path, monkeypatch, oracle):
     """mutmut 3.8.0 and the launcher end to end on a small repo: the first weekly
     run judges every mutant, a second judges none and stores the same verdicts, an
-    edit to the data file a test reads judges that test's function and the canary
-    alone, and a cold run at that tree judges what the carry kept."""
+    edit to the data file a test reads judges the functions of that test and of
+    every test its process ran after it, and a cold run at that tree judges what
+    the carry kept."""
     oracle("mutmut")
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -823,9 +883,15 @@ def test_a_real_mutmut_run_carries_what_holds_and_judges_what_moved(tmp_path, mo
     assert mutation.main(weekly) in (0, 1)
     assert len(runs) == 1 and verdicts() == first
 
+    _commit(repo, {".gitignore": ".crapkit/\n# no test reads this file\n"})
+    assert mutation.main(weekly) in (0, 1)
+    assert len(runs) == 1 and verdicts() == first
+
+    # test_score.py's tests run after test_digest.py read rows.txt in the same
+    # process, so a cache could serve them that read: grade reruns too.
     _commit(repo, {"tests/unit/data/rows.txt": "1\n2\n3\n\n"})
     assert mutation.main(weekly) in (0, 1)
-    assert runs[-1] == _globs(REAL["digest.py:totals"], REAL["score.py:crap"])
+    assert runs[-1] == _globs(*REAL.values())
     carried = verdicts()
 
     assert mutation.main([*weekly, "--cold"]) in (0, 1)

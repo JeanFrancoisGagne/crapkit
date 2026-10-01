@@ -1037,7 +1037,8 @@ def diffs():
 # --- reach ---
 # During the stats run an audit hook notes, for each test, each file it reads,
 # each folder it lists and each program it starts, and the same for what runs
-# outside any test (collection, a fixture wider than one test). The calc runs
+# outside any test (collection, a fixture wider than one test). A test's reads
+# and listings include those its process made before it (see Reach). The calc runs
 # carry a stored verdict only while none of that changed. pytest's and mutmut's
 # own reads are not the tests' and are left out; an import is left out unless it
 # loads a test module, since the carry rule keys the other .py files itself.
@@ -1096,14 +1097,21 @@ def program(event, args):
     return _text(args[PROGRAM_AT.get(event, 0)]), None
 
 
+CUMULATIVE = ("reads", "dirs")
+
+
 class Reach:
     """What each test of one stats run read, listed and started, by node id, under
-    `roots` (mutants/ first, then the stage), as paths of the repo."""
+    `roots` (mutants/ first, then the stage), as paths of the repo. A test's reads
+    and listings are every one its process made up to the test's end: a read a
+    cache in memory serves (lru_cache, a module global) raises no event, and such
+    a cache holds only what the process read before."""
 
     def __init__(self, roots):
         self.roots = [root for path in roots
                       for root in dict.fromkeys([os.path.abspath(path), os.path.realpath(path)])]
         self.where, self.seen, self.broken = OUTSIDE, {OUTSIDE: self.empty()}, False
+        self.process = self.empty()
 
     @staticmethod
     def empty():
@@ -1114,6 +1122,9 @@ class Reach:
         self.seen.setdefault(self.where, self.empty())
 
     def leave(self):
+        if self.where != OUTSIDE:
+            for kind in CUMULATIVE:
+                self.seen[self.where][kind] |= self.process[kind]
         self.where = OUTSIDE
 
     def audit(self, event, args, frame):
@@ -1165,6 +1176,7 @@ class Reach:
 
     def note(self, kind, value):
         self.seen[self.where][kind].add(value)
+        self.process[kind].add(value)
 
     def shown(self, where):
         return {kind: sorted(values) for kind, values in self.seen[where].items()}

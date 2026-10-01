@@ -278,7 +278,10 @@ carries a function's verdicts while all of these hold:
 mutmut's stats pass names the covering tests of each function. The stage's
 launcher notes what each test reads, lists and starts through an audit hook, in
 `stats-reach.json`; a run whose record broke, or whose covering test has none,
-stores no verdict for it. A run judges the canary, `score.crap`, whenever it
+stores no verdict for it. A read that a cache in memory serves (an `lru_cache`,
+a module global) raises no audit event, so a test's reads and listings are
+every one its process made up to the end of that test: a cache holds only what
+the process read before. A run judges the canary, `score.crap`, whenever it
 judges anything. A second run at an unchanged tree judges no mutant.
 
 `--cold` carries nothing and compares what it judges with what would have
