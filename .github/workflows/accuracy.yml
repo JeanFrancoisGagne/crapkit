@@ -473,7 +473,8 @@ jobs:
       - env:
           REF: ${{ needs.image.outputs.ref }}
         run: |
-          docker run --rm --network none --tmpfs /tmp:exec --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF"             python tools/accuracy/mutation.py diff --cap-minutes 60
+          docker run --rm --network none --tmpfs /tmp:exec --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" \
+            python tools/accuracy/mutation.py diff --cap-minutes 60
       # A failed run's receipt still stores what it judged; one that died wrote none.
       - uses: actions/cache/save@v4
         if: always() && steps.env.outputs.key != ''
@@ -573,7 +574,8 @@ jobs:
         env:
           REF: ${{ needs.image.outputs.ref }}
         run: |
-          docker run --rm --network none --tmpfs /tmp:exec --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF"             python tools/accuracy/mutation.py weekly --shard ${{ matrix.shard }} --of 8
+          docker run --rm --network none --tmpfs /tmp:exec --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" \
+            python tools/accuracy/mutation.py weekly --shard ${{ matrix.shard }} --of 8
       # mutation-store merges the shards' receipts into one cache entry;
       # `mutation.py covered` names this pattern for `gh run download`.
       - uses: actions/upload-artifact@v4

@@ -87,6 +87,18 @@ def _runs(job: dict, words: str) -> int:
     return _index(job, lambda item: words in str(item.get("run", "")))
 
 
+@pytest.mark.parametrize("name", MUTATION_JOBS)
+def test_each_docker_run_breaks_its_lines_with_a_continuation(name):
+    """7ac0088c's docker runs lost their backslash continuation and kept a run of
+    13 spaces inside one line: the shell still ran them, but `_commands` joined
+    nothing and the step read as one 150-character line."""
+    lines = [line for item in JOBS[name]["steps"] for line in str(item.get("run", "")).splitlines()]
+    gaps = [line for line in lines if "  " in line.strip()]
+
+    assert gaps == []
+    assert any(line.rstrip().endswith("\\") for line in lines if "docker run" in line)
+
+
 def test_the_nightly_and_the_label_run_judge_with_mutation_py_diff_under_a_cap_that_fits():
     job = JOBS["mutation-diff"]
     (args,) = _calls(job, "diff")
