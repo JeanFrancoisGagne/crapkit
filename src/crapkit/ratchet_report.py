@@ -36,14 +36,26 @@ def _commit_delta(patch: str) -> tuple[dict, dict]:
     return added, removed
 
 
-def mark_events(patches: list[tuple[int, str]]) -> list[tuple]:
+def mark_events(patches: list[tuple]) -> list[tuple]:
     """Committed additions, updates and repayments, plus the history clock.
 
     Updating a value preserves the original entry date. A commit with no mark
     change still advances the clock through an observed event with no key.
+    An entry (ts, patch, text) also carries the text that commit's own
+    revision of the marks file holds, read as one "held" event: the marks
+    open at that commit (marks_history.held_history says why).
     """
-    return [event for ts, patch in patches
-            for event in _commit_events(ts, *_commit_delta(patch))]
+    return [event for ts, patch, *revision in patches
+            for event in _commit_events(ts, *_commit_delta(patch)) + _held_events(ts, revision)]
+
+
+def _held_events(ts: int, revision: list[str]) -> list[tuple]:
+    """A "held" event per revision text, its marks keyed (path, long_name) ->
+    crap. Each row reads as a patch line does, so the keys match the replay's."""
+    from .ratchet import read_ratchet
+
+    return [(ts, None, "held", {(e.path, e.long_name): e.crap for e in read_ratchet(text)[0]})
+            for text in revision]
 
 
 def _commit_events(ts: int, added: dict, removed: dict) -> list[tuple]:
@@ -92,7 +104,7 @@ def _replay(events: list[tuple]) -> tuple[dict, dict, list[int]]:
     crap: dict = {}
     dropped: list[int] = []
     for ts, key, kind, value in events:
-        if kind == "observed":
+        if kind in ("observed", "held"):
             continue
         if kind in ("added", "updated"):
             entered.setdefault(key, ts)
@@ -103,13 +115,18 @@ def _replay(events: list[tuple]) -> tuple[dict, dict, list[int]]:
     return entered, crap, dropped
 
 
-def _open_marks(entered: dict, working: dict | None, anchor: int) -> dict:
-    """Open marks keyed to when they entered. The working tree says WHICH marks
-    are open, history says how old each one is; a mark with no commit behind it
-    entered at the anchor and reports 0d."""
-    if working is None:
-        return entered
-    return {key: entered.get(key, anchor) for key in working}
+def _open_marks(entered: dict, marks: dict, anchor: int) -> dict:
+    """Open marks keyed to when they entered. `marks` say WHICH marks are open,
+    history says how old each one is; a mark with no commit behind it entered
+    at the anchor and reports 0d."""
+    return {key: entered.get(key, anchor) for key in marks}
+
+
+def _committed(events: list[tuple], replayed: dict) -> dict:
+    """The committed marks: the newest revision a "held" event read, else the
+    replay's own state. A replay cannot say which marks a merge kept, since
+    `git log -p` prints no patch for a merge."""
+    return next((value for _, _, kind, value in reversed(events) if kind == "held"), replayed)
 
 
 def mark_age_days(events: list[tuple], key: tuple) -> int | None:
@@ -120,12 +137,13 @@ def mark_age_days(events: list[tuple], key: tuple) -> int | None:
     return None if since is None else (anchor - since) // DAY
 
 
-def _uncommitted(crap: dict, working: dict | None) -> int:
+def _uncommitted(committed: dict, working: dict | None) -> int:
     """Marks the working tree and the newest committed version disagree on:
     added, repaid or tightened on disk and not committed yet."""
     if working is None:
         return 0
-    return sum(1 for key in set(crap) | set(working) if crap.get(key) != working.get(key))
+    return sum(1 for key in set(committed) | set(working)
+               if committed.get(key) != working.get(key))
 
 
 def _age_rows(opened: dict, anchor: int) -> list[dict]:
@@ -138,11 +156,13 @@ def report_from_events(events: list[tuple], working: dict | None = None) -> dict
     """`working` is the marks on disk, keyed (path, long_name) -> crap. It decides
     which marks are open, because a seed that has not been committed is still debt
     somebody owes. Repayment counts and velocity stay on committed history, which
-    is the only place a timestamp exists. None reports the committed state alone.
+    is the only place a timestamp exists. None reports the committed state alone:
+    the newest revision a "held" event carries, else the replay's own state.
     """
     entered, crap, dropped = _replay(events)
+    committed = _committed(events, crap)
     anchor = max((ts for ts, *_ in events), default=0)
-    opened = _open_marks(entered, working, anchor)
+    opened = _open_marks(entered, committed if working is None else working, anchor)
     return {"open": len(opened), "dropped_total": len(dropped), "anchor_ts": anchor,
-            "uncommitted": _uncommitted(crap, working),
+            "uncommitted": _uncommitted(committed, working),
             "oldest": _age_rows(opened, anchor)[:20], **_drop_velocity(dropped, anchor)}

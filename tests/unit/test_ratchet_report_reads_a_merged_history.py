@@ -19,10 +19,12 @@ the merge commit matches neither side and `git log` keeps both branches.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from cli_inproc_repo import commit_all, git, repo, template_repo  # noqa: F401
 from crapkit.cli import main
+from crapkit.marks_history import newest_committed_marks
 from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
 
 MARKS = "crapkit-ratchet.tsv"
@@ -115,3 +117,74 @@ def test_a_mark_both_branches_repaid_counts_one_repayment(repo, capsys):  # noqa
     report = _report(repo, capsys)
 
     assert (report["open"], report["dropped_total"], report["dropped_last_30d"]) == (7, 1, 1), report
+
+
+# --- a merge resolution no patch shows ---------------------------------------
+# Branch b repays k3 on day 2 and branch a loosens it on day 3. Replayed by date,
+# a's change reopens k3 after b's repayment, and the merge that resolved k3 as
+# repaid prints no patch, so the replay ended with k3 open. The file on disk
+# said which marks were open until it was deleted; after that the report read
+# 6 open, k3 among them, while verify's stand-in read the merge's 5. The open
+# marks now come from the newest revision that held any, and the replay gives
+# only their ages and the repayments.
+
+def _dated(monkeypatch, day: int) -> None:
+    stamp = f"2026-09-{day:02d}T12:00:00+00:00"
+    monkeypatch.setenv("GIT_AUTHOR_DATE", stamp)
+    monkeypatch.setenv("GIT_COMMITTER_DATE", stamp)
+
+
+def _write_worth(root: Path, worth: dict[str, float]) -> None:
+    entries = [RatchetEntry("src/app.ts", f"{name} ( n )", crap) for name, crap in worth.items()]
+    (root / MARKS).write_text(dump_ratchet(entries, stamp=metric_version()),
+                              encoding="utf-8", newline="\n")
+
+
+def _merge_resolved_as_repaid(root: Path, monkeypatch) -> str:
+    """k3 loosened on a, repaid on b, and b's conflicted merge keeps the
+    repayment. Answers the base commit's sha."""
+    main_branch = git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    _dated(monkeypatch, 1)
+    _write_worth(root, {"k1": 20.0, "k2": 20.0, "k3": 20.0, "k4": 20.0})
+    commit_all(root, "base marks")
+    base = git(root, "rev-parse", "HEAD").strip()
+    _dated(monkeypatch, 2)
+    git(root, "checkout", "-q", "-b", "b", base)
+    _write_worth(root, {"k1": 20.0, "k2": 20.0, "k4": 20.0, "mb": 20.0})
+    commit_all(root, "b repays k3 and marks mb")
+    _dated(monkeypatch, 3)
+    git(root, "checkout", "-q", "-b", "a", base)
+    _write_worth(root, {"k1": 20.0, "k2": 20.0, "k3": 30.0, "k4": 20.0, "ma": 20.0})
+    commit_all(root, "a loosens k3 and marks ma")
+    git(root, "checkout", "-q", main_branch)
+    _dated(monkeypatch, 4)
+    merge = ("-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "commit.gpgsign=false",
+             "merge", "-q", "--no-ff")
+    git(root, *merge, "-m", "merge a", "a")
+    _dated(monkeypatch, 5)
+    conflicted = subprocess.run(["git", *merge, "-m", "merge b", "b"], cwd=root,
+                                capture_output=True, text=True)
+    assert conflicted.returncode != 0, "b's repayment of k3 conflicts with a's loosening"
+    _write_worth(root, {"k1": 20.0, "k2": 20.0, "k4": 20.0, "ma": 20.0, "mb": 20.0})
+    commit_all(root, "merge b, k3 resolved as repaid")
+    return base
+
+
+def test_a_mark_a_merge_resolved_as_repaid_stays_repaid_after_a_delete(repo, monkeypatch, capsys):  # noqa: F811
+    base = _merge_resolved_as_repaid(repo, monkeypatch)
+    merged = _names("k1", "k2", "k4", "ma", "mb")
+    before = _report(repo, capsys)
+    _, stand_in = newest_committed_marks(repo, base, MARKS)
+    _dated(monkeypatch, 6)
+    _delete(repo)
+
+    assert main(["ratchet", "report", "--json", "--repo", str(repo)]) == 0
+    out = capsys.readouterr()
+    after = json.loads(out.out)
+
+    assert sorted(e.long_name for e in stand_in.entries) == merged
+    assert (_open(before), before["open"]) == (merged, 5), before
+    assert (_open(after), after["open"]) == (merged, 5), after
+    assert after["dropped_total"] == before["dropped_total"], "deleting the file repays none"
+    assert "reads the 5 mark(s) its history last committed" in out.err, out.err
+

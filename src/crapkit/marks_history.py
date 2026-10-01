@@ -3,12 +3,13 @@
 `ratchet report` and `brief` read mark ages and repayments off the commits that
 changed the marks file. For a deleted or emptied marks file, verify judges
 against the newest marks a commit since the baseline held, and ratchet report
-replays the history up to the newest commit that held any. Both read that
-commit's own revision of the file, never a count of patch lines. The log walks no
-renames on its own (gitio.file_log says why), so when the first commit that
-touched the marks file renamed it with `git mv`, this module goes on reading
-the log of the old path from that commit's parent, back through every rename
-git pairs. A renamed marks file keeps every age and every repayment.
+reads as open the marks of the newest commit that held any, each aged by the
+history up to that commit. Both read that commit's own revision of the file,
+never a count or a replay of patch lines. The log walks no renames on its own
+(gitio.file_log says why), so when the first commit that touched the marks
+file renamed it with `git mv`, this module goes on reading the log of the old
+path from that commit's parent, back through every rename git pairs. A
+renamed marks file keeps every age and every repayment.
 
 gitio answers the git questions; this module decides what they mean for the
 marks. A git read that fails raises GitError, and the stand-in walk names what
@@ -31,7 +32,7 @@ def marks_history(root: Path, ratchet_file: str) -> list[tuple[int, str]]:
     return [(ts, patch) for ts, _, patch in _history(root, ratchet_file)]
 
 
-def held_history(root: Path, ratchet_file: str) -> list[tuple[int, str]]:
+def held_history(root: Path, ratchet_file: str) -> list[tuple]:
     """The history a missing or blank marks file reports from: each commit up
     to the newest one whose revision of the file held more than blank lines,
     and every later commit as a clock tick that changes no mark.
@@ -44,11 +45,29 @@ def held_history(root: Path, ratchet_file: str) -> list[tuple[int, str]]:
     by the rule the stand-in reads with. A running count of the lines the
     patches added and removed said it wrong: `git log -p` prints no patch for
     a merge, so a line both sides of one added or removed counted twice.
+
+    That newest commit's entry also carries the text its revision holds,
+    (timestamp, patch, text): those are the open marks. Replaying the patches
+    cannot say which marks a merge kept. A mark one branch repaid and the
+    other loosened read as open after the merge that kept the repayment,
+    because the loosening is the later commit and the merge prints no patch.
     """
     history = _history(root, ratchet_file)
-    last = next((index for index in range(len(history) - 1, -1, -1)
-                 if _held(root, *history[index][1]) is not None), -1)
-    return [(ts, patch if index <= last else "") for index, (ts, _, patch) in enumerate(history)]
+    last, held = _newest_held(root, history)
+    entries = [(ts, patch if index <= last else "") for index, (ts, _, patch) in enumerate(history)]
+    if held is not None:
+        entries[last] += (held.text,)
+    return entries
+
+
+def _newest_held(root: Path, history: list) -> tuple[int, RatchetFile | None]:
+    """The index of the newest entry whose revision held marks, and that
+    revision; (-1, None) when none did."""
+    for index in range(len(history) - 1, -1, -1):
+        held = _held(root, *history[index][1])
+        if held is not None:
+            return index, held
+    return -1, None
 
 
 def _history(root: Path, ratchet_file: str) -> list[tuple[int, tuple[str, str], str]]:

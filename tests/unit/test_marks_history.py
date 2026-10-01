@@ -296,11 +296,29 @@ def test_a_revision_of_a_byte_order_mark_and_blank_lines_holds_no_marks(history,
 
 def test_the_held_history_ticks_every_commit_after_the_newest_that_held_marks(history):
     """ratchet report replays a blank or missing marks file from here: the
-    deletion moves the clock and repays nothing."""
+    deletion moves the clock and repays nothing, and the newest revision that
+    held marks says which are open."""
     from crapkit.marks_history import held_history
 
     root = Path(history["root"])
     full = marks_history(root, MARKS)
 
-    assert held_history(root, MARKS) == [*full[:2], (full[2][0], "")]
+    assert held_history(root, MARKS) == [full[0], (*full[1], marks(10.0)), (full[2][0], "")]
     assert held_history(root, "never.tsv") == []
+
+
+def test_the_held_revision_decides_the_open_marks_and_the_replay_their_ages(history):
+    """The replay below opens `gone( n )`, which the held revision does not
+    hold: a merge kept a repayment no patch shows. The open marks are the
+    revision's, and the one the replay also opened keeps its age."""
+    from crapkit.marks_history import held_history
+
+    root = Path(history["root"])
+    reopened = RatchetEntry("src/a.py", "gone( n )", 30.0)
+    patch = "+" + dump_ratchet([reopened], stamp=metric_version()).splitlines()[-1]
+    read = held_history(root, MARKS)
+
+    report = report_from_events(mark_events([(read[0][0], patch), *read]))
+
+    assert [(e["long_name"], e["age_days"]) for e in report["oldest"]] == [("hot( n )", 59)]
+    assert (report["open"], report["dropped_total"]) == (1, 0)
