@@ -105,10 +105,11 @@ TOOLS: tuple[dict, ...] = (
         "description": ("Lists the newest trusted run's whole risk ranking, every admitted function "
         "ordered by ccn times recency-weighted churn. Use it to survey a repo or "
         "split work, and get_next_item for the one packet to fix now. It runs no tests "
-        "and keeps finished rows, so it never empties. Churn comes from a cache, not "
-        "git log, and git ls-files and git status count the scored files that changed "
-        "(scored_changes). scope narrows before top caps, and an unknown scope is a "
-        "config error. repo may be any directory under the measured checkout."),
+        "and keeps finished rows, so it never empties. Churn is cached per HEAD: after "
+        "a commit, or on first use, the next read walks git log. git ls-files and git "
+        "status count changed scored files (scored_changes). scope narrows before top "
+        "caps, and an unknown scope is a config error. repo may be any directory under "
+        "the measured checkout."),
         "properties": {
             "top": {
                 "type": "integer",
@@ -123,14 +124,14 @@ TOOLS: tuple[dict, ...] = (
         "json_flag": True,
         "positional": (),
         "flags": {},
-        "description": ("Lists every run in the store, oldest first by id. Use it to date the store "
-        "or to see which commit the other tools answer from. Use get_trend for "
-        "totals and get_function_history for one function's scores. It reads the "
-        "store and runs one git ancestry check to mark the baseline run. repo may be "
-        "any directory under the checkout (the server walks up to the nearest "
-        "crapkit.toml), and a relative path resolves from the server's start "
-        "directory. With no crapkit.toml above it, or before the first coverage run, "
-        "it answers isError true with the command to run."),
+        "description": ("Lists every run in the store, oldest first by id. Use it to see which "
+        "commit the other tools answer from, get_trend for totals and "
+        "get_function_history for one function. Marking the baseline run costs one git "
+        "ancestry check per trusted run's commit, newest first, down to that run: two "
+        "or more after a branch switch, none with no trusted run. repo may be any "
+        "directory under the checkout, and a relative path resolves from the server's "
+        "start directory. With no crapkit.toml above it, or no snapshot store yet, it "
+        "answers isError true with the command to run."),
         "properties": {},
         "output": PAYLOADS["runs --json"],
     },
@@ -147,7 +148,7 @@ TOOLS: tuple[dict, ...] = (
         "spawns no git. The first call on a large store sums every run into a rollup "
         "cache and takes seconds. Later calls read the cache back. repo may be any "
         "directory under a checkout where crapkit init and crapkit coverage have run. "
-        "An unmeasured one answers isError true with the setup pointer."),
+        "One with no snapshot store yet answers isError true with the setup pointer."),
         "properties": {},
         "output": PAYLOADS["trend --json"],
     },
@@ -284,10 +285,11 @@ TOOLS: tuple[dict, ...] = (
         "description": ("Reports the ratchet debt burn-down: open marks with their age, repayments "
         "and policy findings. Use it to judge whether marked debt is repaid or piling "
         "up, and get_function_history for one function's mark. It reads the marks "
-        "file and its git log only, and ages count from the newest commit touching "
-        "that file, never the clock. A repo that never committed a marks file reports "
-        "zeros, and a deleted or emptied one reports the marks its history last held as "
-        "open, none repaid. repo may be any directory under a measured checkout."),
+        "file and its git history only, and ages count from the newest commit touching "
+        "that file, never the clock. Open marks are the file's rows, committed or not. "
+        "A deleted or emptied file reports the marks its history last held as open, "
+        "none repaid, and no file with no history reports zeros. repo may be any "
+        "directory under the checkout."),
         "properties": {},
         "output": PAYLOADS["ratchet report --json"],
     },
@@ -332,8 +334,8 @@ TOOLS: tuple[dict, ...] = (
         "stale one with crapkit claims release PATH NAME, and verify closes one at "
         "the ceiling. repo may be any directory under the checkout, since the server "
         "walks up to the nearest crapkit.toml. No crapkit.toml above it answers an "
-        "init pointer, and a checkout never scored answers a coverage pointer, both "
-        "as isError true."),
+        "init pointer, and one with no snapshot store yet a coverage pointer, both as "
+        "isError true."),
         "properties": {},
         "output": PAYLOADS["claims --json"],
     },

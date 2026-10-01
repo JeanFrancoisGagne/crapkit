@@ -13,6 +13,15 @@ backslash one; on POSIX a backslash is a literal filename character.
 get_ratchet_report said no marks file means zeros; a deleted marks file reads
 as the marks its history last held.
 
+Each of those fixes was checked in the one case it was written for. list_runs
+then said it ran one ancestry check, and after a branch switch it ran two.
+list_worklist said churn came from a cache, not git log, and its first call
+after the first coverage run, and after each commit, walked git log.
+get_ratchet_report said a repo that never committed a marks file reports
+zeros, and a seeded file reports its marks before its first commit. list_runs,
+get_trend and list_claims named the first coverage run as the point they stop
+answering isError true, and an inventory run's store answered them first.
+
 Each test reads the description and runs the call it describes. The CLI the
 server spawns runs in this process (the `exits` fixture), and GIT_TRACE, which
 git inherits from this process, records every git command it ran.
@@ -27,7 +36,7 @@ from pathlib import Path
 
 import pytest
 
-from cli_inproc_repo import repo, seed_artifacts, template_repo  # noqa: F401
+from cli_inproc_repo import commit_all, git, repo, seed_artifacts, template_repo  # noqa: F401
 from crapkit import mcp_server
 from crapkit.cli import main
 
@@ -89,33 +98,114 @@ def test_a_brief_miss_is_the_tool_error_the_description_names(scored, exits):
            "lists the file's functions." in description
 
 
-# --- list_runs: one ancestry check ---------------------------------------------------
+# --- list_runs: one ancestry check per commit down to the baseline -----------------
 
-def test_list_runs_names_the_one_git_command_it_runs(scored, exits, monkeypatch, tmp_path):
-    ran = _git_commands(monkeypatch, tmp_path,
-                        lambda: _call(scored, "list_runs"))
+RUNS_GIT = ("Marking the baseline run costs one git ancestry check per trusted run's commit, "
+            "newest first, down to that run: two or more after a branch switch, none with "
+            "no trusted run.")
+
+
+def _ancestry_checks(ran: list[str]) -> list[str]:
+    return [c for c in ran if c.startswith("merge-base --is-ancestor")]
+
+
+def _baseline_ids(reply: dict) -> list[int]:
+    return [run["id"] for run in reply["structuredContent"]["runs"] if run["baseline"]]
+
+
+def test_list_runs_asks_once_when_the_newest_run_is_the_baseline(scored, exits, monkeypatch,
+                                                                  tmp_path):
+    ran = _git_commands(monkeypatch, tmp_path, lambda: _call(scored, "list_runs"))
 
     assert [c.split()[:2] for c in ran] == [["merge-base", "--is-ancestor"]], ran
     description = _tool("list_runs")["description"]
-    assert "spawns no git" not in description
-    assert "runs one git ancestry check to mark the baseline run" in description
+    assert "runs one git ancestry check" not in description
+    assert RUNS_GIT in description
 
 
-# --- list_worklist: churn from the cache, changed files from git ---------------------
+def test_list_runs_after_a_branch_switch_asks_down_to_the_baseline(scored, exits, monkeypatch,
+                                                                    tmp_path):
+    git(scored, "checkout", "-q", "-b", "side")
+    (scored / "src" / "extra.ts").write_text("export const a = 1;\n", encoding="utf-8")
+    commit_all(scored, "side work")
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(scored)]) == 0
+    git(scored, "checkout", "-q", "-")
+    replies = []
 
-def test_list_worklist_names_the_git_reads_a_warm_call_makes(scored, exits, monkeypatch,
-                                                               tmp_path):
-    _call(scored, "list_worklist")  # the warm-up fills the churn cache
+    ran = _git_commands(monkeypatch, tmp_path,
+                        lambda: replies.append(_call(scored, "list_runs")))
 
-    ran = _git_commands(monkeypatch, tmp_path, lambda: _call(scored, "list_worklist"))
+    assert len(_ancestry_checks(ran)) == 2, ran
+    assert _baseline_ids(replies[0]) == [1], replies[0]
+    assert RUNS_GIT in _tool("list_runs")["description"]
 
-    words = {c.split()[0] for c in ran}
-    assert "log" not in words, ran
-    assert {"ls-files", "status"} <= words, ran
+
+def test_list_runs_with_no_trusted_run_asks_git_nothing(repo, exits, monkeypatch,  # noqa: F811
+                                                        tmp_path):
+    assert main(["inventory", "--repo", str(repo)]) == 0
+    replies = []
+
+    ran = _git_commands(monkeypatch, tmp_path, lambda: replies.append(_call(repo, "list_runs")))
+
+    assert ran == [], ran
+    assert [r["kind"] for r in replies[0]["structuredContent"]["runs"]] == ["inventory"]
+    assert _baseline_ids(replies[0]) == []
+    assert RUNS_GIT in _tool("list_runs")["description"]
+
+
+# --- list_runs, get_trend, list_claims: the error is a missing store ----------------
+
+NO_STORE = {
+    "list_runs": "With no crapkit.toml above it, or no snapshot store yet, it answers isError "
+                 "true with the command to run.",
+    "get_trend": "One with no snapshot store yet answers isError true with the setup pointer.",
+    "list_claims": "No crapkit.toml above it answers an init pointer, and one with no snapshot "
+                   "store yet a coverage pointer, both as isError true.",
+}
+
+
+@pytest.mark.parametrize("tool", sorted(NO_STORE))
+def test_an_inventory_runs_store_answers_before_any_coverage_run(repo, exits, tool):  # noqa: F811
+    """`crapkit inventory` makes the store; the CLI refuses only when there is
+    none, whatever kind of run it holds."""
+    assert _call(repo, tool)["isError"] is True
+    assert main(["inventory", "--repo", str(repo)]) == 0
+
+    assert _call(repo, tool)["isError"] is False
+    description = _tool(tool)["description"]
+    for said in ("before the first coverage run", "An unmeasured one", "a checkout never scored"):
+        assert said not in description, said
+    assert NO_STORE[tool] in description
+
+
+# --- list_worklist: churn walks git log once per HEAD --------------------------------
+
+WORKLIST_CHURN = ("Churn is cached per HEAD: after a commit, or on first use, the next read "
+                  "walks git log. git ls-files and git status count changed scored files "
+                  "(scored_changes).")
+
+
+def _words(ran: list[str]) -> set[str]:
+    return {c.split()[0] for c in ran}
+
+
+def test_list_worklist_walks_git_log_once_per_head(scored, exits, monkeypatch, tmp_path):
+    def call():
+        return _git_commands(monkeypatch, tmp_path, lambda: _call(scored, "list_worklist"))
+
+    first, warm = call(), call()
+    (scored / "src" / "extra.ts").write_text("export const a = 1;\n", encoding="utf-8")
+    commit_all(scored, "one more commit")
+    moved, again = call(), call()
+
+    assert "log" in _words(first), first
+    assert "log" not in _words(warm) and {"ls-files", "status"} <= _words(warm), warm
+    walked = [c for c in moved if c.startswith("log ")]
+    assert len(walked) == 1 and ".." in walked[0], moved  # only the commits since the cached HEAD
+    assert "log" not in _words(again), again
     description = _tool("list_worklist")["description"]
-    assert "not git." not in description
-    assert "Churn comes from a cache, not git log, and git ls-files and git status count " \
-           "the scored files that changed (scored_changes)." in description
+    assert "not git log" not in description
+    assert WORKLIST_CHURN in description
 
 
 # --- list_coupled_files: git log only when the cache key moved ------------------------
@@ -194,23 +284,65 @@ def test_both_tools_describe_name_and_path_by_one_rule(tool):
                                             "repo; a backslash separates folders on Windows only")
 
 
-# --- get_ratchet_report: a deleted marks file is not zeros -----------------------
+# --- get_ratchet_report: the file on disk, then its history ------------------------
 
-def test_a_deleted_marks_file_reports_what_the_description_says(scored, exits):
-    from cli_inproc_repo import commit_all, git
+REPORT_OPEN = ("It reads the marks file and its git history only, and ages count from the "
+               "newest commit touching that file, never the clock. Open marks are the file's "
+               "rows, committed or not. A deleted or emptied file reports the marks its history "
+               "last held as open, none repaid, and no file with no history reports zeros.")
+REPORT_GIT = {"log", "diff-tree", "ls-tree", "cat-file"}
+
+
+def _write_marks(root: Path) -> None:
     from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
 
     marks = [RatchetEntry("src/app.ts", "dispatch ( kind )", 60.0)]
-    (scored / "crapkit-ratchet.tsv").write_text(dump_ratchet(marks, stamp=metric_version()),
-                                                encoding="utf-8", newline="\n")
+    (root / "crapkit-ratchet.tsv").write_text(dump_ratchet(marks, stamp=metric_version()),
+                                              encoding="utf-8", newline="\n")
+
+
+def _report_and_git(root: Path, monkeypatch, tmp_path) -> tuple[dict, list[str]]:
+    replies = []
+    ran = _git_commands(monkeypatch, tmp_path,
+                        lambda: replies.append(_call(root, "get_ratchet_report")))
+    return replies[0]["structuredContent"], ran
+
+
+def _counts(report: dict) -> tuple:
+    return report["open"], report["dropped_total"], report["uncommitted"]
+
+
+def test_a_deleted_marks_file_reports_what_the_description_says(scored, exits, monkeypatch,
+                                                                 tmp_path):
+    _write_marks(scored)
     commit_all(scored, "a mark")
     git(scored, "rm", "-q", "crapkit-ratchet.tsv")
     commit_all(scored, "delete it")
 
-    report = _call(scored, "get_ratchet_report")["structuredContent"]
+    report, ran = _report_and_git(scored, monkeypatch, tmp_path)
 
-    assert (report["open"], report["dropped_total"]) == (1, 0), report
+    assert _counts(report) == (1, 0, 0), report
+    assert _words(ran) <= REPORT_GIT, ran
     description = _tool("get_ratchet_report")["description"]
     assert "no marks file means zeros" not in description
-    assert "A repo that never committed a marks file reports zeros, and a deleted or emptied " \
-           "one reports the marks its history last held as open, none repaid." in description
+    assert "never committed a marks file reports zeros" not in description
+    assert REPORT_OPEN in description
+
+
+def test_a_seeded_file_never_committed_reports_its_marks_open(repo, exits, monkeypatch,  # noqa: F811
+                                                              tmp_path):
+    _write_marks(repo)
+
+    report, ran = _report_and_git(repo, monkeypatch, tmp_path)
+
+    assert _counts(report) == (1, 0, 1), report
+    assert _words(ran) <= REPORT_GIT, ran
+    assert REPORT_OPEN in _tool("get_ratchet_report")["description"]
+
+
+def test_no_file_and_no_history_reports_zeros(repo, exits, monkeypatch, tmp_path):  # noqa: F811
+    report, ran = _report_and_git(repo, monkeypatch, tmp_path)
+
+    assert (_counts(report), report["oldest"]) == ((0, 0, 0), []), report
+    assert _words(ran) <= REPORT_GIT, ran
+    assert REPORT_OPEN in _tool("get_ratchet_report")["description"]
