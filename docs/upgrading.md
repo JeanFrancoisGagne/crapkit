@@ -545,7 +545,7 @@ rest:
 | a staged file with an upper-case extension (`src/MAIN.CPP`, `src/Tool.PY`) holding a function over its ceiling | commit hook | 0, the file was not scored | 6, a `ccn` line naming the function | Decompose it, or run `crapkit coverage` then `crapkit ratchet seed` |
 | a `test_*.py`, `*.test.*` or `*.spec.*` file outside every scope and outside a `test`, `tests` or `__tests__` directory | `test-scoped` | 0, the scope's template ran it | 3, `... belongs to no declared scope, and only a file under a test, tests or __tests__ directory runs without one` | Move the file under a scope's `paths` or into `tests/` |
 | the Action's `top` input set to `"ten"`, `"5.0"` or `""` | the GitHub Action | 2, `invalid int value`, and no comment | 0, a comment with 5 rows, and a `::warning` line naming the input when it is not empty | Set `top` to a whole number, or leave it out |
-| a mark typed by hand with more than four decimals | `verify` | judged against the typed value: 7 for a mark of 29.99996 over a CRAP of 30.0 | judged against the four-decimal value every rewrite of the file already gave it: 0 there, and 7 for a mark of 30.00004 over a CRAP between 30.0000 and 30.00004 | Write the mark with four decimals |
+| a mark typed by hand with more than four decimals | `verify` | judged against the typed value: 7 for a mark of 29.99996 over a CRAP of 30.0 | judged against the four-decimal value every rewrite of the file already gave it: 0 there. A mark that rounds down, such as 30.00004 over a CRAP of 30.0, exits 0 under both | Write the mark with four decimals |
 
 ## Values that move without an exit code
 
