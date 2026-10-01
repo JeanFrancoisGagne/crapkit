@@ -1475,6 +1475,9 @@ def open_failures(rulings: Path | None = None) -> list[str]:
 # fail every mutant alike. The calc stage leaves them out with the open defects'
 # tests; CI runs them on the tree. A test that fails in the copy for any other
 # reason stops nothing: the launcher's stats run leaves it out (STATS_FAILURES).
+# A test that lists the tracked files: the copy is the stage's mutants/ folder,
+# where git tracks no file.
+LISTS_NOTHING = "runs `git ls-files` in the copy, where git tracks no file, so it lists nothing"
 COPY_BOUND = {
     "tests/unit/test_printed_text_is_ascii.py::"
     "test_no_literal_crapkit_prints_is_typed_with_a_non_ascii_character":
@@ -1514,6 +1517,31 @@ COPY_BOUND = {
     "test_a_dist_info_with_no_version_header_defers_to_metadata":
         "starts a child with -S on the copy, and every mutated module there imports mutmut, "
         "which -S leaves off sys.path",
+    "tests/unit/test_tracked_path_length.py::"
+    "test_no_tracked_path_is_longer_than_a_windows_clone_can_write":
+        LISTS_NOTHING,
+    "tests/unit/test_tracked_text_cites_no_planning_ids.py::"
+    "test_no_tracked_text_cites_a_planning_id":
+        LISTS_NOTHING,
+    "tests/unit/test_architecture_review_rebuilds.py::"
+    "test_a_rebuild_reproduces_the_committed_report":
+        LISTS_NOTHING,
+    "tests/unit/test_architecture_review_rebuilds.py::"
+    "test_every_evidence_link_in_a_rebuilt_report_names_a_committed_file":
+        LISTS_NOTHING,
+    "tests/unit/test_architecture_review_rebuilds.py::"
+    "test_the_publish_flow_reproduces_the_committed_folder":
+        LISTS_NOTHING,
+    "tests/unit/test_architecture_review_rebuilds.py::"
+    "test_every_link_in_the_published_copy_resolves_next_to_it":
+        LISTS_NOTHING,
+    "tests/unit/test_architecture_review_rebuilds.py::"
+    "test_the_committed_manifest_binds_every_file_in_the_folder":
+        LISTS_NOTHING,
+    "tests/accuracy/kit/test_kit_contract.py::"
+    "test_every_module_the_push_tier_collects_imports_with_the_push_packages_alone":
+        "imports every push-tier module in a child that refuses the nightly-only packages, "
+        "and every mutated module of the copy imports mutmut, which only the nightly lock pins",
 }
 
 

@@ -680,6 +680,30 @@ def test_the_calc_stage_leaves_out_the_differential_that_analyzes_every_module_o
     assert node in mutation.stage_deselected()
 
 
+# Each fails in mutmut's copy whatever the mutant, as the nightly diff run of
+# 2026-10-01 (accuracy run 36891129973) showed: `git ls-files` run in mutants/
+# lists nothing, since the stage tracks no file there, and every mutated module
+# of the copy imports mutmut, a package only the nightly lock pins.
+GIT_LISTED = ("tests/unit/test_tracked_path_length.py::"
+              "test_no_tracked_path_is_longer_than_a_windows_clone_can_write",
+              "tests/unit/test_tracked_text_cites_no_planning_ids.py::test_no_tracked_text_cites_a_planning_id",
+              "tests/unit/test_architecture_review_rebuilds.py::test_a_rebuild_reproduces_the_committed_report",
+              "tests/unit/test_architecture_review_rebuilds.py::"
+              "test_every_evidence_link_in_a_rebuilt_report_names_a_committed_file",
+              "tests/unit/test_architecture_review_rebuilds.py::"
+              "test_the_publish_flow_reproduces_the_committed_folder",
+              "tests/unit/test_architecture_review_rebuilds.py::"
+              "test_every_link_in_the_published_copy_resolves_next_to_it",
+              "tests/unit/test_architecture_review_rebuilds.py::"
+              "test_the_committed_manifest_binds_every_file_in_the_folder")
+PUSH_IMPORTS = ("tests/accuracy/kit/test_kit_contract.py::"
+                "test_every_module_the_push_tier_collects_imports_with_the_push_packages_alone")
+
+
+def test_the_calc_stage_leaves_out_the_tests_that_read_git_or_the_push_packages_in_the_copy():
+    assert [node for node in (*GIT_LISTED, PUSH_IMPORTS) if node not in mutation.stage_deselected()] == []
+
+
 def test_the_calc_stage_leaves_out_the_copy_bound_tests_and_the_open_defects_tests(monkeypatch):
     monkeypatch.setattr(mutation, "open_failures", lambda: ["tests/a.py::test_open"])
 

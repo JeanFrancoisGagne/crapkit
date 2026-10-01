@@ -307,8 +307,9 @@ prints it and keeps it in its receipt under `stats_failures`. The copy's `src/` 
 rewritten with trampolines, so the checks that read crapkit's own source as
 data read the stage's `src/crapkit` instead, which the tool names in
 `CRAPKIT_ACCURACY_SOURCE`. A test that cannot pass inside the copy whatever
-mutant is active (it reads a module as text, times a call, or starts an
-interpreter on the copy) goes in `COPY_BOUND` in `tools/accuracy/mutation.py`
+mutant is active (it reads a module as text, times a call, starts an
+interpreter on the copy, or lists the files git tracks, which in the copy
+are none) goes in `COPY_BOUND` in `tools/accuracy/mutation.py`
 with its reason, and the stage leaves it out, as it leaves out the tests an open
 defect ruling names. CI still runs it on the tree.
 
