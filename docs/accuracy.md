@@ -169,8 +169,8 @@ or no longer (fixed). `python tools/docs/generate.py` writes this table, the
 | Tier | Where it runs | What it adds |
 |---|---|---|
 | `push` | Every push and pull request: `accuracy-push` in ci.yml, on Ubuntu and on Windows (the `os_sensitive` checks) | The fast checks, at most 504 declared serial seconds on Ubuntu (about 2 min at `-n 4`) |
-| `nightly` | accuracy.yml at 03:17 UTC, in the accuracy image, plus native Windows and macOS cells | Every outside oracle, the full corpus, 20,000 Hypothesis examples, Python 3.11 to 3.14, mutation of the functions changed since the weekly run, a slice of the past-bug replays |
-| `weekly` | accuracy.yml on Saturdays | Full mutation testing in 8 shards, a no-cache image rebuild that checks every pin |
+| `nightly` | accuracy.yml at 03:17 UTC, in the accuracy image, plus native Windows and macOS cells | Every outside oracle, the full corpus, 20,000 Hypothesis examples, Python 3.11 to 3.14, mutation of every function whose stored verdicts do not carry, and every public past-bug row, judged by the verdict kept for it or replayed |
+| `weekly` | accuracy.yml on Saturdays | Mutation, in 8 shards, of each function in the floors' modules whose stored verdicts do not carry, and a no-cache image rebuild that checks every pin |
 | `release` | The release tool's `accuracy` stage | The push tier, both wheel diffs against the previous release, the store upgrade, the consumer replay, the retro replays, the mutation coverage |
 
 A pull request runs the nightly tier as well while it carries the `accuracy` label.

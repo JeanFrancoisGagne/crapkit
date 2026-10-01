@@ -383,6 +383,27 @@ def test_the_docs_promise_no_verdict_reuse_across_releases():
     assert "next release" not in said
     assert "first attempt replays every stale row" in said
 
+
+def _tier_cell(tier: str) -> str:
+    doc = (ROOT / "docs/accuracy.md").read_text(encoding="utf-8")
+    return next(line for line in doc.splitlines() if line.startswith(f"| `{tier}` |")).split(" | ")[-1]
+
+
+def test_the_tier_table_says_what_the_nightly_and_weekly_runs_judge():
+    """The tier table still said the nightly mutated the functions changed since
+    the weekly run and replayed a slice of the past bugs. The retro job judges
+    every public row each night by the verdict kept for it, and both mutation
+    runs judge every function whose stored verdicts do not carry, whatever the
+    weekly run did."""
+    retro = _jobs("accuracy.yml")["retro"]
+    nightly, weekly = _tier_cell("nightly"), _tier_cell("weekly")
+
+    assert retro["if"] == "needs.plan.outputs.mode == 'nightly'"
+    assert "slice" not in nightly and "since the weekly run" not in nightly
+    assert "every public past-bug row, judged by the verdict kept for it or replayed" in nightly
+    for cell in (nightly, weekly):
+        assert "whose stored verdicts do not carry" in cell
+
 def _nightly_npm_prefixes() -> list[str]:
     """The Node tool sets docs/accuracy.md's nightly recipe installs, in its order."""
     text = (ROOT / "docs" / "accuracy.md").read_text(encoding="utf-8")
