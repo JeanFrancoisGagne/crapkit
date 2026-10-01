@@ -90,16 +90,17 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # PowerShell reader's spelling and parameter passes and the own-lines shingler
 # landed, 3,661 once the program merged into the 0.8.1 release tree, 3,668 once
 # the gate named the ceiling it judged, an override with no alert command was
-# refused first, and a deleted marks file read as the marks its history held.
+# refused first, and a deleted marks file read as the marks its history held,
+# 3,673 once the report read which marks a revision held off its own blob.
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3668
+SRC_DEFS = 3673
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
     """Every def ast finds in crapkit's source and in the shapes is one row
     spanning the def line to its body's last line, and no other row exists:
-    3,668 of 3,668 on crapkit's source."""
+    3,673 of 3,673 on crapkit's source."""
     shapes = analysis_shapes.py_shape_files()
     misses = _differences(src_corpus.files, src_inventory, _spans)
     ast_defs = sum(map(len, map(_ast_rows, src_corpus.files.values())))
