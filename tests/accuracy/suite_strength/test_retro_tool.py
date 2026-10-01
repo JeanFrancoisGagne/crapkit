@@ -1091,6 +1091,16 @@ def test_a_stale_bundle_row_replays_without_the_variable_when_the_clone_holds_it
     assert "cannot replay" not in capsys.readouterr().out
 
 
+def test_a_stale_bundle_row_whose_fix_commit_the_clone_lacks_is_out_of_reach(tables, monkeypatch, capsys):
+    _no_bundle(tables, monkeypatch)
+    monkeypatch.setattr(retro, "have_commit", lambda sha, repo=retro.REPO: sha == "a" * 12)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    assert retro.main(["release"]) == 0
+    assert tables.replayed == ["R1"]
+    assert BUNDLE_LINE in capsys.readouterr().out
+
+
 def test_a_stale_bundle_row_with_a_kept_release_verdict_is_judged_without_the_bundle(
         tables, monkeypatch, capsys):
     monkeypatch.setenv("CRAPKIT_ACCURACY_TIER", "release")
