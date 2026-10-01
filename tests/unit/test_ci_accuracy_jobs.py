@@ -363,6 +363,26 @@ def test_a_rerun_attempt_saves_what_it_judged_under_a_key_of_its_own():
         assert item["with"]["key"].endswith("-${{ github.run_id }}-${{ github.run_attempt }}"), name
 
 
+
+def test_the_docs_promise_no_verdict_reuse_across_releases():
+    """docs/accuracy.md said the release cells' cache served the next release
+    within GitHub's 7-day eviction. Each release dispatches on a branch of its
+    own, a run restores only caches saved on its own branch or the default
+    branch, and only a release-mode run saves a release key, so no run on main
+    ever seeds one."""
+    from test_release_tool import release
+
+    saves = [item for job in _jobs("accuracy.yml").values() for item in job.get("steps", [])
+             if str(item.get("uses", "")).startswith("actions/cache/save@")
+             and item["with"]["key"].startswith("retro-verdicts-release-")]
+    doc = " ".join((ROOT / "docs/accuracy.md").read_text(encoding="utf-8").split())
+    said = doc[doc.index("The release tier runs `retro.py release`"):doc.index("Rows R01 to R12 are bundle rows")]
+
+    assert release.accuracy_branch("0.9.0") != release.accuracy_branch("0.9.1") != "main"
+    assert saves and all("needs.plan.outputs.mode == 'release'" in item["if"] for item in saves)
+    assert "next release" not in said
+    assert "first attempt replays every stale row" in said
+
 def _nightly_npm_prefixes() -> list[str]:
     """The Node tool sets docs/accuracy.md's nightly recipe installs, in its order."""
     text = (ROOT / "docs" / "accuracy.md").read_text(encoding="utf-8")

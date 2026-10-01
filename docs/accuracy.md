@@ -491,9 +491,14 @@ The release tier runs `retro.py release`, which judges every stale row by the
 same verdict cache, keyed at the release tier. In a release run of accuracy.yml
 one cell per OS runs it, the Linux `verdict-score` shard on 3.12 and the Windows
 3.13 cell (its row names `linux-3.12` and `win32-3.13`), and those cells
-restore and save that cache under `retro-verdicts-release-<os>-<python>-`, so a
-re-run of a cell, or the next release within GitHub's 7-day cache eviction,
-replays only the rows no earlier run kept. Rows R01 to R12 are bundle rows:
+restore and save that cache under `retro-verdicts-release-<os>-<python>-`.
+Each release dispatches on its own branch, `accuracy-release/<version>`, and a
+run restores only caches saved on its own branch or on main, where no run saves
+a release key. So each release's first attempt replays every stale row in both
+cells, and only a later run of the same version (a re-run attempt, or a new
+dispatch on that branch) replays just the rows no earlier run kept. Seeding the
+key from main would take a release-tier run there, which costs more than it
+saves. Rows R01 to R12 are bundle rows:
 their commits live only in `CRAPKIT_RETRO_BUNDLE`, the history bundle, and
 GitHub holds none of them. A bundle row whose digest has not moved is not
 replayed; its ledger record answers for it. A stale bundle row replays where

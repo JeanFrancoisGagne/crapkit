@@ -327,7 +327,10 @@ jobs:
       # At release the 3.13 cell's tier runs `retro.py release` (its check names
       # the cells linux-3.12 and win32-3.13), which judges a stale row by the
       # verdict kept for it at the release tier and this cell's Python. A replay
-      # installs its venvs with uv.
+      # installs its venvs with uv. The cache serves a later run of the same
+      # release only (a re-run attempt or a new dispatch on its branch): each
+      # release dispatches on its own branch, so its first attempt replays every
+      # stale row.
       - uses: astral-sh/setup-uv@v6
         if: matrix.python == '3.13' && (needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'release')
         with:
