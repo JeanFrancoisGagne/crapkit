@@ -38,9 +38,13 @@ A run mutmut ends with anything but 0 (a failed stats run, a crash, a signal,
 SIGHUP included) judged nothing, the serial rerun of the unfinished mutants
 included: the command writes no receipt, names how mutmut ended and each
 in-process call the test kit logged as stuck in the stage's in-process-hangs.log,
-and exits 4. mutmut runs its stats pass in its own process, so every run names
-that file to the kit (HANGS_ENV), and the kit then never ends the process on a
-stuck call. `covered` refuses a receipt holding a mutant its run never judged,
+and exits 4. So does a run where the diffs launcher died by a signal or the kit
+logged a stuck call though mutmut ended with 0: a stuck call fails its test
+whatever the mutant, and a crash on a degraded host can fail one too, and either
+reads as a kill. No verdict of a mutant whose test process a signal ended (a
+timeout or mutmut's `segfault`) carries to another run. mutmut runs its stats
+pass in its own process, so every run names that file to the kit (HANGS_ENV),
+and the kit then never ends the process on a stuck call. `covered` refuses a receipt holding a mutant its run never judged,
 and a diff receipt covers a changed function only when it holds a mutant of
 that function and its head holds the function's text as HEAD does (uncovered).
 
@@ -768,11 +772,15 @@ def _run_mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple
 def died(repo: Path, code: int | None, run: str = "mutmut's run") -> str:
     """Why mutmut's run in `repo` proves nothing, or "". mutmut ends a run it
     finished with 0, and None is the budget stopping it; any other end (a failed
-    stats run, a crash, a signal) leaves its mutants unjudged."""
-    if code is None or code == 0:
-        return ""
-    return (f"{run} in {repo} ended with {_ending(code)} before it judged its mutants, "
-            f"so the run proves nothing and writes no receipt{_stuck_calls(repo)}")
+    stats run, a crash, a signal) leaves its mutants unjudged. A run that finished
+    proves nothing either when the test kit logged a call stuck past its bound:
+    that call fails its test whatever the mutant, which reads as a kill."""
+    if code is not None and code != 0:
+        return (f"{run} in {repo} ended with {_ending(code)} before it judged its mutants, "
+                f"so the run proves nothing and writes no receipt{_stuck_calls(repo)}")
+    stuck = _stuck_calls(repo)
+    return (f"{run} in {repo} logged an in-process call stuck past its bound, so the run "
+            f"keeps no verdict and writes no receipt{stuck}") if stuck else ""
 
 
 def _refuse_dead(repo: Path, code: int | None, run: str = "mutmut's run") -> None:
@@ -828,15 +836,25 @@ def _answered(repo: Path, names: list[str], mutmut: tuple) -> tuple[dict[str, st
     found, done = _ask_diffs(repo, names, mutmut)
     if done.returncode == 0:
         return found, done.stderr
+    _refuse_signal(repo, done.returncode)
     rest = [name for name in names if name not in found]
     print(f"mutation: the diffs launcher ended with {_ending(done.returncode)} after "
           f"{len(found)} of {len(names)} mutant(s); asking again for the other {len(rest)}")
     more, again = _ask_diffs(repo, rest, mutmut)
+    _refuse_signal(repo, again.returncode)
     if again.returncode != 0:
         raise MutationError(f"the diffs launcher ended with {_ending(again.returncode)} again, "
                             f"after {len(more)} of the {len(rest)} mutant(s) it was asked for "
                             f"again: {again.stderr.strip()[-500:]}")
     return {**found, **more}, again.stderr
+
+
+def _refuse_signal(repo: Path, code: int) -> None:
+    """RunDied when the diffs launcher died by a signal: a process of the run that
+    crashed may have crashed beside a verdict too, so the run keeps none."""
+    if code < 0:
+        raise RunDied(f"the diffs launcher in {repo} ended with {_ending(code)}: a process of the "
+                      "run died by a signal, so the run keeps no verdict and writes no receipt")
 
 
 def _diffs(repo: Path, names: list[str], mutmut: tuple) -> dict[str, str]:

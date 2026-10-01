@@ -1663,6 +1663,70 @@ def test_a_diffs_launcher_that_dies_twice_stops_the_run_saying_how_it_ended(tmp_
                                   "mutant(s) it was asked for again: crashed")
 
 
+# A process of the run that a signal ends measures nothing: Desktop A crashed
+# Python 3 times in 14 minutes on 2026-10-01, and the diffs launcher of the run
+# at 137f8b4f jumped to address 0. A verdict written beside such a crash can be
+# a false kill, so the run keeps none of them.
+
+def _diffs_ending(monkeypatch, *codes: int) -> list:
+    """Stand in for the diffs launcher: each call answers the first name it is asked
+    for and ends with the next of `codes`."""
+    calls, left = [], list(codes)
+
+    def ask(repo, names, mutmut):
+        calls.append(list(names))
+        done = mutation.subprocess.CompletedProcess([], left.pop(0), "", "crashed")
+        return {names[0]: "--- " + names[0]}, done
+
+    monkeypatch.setattr(mutation, "_ask_diffs", ask)
+    return calls
+
+
+@pytest.mark.parametrize("codes, asked", [((-11,), 1), ((3, -6), 2)])
+def test_a_diffs_launcher_a_signal_ended_stops_the_run_at_exit_4(tmp_path, monkeypatch, codes,
+                                                                 asked):
+    calls = _diffs_ending(monkeypatch, *codes)
+
+    with pytest.raises(mutation.RunDied) as died:
+        mutation._diffs(tmp_path, ["m.x_f__mutmut_1", "m.x_f__mutmut_2"], ("launch.py",))
+
+    assert len(calls) == asked
+    assert "the diffs launcher" in str(died.value) and "ended with signal" in str(died.value)
+    assert "keeps no verdict and writes no receipt" in str(died.value)
+    assert mutation.EXIT_BY_REFUSAL[type(died.value)] == 4
+
+
+@pytest.mark.parametrize("code", [0, None])
+def test_a_run_whose_kit_logged_a_stuck_call_keeps_no_verdict_though_mutmut_ended(tmp_path,
+                                                                                  monkeypatch, code):
+    """A stuck in-process call fails its test whatever the mutant, which reads as a
+    kill; the kit only logs it inside a stage, so the run reads the log."""
+    stage, _ = _fake_stage(tmp_path, monkeypatch)
+
+    def run(repo, args, budget, mutmut=(), env=None):
+        (repo / mutation.HANGS_FILE).write_text(
+            "tests/t.py::test_slow (call): ['crapkit'] past its 120 s bound\n", encoding="utf-8")
+        return code
+
+    monkeypatch.setattr(mutation, "_run_mutmut", run)
+
+    with pytest.raises(mutation.RunDied) as died:
+        mutation.staged_run(Path("w"), {}, ["crapkit.score.*"], {}, 2, budget=60)
+
+    said = str(died.value)
+    assert "logged an in-process call stuck past its bound" in said
+    assert "tests/t.py::test_slow (call): ['crapkit'] past its 120 s bound" in said
+    assert "keeps no verdict and writes no receipt" in said
+
+
+def test_a_mutant_a_signal_ended_is_never_carried():
+    """Its verdict is the one serial rerun's, or unfinished; a run judges it again."""
+    rows = [mutation.Result(f"m.x_f__mutmut_{n}", "m.py", "f", mutation.STATUS_BY_EXIT[code])
+            for n, code in enumerate((1, -11))]
+
+    assert [mutation.verdict_kind(rows[:1]), mutation.verdict_kind(rows)] == ["killed", "unfinished"]
+
+
 # --- the calc modules, the receipts and the tables a run writes -------------------------------------
 
 def test_the_calc_modules_are_every_module_a_calcs_table_names(tmp_path):

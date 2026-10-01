@@ -292,9 +292,15 @@ defect ruling names. CI still runs it on the tree.
 
 A run that mutmut ends before it judged its mutants proves nothing: a failed stats
 run, a crash, a signal (SIGHUP included). So does a serial rerun of the timeouts
-that mutmut ends that way. The command then writes no receipt, prints how mutmut
-ended and each in-process crapkit call the test kit logged as stuck past its
-bound, and exits 4. Only the `diff` run's cap stops mutmut short without a
+that mutmut ends that way, a run whose diffs launcher a signal ends, and a run
+whose test kit logged a call stuck past its bound though mutmut ended with 0:
+the stuck call fails its test whatever the mutant, and a crash on a degraded
+host can fail one too, and either reads as a kill. The command then writes no
+receipt, so no verdict of that run carries, prints how the run ended and each
+in-process crapkit call the test kit logged as stuck past its bound, and exits
+4. A mutant whose test process a signal ended (a timeout, mutmut's `segfault`)
+gets its serial rerun, and its verdict never carries to another run. Only the
+`diff` run's cap stops mutmut short without a
 death, and that run reports `incomplete`. Exit 1 stays a check that failed, and
 exit 3 a receipt missing on this machine. `covered` refuses a weekly receipt that
 holds a mutant its run never judged, and a diff receipt that holds one covers no

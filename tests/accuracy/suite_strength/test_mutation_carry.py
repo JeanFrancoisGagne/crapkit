@@ -303,8 +303,12 @@ def test_a_survivor_carries_only_to_the_tree_it_was_judged_at(world):
     assert world.judged() == _globs(CRAP, GRADE)
 
 
-def test_an_unfinished_mutant_is_judged_again_by_every_run(world):
-    world.mutmut.codes[GRADE]["crapkit.score.x_grade__mutmut_1"] = 36
+@pytest.mark.parametrize("code", [36, -24, -11, -9], ids=["timeout", "sigxcpu", "sigsegv",
+                                                          "sigkill"])
+def test_an_unfinished_mutant_is_judged_again_by_every_run(world, code):
+    """Only the verdicts of test processes that exited carry: one a signal ended
+    is a timeout or mutmut's `segfault`, judged again by every run."""
+    world.mutmut.codes[GRADE]["crapkit.score.x_grade__mutmut_1"] = code
     world.run()
     world.judged()
 
