@@ -501,7 +501,7 @@ starts no commit, so 0.8.0 judged an empty diff and passed. 0.8.1 tells a commit
 `GIT_INDEX_FILE`, which git sets for the hooks a commit runs. Outside a commit, with
 nothing staged, the hook prints `crapkit gate: nothing is staged and no commit is running,
 so every tracked file was judged` and exits 6 on each function over its ceiling that the
-committed ratchet does not mark. Before you move the `rev` to the 0.8.1 tag, run
+marks file in the working tree does not mark. Before you move the `rev` to the 0.8.1 tag, run
 `crapkit hook-precommit` by hand with nothing staged: record the debt it names with
 `crapkit coverage`, then `crapkit ratchet seed`, and commit the marks, or decompose those
 functions. A commit still judges only what it stages.

@@ -779,8 +779,8 @@ $ crapkit worklist --json
 
 Each entry carries `scope`, `path`, `function`, `start`, `end`, `occurrence`, `ccn`, `ccn_std`, `nloc`,
 `commits`, `authors`, `weight`, `risk`, plus `flag`, `remedy`, `crap` and `cov` from the
-run that scored it, and `ratchet_mark`: the committed mark's value, or `null` when the
-function carries no mark or the repo has no marks file. The mark is read under the
+run that scored it, and `ratchet_mark`: the value of its mark in the marks file in the working
+tree, or `null` when the function carries no mark or the repo has no marks file. The mark is read under the
 function's own ratchet key, so twins sharing a long name report their own marks and not
 each other's. `handle` is the short name form `brief`, `explain` and `claims release` take:
 the bare identifier; `NAME#N` in file order when one file gives that long name to several functions, starting at `NAME#1`; the full long name when functions with different signatures share an identifier; or `(anonymous)#N` for a function lizard could not name. A handle is not a ratchet key: the first twin's mark is keyed with no suffix and the second's `long_name#2`, and `ratchet_mark` already reports each twin's own mark. The four run fields are `null` on an inventory-only run, which scored no

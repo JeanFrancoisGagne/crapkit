@@ -7,7 +7,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from cli_inproc_repo import (add_knotty, commit_all, istanbul, repo,  # noqa: F401
+from cli_inproc_repo import (add_knotty, commit_all, git, istanbul, repo,  # noqa: F401
                              seed_artifacts, template_repo)
 
 from crapkit.cli import main
@@ -187,3 +187,111 @@ def _table_row(prose: str, first_cell: str) -> str:
     """The one five-column row, in prose `_section` joined, whose first cell is `first_cell`."""
     (row,) = re.findall(rf"\| {re.escape(first_cell)} \|(?:[^|]*\|){{4}}", prose)
     return row
+
+
+# --- the marks file the hooks and worklist read (docs[5]) ---------------------------
+
+MARKS = "crapkit-ratchet.tsv"
+
+
+def _untracked_mark(repo, path: str, long_name: str, crap: float) -> None:
+    """A mark in the working tree's marks file that no commit and no index holds."""
+    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+
+    (repo / MARKS).write_text(dump_ratchet([RatchetEntry(path, long_name, crap)],
+                                           stamp=metric_version()), encoding="utf-8", newline="\n")
+    assert git(repo, "status", "--porcelain", "--", MARKS) == f"?? {MARKS}\n"
+
+
+def _hook(repo, capsys) -> tuple[int, str]:
+    code = main(["hook-precommit", "--repo", str(repo)])
+    return code, capsys.readouterr().err
+
+
+def _prose(rel: str) -> str:
+    return " ".join(_doc(rel).split())
+
+
+def test_hook_precommit_pardons_a_staged_function_on_a_mark_no_commit_holds(repo, capsys):  # noqa: F811
+    """README said the hooks pardon "a function the committed ratchet already
+    carries a mark for". The gate loads the marks file from the working tree, so
+    a mark never staged and never committed lets a staged breach through at 0."""
+    add_knotty(repo)
+    git(repo, "add", "src/app.ts")
+    assert _hook(repo, capsys)[0] == 6
+    _untracked_mark(repo, "src/app.ts", "knotty ( n )", 72.0)
+
+    code, err = _hook(repo, capsys)
+
+    assert code == 0
+    assert "1 staged function(s) carry a ratchet mark and were not gated" in err, err
+    readme = _prose("README.md")
+    assert "the committed ratchet already carries a mark for" not in readme
+    assert ("Both hooks pardon a function that the marks file in the working tree carries a mark "
+            "for, whether or not that mark is staged or committed") in readme
+    assert ("In CI the file on disk is the committed one, so `verify` there fails a function "
+            "whose mark never reached a commit") in readme
+    assert ("pardoned: any function the working-tree marks file marks, counted in one stderr line"
+            in _doc("docs/handbook.html"))
+
+
+def test_hook_precommit_with_nothing_staged_pardons_on_the_working_tree_marks(repo, capsys):  # noqa: F811
+    """Outside a commit with nothing staged, the form `pre-commit run --all-files`
+    runs, the hook judges every tracked file against the same file on disk. Three
+    pages said "the committed ratchet"; in CI that is the same file, locally it is
+    not."""
+    add_knotty(repo)
+    commit_all(repo, "knotty")
+    assert _hook(repo, capsys)[0] == 6
+    _untracked_mark(repo, "src/app.ts", "knotty ( n )", 72.0)
+
+    code, err = _hook(repo, capsys)
+
+    assert code == 0, err
+    assert "carry a ratchet mark and were not gated" in err, err
+    assert ("a function over its ceiling fails unless the marks file in the working tree marks "
+            "it, which in CI is the committed file") in _prose("README.md")
+    assert ("exits 6 on each function over its ceiling that the marks file in the working tree "
+            "does not mark") in _section(GUIDE, "## The commit gate in 0.8.1")
+    assert ("with the functions the marks file in the working tree marks exempt as before"
+            in _prose("docs/releases/0.8.1.md"))
+    for page in ("README.md", GUIDE, "docs/releases/0.8.1.md", "docs/handbook.html"):
+        assert "the committed ratchet marks" not in _prose(page), page
+        assert "the committed ratchet does not mark" not in _prose(page), page
+
+
+def test_claude_hook_skips_a_function_on_a_mark_no_commit_holds(tmp_path, monkeypatch, capsys):
+    """The other of "both hooks": claude-hook reads the same file on disk."""
+    from claude_hook_repo import BREACH, edit_event, hook, measured, write
+
+    hooked = measured(tmp_path)
+    edited = write(hooked, "calc/grade.py", BREACH)
+    assert hook(monkeypatch, capsys, edit_event(edited))[0] == 2
+    _untracked_mark(hooked, "calc/grade.py", "sprawl( n )", 72.0)
+
+    assert hook(monkeypatch, capsys, edit_event(edited)) == (0, [])
+
+
+def test_worklist_reads_ratchet_mark_from_the_working_tree(repo, capsys):  # noqa: F811
+    """README, the agent JSON page and the handbook called `ratchet_mark` the
+    committed mark. worklist reads the marks file on disk, so a mark no commit
+    holds shows up there."""
+    add_knotty(repo)
+    commit_all(repo, "knotty")
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    _untracked_mark(repo, "src/app.ts", "knotty ( n )", 72.0)
+
+    rows = _json(["worklist", "--json"], repo, capsys)["active"]
+
+    assert [r["ratchet_mark"] for r in rows if r["function"] == "knotty ( n )"] == [72.0]
+    assert ("its `ratchet_mark` when the marks file in the working tree signs for it"
+            in _prose("README.md"))
+    assert ("`ratchet_mark`: the value of its mark in the marks file in the working tree, or "
+            "`null`" in _prose("docs/agent-json.md"))
+    assert ("<code>ratchet_mark</code>, the function's mark in the working-tree marks file or "
+            "<code>null</code>" in _prose("docs/handbook.html"))
+    for page in ("README.md", "docs/agent-json.md", "docs/handbook.html"):
+        assert "committed mark" not in _prose(page).replace("committed marks", ""), page
+
