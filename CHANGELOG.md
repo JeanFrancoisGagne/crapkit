@@ -137,7 +137,12 @@ page](docs/releases/0.8.1.md#upgrading-from-080) keeps the full upgrade notes.
 ### Scores that move: analysis version 13
 
 These changes move scores and share the one re-seed in step 4. [Analysis version
-13](docs/releases/0.8.1.md#analysis-version-13) sums them up.
+13](docs/releases/0.8.1.md#analysis-version-13) sums them up. The accuracy suite declares
+the score moves its corpus shows in two changes. The first, analysis version 12, holds the
+Rust, Go and Zig readers, a `//` comment and a heredoc line that end where their language
+ends them, `crap = ccn` for a function its coverage tool leaves out, and the CRAP cube
+(accuracy change C2). The second, version 13, holds `nesting` and `cognitive` in every
+language and the C family, Java, Swift, shell and PowerShell readers (accuracy change C7).
 
 - [`nesting`](docs/releases/0.8.1.md#nesting-reads-block-depth-in-every-language) comes
   from crapkit's cognitive pass in every language, as Python's has since 0.5.0, not from
@@ -228,6 +233,13 @@ the next passing `verify`, and `ratchet seed` no longer writes one.
 - [`duplication` and brief's twins](docs/releases/0.8.1.md#near-duplicate-functions)
   shingle each function from its own lines and read comments by language.
 
+The accuracy suite declares two changes that move none of its corpus scores. The first,
+beside analysis version 12, holds lane reuse and the full-suite guard, the churn window,
+exact ties in batches, coupling and digests, and line ends in the hooks and `mutate`
+(accuracy change C3). The second, beside version 13, holds duplication's shingles and
+comment lines and the PowerShell, shell and Java reader fixes that left its corpus scores
+alone (accuracy change C8).
+
 ### Values nobody measured
 
 Thirteen changes that name a missing value can move an exit code, and the [upgrade
@@ -290,7 +302,10 @@ exit.
   in `crapkit.toml`, on the command line or in a coverage report names the file git
   names: in another letter case on a disk that ignores case, and in Git Bash or WSL
   spelling on Windows. `init` writes a lane's python as a launcher token, `{python:.venv}`
-  or `{python}`, which the loader reads for the OS reading the file.
+  or `{python}`, which the loader reads for the OS reading the file. A source file whose
+  extension is upper case, such as `src/Tool.PY`, scores and gates as its lower-case twin
+  does. The accuracy suite declares it with step 1's refusal of a coverage.py report
+  without `start_line` (accuracy change C11).
 - [A command at the repository top](docs/releases/0.8.1.md#a-command-at-the-repository-top-is-told-which-root-to-name)
   names the `--repo` that reaches each `crapkit.toml` below it.
 - [`init`](docs/releases/0.8.1.md#init-reads-packagejson-by-one-json-rule-appends-to-gitignore-as-git-reads-it-and-finishes-a-half-done-init)
@@ -306,7 +321,9 @@ exit.
   are ASCII and quote a path as typed, and [a next step it
   prints](docs/releases/0.8.1.md#a-command-crapkit-prints-for-the-reader-to-paste-runs-in-git-bash-and-powershell)
   runs when pasted into Git Bash and PowerShell, and [under
-  uvx](docs/releases/0.8.1.md#running-crapkit-through-uvx) names `uvx crapkit`.
+  uvx](docs/releases/0.8.1.md#running-crapkit-through-uvx) names `uvx crapkit`. Outside
+  uvx, a next step names `crapkit` only when PATH finds this installation's console
+  script, and otherwise the python that runs it (accuracy change C15).
 - [Help, usage errors and MCP results](docs/releases/0.8.1.md#colour-codes-stay-out-of-the-text-a-program-reads)
   carry no colour codes off a terminal, and [tracked files missing from the working
   tree](docs/releases/0.8.1.md#the-same-repo-prints-the-same-bytes-on-every-machine) are
