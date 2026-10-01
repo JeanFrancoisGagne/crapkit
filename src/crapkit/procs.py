@@ -502,8 +502,10 @@ def _exit_status(status) -> int:
 
 
 def _wait_command(proc, timeout):
-    """Leave a POSIX group leader unreaped until group cleanup confirms exit."""
-    if os.name == "nt":
+    """Leave a POSIX group leader unreaped until group cleanup confirms exit. A
+    Python with no os.waitid (Windows, python.org's macOS builds before 3.13)
+    reaps the leader here, and group cleanup finds its members by group id."""
+    if not hasattr(os, "waitid"):
         return proc.wait(timeout=timeout)
     options = os.WEXITED | os.WNOWAIT
     if timeout is None:

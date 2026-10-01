@@ -320,3 +320,23 @@ def test_run_bounded_hands_back_the_exit_code_of_a_streamed_command(tmp_path):
 
     assert code == 3
     assert log.read_text(encoding="utf-8").strip() == "7"
+
+
+@pytest.mark.skipif(procs.os.name == "nt", reason="Windows waits with Popen.wait; the POSIX wait is under test")
+def test_a_lane_command_is_waited_on_where_python_has_no_os_waitid(monkeypatch):
+    """python.org's macOS Pythons before 3.13 have no os.waitid, and every lane run
+    there died with AttributeError in _wait_command: the 0.8.1 release's macOS
+    accuracy cell, `crapkit coverage` exited 1. Popen.wait still bounds the wait."""
+    monkeypatch.delattr(procs.os, "waitid")
+    quits = subprocess.Popen([sys.executable, "-c", "raise SystemExit(3)"], start_new_session=True)
+    reads = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"],
+                             stdin=subprocess.PIPE, start_new_session=True)
+    try:
+        assert procs._wait_command(quits, None) == 3
+        with pytest.raises(subprocess.TimeoutExpired):
+            procs._wait_command(reads, TICK)
+    finally:
+        reads.communicate(b"")
+
+
+TICK = 0.2  # a poll slice: the reader never ends on its own, so any slice expires
