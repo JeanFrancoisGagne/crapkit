@@ -149,5 +149,9 @@ def test_a_citation_of_a_moved_address_is_named_with_its_live_form(tmp_path):
     assert dead_citations(rulings.load(tmp_path)) == ["D5: istanbuljs/nyc/blob/nyc-v<version>"]
 
 
-def test_no_repo_ruling_cites_an_address_that_answers_404():
+def test_no_repo_ruling_cites_a_known_moved_address():
+    """No repo rulings row cites an address that matches one of the four MOVED
+    patterns, the moved addresses C13 replaced in six rows. The test asks no
+    server for a status, so a citation of any other address that answers 404
+    passes."""
     assert dead_citations(rulings.load()) == []
