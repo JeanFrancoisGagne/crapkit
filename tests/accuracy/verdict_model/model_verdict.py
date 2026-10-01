@@ -5,9 +5,9 @@ sha256, so a docs edit that moves or rewrites one fails the kit contract until
 this model is read against the new text again. No crapkit import: the tests
 compare what crapkit prints with what these functions say it should print.
 
-doc: README.md:1376-1468 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aacfd8e862acadfae30
-doc: README.md:1470-1497 sha256=2a0ca63518c599c9ed7c425b5b85bfc1bea28854e6aed403ccc5f0f04938601f
-doc: README.md:1282-1282 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
+doc: README.md:1379-1471 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aacfd8e862acadfae30
+doc: README.md:1473-1500 sha256=2a0ca63518c599c9ed7c425b5b85bfc1bea28854e6aed403ccc5f0f04938601f
+doc: README.md:1285-1285 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
 doc: CONTEXT.md:30-37 sha256=f7baa578e3f82045a5588991a9c2a408ee7995faa7f12e682342b60295ef2987
 doc: CONTEXT.md:83-154 sha256=e4fbb26a3289f62d24e9a749dadceba60667205c477c3109c4585b56bd00149a
 doc: docs/ratchet.md:20-89 sha256=c632bda254159ea7a636a8959cac9f4eda6e27f71bb32729d05aefde1eda14c2
@@ -26,10 +26,10 @@ doc: docs/lanes.md:1540-1578 sha256=964831502d735a929aaae499fd2404f9f8d39a2827e0
 doc: docs/lanes.md:1714-1727 sha256=c80c08b87c893b48a67c8dc8b92f1d37f947e41bee1efafb8670fe670064689c
 doc: docs/ratchet.md:1103-1107 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
 doc: docs/agent-json.md:593-613 sha256=64d6cb9b71322533826e0516f0eb3a3646b001c9636575730dc41313cfd76acf
-doc: docs/lanes.md:1215-1372 sha256=96c2599a790a9dda70427465335807613ac4b519ff7bca7b18fde7cb87a98dfc
+doc: docs/lanes.md:1215-1372 sha256=7d28889683d759dc2dc72783fd1428ceb32951db241a9b8735352e65a8fa1c9e
 doc: docs/lanes.md:1374-1435 sha256=9562d770e19872b412caf2ed5a4dbf8760c219d517f71ae90efa2d54b7f5c8a0
 doc: docs/lanes.md:1972-2073 sha256=6b2e585c08bcc87c7abc8d6bd58a0038fa702579d1bac4837b7de1698f70b532
-doc: README.md:1318-1325 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
+doc: README.md:1321-1328 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
 doc: docs/portable-records.md:9-24 sha256=e4e06a93b5a1fd4569a93b1673493be0fcdd6e7eb3b04c0d0bc507b5dd3867c9
 """
 from __future__ import annotations
