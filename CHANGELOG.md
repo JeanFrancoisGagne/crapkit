@@ -46,6 +46,9 @@ page](docs/releases/0.8.1.md#upgrading-from-080) keeps the full upgrade notes.
    over its ceiling there, where 0.8.0 passed at 0. `test-scoped` refuses a test-named
    file outside every scope and every test directory at exit 3: move it under a scope's
    `paths` or into `tests/`. `verify` rounds a hand-typed mark to four decimals.
+   `verify --override` in a repo whose `crapkit.toml` sets no `alert_command` exits 3
+   before any lane runs, where 0.8.0 exited with the verdict's code: set `alert_command`
+   or drop `--override`.
 4. Check what reads crapkit's output. Messages spell a dash as ` - `, `worklist` ends with
    a `-> next:` line, a no-lane row prints `cov -`, a run with no scored function prints a
    load of `0.0`, a partial run's `crap_load` counts only the scopes it measured, and

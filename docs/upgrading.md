@@ -524,6 +524,7 @@ rest:
 | What the job meets | Command | 0.8.0 exit | 0.8.1 exit | Action |
 |---|---|---|---|---|
 | `git checkout main` after a passing verify on a feature branch | `verify` | 4, blaming a rebase or amend | its verdict against main's own run; 4 only when no trusted run sits behind HEAD | None |
+| `--override REASON` where `crapkit.toml` sets no `alert_command` | `verify` | the verdict's: 0 on a passing tree, 7 on a ratchet regression, and 3 after every lane ran on a gate breach the override would grant | 3 before any lane runs, `no alert_command configured` | Set [`alert_command`](ratchet.md#overrides-and-the-audit-trail), or drop `--override` |
 | a pytest lane whose coverage.py is older than 7.13.1 | `doctor` | 0 | 1, a FAIL naming the install line | Install `coverage>=7.13.1` where the lane runs |
 | a run under uvx, `uv run --with` or `pipx run` | `doctor --plugin-root` | 0 | 1, ``FAIL no `crapkit` on PATH`` | `uv tool install crapkit`, or `pipx install crapkit` |
 | a user-scope plugin older than a project-scope one, no PATH given | `doctor --plugin-root` | 0 | 1 | Update the older install |
