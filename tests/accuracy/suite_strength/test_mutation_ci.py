@@ -40,9 +40,11 @@ mutation = _load()
 
 JOBS = yaml.safe_load((ROOT / ".github/workflows/accuracy.yml").read_text(encoding="utf-8"))["jobs"]
 RECEIPT_FILES = f"{mutation.RECEIPTS.as_posix()}/*.json"
-# The stats pass over the calc stage took about 24 minutes at c3fa1d42; the cap
-# leaves the diff run the 30 minutes of judging the old cap meant on top of it.
-STATS_MINUTES = 24
+# Before its first mutant the nightly diff of 2026-10-01 (accuracy run
+# 36891129973, 896 functions) spent 32.1 minutes in mutmut's stats pass and 14.8
+# in its clean pass, 0.7 before them: 47.6 in all, where c3fa1d42 measured about
+# 24. The cap leaves the diff run the 30 minutes of judging on top of that.
+STATS_MINUTES = 48
 JUDGING_MINUTES = 30
 MUTATION_JOBS = ("mutation-diff", "mutation-full")
 

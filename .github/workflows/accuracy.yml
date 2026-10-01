@@ -484,13 +484,16 @@ jobs:
   mutation-diff:
     # Nightly, and on the label: every function of the calc modules whose stored
     # verdicts do not carry to this head (tools/accuracy/mutation.py, "Carrying a
-    # verdict"), capped at 60 minutes, since the stats pass alone takes about 24;
-    # a capped run reports incomplete, never pass. The receipts carry from run
-    # to run in the actions cache, keyed by the environment key they hold.
+    # verdict"), capped at 78 minutes: 48 before the first mutant (run
+    # 36891129973: stats pass 32.1, clean pass 14.8) and 30 of judging. A capped
+    # run reports incomplete, never pass. A run that judges every function
+    # (9,627 mutants) needs hours more, so it stays incomplete. The receipts
+    # carry from run to run in the actions cache, keyed by the environment key
+    # they hold.
     needs: [plan, image]
     if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'label'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 95
     steps:
       - uses: actions/checkout@v4
         with:
@@ -512,7 +515,7 @@ jobs:
           REF: ${{ needs.image.outputs.ref }}
         run: |
           docker run --rm --network none --tmpfs /tmp:exec --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src "$REF" \
-            python tools/accuracy/mutation.py diff --cap-minutes 60
+            python tools/accuracy/mutation.py diff --cap-minutes 78
       # A failed run's receipt still stores what it judged; one that died wrote none.
       - uses: actions/cache/save@v4
         if: always() && steps.env.outputs.key != ''

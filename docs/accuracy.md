@@ -245,7 +245,7 @@ them. One shard of the weekly run, and the run over all of them under a cap:
 
 ```
 docker run --rm --network none --tmpfs /tmp:exec -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py weekly --shard 1 --of 8
-docker run --rm --network none --tmpfs /tmp:exec -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py diff --cap-minutes 60
+docker run --rm --network none --tmpfs /tmp:exec -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py diff --cap-minutes 78
 ```
 
 Always give a mutation stage `/tmp` on tmpfs, with `exec`, since the tests run
@@ -291,7 +291,11 @@ under that key before it runs. The nightly and label `diff` run saves the
 receipts it leaves; each weekly shard uploads its receipt as
 `mutation-receipt-N`, and the `mutation-store` job merges them into one entry.
 A new image, or any other change to the key, starts from no receipt. The
-`diff` cap is 60 minutes, since the stats pass alone takes about 24.
+`diff` cap is 78 minutes: the nightly run of 2026-10-01 spent 47.6 minutes
+before its first mutant (mutmut's stats pass 32.1, its clean pass 14.8), and
+the cap leaves 30 minutes of judging on top. A run that judges every function
+of the 18 modules (9,627 mutants) needs hours more than that and reports
+`incomplete`; mutmut judges the mutants whose tests are cheapest first.
 
 `--cold` carries nothing and compares what it judges with what would have
 carried. A difference fails the run, and the receipts older than it carry

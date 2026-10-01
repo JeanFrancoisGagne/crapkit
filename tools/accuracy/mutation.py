@@ -2530,7 +2530,8 @@ def _parser() -> argparse.ArgumentParser:
     weekly.add_argument("--cold", action="store_true", help="carry no stored verdict")
     diff = sub.add_parser("diff")
     diff.add_argument("--cap-minutes", type=float, default=60,
-                      help="the stats pass alone took about 24 minutes at c3fa1d42")
+                      help="mutmut's stats and clean passes took 47.6 minutes before the first "
+                      "mutant in accuracy run 36891129973; CI passes 78")
     diff.add_argument("--cold", action="store_true", help="carry no stored verdict")
     gate_p = sub.add_parser("gate")
     gate_p.add_argument("results", nargs="+", type=Path)
