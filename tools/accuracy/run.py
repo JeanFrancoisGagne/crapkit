@@ -1,8 +1,8 @@
 """Run a tier of the accuracy suite, or one shard of it, and write its receipt.
 
     python tools/accuracy/run.py [--tier push|nightly|weekly|release] [--shard NAME]
-                                 [--os-sensitive] [-n WORKERS] [--receipt PATH]
-                                 [--checks DIR]
+                                 [--os-sensitive] [--local] [-n WORKERS]
+                                 [--receipt PATH] [--checks DIR]
     python tools/accuracy/run.py merge RECEIPT... --out PATH
     python tools/accuracy/run.py image-tag
     python tools/accuracy/run.py kit-goldens --declare ID --kind KIND --reason TEXT
@@ -24,6 +24,11 @@ packet owns:
          "pytest": ["tests/accuracy/analysis_oracles/test_decode_matrix.py"]},
         {"name": "wheel diff", "seconds": 60, "tiers": ["release"],
          "argv": ["python", "tools/accuracy/wheel_diff.py", "--corpus", "small"]},
+        {"name": "retro replays", "seconds": 0, "tiers": ["release"],
+         "cells": ["linux-3.12", "win32-3.13"],
+         "argv": ["python", "tools/accuracy/retro.py", "release"]},
+        {"name": "receipts cover", "seconds": 0, "tiers": ["release"], "local": True,
+         "argv": ["python", "tools/accuracy/mutation.py", "covered"]},
     ]
 
 `seconds` is the check's declared serial time on ubuntu in the push tier.
@@ -31,7 +36,12 @@ packet owns:
 decoding, path spellings, argv splitting, a shell); `--os-sensitive` runs only
 those, and the checks whose `os` names this platform, which is what CI's
 Windows push job runs, since the rest answer the same on every OS and the
-Ubuntu job already ran them. A
+Ubuntu job already ran them. `cells` names the `<sys.platform>-<minor>`
+interpreters a CI cell runs the check under, so a check that judges the same
+thing on every Python of one OS runs in one cell of it. `local: True` marks a
+check that reads state only the releasing machine holds (mutation receipts):
+it runs only with `--local`, which release.py's accuracy stage passes, and
+`--local` runs every other selected check whatever `cells` it names. A
 pytest check names test files or directories, and the tier's markers pick what
 runs inside them (tests/accuracy/kit/tiers.py). One pytest session runs every
 selected pytest check, at -n WORKERS when given, and a check's measured time is
@@ -74,6 +84,7 @@ import json
 import os
 from pathlib import Path
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -87,7 +98,8 @@ from accuracy.kit import runlog, tiers  # noqa: E402
 
 CHECKS_DIR = REPO / "tools" / "accuracy" / "checks"
 PINS = REPO / "tools" / "accuracy" / "pins.toml"
-FIELDS = frozenset({"name", "pytest", "argv", "seconds", "os", "tiers", "os_sensitive"})
+FIELDS = frozenset({"name", "pytest", "argv", "seconds", "os", "tiers", "os_sensitive", "cells",
+                    "local"})
 EXIT = {"pass": 0, "fail": 1, "infra": 3}
 OS_NAMES = {"win32": "windows", "linux": "linux", "darwin": "macos"}
 # Everything the accuracy image is built from; its tag hashes these.
@@ -130,6 +142,8 @@ class Check:
     os: tuple = ()
     tiers: tuple = ()
     os_sensitive: bool = False
+    cells: tuple = ()
+    local: bool = False
 
 
 @dataclass(frozen=True)
@@ -167,13 +181,20 @@ def _argv_tiers(row: dict) -> str | None:
     return "is an argv check: an argv check names its tiers" if unnamed else None
 
 
-def _sensitive_flag(row: dict) -> str | None:
-    if isinstance(row.get("os_sensitive", False), bool):
-        return None
-    return "sets os_sensitive to something other than True or False"
+def _flags(row: dict) -> str | None:
+    named = [name for name in ("os_sensitive", "local") if not isinstance(row.get(name, False), bool)]
+    return f"sets {named[0]} to something other than True or False" if named else None
 
 
-ROW_RULES = (_unknown, _no_seconds, _targets, _node_ids, _argv_tiers, _sensitive_flag)
+CELL_SHAPE = re.compile(r"(linux|win32|darwin)-3\.\d+")
+
+
+def _cell_names(row: dict) -> str | None:
+    odd = [cell for cell in row.get("cells", ()) if not CELL_SHAPE.fullmatch(str(cell))]
+    return f"names cell {odd[0]!r}; a cell is <sys.platform>-<minor>, as in win32-3.13" if odd else None
+
+
+ROW_RULES = (_unknown, _no_seconds, _targets, _node_ids, _argv_tiers, _flags, _cell_names)
 
 
 def _check(key: str, shard: str, row: dict) -> Check:
@@ -183,7 +204,8 @@ def _check(key: str, shard: str, row: dict) -> Check:
     return Check(key=key, name=row["name"], shard=shard, seconds=row["seconds"],
                  pytest=tuple(row.get("pytest", ())), argv=tuple(row.get("argv", ())),
                  os=tuple(row.get("os", ())), tiers=tuple(row.get("tiers", ())),
-                 os_sensitive=row.get("os_sensitive", False))
+                 os_sensitive=row.get("os_sensitive", False), cells=tuple(row.get("cells", ())),
+                 local=row.get("local", False))
 
 
 def _module(path: Path):
@@ -248,12 +270,25 @@ def _wanted(check: Check, os_sensitive_only: bool) -> bool:
     return check.os_sensitive or bool(check.os) or not os_sensitive_only
 
 
+def _in_stage(check: Check, cell: str, local: bool) -> bool:
+    """The releasing machine runs every check; a CI cell runs no local one, and a
+    check that names cells only in those."""
+    if local:
+        return True
+    return not check.local and (not check.cells or cell in check.cells)
+
+
 def selected(checks: list[Check], tier: str, shard: str | None, platform: str,
-             os_sensitive_only: bool = False) -> list[Check]:
-    """The checks a tier runs in this shard on this platform: only the ones whose
-    answer can change with the OS when `os_sensitive_only` holds."""
+             os_sensitive_only: bool = False, python: str | None = None,
+             local: bool = False) -> list[Check]:
+    """The checks a tier runs in this shard on this platform and Python minor
+    (this interpreter's when None): only the ones whose answer can change with
+    the OS when `os_sensitive_only` holds, and the local ones only on the
+    releasing machine (`local`)."""
+    cell = f"{platform}-{python or _python()}"
     keeps = (lambda check: _in_shard(check, shard), lambda check: _on_os(check, platform),
-             lambda check: _in_tier(check, tier), lambda check: _wanted(check, os_sensitive_only))
+             lambda check: _in_tier(check, tier), lambda check: _wanted(check, os_sensitive_only),
+             lambda check: _in_stage(check, cell, local))
     return [check for check in checks if all(keep(check) for keep in keeps)]
 
 
@@ -578,6 +613,9 @@ def _run_parser() -> argparse.ArgumentParser:
     parser.add_argument("--os-sensitive", action="store_true",
                         help="run only the checks whose answer can change with the OS "
                              "(CI's Windows push job)")
+    parser.add_argument("--local", action="store_true",
+                        help="the releasing machine (release.py's accuracy stage): also run the "
+                             "checks that read local state, and each check in any cell")
     parser.add_argument("-n", "--workers", type=int, default=0,
                         help="pytest-xdist workers for the pytest session")
     parser.add_argument("--receipt", type=Path, help="where to write the receipt")
@@ -588,7 +626,7 @@ def _run_parser() -> argparse.ArgumentParser:
 def _run_main(argv: list[str]) -> int:
     args = _run_parser().parse_args(argv)
     checks = selected(load_checks(args.checks), args.tier, args.shard, sys.platform,
-                      args.os_sensitive)
+                      args.os_sensitive, local=args.local)
     saved = run_tier(checks, args.tier, args.shard, args.workers)
     _publish(saved, args.receipt or default_receipt(args.tier, args.shard))
     return EXIT[saved["outcome"]]

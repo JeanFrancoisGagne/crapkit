@@ -305,13 +305,31 @@ def test_the_accuracy_stage_follows_verify():
     assert accuracy.background
 
 
+@pytest.mark.parametrize("platform, python, expected", [
+    ("linux", "3.12", {"retro replays for the release", "mutation receipts cover the release"}),
+    ("win32", "3.11", {"retro replays for the release"}),
+])
+def test_the_local_tier_runs_the_rows_that_read_this_machine_s_state(platform, python, expected):
+    """The bundle rows replay only where the history bundle is, and the mutation
+    receipts live only here: the stage's own command, read by run.py's parser
+    and check selection, runs both rows, the mutation one on Linux only, since
+    `covered` exits 3 until a stored receipt carries verdicts."""
+    import runpy
+    tool = runpy.run_path(str(ROOT / "tools" / "accuracy" / "run.py"))
+    args = tool["_run_parser"]().parse_args(list(_accuracy_step().commands[0][2:]))
+    names = {check.name for check in tool["selected"](tool["load_checks"](), args.tier, args.shard, platform,
+                                                       args.os_sensitive, python=python, local=args.local)}
+
+    assert names & {"retro replays for the release", "mutation receipts cover the release"} == expected
+
+
 def test_the_accuracy_stage_publishes_no_release_ref():
     """The remote run reaches the tagged commit through a scratch branch, never
     through the tag or main."""
     accuracy = _accuracy_step()
     pushed = [command[-1] for command in accuracy.commands if command[:2] == ("git", "push")]
 
-    assert accuracy.commands[0][1:] == ("tools/accuracy/run.py", "--tier", "release", "--receipt",
+    assert accuracy.commands[0][1:] == ("tools/accuracy/run.py", "--tier", "release", "--local", "--receipt",
                                         ".crapkit/release-accuracy-0.5.2.json")
     assert pushed == ["v0.5.2^{commit}:refs/heads/accuracy-release/0.5.2", "accuracy-release/0.5.2"]
     assert accuracy.commands[2][-4:] == ("-f", "mode=release", "-f", "release_key=0.5.2")

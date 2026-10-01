@@ -36,8 +36,14 @@ CHECKS = [
      "pytest": [_SS + "test_runner_targets.py"]},
     {"name": "no ruling waits on an answer", "seconds": 0,
      "pytest": [_SS + "test_release_rows.py"]},
+    # One CI cell per OS replays the public rows; the releasing machine also
+    # replays the bundle rows, from the history bundle only it holds.
     {"name": "retro replays for the release", "seconds": 0, "tiers": ["release"],
+     "cells": ["linux-3.12", "win32-3.13"],
      "argv": ["python", "tools/accuracy/retro.py", "release"]},
+    # The receipts live on the releasing machine, and `covered` exits 3 until a
+    # stored receipt carries verdicts, so no CI cell and no Windows release runs it.
     {"name": "mutation receipts cover the release", "seconds": 0, "tiers": ["release"],
+     "os": ["linux"], "local": True,
      "argv": ["python", "tools/accuracy/mutation.py", "covered"]},
 ]

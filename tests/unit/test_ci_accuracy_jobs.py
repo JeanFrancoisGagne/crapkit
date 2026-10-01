@@ -14,6 +14,7 @@ import runpy
 import shlex
 import tomllib
 
+import pytest
 import yaml
 
 from test_ci_parallel_jobs import CI, arguments, rendered, step
@@ -117,7 +118,24 @@ def test_the_windows_nightly_cell_replays_the_past_bugs_the_image_cannot():
     assert (linux.command, linux.platform_only) == ("nightly", False)
     assert (native.command, native.platform_only) == ("nightly", True)
     assert f"uv {setup['with']['version']}" == pins["oracle"]["uv"]["version_line"]
-    assert setup["if"] == step(windows, "run", "python tools/accuracy/retro.py")["if"]
+
+
+def test_every_windows_cell_that_replays_a_past_bug_has_uv_before_it():
+    """A replay installs each commit's venv with `uv pip install`, and the runner
+    image ships no uv: without setup-uv a stale row in the release cell ends in
+    FileNotFoundError instead of a verdict."""
+    windows = _jobs("accuracy.yml")["windows"]
+    setup = step(windows, "uses", "astral-sh/setup-uv@")
+    nightly = step(windows, "run", "python tools/accuracy/retro.py")
+    first = min(_tier_index(windows), windows["steps"].index(nightly))
+    for mode in ("nightly", "release"):
+        for python in windows["strategy"]["matrix"]["python"]:
+            row = {"python": python}
+            replays = _holds(nightly["if"], mode, row) or (
+                mode == "release" and _runs_retro_release(windows, row, "win32"))
+
+            assert _holds(setup["if"], mode, row) == replays, (mode, python)
+    assert windows["steps"].index(setup) < first
 
 
 COLD_SECONDS_A_ROW = 51.5  # a Linux row replayed with no worktree, venv or verdict kept, measured 2026-10-01
@@ -181,25 +199,49 @@ def _holds(condition, mode: str, row: dict) -> bool:
     return eval(text)
 
 
+MUTATION_RELEASE = "mutation receipts cover the release"
+
+
 def _release_cells():
-    """(job, matrix row, sys.platform) for every cell a release run starts."""
+    """(job, matrix row, sys.platform) for every cell a release run starts; each
+    row names the Python minor the cell runs."""
     jobs = _jobs("accuracy.yml")
     for row in jobs["oracles"]["strategy"]["matrix"]["include"]:
         yield jobs["oracles"], row, "linux"
     for python in jobs["windows"]["strategy"]["matrix"]["python"]:
         yield jobs["windows"], {"python": python}, "win32"
-    yield jobs["macos"], {}, "darwin"
+    macos = step(jobs["macos"], "uses", "actions/setup-python@")["with"]["python-version"]
+    yield jobs["macos"], {"python": macos}, "darwin"
 
 
-def _runs_retro_release(job: dict, row: dict, platform: str) -> bool:
-    """Whether the cell's release tier, read by run.py's own parser and check
-    selection, runs `retro.py release`."""
+def _release_checks(job: dict, row: dict, platform: str) -> set:
+    """The names of the checks the cell's release tier runs, read by run.py's own
+    parser and check selection."""
     command = job["steps"][_tier_index(job)]["run"].replace("\\\n", " ")
     command = command[command.index("python tools/accuracy/run.py"):].replace('"$TIER"', "release")
     command = rendered(command.replace("${{ needs.plan.outputs.tier }}", "release"), row)
     args = arguments(RUN_TOOL["_run_parser"]().parse_args, command, "tools/accuracy/run.py")
-    checks = RUN_TOOL["selected"](RUN_TOOL["load_checks"](), "release", args.shard, platform, args.os_sensitive)
-    return RETRO_RELEASE in {check.name for check in checks}
+    checks = RUN_TOOL["selected"](RUN_TOOL["load_checks"](), "release", args.shard, platform, args.os_sensitive,
+                                  python=row["python"], local=args.local)
+    return {check.name for check in checks}
+
+
+def _runs_retro_release(job: dict, row: dict, platform: str) -> bool:
+    return RETRO_RELEASE in _release_checks(job, row, platform)
+
+
+def test_one_release_cell_per_os_replays_the_past_bugs_and_none_reads_mutation_receipts():
+    """`retro.py release` judges the same public rows on every Python of one OS,
+    so a second Windows cell repeated each replay. `mutation.py covered` reads
+    receipts no CI checkout holds and exits 3 there, so only the releasing
+    machine runs it."""
+    retro = [(platform, row["python"]) for job, row, platform in _release_cells()
+             if _runs_retro_release(job, row, platform)]
+    mutation = [row for job, row, platform in _release_cells()
+                if MUTATION_RELEASE in _release_checks(job, row, platform)]
+
+    assert sorted(retro) == [("linux", "3.12"), ("win32", "3.13")]
+    assert mutation == []
 
 
 def _verdict_cache_steps(job: dict, row: dict, action: str, where) -> list[dict]:
@@ -208,6 +250,34 @@ def _verdict_cache_steps(job: dict, row: dict, action: str, where) -> list[dict]
     return [item for index, item in enumerate(job["steps"])
             if str(item.get("uses", "")).startswith(action) and item.get("with", {}).get("path") == VERDICTS
             and where(index) and _holds(item.get("if"), "release", row)]
+
+
+@pytest.mark.parametrize("field, problem", [
+    ({"cells": ["windows-3.13"]}, "names cell 'windows-3.13'; a cell is <sys.platform>-<minor>"),
+    ({"cells": ["win32"]}, "names cell 'win32'"),
+    ({"local": "yes"}, "sets local to something other than True or False"),
+])
+def test_a_check_that_names_a_cell_run_py_cannot_match_is_refused(field, problem):
+    """A misspelled cell would leave the check out of every cell without a word."""
+    row = {"name": "replays", "seconds": 0, "tiers": ["release"], "argv": ["python", "x.py"], **field}
+
+    with pytest.raises(RUN_TOOL["CheckError"], match=re.escape(problem)):
+        RUN_TOOL["_check"]("suite_strength", "verdict-score", row)
+
+
+def test_a_check_with_cells_runs_only_in_them_and_a_local_one_only_on_the_releasing_machine():
+    check = RUN_TOOL["_check"]("k", "s", {"name": "c", "seconds": 0, "tiers": ["release"], "argv": ["python", "x.py"],
+                                          "cells": ["linux-3.12", "win32-3.13"]})
+    local = RUN_TOOL["_check"]("k", "s", {"name": "l", "seconds": 0, "tiers": ["release"], "argv": ["python", "y.py"],
+                                          "local": True})
+    picked = {(platform, python, here): [found.name for found in RUN_TOOL["selected"](
+        [check, local], "release", None, platform, python=python, local=here)]
+        for platform in ("linux", "win32") for python in ("3.11", "3.12", "3.13") for here in (False, True)}
+
+    assert {cell for cell, names in picked.items() if "c" in names} == {
+        ("linux", "3.12", False), ("win32", "3.13", False), *((platform, python, True) for platform in ("linux", "win32")
+                                                              for python in ("3.11", "3.12", "3.13"))}
+    assert {cell for cell, names in picked.items() if "l" in names} == {cell for cell in picked if cell[2]}
 
 
 def test_a_release_cell_judges_an_unchanged_row_by_its_kept_verdict():
@@ -230,7 +300,7 @@ def test_a_release_cell_judges_an_unchanged_row_by_its_kept_verdict():
         assert "always()" in saves[0]["if"]
         keys.append(key)
 
-    assert len(keys) == len(set(keys)) == 3
+    assert len(keys) == len(set(keys)) == 2
 
 
 def _nightly_npm_prefixes() -> list[str]:

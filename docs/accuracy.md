@@ -339,10 +339,18 @@ share the disk, so the stage's own files sit in RAM as well.
 ### Release
 
 ```
-python tools/accuracy/run.py --tier release --receipt .crapkit/release-accuracy-VERSION.json
+python tools/accuracy/run.py --tier release --local --receipt .crapkit/release-accuracy-VERSION.json
 ```
 
 The release tool runs this in its `accuracy` stage (see [Releases](#releases)).
+`--local` adds the rows that read state only the releasing machine holds, and
+runs `retro.py release` whatever cells its row names, so the bundle rows replay
+there.
+
+The mutation row is one of them, and it runs only on Linux. A CI checkout holds
+no receipt, and `covered` exits 3 until a stored receipt carries verdicts, which
+no receipt does before the first carrying weekly, so a release from Windows
+skips it.
 
 Its mutation row, `python tools/accuracy/mutation.py covered`, reads the verdicts
 the weekly and diff receipts under `.crapkit/accuracy/mutation/` store (see
@@ -478,7 +486,8 @@ clone that never made it) or holds another commit is rebuilt with its venvs.
 
 The release tier runs `retro.py release`, which judges every stale row by the
 same verdict cache, keyed at the release tier. In a release run of accuracy.yml
-the cells that run it (the Linux `verdict-score` shard and both Windows cells)
+one cell per OS runs it, the Linux `verdict-score` shard on 3.12 and the Windows
+3.13 cell (its row names `linux-3.12` and `win32-3.13`), and those cells
 restore and save that cache under `retro-verdicts-release-<os>-<python>-`, so a
 re-run of a cell, or the next release within GitHub's 7-day cache eviction,
 replays only the rows no earlier run kept. Rows R01 to R12 are bundle rows:
@@ -487,8 +496,10 @@ GitHub holds none of them. A bundle row whose digest has not moved is not
 replayed; its ledger record answers for it. A stale bundle row replays where
 `CRAPKIT_RETRO_BUNDLE` is set or an earlier fetch left its commits in the clone.
 Anywhere else `release` names it ("a stale bundle row this clone cannot
-replay"). A CI cell then passes, and the local release stage exits 3, so set
-`CRAPKIT_RETRO_BUNDLE` there before a release.
+replay"). A CI cell then passes, and `retro.py release` exits 3 on the releasing
+machine. The release tool sets `CRAPKIT_RETRO_BUNDLE` for its local tier from the
+environment or from `tools/release/retro-bundle.path`, and refuses before the tier
+starts when neither names a file.
 
 ## Change control
 
@@ -567,7 +578,12 @@ it, as long as the bug keeps a `bugs.tsv` row.
    (`"tiers": ["nightly"]`), and its tests carry the same marker
    (`pytestmark = [pytest.mark.nightly]`), because a test with no tier marker runs
    in push. `"os": ["linux"]` on the row and `@pytest.mark.platform("linux")` on
-   the test limit it to one platform.
+   the test limit it to one platform. `"cells": ["linux-3.12", "win32-3.13"]`
+   limits a check to the CI cells of those interpreters (`<sys.platform>-<minor>`),
+   for a check that answers the same on every Python of one OS. `"local": True`
+   keeps a check off every CI cell: it runs only under `run.py --local`, which the
+   release tool's accuracy stage passes on the releasing machine, and that run
+   ignores `cells`.
 3. A new calculation gets a `calcs.tsv` row naming its modules, its functions and
    its independent test. Then run `python tools/docs/generate.py`: it rewrites
    pyproject.toml's `[tool.mutmut]` `paths_to_mutate`, the union of every row's

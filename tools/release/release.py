@@ -635,7 +635,7 @@ def _upload_prefix(surface: str, version: str) -> tuple:
 def _accuracy_step(version: str) -> Step:
     branch = accuracy_branch(version)
     return Step("accuracy", "accuracy", (
-        (PY, "tools/accuracy/run.py", "--tier", "release", "--receipt", accuracy_receipt(version)),
+        (PY, "tools/accuracy/run.py", "--tier", "release", "--local", "--receipt", accuracy_receipt(version)),
         ("git", "push", "-q", "origin", f"v{version}^{{commit}}:refs/heads/{branch}"),
         ("gh", "workflow", "run", "accuracy.yml", "--repo", GITHUB_REPO, "--ref", branch,
          "-f", "mode=release", "-f", f"release_key={version}"),

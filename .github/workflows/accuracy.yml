@@ -321,10 +321,18 @@ jobs:
         run: |
           folder=$(python tools/accuracy/corpus.py fetch --dest .crapkit/corpus)
           echo "CRAPKIT_ACCURACY_CORPUS=$folder" >> "$GITHUB_ENV"
-      # At release this tier runs `retro.py release`, which judges a stale row by
-      # the verdict kept for it at the release tier and this cell's Python.
+      # At release the 3.13 cell's tier runs `retro.py release` (its check names
+      # the cells linux-3.12 and win32-3.13), which judges a stale row by the
+      # verdict kept for it at the release tier and this cell's Python. A replay
+      # installs its venvs with uv.
+      - uses: astral-sh/setup-uv@v6
+        if: matrix.python == '3.13' && (needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'release')
+        with:
+          version: "0.12.17"  # tools/accuracy/pins.toml, [oracle.uv]
+          enable-cache: true
+          cache-dependency-glob: tests/accuracy/suite_strength/retro/bugs.tsv
       - uses: actions/cache/restore@v4
-        if: needs.plan.outputs.mode == 'release'
+        if: matrix.python == '3.13' && needs.plan.outputs.mode == 'release'
         with:
           path: .crapkit/accuracy/retro-verdicts
           key: retro-verdicts-release-windows-${{ matrix.python }}-${{ github.run_id }}
@@ -332,7 +340,7 @@ jobs:
       # The checks whose os list names win32, plus every check with no os list.
       - run: python tools/accuracy/run.py --tier ${{ needs.plan.outputs.tier }} -n 4 --receipt .crapkit/accuracy/receipts/windows-${{ matrix.python }}.json
       - uses: actions/cache/save@v4
-        if: always() && needs.plan.outputs.mode == 'release'
+        if: always() && matrix.python == '3.13' && needs.plan.outputs.mode == 'release'
         with:
           path: .crapkit/accuracy/retro-verdicts
           key: retro-verdicts-release-windows-${{ matrix.python }}-${{ github.run_id }}
@@ -342,12 +350,6 @@ jobs:
       # ImageVersion name the runner image, so a new runner image replays the
       # Windows rows once. The verdicts are saved even when the step fails, and
       # uploaded for `retro.py adopt --env-key`.
-      - uses: astral-sh/setup-uv@v6
-        if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
-        with:
-          version: "0.12.17"  # tools/accuracy/pins.toml, [oracle.uv]
-          enable-cache: true
-          cache-dependency-glob: tests/accuracy/suite_strength/retro/bugs.tsv
       - uses: actions/cache/restore@v4
         if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
         with:
