@@ -230,7 +230,8 @@ def test_a_release_dispatch_runs_nightly_and_weekly_entries_with_the_release_cad
     plan = scope(tmp_path, EVENT_NAME="workflow_dispatch", CADENCE_INPUT="release")
 
     assert plan["cadence"] == "release" and set(plan["jobs"]) == scheduled("release")
-    assert {"nightly-linux-core", "weekly-online"} <= _names(plan, "linux")
+    assert {"nightly-linux-core", "latest-harnesses"} <= _names(plan, "linux")
+    assert "weekly-online" not in plan["jobs"]
     pushed = ("lin-repeat", "lin-clock")  # the push set by design: twice cold, and on a moved clock
     assert all("--cadence release" in args for entry in plan["linux"] if entry["name"] not in pushed
                for args in entry["runs"])

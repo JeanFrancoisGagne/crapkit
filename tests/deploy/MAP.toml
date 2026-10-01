@@ -403,9 +403,12 @@ then = "python tools/deploy/lock.py manifest --check --image crapkit-deploy:core
 timeout = 60
 measured = 0
 
+# Not in the release cadence: its cells check vVERSION out of GitHub, which
+# holds that tag only once stage 2b pushes it (0.8.1's release run failed it
+# with "git checkout v0.8.1 failed"). published-online runs after the push.
 [jobs.weekly-online]
 runner = "linux"
-when = ["weekly", "release"]
+when = ["weekly"]
 runs = ["--online --cadence {cadence} --os linux --image core --cache gha -n 4"]
 timeout = 30
 measured = 0

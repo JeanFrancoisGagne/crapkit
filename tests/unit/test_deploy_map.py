@@ -325,6 +325,15 @@ def test_every_open_question_names_a_probe_cell_or_a_manual_check():
     assert [key for key, item in MAP["unknowns"].items() if ("probe" in item) == ("manual" in item)] == []
 
 
+def test_the_online_set_waits_for_the_tag_the_release_pushes():
+    """weekly-online's cells check vVERSION out of GitHub, and the tag reaches
+    GitHub only when stage 2b pushes it, after the release cadence must pass:
+    0.8.1's release run spent its 30-minute entry on "git checkout v0.8.1
+    failed". published-online runs after the push."""
+    assert MAP["jobs"]["weekly-online"]["when"] == ["weekly"]
+    assert MAP["jobs"]["published-online"]["when"] == ["published"]
+
+
 def test_every_scope_path_is_in_the_tree():
     assert [path for path in MAP["scope"]["paths"] if not (ROOT / path).exists()] == []
 
