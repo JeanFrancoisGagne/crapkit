@@ -146,9 +146,12 @@ deploy gate: the deploy record was made at 0123456789ab and the release is at 8f
 deploy gate: GitHub holds no successful deploy.yml run named `deploy release TREE` at 8fb7b45c7248; rerun `python tools/release/release.py run deploy VERSION`
 ```
 
-The release cadence leaves out `weekly-online`: its cells check vVERSION out of GitHub,
-and the tag reaches GitHub only when stage 2b pushes it. `published-online` runs after
-the push.
+The release cadence runs no cell that the published cadence runs: those cells copy the
+README lines that name vVERSION, and the tag, the PyPI files and the registry entry reach
+GitHub only when stage 2b pushes them. So `weekly-online` stays out of the release
+cadence, and `latest-harnesses` runs only its harness cells (`--packet deploy-harnesses`).
+`published-online` runs those cells after the push. `tests/unit/test_deploy_map.py`
+checks every release entry against run.py's own selection.
 
 `check` reads no deploy.yml run: before the bump there is no tag commit to test. It
 refuses a machine whose gh cannot dispatch and read the run later:

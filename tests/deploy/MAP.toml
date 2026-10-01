@@ -432,11 +432,14 @@ measured = 0
 # full-latest is full with every harness at its newest release, rebuilt once
 # an ISO week (22.1 GB unpacked); run.py writes latest-drift.txt beside the
 # JUnit. A release runs it too: the docs must hold for the harnesses a user
-# installs that day.
+# installs that day. --packet keeps it to the harness cells: without it the
+# release cadence's `online` term also picked the five cells that need the
+# tag, PyPI files and registry entry stage 2b has not pushed yet, and the
+# weekly ran the three weekly-online cells a second time.
 [jobs.latest-harnesses]
 runner = "linux"
 when = ["weekly", "release"]
-runs = ["--online --cadence {cadence} --os linux --image full-latest -n 4"]
+runs = ["--online --cadence {cadence} --os linux --image full-latest --packet deploy-harnesses -n 4"]
 free_disk = true
 timeout = 60
 measured = 0

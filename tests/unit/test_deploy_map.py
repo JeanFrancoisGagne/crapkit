@@ -325,13 +325,53 @@ def test_every_open_question_names_a_probe_cell_or_a_manual_check():
     assert [key for key, item in MAP["unknowns"].items() if ("probe" in item) == ("manual" in item)] == []
 
 
-def test_the_online_set_waits_for_the_tag_the_release_pushes():
-    """weekly-online's cells check vVERSION out of GitHub, and the tag reaches
-    GitHub only when stage 2b pushes it, after the release cadence must pass:
-    0.8.1's release run spent its 30-minute entry on "git checkout v0.8.1
-    failed". published-online runs after the push."""
-    assert MAP["jobs"]["weekly-online"]["when"] == ["weekly"]
-    assert MAP["jobs"]["published-online"]["when"] == ["published"]
+# --- no release entry runs a cell that needs the tag on GitHub ---------------------------------
+#
+# The release cadence runs on the tag commit before stage 2b pushes the tag,
+# PyPI files and registry entry. A cell the published cadence runs copies the
+# README lines that name vVERSION, so in a release run it fails on a surface
+# that does not exist yet: 0.8.1's release run spent weekly-online's 30-minute
+# entry on "git checkout v0.8.1 failed", and latest-harnesses selected the same
+# cells through the release cadence's `online` term.
+
+def needs_the_tag(cell) -> bool:
+    """A cell the published cadence runs reads a surface stage 2b publishes."""
+    return "published" in _parts(cell["cadence"])
+
+
+def tag_bound_in_release(jobs=MAP["jobs"], cells=MAP["cell"]):
+    """The cells that need the tag on GitHub and that a release-cadence entry
+    runs, by run.py's own -m expression for each of the entry's calls."""
+    from test_deploy_workflows import invocations, reaches
+    calls = [(when, argv) for when, argv in invocations(jobs) if when == "release"]
+    return sorted(cell_id for cell_id, cell in cells.items()
+                  if needs_the_tag(cell) and reaches(cell_id, cell, "release", calls))
+
+
+def test_no_release_entry_runs_a_cell_that_needs_the_tag_on_github():
+    assert tag_bound_in_release() == []
+
+
+def _with_release(name):
+    entry = MAP["jobs"][name]
+    return {**MAP["jobs"], name: {**entry, "when": sorted({*entry["when"], "release"})}}
+
+
+def test_an_online_entry_back_in_the_release_cadence_is_caught():
+    tagged = ["lin-online-marketplaces", "lin-online-pipgit", "lin-online-pypi", "published-precommit",
+              "published-registry"]
+
+    assert tag_bound_in_release(_with_release("weekly-online")) == tagged
+    assert tag_bound_in_release(_with_release("published-online")) == tagged
+
+
+def test_latest_harnesses_without_its_packet_is_caught():
+    entry = MAP["jobs"]["latest-harnesses"]
+    unnarrowed = [args.replace(" --packet deploy-harnesses", "") for args in entry["runs"]]
+    jobs = {**MAP["jobs"], "latest-harnesses": {**entry, "runs": unnarrowed}}
+
+    assert "release" in entry["when"]
+    assert "lin-online-pipgit" in tag_bound_in_release(jobs)
 
 
 def test_every_scope_path_is_in_the_tree():

@@ -517,10 +517,18 @@ def release_calls(calls):
     return [("release", argv) for when, argv in calls if when in ("release", "push")]
 
 
+def in_release(cell):
+    """A push, nightly or weekly cell runs in a release, unless the published
+    cadence runs it too: then it needs the tag stage 2b has not pushed yet, and
+    it runs after the push instead (test_deploy_map holds that side)."""
+    cadences = set(cell["cadence"].split("+"))
+    return bool(IN_RELEASE & cadences) and "published" not in cadences
+
+
 def unreached_by_release(cells, calls):
     release = release_calls(calls)
     return sorted({cell_id for cell_id, cell in waiting(cells)
-                   if IN_RELEASE & set(cell["cadence"].split("+")) and not reaches(cell_id, cell, "release", release)})
+                   if in_release(cell) and not reaches(cell_id, cell, "release", release)})
 
 
 CALLS = invocations()
@@ -612,11 +620,18 @@ def unblocked_calls(jobs):
     return [(name, argv) for name, job in jobs.items() if not job.get("blocked") for _, argv in _job_invocations(job)]
 
 
+def own_job_halves(cells, name):
+    """The job cells that name this entry as their job: latest-harnesses is one,
+    and its run collects that cell's @cell tests."""
+    return [(cell_id, cell) for cell_id, cell in cells.items() if cell.get("job") == f"deploy.yml:{name}" and "os" in cell]
+
+
 def empty_runs(jobs=MAP["jobs"], cells=MAP["cell"]):
     """Each run of an unblocked entry that names cells or a packet and selects
     no cell a packet writes: pytest collects nothing there and exits 5."""
     written = pytest_halves(cells)
-    return [f"{name}: {' '.join(argv)}" for name, argv in unblocked_calls(jobs) if _selects_nothing(argv, written)]
+    return [f"{name}: {' '.join(argv)}" for name, argv in unblocked_calls(jobs)
+            if _selects_nothing(argv, written + own_job_halves(cells, name))]
 
 
 def test_every_run_that_names_cells_or_a_packet_selects_a_cell_the_tree_holds():
