@@ -156,6 +156,27 @@ def test_every_bugs_row_is_well_formed():
     assert [problem for row in BUGS for problem in _bug_problems(row)] == []
 
 
+def _history() -> set[str]:
+    """The 12-character names of every commit in HEAD's history."""
+    done = hang_guard.run(["git", "rev-list", "HEAD"], cwd=REPO, text=True, encoding="utf-8",
+                          errors="replace")
+    assert done.returncode == 0, (f"git rev-list HEAD failed: {done.stderr}; "
+                                  "the check needs full history (fetch-depth: 0)")
+    return {sha[:12] for sha in done.stdout.split()}
+
+
+@pytest.mark.process
+def test_a_public_row_names_commits_in_this_history():
+    """A public row replays from a clone of main, so main must hold its commits. A
+    history rewrite leaves the old commits only in the clone that rewrote it: R193
+    and R194 named two that GitHub never held."""
+    history = _history()
+    missing = [f"{row['id']} {sha}" for row in BUGS if row["replay"] == "public"
+               for sha in (*_ids(row["fix_commits"]), row["before_commit"]) if sha not in history]
+
+    assert missing == []
+
+
 # --- the ledger --------------------------------------------------------------------------------------
 
 def test_every_bugs_row_joins_one_ledger_row():
