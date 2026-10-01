@@ -104,7 +104,8 @@ and it compares the receipts it downloads with one another and passes on a singl
 one, so a receipt gone by then would leave the rerun cells checked against nothing.
 A receipt that expired or expires within the watch, an artifact list GitHub cannot
 answer (an HTTP or network error, or a body with no list), or a rerun gh refuses gets
-a new dispatch instead.
+a new dispatch instead. xplat itself refuses when any receipt the plan job names
+(the four corpus shards, macOS and both Windows cells) is missing.
 
 Stage 2b and the registry stage believe neither report. Before each publication they
 read accuracy.yml's runs at the tag commit from GitHub and require one named

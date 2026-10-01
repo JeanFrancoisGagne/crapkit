@@ -7,6 +7,7 @@ two measured wheels, and `accuracy-green` moves the ref change control judges
 against. These read each command the way the runner does: through the argument
 parser of the script it calls, with every `${{ matrix.* }}` filled.
 """
+import fnmatch
 import json
 from pathlib import Path
 import re
@@ -96,6 +97,47 @@ def test_the_nightly_cells_compare_their_exports_by_the_same_rule():
     xplat = _jobs("accuracy.yml")["xplat"]
 
     assert step(xplat, "run", "python tools/accuracy/wheel_diff.py xplat") is not None
+
+
+def _cell_receipts():
+    """(artifact name, receipt file name) for every cell of the jobs xplat needs,
+    read from each cell's upload step and its tier's --receipt."""
+    jobs = _jobs("accuracy.yml")
+    for name in jobs["xplat"]["needs"]:
+        job = jobs[name]
+        if not any("tools/accuracy/run.py --tier" in str(item.get("run", "")) for item in job["steps"]):
+            continue
+        rows = job.get("strategy", {}).get("matrix", {})
+        rows = rows.get("include") or [{"python": python} for python in rows.get("python", [])] or [{}]
+        upload = [item for item in job["steps"] if str(item.get("uses", "")).startswith("actions/upload-artifact@")
+                  and "receipt-" in str(item.get("with", {}).get("name", ""))]
+        for row in rows:
+            command = job["steps"][_tier_index(job)]["run"].replace("\\\n", " ")
+            receipt = re.search(r"--receipt (\S+)", rendered(command, row)).group(1)
+            yield rendered(upload[0]["with"]["name"], row), Path(receipt).name
+
+
+def test_xplat_refuses_when_a_cell_the_plan_names_handed_in_no_receipt():
+    """xplat compares the receipts it downloads with one another and passes on
+    one. A rerun of only the failed cells after a green cell's receipt expired,
+    or a cell that died before writing its receipt, left it fewer receipts and a
+    pass. The plan job names every receipt xplat compares, and xplat checks each
+    is there before it compares."""
+    jobs = _jobs("accuracy.yml")
+    plan = step(jobs["plan"], "id", "plan")
+    found = re.search(r'receipts="([^"]*)"', plan["run"])
+    named = found.group(1).split() if found else []
+    patterns = [item["with"]["pattern"] for item in jobs["xplat"]["steps"]
+                if str(item.get("uses", "")).startswith("actions/download-artifact@")]
+    compared = sorted(receipt for artifact, receipt in _cell_receipts()
+                      if any(fnmatch.fnmatch(artifact, pattern) for pattern in patterns))
+    assert sorted(named) == compared and len(compared) >= 3
+    check = step(jobs["xplat"], "name", "every receipt the plan names is here")
+    compare = step(jobs["xplat"], "run", "python tools/accuracy/wheel_diff.py xplat")
+    assert jobs["plan"]["outputs"]["receipts"] == "${{ steps.plan.outputs.receipts }}"
+    assert check["env"]["RECEIPTS"] == "${{ needs.plan.outputs.receipts }}"
+    assert 'for name in $RECEIPTS' in check["run"] and '[ -f "receipts/$name" ]' in check["run"]
+    assert jobs["xplat"]["steps"].index(check) < jobs["xplat"]["steps"].index(compare)
 
 
 def _retro_args(job: dict):

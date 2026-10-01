@@ -75,6 +75,7 @@ jobs:
       mode: ${{ steps.plan.outputs.mode }}
       tier: ${{ steps.plan.outputs.tier }}
       ref: ${{ steps.plan.outputs.ref }}
+      receipts: ${{ steps.plan.outputs.receipts }}
     steps:
       - id: plan
         env:
@@ -95,8 +96,10 @@ jobs:
             release) tier=release ;;
             *) tier=nightly ;;
           esac
+          # Every receipt xplat compares: the corpus shards and both Windows cells.
+          receipts="linux-3.11-corpus.json linux-3.12-corpus.json linux-3.13-corpus.json linux-3.14-corpus.json windows-3.11.json windows-3.13.json macos-3.12-corpus.json"
           echo "mode=$mode tier=$tier ref=$ref"
-          { echo "mode=$mode"; echo "tier=$tier"; echo "ref=$ref"; } >> "$GITHUB_OUTPUT"
+          { echo "mode=$mode"; echo "tier=$tier"; echo "ref=$ref"; echo "receipts=$receipts"; } >> "$GITHUB_OUTPUT"
 
   image:
     needs: plan
@@ -441,6 +444,18 @@ jobs:
           pattern: receipt-windows-*
           path: receipts
           merge-multiple: true
+      # xplat passes on a single receipt. A cell that died before writing one, or
+      # a rerun of the failed cells after a green cell's receipt expired, would
+      # leave it fewer to compare and a pass.
+      - name: every receipt the plan names is here
+        env:
+          RECEIPTS: ${{ needs.plan.outputs.receipts }}
+        run: |
+          missing=0
+          for name in $RECEIPTS; do
+            [ -f "receipts/$name" ] || { echo "xplat: no receipts/$name; its cell wrote none or it expired"; missing=1; }
+          done
+          exit "$missing"
       - run: python tools/accuracy/wheel_diff.py xplat receipts/*.json
 
   mutation-diff:
