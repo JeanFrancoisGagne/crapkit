@@ -237,17 +237,44 @@ faster. Under Git Bash, set `MSYS_NO_PATHCONV=1` before `-e VAR=/path`.
 ### Weekly
 
 Mutation testing runs in the accuracy image, since mutmut forks and runs on Linux
-only. One shard of the weekly run, and the run over the functions changed since
-the last weekly or brought into calc scope since then:
+only. One shard of the weekly run, and the run over every calculation module
+under a cap:
 
 ```
 docker run --rm --network none -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py weekly --shard 1 --of 8
-docker run --rm --network none -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py diff --since-weekly --cap-minutes 30
+docker run --rm --network none -v "$PWD:/src" -w /src crapkit-accuracy:<tag> python tools/accuracy/mutation.py diff --cap-minutes 30
 ```
 
 A survivor on neither `suite_strength/mutation/survivors.tsv` nor
 `equivalent.tsv` fails the run, and a capped `diff` run reports `incomplete`,
 never `pass`.
+
+Neither command judges a function whose stored verdicts still hold. Each weekly
+and diff receipt keeps, beside its results, what each function's verdicts rest
+on, and the next run reads every receipt under `.crapkit/accuracy/mutation/` and
+carries a function's verdicts while all of these hold:
+
+| Condition | What breaks it |
+|---|---|
+| The environment key | Python, an installed or system package (mutmut among them), the launcher, or the stage's pytest and mutmut tables |
+| Age | Verdicts judged more than 28 days ago |
+| The function's key | Its text with its decorators, or its module's code outside any function |
+| The mutated modules | A change outside their functions, a function added or removed, or a change to a function mutmut made no mutant of, since no map says which tests reach it |
+| Every other `.py` file | Any change to a `.py` file that is neither a mutated module nor a test module (`src/`, `tools/`, `conftest.py`, the kit) |
+| What the suite reads outside any test | A file read or a folder listed during collection or by a fixture wider than one test; any change at all once a program was started there |
+| What the covering tests rest on | Their test modules, each file they read, each folder they list, any change at all when one starts a program other than git outside the stage, and each function they also run |
+| The kind of verdict | A survivor, an unreached mutant or a timeout holds only at the tree it was judged at, and a run judges every timeout again |
+
+mutmut's stats pass names the covering tests of each function. The stage's
+launcher notes what each test reads, lists and starts through an audit hook, in
+`stats-reach.json`; a run whose record broke, or whose covering test has none,
+stores no verdict for it. A run judges the canary, `score.crap`, whenever it
+judges anything. A second run at an unchanged tree judges no mutant.
+
+`--cold` carries nothing and compares what it judges with what would have
+carried. A difference fails the run, and the receipts older than it carry
+nothing from then on. Run one after a host crash, or when a carried verdict is
+in doubt.
 
 Both commands check out HEAD under `.crapkit/accuracy/mutation/calc-stage` and
 run `tests/unit` and the accuracy tests at the push tier against mutmut's copy

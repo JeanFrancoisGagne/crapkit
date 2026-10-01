@@ -1,7 +1,7 @@
 """Mutation testing of the calculation modules, gated on a keyed survivor set.
 
-    python tools/accuracy/mutation.py weekly --shard N --of M [--max-children K]
-    python tools/accuracy/mutation.py diff --since-weekly [--base SHA] [--cap-minutes 30]
+    python tools/accuracy/mutation.py weekly --shard N --of M [--max-children K] [--cold]
+    python tools/accuracy/mutation.py diff [--cap-minutes 30] [--cold]
     python tools/accuracy/mutation.py gate RESULTS.json... [--update]
     python tools/accuracy/mutation.py floors RESULTS.json...
     python tools/accuracy/mutation.py covered [--receipts DIR]
@@ -9,17 +9,19 @@
     python tools/accuracy/mutation.py key < MUTANT.diff
     python tools/accuracy/mutation.py killer [PYTEST ARGS...]
 
-mutmut 3.8.0 runs in the accuracy image (it forks, so Linux only). `weekly`
-mutates one shard of the modules every tests/accuracy/*/calcs.tsv row names
-(a cli module and the release tool only at the functions a row names, and
-never a module `tools` mutates);
-`diff` mutates only the functions changed since the last weekly run, and those
-a calcs.tsv row brought into calc scope since then, and stops at its cap,
-reporting `incomplete`, never `pass`. Both run in a detached
-worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose [tool.mutmut]
-names the modules and the suite, tests/unit and tests/accuracy at the push tier
-with the dependent methods deselected, less each test an open defect row of
-rulings.tsv names as failing on a clean tree and each COPY_BOUND test, which
+mutmut 3.8.0 runs in the accuracy image (it forks, so Linux only). The calc
+runs mutate the modules every tests/accuracy/*/calcs.tsv row names (a cli
+module and the release tool only at the functions a row names, and never a
+module `tools` mutates; weekly_modules). `weekly` judges one shard of them, and
+`diff` all of them under a cap, reporting `incomplete`, never `pass`, when the
+cap stops it. Neither judges a function whose stored verdicts still hold (see
+"Carrying a verdict" below): a second run at an unchanged tree judges no
+mutant. Both run
+in a detached worktree of HEAD (.crapkit/accuracy/mutation/calc-stage) whose
+[tool.mutmut] names every one of those modules, so one stats pass maps the
+tests of all of them, and the suite, tests/unit and tests/accuracy at the push
+tier with the dependent methods deselected, less each test an open defect row
+of rulings.tsv names as failing on a clean tree and each COPY_BOUND test, which
 fails or runs for hours inside mutmut's copy whatever the mutant, then write a
 receipt under .crapkit/accuracy/mutation/ and run the gate. The checks that read
 crapkit's own source as data read the stage's src/crapkit, named in
@@ -41,6 +43,20 @@ that file to the kit (HANGS_ENV), and the kit then never ends the process on a
 stuck call. `covered` refuses a receipt holding a mutant its run never judged,
 and a diff receipt covers a changed function only when it holds a mutant of
 that function and its head holds the function's text as HEAD does (uncovered).
+
+Carrying a verdict. Each weekly and diff receipt stores, beside its results,
+what each function's verdicts rest on (carry_problem): the function's key (its
+text with its decorators and its module's code outside any function), the
+covering tests mutmut's stats pass mapped to it, every file those tests read,
+each folder they list, whether they start a program, and the functions they
+also run; and per run the environment key (Python, the installed packages,
+dpkg's list, the launcher and the stage's pytest and mutmut tables), the tree
+it judged and what the suite read outside any test. A later run carries those
+verdicts only while every one of those still holds, any .py file outside the
+mutated modules and the test modules is unchanged, and the verdicts are under
+28 days old; a surviving or unfinished mutant's verdict holds only at the tree
+it was judged at. A run with --cold carries nothing and compares what it
+judges with what would have carried; a difference voids every older receipt.
 
 The gate is a survivor set, not a rate. A survivor is keyed by (module,
 function, sha256 of its mutant diff with line numbers and mutmut's numbering
@@ -79,7 +95,7 @@ from __future__ import annotations
 
 import argparse
 import ast
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import datetime
 import fnmatch
 import hashlib
@@ -88,11 +104,11 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import subprocess
 import sys
 import tempfile
-import time
 import tomllib
 
 REPO = Path(__file__).resolve().parents[2]
@@ -127,7 +143,6 @@ FLOOR_SUITE = "not golden and not change_control and not cross_surface"
 # The killer suite also leaves out every test that spawns git, node, pwsh or the CLI.
 INDEPENDENT_ONLY = f"not process and {FLOOR_SUITE}"
 SEPARATOR = "ǁ"  # mutmut's class separator in a mangled method name
-WEEKLY_DAY, WEEKLY_HOUR = 5, 6  # Saturday 06:00 UTC, accuracy.yml's weekly schedule
 
 
 class MutationError(ValueError):
@@ -223,12 +238,17 @@ def _dotted(path: str) -> str:
     return path.removesuffix(".py").replace("/", ".")
 
 
-def mutmut_glob(path: str, qualname: str) -> str:
-    """The mutmut mutant-name glob for one function: the nightly diff run's filter."""
-    dotted = _dotted(path)
+def mangled(path: str, qualname: str) -> str:
+    """The name mutmut files a function under in its stats map and its meta files:
+    crapkit.score.x_crap, crapkit.store.xǁStoreǁwrite."""
     owner, _, name = qualname.rpartition(".")
-    mangled = f"x{SEPARATOR}{owner}{SEPARATOR}{name}" if owner else f"x_{name}"
-    return f"{dotted}.{mangled}__mutmut_*"
+    tail = f"x{SEPARATOR}{owner}{SEPARATOR}{name}" if owner else f"x_{name}"
+    return f"{_dotted(path)}.{tail}"
+
+
+def mutmut_glob(path: str, qualname: str) -> str:
+    """The mutmut mutant-name glob for one function: a calc run's filter."""
+    return f"{mangled(path, qualname)}__mutmut_*"
 
 
 # --- results ---------------------------------------------------------------------------------
@@ -421,8 +441,8 @@ _LINES = (
 
 def verdict_lines(verdict: Verdict) -> list[str]:
     lines = [f"void: {verdict.void}"] if verdict.void else []
-    for field, template in _LINES:
-        lines += [template.format(*ident) for ident in getattr(verdict, field)]
+    for name, template in _LINES:
+        lines += [template.format(*ident) for ident in getattr(verdict, name)]
     return lines
 
 
@@ -471,16 +491,6 @@ def floors(results: list[Result], equivalents: list[dict], groups: list[dict]) -
 
 # --- what changed since the last weekly run --------------------------------------------------
 
-def last_weekly(now: datetime.datetime) -> datetime.datetime:
-    """The most recent Saturday 06:00 UTC at or before `now`: when accuracy.yml's
-    weekly run last started."""
-    now = now.astimezone(datetime.timezone.utc)
-    back = (now.weekday() - WEEKLY_DAY) % 7
-    start = (now - datetime.timedelta(days=back)).replace(hour=WEEKLY_HOUR, minute=0, second=0,
-                                                         microsecond=0)
-    return start if start <= now else start - datetime.timedelta(days=7)
-
-
 def captured(argv: list, cwd: Path, stdin: str | None = None) -> subprocess.CompletedProcess:
     """argv's output as text; a byte that is not UTF-8 reads as U+FFFD, never an error."""
     fed = stdin.encode() if stdin is not None else None
@@ -494,16 +504,6 @@ def _git(repo: Path, *args: str) -> str:
     if done.returncode != 0:
         raise MutationError(f"git {' '.join(args)}: {done.stderr.strip()}")
     return done.stdout
-
-
-def weekly_base(repo: Path, now: datetime.datetime) -> str:
-    """The first-parent commit the last weekly run measured: the newest one
-    committed before it started."""
-    stamp = last_weekly(now).strftime("%Y-%m-%dT%H:%M:%SZ")
-    found = _git(repo, "rev-list", "-1", "--first-parent", f"--before={stamp}", "HEAD").strip()
-    if not found:
-        raise MutationError(f"no commit before the weekly run of {stamp}")
-    return found
 
 
 _HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.M)
@@ -883,7 +883,7 @@ def _rerun_timeouts(repo: Path, rows: list[Result], mutmut: tuple = LAUNCH,
 
 def _receipt(kind: str, **fields) -> dict:
     return {"schema": 1, "kind": kind, "head": _git(REPO, "rev-parse", "HEAD").strip(),
-            "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **fields}
+            "created": _now().strftime(STAMP_FORMAT), **fields}
 
 
 def _write_receipt(receipt: dict, name: str) -> Path:
@@ -895,10 +895,6 @@ def _write_receipt(receipt: dict, name: str) -> Path:
 
 def _globs_for(modules: list[str]) -> list[str]:
     return [f"{_dotted(module)}.*" for module in modules]
-
-
-def _canary_globs() -> list[str]:
-    return [mutmut_glob(*CANARY)]
 
 
 # --- the calc runs' scope ---------------------------------------------------------------------
@@ -925,18 +921,6 @@ def calc_functions(root: Path | None = None) -> dict[str, set[str]]:
 def weekly_modules() -> list[str]:
     """The calc modules the weekly shards split, less the ones `tools` mutates."""
     return [module for module in calc_modules() if module not in TOOL_TARGETS]
-
-
-def calc_globs(modules: list[str], named: dict[str, set[str]]) -> list[str]:
-    """mutmut's filter for a calc run over `modules`: each whole module, a cli
-    module and the release tool only at their named functions."""
-    return [glob for module in modules for glob in _module_globs(module, named)]
-
-
-def _module_globs(module: str, named: dict[str, set[str]]) -> list[str]:
-    if module.startswith(FUNCTION_SCOPED):
-        return [mutmut_glob(module, name) for name in sorted(named.get(module, ()))]
-    return [f"{_dotted(module)}.*"]
 
 
 def in_calc_scope(pairs: list[tuple[str, str]], named: dict[str, set[str]]) -> list[tuple[str, str]]:
@@ -1006,8 +990,11 @@ from tests/, and tests load a tool by path under a name of their own, so here
 mutmut gave it.
 """
 import importlib.util
+import json
 import os
 from pathlib import Path
+import sys
+import sysconfig
 import tomllib
 
 
@@ -1068,6 +1055,196 @@ def diffs():
             print(f"{name}: {missed!r}", file=sys.stderr)
 
 
+# --- reach ---
+# During the stats run an audit hook notes, for each test, each file it reads,
+# each folder it lists and each program it starts, and the same for what runs
+# outside any test (collection, a fixture wider than one test). The calc runs
+# carry a stored verdict only while none of that changed. pytest's and mutmut's
+# own reads are not the tests' and are left out; an import is left out unless it
+# loads a test module, since the carry rule keys the other .py files itself.
+
+OUTSIDE = ""
+WATCHED = frozenset({"open", "os.listdir", "os.scandir", "subprocess.Popen", "os.system",
+                     "os.posix_spawn", "os.exec", "os.spawn"})
+LISTING = frozenset({"os.listdir", "os.scandir"})
+TOOLING = ("_pytest", "pluggy", "pytest", "mutmut", "xdist", "coverage")
+STDLIB = sysconfig.get_paths()["stdlib"]
+LISTENING = []
+
+
+def library(filename):
+    """Whether a frame runs the standard library, which reads for its caller."""
+    inside = filename.startswith(STDLIB) and "site-packages" not in filename
+    return filename.startswith("<") or inside
+
+
+def origin(frame):
+    """(whether an import is reading, the module of the first caller outside the
+    standard library)."""
+    importing = False
+    while frame is not None and library(frame.f_code.co_filename):
+        importing = importing or frame.f_code.co_filename.startswith("<frozen importlib")
+        frame = frame.f_back
+    return importing, "" if frame is None else frame.f_globals.get("__name__", "")
+
+
+def test_module(path):
+    name = path.rpartition("/")[2]
+    named = name.startswith("test_") or name.endswith("_test.py")
+    return path.startswith("tests/") and name.endswith(".py") and named
+
+
+def _text(path):
+    return os.fsdecode(os.fspath(path))
+
+
+def popen_program(args):
+    """subprocess.Popen's (executable, args, cwd, env): its program and its folder."""
+    command = args[0] or args[1]
+    first = command if not isinstance(command, (str, bytes)) else command.split()
+    return _text(first[0]), args[2]
+
+
+PROGRAM_AT = {"os.spawn": 1}
+
+
+def program(event, args):
+    """(the program a start event runs, the folder it starts in or None for this one)."""
+    if event == "subprocess.Popen":
+        return popen_program(args)
+    if event == "os.system":
+        return _text(args[0]).split()[0], None
+    return _text(args[PROGRAM_AT.get(event, 0)]), None
+
+
+class Reach:
+    """What each test of one stats run read, listed and started, by node id, under
+    `roots` (mutants/ first, then the stage), as paths of the repo."""
+
+    def __init__(self, roots):
+        self.roots = [root for path in roots
+                      for root in dict.fromkeys([os.path.abspath(path), os.path.realpath(path)])]
+        self.where, self.seen, self.broken = OUTSIDE, {OUTSIDE: self.empty()}, False
+
+    @staticmethod
+    def empty():
+        return {"reads": set(), "dirs": set(), "spawns": set()}
+
+    def enter(self, nodeid):
+        self.where = nodeid.removeprefix("mutants/")
+        self.seen.setdefault(self.where, self.empty())
+
+    def leave(self):
+        self.where = OUTSIDE
+
+    def audit(self, event, args, frame):
+        """Note one event; a failure to note it marks the record broken, so the run
+        stores no verdict, and never fails the test."""
+        try:
+            self.note_event(event, args, frame)
+        except Exception:
+            self.broken = True
+
+    def note_event(self, event, args, frame):
+        importing, module = origin(frame)
+        if module.startswith(TOOLING):
+            return
+        if event == "open":
+            self.read(args[0], importing)
+        elif event in LISTING:
+            self.listed("." if args[0] is None else args[0])
+        else:
+            self.started(*program(event, args))
+
+    def read(self, path, importing):
+        relative = self.relative(path)
+        if relative and (test_module(relative) or not importing):
+            self.note("reads", relative)
+
+    def listed(self, path):
+        relative = self.relative(path)
+        if relative is not None:
+            self.note("dirs", relative)
+
+    def started(self, name, cwd):
+        base = os.path.basename(name).lower().removesuffix(".exe")
+        elsewhere = cwd is not None and self.relative(cwd) is None
+        if base != "git" or not elsewhere:
+            self.note("spawns", base or "?")
+
+    def relative(self, path):
+        """`path` as a repo path, "" for a root itself, None outside the roots."""
+        if isinstance(path, int):
+            return None
+        full = os.path.normpath(os.path.join(os.getcwd(), _text(path)))
+        return next((self.under(full, root) for root in self.roots
+                     if full == root or full.startswith(root + os.sep)), None)
+
+    @staticmethod
+    def under(full, root):
+        return full[len(root) + 1:].replace(os.sep, "/")
+
+    def note(self, kind, value):
+        self.seen[self.where][kind].add(value)
+
+    def shown(self, where):
+        return {kind: sorted(values) for kind, values in self.seen[where].items()}
+
+    def merged(self, old):
+        tests = {**old.get("tests", {}), **{node: self.shown(node) for node in self.seen if node}}
+        before = old.get("outside", {})
+        outside = {kind: sorted({*before.get(kind, ()), *values})
+                   for kind, values in self.shown(OUTSIDE).items()}
+        return {"outside": outside, "tests": tests}
+
+    def save(self, path, whole):
+        """Write the record: in place of the last one after a full stats run, over it
+        after a run of the tests mutmut had not seen."""
+        old = {} if whole or not path.is_file() else json.loads(path.read_bytes())
+        broken = self.broken or old.get("broken", False)
+        data = {"broken": True} if broken else self.merged(old)
+        path.write_bytes(json.dumps(data, sort_keys=True).encode())
+
+
+def dispatch(event, args):
+    if LISTENING[0] is not None and event in WATCHED:
+        LISTENING[0].audit(event, args, sys._getframe(1))
+
+
+def listen(reach):
+    """Send each audit event to `reach`, or to nothing for None. A hook, once added,
+    stays for the life of the process, so it is added once."""
+    if not LISTENING:
+        sys.addaudithook(dispatch)
+        LISTENING.append(None)
+    LISTENING[0] = reach
+
+
+def reach_plugin(reach):
+    """The pytest plugin that tells `reach` which test runs: none while a fixture
+    wider than one test sets up, since every test that uses it reads what it reads."""
+    import pytest
+
+    class Plugin:
+        def pytest_runtest_logstart(self, nodeid, location):
+            reach.enter(nodeid)
+
+        def pytest_runtest_logfinish(self, nodeid, location):
+            reach.leave()
+
+        @pytest.hookimpl(wrapper=True)
+        def pytest_fixture_setup(self, fixturedef, request):
+            if fixturedef.scope == "function":
+                return (yield)
+            where, reach.where = reach.where, OUTSIDE
+            try:
+                return (yield)
+            finally:
+                reach.where = where
+
+    return Plugin()
+
+
 class Failures:
     """A pytest plugin that notes each test, and each file pytest could not
     collect, that fails."""
@@ -1086,21 +1263,26 @@ def run_stats(self, *, tests):
     """mutmut's stats run, except that a failing test stops nothing. The run has no
     mutant active, so such a test fails whatever the mutant and tells none from the
     original; mutmut runs it with -x and then judges no mutant at all. Here it is
-    left out of every mutant's tests and named in FAILURES, and the run goes on."""
-    failures, execute = Failures(), self.execute_pytest
+    left out of every mutant's tests and named in FAILURES, and the run goes on.
+    What each test reads, lists and starts goes to REACH (see Reach)."""
+    failures, execute, reach = Failures(), self.execute_pytest, Reach((MUTANTS, STAGE))
+    plugin = reach_plugin(reach)
 
     def lenient(params, plugins=(), **kwargs):
         kept = [param for param in params if param != "-x"]
         return execute([*kept, "--continue-on-collection-errors"],
-                       plugins=[*plugins, failures], **kwargs)
+                       plugins=[*plugins, plugin, failures], **kwargs)
 
     self.execute_pytest = lenient
+    listen(reach)
     try:
         code = _run_stats(self, tests=tests)
     finally:
+        listen(None)
         del self.execute_pytest
     forget(failures.nodes)
     record(failures.nodes, whole=not tests)
+    reach.save(REACH, whole=not tests)
     return 0 if code == 1 and failures.nodes else code
 
 
@@ -1140,7 +1322,9 @@ if __name__ == "__main__":
     CONFIG = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["tool"]["mutmut"]
     SOURCES = set(CONFIG["source_paths"])
     MUTANTS = Path("mutants").resolve()
+    STAGE = Path.cwd().resolve()
     FAILURES = Path("stats-failures.txt").resolve()
+    REACH = Path("stats-reach.json").resolve()
     _strip, _spec = names.strip_prefix, importlib.util.spec_from_file_location
     _set_mutant = _trampolines.set_mutant_under_test
     names.strip_prefix = strip_prefix
@@ -1351,6 +1535,12 @@ def staged_run(where: Path, targets: dict, globs: list[str], env: dict, children
     `budget` seconds (a capped run reruns nothing). RunDied when mutmut ended
     before it judged them."""
     stage = _prepare_stage(targets, where, tuple(deselect))
+    return mutmut_in(stage, globs, env, children, budget)
+
+
+def mutmut_in(stage: Path, globs: list[str], env: dict, children: int,
+              budget: float | None = None) -> tuple[list[Result], bool]:
+    """mutmut over `globs` in a prepared `stage`, as staged_run gives it."""
     (stage / HANGS_FILE).unlink(missing_ok=True)
     code = _run_mutmut(stage, ["run", "--max-children", str(children), *globs], budget, env=env)
     _refuse_dead(stage, code)
@@ -1378,6 +1568,700 @@ def _left_out(where: Path) -> list[str]:
     for node in failed:
         print(f"mutation: {node} failed with no mutant active, so no mutant was run against it")
     return failed
+
+
+# --- carrying a verdict to a new tree ----------------------------------------------------------
+#
+# A stored verdict carries to HEAD only while everything it rests on holds; see
+# carry_problem for the rule, condition by condition. What the stats pass read
+# comes from the launcher's REACH_FILE, and which tests reach which function
+# from mutmut's own map.
+
+REACH_FILE = "stats-reach.json"
+STATS_MAP = "mutants/mutmut-stats.json"
+# In a stage: the tree and environment its stats map and reach file were made at.
+STATS_STAMP = "stats-stamp.json"
+MAX_AGE = datetime.timedelta(days=28)
+STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+CARRYING_KINDS = ("weekly", "diff")
+# The kinds of a function's verdicts: a kill holds while what its tests read
+# holds; a survivor, an unreached mutant or an unfinished one only at the tree
+# it was judged at, since any new or moved test may reach it there.
+WHOLE_TREE = frozenset({"alive", "unfinished"})
+NO_REACH = {"reads": [], "dirs": [], "spawns": []}
+NO_TESTS = {"tests": [], "reads": [], "dirs": [], "spawns": False, "reached": []}
+NO_VERDICT = "no stored verdict names it"
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _fid(function: tuple[str, str]) -> str:
+    return f"{function[0]}:{function[1]}"
+
+
+def _test_name(name: str) -> bool:
+    return name.startswith("test_") or name.endswith("_test.py")
+
+
+def is_test_module(path: str) -> bool:
+    """A file pytest collects tests from; conftest.py and helpers are not."""
+    name = path.rpartition("/")[2]
+    return path.startswith("tests/") and name.endswith(".py") and _test_name(name)
+
+
+class Tree:
+    """A commit's tracked files, path to git blob id, and a reader of a blob's text."""
+
+    def __init__(self, blobs: dict[str, str], read):
+        self.blobs, self._read = blobs, read
+        self.ident = _sha(json.dumps(sorted(blobs.items())))
+
+    def text(self, path: str) -> str:
+        blob = self.blobs.get(path)
+        return "" if blob is None else self._read(blob)
+
+
+def _blob_entries(listed: str):
+    for record in listed.split("\0"):
+        meta, _, path = record.partition("\t")
+        fields = meta.split()
+        if fields[1:2] == ["blob"]:
+            yield path, fields[2]
+
+
+def head_tree(repo: Path) -> Tree:
+    """HEAD's tracked files: what the stage checks out."""
+    blobs = dict(_blob_entries(_git(repo, "ls-tree", "-r", "-z", "HEAD")))
+    return Tree(blobs, lambda blob: _git(repo, "cat-file", "blob", blob))
+
+
+def outside_code(source: str) -> str:
+    """A module's lines outside every function mutmut mutates: imports, constants,
+    class lines."""
+    inside = {line for _, first, last in _functions(ast.parse(source))
+              for line in range(first, last + 1)}
+    lines = io.StringIO(source, newline="").readlines()
+    return "".join(line for number, line in enumerate(lines, 1) if number not in inside)
+
+
+def module_facts(source: str) -> dict:
+    """sha256 of a module's code outside any function, and of each function's text."""
+    texts = function_texts(source)
+    return {"outside": _sha(outside_code(source)),
+            "texts": {name: _sha(text) for name, text in texts.items()}}
+
+
+def function_key(facts: dict, name: str) -> str:
+    """A function's text with its decorators, and its module's code outside any function."""
+    return _sha(f"{facts['texts'].get(name, '')}\n{facts['outside']}")
+
+
+def listings(blobs: dict[str, str]) -> dict[str, frozenset]:
+    """What each folder of a tree holds, by folder ("" is the root)."""
+    found: dict[str, set] = {}
+    for path in blobs:
+        parts = path.split("/")
+        for depth in range(len(parts)):
+            found.setdefault("/".join(parts[:depth]), set()).add(parts[depth])
+    return {folder: frozenset(names) for folder, names in found.items()}
+
+
+def moved_paths(then: dict[str, str], now: dict[str, str]) -> list[str]:
+    """Every path whose blob differs between two trees, added and removed ones included."""
+    return sorted(path for path in then.keys() | now.keys() if then.get(path) != now.get(path))
+
+
+@dataclass(frozen=True)
+class Stored:
+    """One function's stored verdicts: its receipt entry, the run's frame, the tree
+    that run judged, and the result rows of its mutants."""
+    entry: dict
+    frame: dict
+    blobs: dict
+    rows: tuple
+
+
+class Head:
+    """HEAD as the carry rule reads it: its tree, its environment key and the time,
+    with what it works out once per module and per stored tree."""
+
+    def __init__(self, tree: Tree, env: str, now: datetime.datetime):
+        self.tree, self.env, self.now = tree, env, now
+        self.listed = listings(tree.blobs)
+        self._facts: dict = {}
+        self._moved: dict = {}
+        self._listed: dict = {}
+        self._frames: dict = {}
+
+    def facts(self, module: str) -> dict:
+        if module not in self._facts:
+            self._facts[module] = module_facts(self.tree.text(module))
+        return self._facts[module]
+
+    def moved(self, stored: Stored) -> list[str]:
+        ident = stored.frame["tree"]
+        if ident not in self._moved:
+            self._moved[ident] = moved_paths(stored.blobs, self.tree.blobs)
+        return self._moved[ident]
+
+    def listed_then(self, stored: Stored) -> dict:
+        ident = stored.frame["tree"]
+        if ident not in self._listed:
+            self._listed[ident] = listings(stored.blobs)
+        return self._listed[ident]
+
+    def frame_problem(self, stored: Stored) -> str:
+        ident = stored.entry["frame"]
+        if ident not in self._frames:
+            self._frames[ident] = frame_problem(stored, self)
+        return self._frames[ident]
+
+
+def carry_problem(stored: Stored, function: tuple[str, str], head: Head, select: bool = True) -> str:
+    """"" when `function`'s stored verdicts hold at `head`, else the first reason
+    they do not. They hold while the run's environment key is HEAD's, they are
+    under MAX_AGE old, the function's key is unchanged, and, for a function with
+    mutants: no surviving or unfinished verdict sees any change to the tree (and a
+    run that selects what to judge carries no unfinished one at all); no .py file
+    outside the mutated modules and the test modules changed; no mutated module
+    changed outside its functions, gained or lost one, or changed a function
+    mutmut keeps no map for; nothing the suite read or listed outside any test
+    changed, nor anything at all when it started a program there; and no test that
+    reaches the function moved, read or listed something that moved, started a
+    program in a changed tree, or runs a function that changed."""
+    return (_env_problem(stored, head) or _age_problem(stored, head)
+            or _key_problem(stored, function, head) or _reach_problem(stored, head, select))
+
+
+def _env_problem(stored: Stored, head: Head) -> str:
+    if stored.frame["env"] == head.env:
+        return ""
+    return ("the environment changed: Python, the installed or system packages, mutmut, the "
+            "launcher, or the stage's pytest and mutmut tables")
+
+
+def _age_problem(stored: Stored, head: Head) -> str:
+    judged = datetime.datetime.strptime(stored.entry["judged"], STAMP_FORMAT).replace(
+        tzinfo=datetime.timezone.utc)
+    if head.now - judged <= MAX_AGE:
+        return ""
+    return (f"its verdicts were judged {(head.now - judged).days} days ago, and none carries "
+            f"past {MAX_AGE.days}")
+
+
+def _key_problem(stored: Stored, function: tuple[str, str], head: Head) -> str:
+    if function_key(head.facts(function[0]), function[1]) == stored.entry["key"]:
+        return ""
+    return "its text, or its module's code outside any function, changed"
+
+
+def _reach_problem(stored: Stored, head: Head, select: bool) -> str:
+    if not stored.entry["mutants"]:
+        return ""
+    return (_kind_problem(stored, head, select) or head.frame_problem(stored)
+            or _test_problem(stored, head))
+
+
+def _kind_problem(stored: Stored, head: Head, select: bool) -> str:
+    kind = stored.entry["kind"]
+    if select and kind == "unfinished":
+        return "a mutant of it did not finish (a timeout or a signal), so it is judged again"
+    moved = head.moved(stored)
+    if kind in WHOLE_TREE and moved:
+        return (f"a surviving or unfinished mutant's verdict holds only at the tree it was judged "
+                f"at, and {moved[0]} changed")
+    return ""
+
+
+def frame_problem(stored: Stored, head: Head) -> str:
+    """Why nothing the run of `stored` judged carries to `head`, or ""."""
+    moved = head.moved(stored)
+    return (_unmapped_problem(moved, stored.frame) or _modules_problem(stored.frame, head)
+            or _outside_problem(stored, head, moved))
+
+
+def _unmapped(path: str, frame: dict) -> bool:
+    return path.endswith(".py") and not is_test_module(path) and path not in frame["modules"]
+
+
+def _unmapped_problem(moved: list[str], frame: dict) -> str:
+    for path in moved:
+        if _unmapped(path, frame):
+            return f"{path} changed, and no map says which tests reach its code"
+    return ""
+
+
+def _modules_problem(frame: dict, head: Head) -> str:
+    for module, then in frame["modules"].items():
+        problem = _module_problem(module, then, head.facts(module))
+        if problem:
+            return problem
+    return ""
+
+
+def _module_problem(module: str, then: dict, now: dict) -> str:
+    if now["outside"] != then["outside"]:
+        return f"{module} changed outside its functions"
+    if set(now["texts"]) != set(then["texts"]):
+        return f"{module} gained or lost a function"
+    unplaced = _unplaced_moved(then, now)
+    return (f"{module}:{unplaced[0]} changed, and mutmut keeps no map of the tests that reach "
+            "it (it made no mutant of it)") if unplaced else ""
+
+
+def _unplaced_moved(then: dict, now: dict) -> list[str]:
+    unplaced = sorted(set(then["texts"]) - set(then["placed"]))
+    return [name for name in unplaced if now["texts"][name] != then["texts"][name]]
+
+
+def _relisted(folders: list[str], stored: Stored, head: Head) -> str:
+    """The first of `folders` whose tracked entries differ between the two trees."""
+    then = head.listed_then(stored)
+    return next((folder for folder in folders if then.get(folder) != head.listed.get(folder)), None)
+
+
+def _shown(folder: str) -> str:
+    return f"{folder}/" if folder else "the root folder"
+
+
+def _outside_problem(stored: Stored, head: Head, moved: list[str]) -> str:
+    outside = stored.frame["outside"]
+    read = sorted(set(outside["reads"]) & set(moved))
+    if read:
+        return f"{read[0]}, which the suite read outside any test, changed"
+    folder = _relisted(outside["dirs"], stored, head)
+    if folder is not None:
+        return f"{_shown(folder)}, which the suite listed outside any test, changed"
+    started = outside["spawns"] and moved
+    return f"the suite started a program outside any test, and {moved[0]} changed" if started else ""
+
+
+def _test_problem(stored: Stored, head: Head) -> str:
+    entry, moved = stored.entry, head.moved(stored)
+    if entry["spawns"] and moved:
+        return f"a test that reaches it starts a program, and {moved[0]} changed"
+    read = sorted(set(entry["reads"]) & set(moved))
+    if read:
+        return f"{read[0]}, which a test that reaches it reads, changed"
+    folder = _relisted(entry["dirs"], stored, head)
+    if folder is not None:
+        return f"{_shown(folder)}, which a test that reaches it lists, changed"
+    return _reached_problem(stored, head)
+
+
+def _reached_problem(stored: Stored, head: Head) -> str:
+    modules = stored.frame["modules"]
+    for function in stored.entry["reached"]:
+        module, _, name = function.partition(":")
+        then = modules.get(module, {}).get("texts", {}).get(name)
+        if then != head.facts(module)["texts"].get(name):
+            return f"{function}, which a test that reaches it also runs, changed"
+    return ""
+
+
+# --- the store: receipts, read and written ------------------------------------------------------
+
+def _created(receipt: dict) -> str:
+    return str(receipt.get("created", ""))
+
+
+def _voided_before(receipts: list[dict]) -> str:
+    """When the newest cold run that judged a carried verdict otherwise was made."""
+    return max((_created(receipt) for receipt in receipts if receipt.get("cold_mismatch")),
+               default="")
+
+
+def trusted(receipts: list[dict]) -> list[dict]:
+    """The weekly and diff receipts a carry may read: none older than the newest
+    cold run that judged a carried verdict otherwise."""
+    void = _voided_before(receipts)
+    return [receipt for receipt in receipts
+            if receipt.get("kind") in CARRYING_KINDS and _created(receipt) >= void]
+
+
+def _stored(entry: dict, carry: dict, rows: dict) -> Stored | None:
+    named = [rows.get(name) for name in entry["mutants"]]
+    if None in named:
+        return None
+    frame = carry["frames"][entry["frame"]]
+    return Stored(entry, frame, carry["trees"][frame["tree"]], tuple(named))
+
+
+def _stored_in(receipt: dict):
+    carry = receipt.get("carry") or {}
+    rows = {row["name"]: Result(**row) for row in receipt.get("results", [])}
+    for function, entry in carry.get("functions", {}).items():
+        stored = _stored(entry, carry, rows)
+        if stored:
+            yield function, stored
+
+
+def stored_verdicts(receipts: list[dict]) -> dict[str, list[Stored]]:
+    """Each function's stored verdicts in the trusted receipts, newest receipt first."""
+    found: dict[str, list[Stored]] = {}
+    for receipt in sorted(trusted(receipts), key=_created, reverse=True):
+        for function, stored in _stored_in(receipt):
+            found.setdefault(function, []).append(stored)
+    return found
+
+
+def loaded(directory: Path) -> list[dict]:
+    """Every receipt saved in `directory`."""
+    return [json.loads(_read(path)) for path in sorted(Path(directory).glob("*.json"))]
+
+
+@dataclass
+class Plan:
+    """Which functions carry a stored verdict to HEAD, and why each other one is judged."""
+    carried: dict = field(default_factory=dict)
+    todo: list = field(default_factory=list)
+    why: dict = field(default_factory=dict)
+
+
+def _holding(candidates: list[Stored], function: tuple[str, str], head: Head,
+             select: bool) -> tuple[Stored | None, str]:
+    reasons = []
+    for candidate in candidates:
+        reason = carry_problem(candidate, function, head, select)
+        if not reason:
+            return candidate, ""
+        reasons.append(reason)
+    return None, reasons[0] if reasons else NO_VERDICT
+
+
+def plan(functions: list, stored: dict[str, list[Stored]], head: Head, select: bool = True) -> Plan:
+    """Each function carries the newest stored verdicts that hold at `head`; the
+    rest are judged, each with the newest stored verdicts' reason."""
+    found = Plan()
+    for function in functions:
+        holding, why = _holding(stored.get(_fid(function), []), function, head, select)
+        if holding:
+            found.carried[function] = holding
+        else:
+            found.todo.append(function)
+            found.why[function] = why
+    return found
+
+
+# --- what a run's stats pass recorded -----------------------------------------------------------
+
+def load_map(stage: Path) -> dict | None:
+    """mutmut's map from each function it trampolined to the tests that reach it."""
+    try:
+        return json.loads(_read(stage / STATS_MAP))["tests_by_mangled_function_name"]
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def load_reach(stage: Path) -> dict | None:
+    """The launcher's record of what each test read, listed and started; None when
+    there is none or a recording failed, and then no verdict of the run is stored."""
+    try:
+        reach = json.loads(_read(stage / REACH_FILE))
+    except (OSError, ValueError):
+        return None
+    return None if reach.get("broken") or "tests" not in reach else reach
+
+
+def placed(stage: Path, module: str) -> list[str]:
+    """The functions of `module` mutmut made a mutant of, and so a trampoline: only
+    their hits reach its map."""
+    try:
+        names = json.loads(_read(stage / "mutants" / f"{module}.meta")).get(
+            "hash_by_function_name", {})
+    except (OSError, ValueError):
+        return []
+    return sorted(_unmangled(name, name) for name in names)
+
+
+@dataclass(frozen=True)
+class Mapped:
+    """One stats pass: the tests reaching each function, each test's reach, and the
+    functions each test runs."""
+    tests: dict
+    reach: dict
+    runs: dict
+
+
+def _runs(tests: dict) -> dict:
+    runs: dict = {}
+    for function, nodes in tests.items():
+        for node in nodes:
+            runs.setdefault(node, set()).add(function)
+    return runs
+
+
+def mapped(stats: dict | None, reach: dict | None, names: dict) -> Mapped | None:
+    """The stats pass as functions, from mutmut's names (`names`: mangled to fid)."""
+    if stats is None or reach is None:
+        return None
+    tests = {names[key]: sorted(nodes) for key, nodes in stats.items() if key in names}
+    return Mapped(tests, reach["tests"], _runs(tests))
+
+
+def verdict_kind(rows: list[Result]) -> str:
+    """killed, alive, unfinished, none (no mutant), or "" when a mutant was never
+    judged and nothing of the function may be stored."""
+    statuses = {row.status for row in rows}
+    if not statuses <= JUDGED:
+        return ""
+    return "unfinished" if statuses & UNFINISHED else _settled_kind(statuses)
+
+
+def _settled_kind(statuses: set[str]) -> str:
+    return "alive" if statuses - KILLED else ("killed" if statuses else "none")
+
+
+def _union(contexts: list[dict], kind: str) -> set:
+    return {value for context in contexts for value in context[kind]}
+
+
+def _contexts(function: tuple[str, str], found: Mapped | None) -> tuple[list, list] | None:
+    """(the tests that reach the function, each one's reach); None with no map, or
+    when a covering test has no reach record, since its reads are then unknown."""
+    if found is None:
+        return None
+    tests = found.tests.get(_fid(function), [])
+    contexts = [found.reach.get(node) for node in tests]
+    return None if None in contexts else (tests, contexts)
+
+
+def _runs_of(tests: list[str], found: Mapped) -> set[str]:
+    return {function for node in tests for function in found.runs.get(node, ())}
+
+
+def _reach_of(tests: list[str], contexts: list[dict], found: Mapped) -> dict:
+    files = {node.split("::")[0] for node in tests}
+    return {"tests": tests, "reads": sorted(_union(contexts, "reads") | files),
+            "dirs": sorted(_union(contexts, "dirs")),
+            "spawns": any(context["spawns"] for context in contexts),
+            "reached": sorted(_runs_of(tests, found))}
+
+
+def _mapped_entry(function: tuple[str, str], entry: dict, found: Mapped | None) -> dict | None:
+    """The entry with what its covering tests rest on, or None (see _contexts)."""
+    known = _contexts(function, found)
+    return None if known is None else {**entry, **_reach_of(*known, found)}
+
+
+def new_entry(function: tuple[str, str], rows: list[Result], finished: bool, found: Mapped | None,
+              base: dict, head: Head) -> dict | None:
+    """What to store for a function this run judged, or None: a mutant never
+    judged, or no mutant in a run its cap stopped, stores nothing."""
+    kind = verdict_kind(rows)
+    if not kind or (kind == "none" and not finished):
+        return None
+    entry = {**base, "key": function_key(head.facts(function[0]), function[1]), "kind": kind,
+             "mutants": _row_names(rows)}
+    return {**entry, **NO_TESTS} if kind == "none" else _mapped_entry(function, entry, found)
+
+
+def _row_names(rows: list[Result]) -> list[str]:
+    return sorted(row.name for row in rows)
+
+
+def _by_function(rows: list[Result]) -> dict:
+    found: dict = {}
+    for row in rows:
+        found.setdefault((row.module, row.function), []).append(row)
+    return found
+
+
+def _names(modules: list[str], head: Head) -> dict[str, str]:
+    return {mangled(module, name): f"{module}:{name}" for module in modules
+            for name in head.facts(module)["texts"]}
+
+
+def new_frame(stage: Path, head: Head, modules: list[str], reach: dict | None) -> dict:
+    """What every verdict this run judged rests on beside its own tests."""
+    return {"env": head.env, "tree": head.tree.ident,
+            "modules": {module: {**head.facts(module), "placed": placed(stage, module)}
+                        for module in modules},
+            "outside": (reach or {}).get("outside", NO_REACH)}
+
+
+def judged_section(stage: Path, head: Head, todo: list, rows: list[Result], finished: bool,
+                   modules: list[str]) -> tuple[str, dict, dict]:
+    """(frame id, frame, entries) for what this run judged in full."""
+    reach = load_reach(stage)
+    frame = new_frame(stage, head, modules, reach)
+    ident = _sha(json.dumps(frame, sort_keys=True))
+    found = mapped(load_map(stage), reach, _names(modules, head))
+    base, by_function = {"frame": ident, "judged": head.now.strftime(STAMP_FORMAT)}, _by_function(rows)
+    entries = {_fid(function): new_entry(function, by_function.get(function, []), finished, found,
+                                         base, head) for function in todo}
+    return ident, frame, {name: entry for name, entry in entries.items() if entry}
+
+
+def carry_section(carried: dict, new: tuple | None, head: Head) -> dict:
+    """The receipt's store: each function's entry, each run's frame, each tree."""
+    section: dict = {"functions": {}, "frames": {}, "trees": {}}
+    for function, stored in carried.items():
+        _keep(section, _fid(function), stored.entry, stored.frame, stored.blobs)
+    ident, frame, entries = new or ("", {}, {})
+    for function, entry in entries.items():
+        _keep(section, function, entry, frame, head.tree.blobs)
+    return section
+
+
+def _keep(section: dict, function: str, entry: dict, frame: dict, blobs: dict) -> None:
+    section["functions"][function] = entry
+    section["frames"][entry["frame"]] = frame
+    section["trees"][frame["tree"]] = blobs
+
+
+def _settled(status: str) -> bool:
+    return status in KILLED | ALIVE
+
+
+def _differs(before: str, after: str) -> bool:
+    return _settled(before) and _settled(after) and (before in KILLED) != (after in KILLED)
+
+
+def mismatches(carried: dict, rows: list[Result]) -> list[str]:
+    """Each mutant a carried verdict called killed or alive that this run judged the
+    other way: a cold run's check on the carry rule."""
+    fresh = _statuses(rows)
+    return sorted(row.name for stored in carried.values() for row in stored.rows
+                  if _differs(row.status, fresh.get(row.name, "")))
+
+
+def _statuses(rows: list[Result]) -> dict[str, str]:
+    return {row.name: row.status for row in rows}
+
+
+# --- the environment a verdict was judged in --------------------------------------------------------
+
+def installed() -> list[str]:
+    """Every installed distribution and its version but crapkit's own, whose code the
+    tree holds."""
+    import importlib.metadata
+    found = {f"{dist.metadata['Name']}=={dist.version}"
+             for dist in importlib.metadata.distributions()}
+    return sorted(name for name in found if not name.lower().startswith("crapkit=="))
+
+
+def system_packages() -> str:
+    """dpkg's list of the image's system packages; "" where there is no dpkg."""
+    dpkg = shutil.which("dpkg-query")
+    if not dpkg:
+        return ""
+    return captured([dpkg, "-W", "-f=${Package}=${Version}\n"], Path.cwd()).stdout
+
+
+def env_key(stage: Path) -> str:
+    """sha256 over what judges a mutant beside the tree: Python, the installed and
+    system packages (mutmut among them), the launcher, and the stage's pytest and
+    mutmut tables."""
+    tool = tomllib.loads(_read(stage / "pyproject.toml")).get("tool", {})
+    facts = {"python": sys.version, "packages": installed(), "system": system_packages(),
+             "launcher": LAUNCHER, "mutmut": tool.get("mutmut", {}), "pytest": tool.get("pytest", {})}
+    return _sha(json.dumps(facts, sort_keys=True))
+
+
+# --- a calc run: carry what holds, judge the rest ----------------------------------------------
+
+@dataclass
+class Outcome:
+    rows: list
+    complete: bool
+    carry: dict
+    judged: list
+    mismatched: list
+    env: str
+
+
+def _now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def scope_functions(modules: list[str], head: Head) -> list[tuple[str, str]]:
+    """Every function of `modules` at HEAD a calc run mutates."""
+    pairs = [(module, name) for module in modules for name in head.facts(module)["texts"]]
+    return in_calc_scope(pairs, calc_functions())
+
+
+def _todo(functions: list, found: Plan, cold: bool) -> list:
+    """What to judge: what does not carry, or everything in a cold run; the canary
+    too whenever anything is judged, so each judging run proves its suite kills."""
+    todo = list(functions) if cold else list(found.todo)
+    return todo + [CANARY] if todo and CANARY not in todo else todo
+
+
+def _say_plan(found: Plan, todo: list) -> None:
+    carried = [function for function in found.carried if function not in todo]
+    print(f"mutation: {len(carried)} function(s) carry their stored verdicts; judging {len(todo)}")
+    reasons: dict[str, int] = {}
+    for function in todo:
+        why = found.why.get(function, "a cold run, or the canary")
+        reasons[why] = reasons.get(why, 0) + 1
+    for why, count in sorted(reasons.items()):
+        print(f"mutation: judging {count} function(s): {why}")
+
+
+def _fresh_stats(stage: Path, head: Head) -> None:
+    """Drop a stats map and reach file made at another tree or in another
+    environment: mutmut maps again only the tests it has not seen, so a test that
+    changed would keep its old map and its old reads."""
+    stamp = json.dumps({"tree": head.tree.ident, "env": head.env})
+    held = stage / STATS_STAMP
+    if held.is_file() and _read(held) == stamp:
+        return
+    for name in (STATS_MAP, REACH_FILE, STATS_STAMP):
+        (stage / name).unlink(missing_ok=True)
+
+
+def _stamp_stats(stage: Path, head: Head) -> None:
+    if (stage / STATS_MAP).is_file() and (stage / REACH_FILE).is_file():
+        _write(stage / STATS_STAMP, json.dumps({"tree": head.tree.ident, "env": head.env}))
+
+
+def _judge_todo(stage: Path, head: Head, todo: list, modules: list[str], children: int,
+                budget: float | None) -> tuple[list[Result], bool, tuple | None]:
+    if not todo:
+        return [], True, None
+    _fresh_stats(stage, head)
+    rows, complete = mutmut_in(stage, [mutmut_glob(*function) for function in todo],
+                               calc_env(dict(os.environ)), children, budget)
+    _stamp_stats(stage, head)
+    return rows, complete, judged_section(stage, head, todo, rows, complete, modules)
+
+
+def calc_run(modules: list[str], children: int, budget: float | None = None, cold: bool = False,
+             canary: bool = False) -> Outcome:
+    """Judge every function of `modules` (and the canary, with `canary`) whose stored
+    verdicts do not carry to HEAD, in the calc stage, and carry the rest."""
+    targets = calc_targets(weekly_modules())
+    stage = _prepare_stage(targets, CALC_STAGE, tuple(stage_deselected()))
+    head = Head(head_tree(REPO), env_key(stage), _now())
+    functions = _with_canary(scope_functions(modules, head), canary)
+    found = plan(functions, stored_verdicts(loaded(REPO / RECEIPTS)), head)
+    todo = _todo(functions, found, cold)
+    _say_plan(found, todo)
+    rows, complete, new = _judge_todo(stage, head, todo, sorted(targets), children, budget)
+    return _run_outcome(found, todo, rows, complete, new, head)
+
+
+def _with_canary(functions: list, canary: bool) -> list:
+    return functions + [CANARY] if canary and CANARY not in functions else functions
+
+
+def _run_outcome(found: Plan, todo: list, rows: list[Result], complete: bool, new: tuple | None,
+             head: Head) -> Outcome:
+    """The run's rows, carried and judged, and the store its receipt keeps."""
+    carried = {function: stored for function, stored in found.carried.items() if function not in todo}
+    kept = [row for stored in carried.values() for row in stored.rows]
+    return Outcome(kept + rows, complete, carry_section(carried, new, head), todo,
+                   mismatches(found.carried, rows), head.env)
+
+
+def _say_mismatched(names: list[str]) -> int:
+    for name in names:
+        print(f"mutation: {name}: a fresh judgement differs from its carried verdict, so no "
+              "receipt older than this one carries")
+    return 1 if names else 0
 
 
 def _tools(args) -> int:
@@ -1428,48 +2312,39 @@ def _print_floor(floor: Floor) -> None:
     print(f"mutation: floor {floor.group}: {rate}, floor {floor.floor}% {mark}")
 
 
+def _held(carry: dict) -> list[list[str]]:
+    """(module, function) of each function whose verdicts a receipt stores."""
+    return [list(function.partition(":")[::2]) for function in sorted(carry["functions"])]
+
+
+def _calc_fields(outcome: Outcome) -> dict:
+    """What a weekly or diff receipt keeps of its run: the functions it judged, the
+    functions whose verdicts it stores, its rows and its store."""
+    return {"schema": 2, "env": outcome.env, "judged": [list(pair) for pair in outcome.judged],
+            "functions": _held(outcome.carry), "deselected": stage_deselected(),
+            "stats_failures": _left_out(CALC_STAGE) if outcome.judged else [],
+            "cold_mismatch": outcome.mismatched, "results": [asdict(row) for row in outcome.rows],
+            "carry": outcome.carry}
+
+
 def _weekly(args) -> int:
     modules = shard(weekly_modules(), args.shard, args.of)
-    globs = calc_globs(modules, calc_functions()) + _canary_globs()
-    deselected = stage_deselected()
-    rows, _ = staged_run(CALC_STAGE, calc_targets(modules), globs, calc_env(dict(os.environ)),
-                         args.max_children, deselect=deselected)
+    outcome = calc_run(modules, args.max_children, None, args.cold, canary=True)
     receipt = _receipt("weekly", shard=args.shard, of=args.of, modules=modules,
-                       deselected=deselected, stats_failures=_left_out(CALC_STAGE),
-                       results=[asdict(row) for row in rows])
+                       **_calc_fields(outcome))
     _write_receipt(receipt, f"weekly-{args.shard}.json")
-    return _judge(rows, update=False)
-
-
-def _run_changed(changed: list, budget: float) -> tuple[list[Result], bool]:
-    """The results for the changed functions, and whether the run finished inside
-    `budget` seconds."""
-    if not changed:
-        return [], True
-    targets = calc_targets([path for path, _ in changed])
-    return staged_run(CALC_STAGE, targets, [mutmut_glob(*pair) for pair in changed],
-                      calc_env(dict(os.environ)), os.cpu_count() or 2, budget,
-                      deselect=stage_deselected())
-
-
-def _diff_receipt(base: str, changed: list, rows: list[Result], complete: bool) -> dict:
-    left_out = _left_out(CALC_STAGE) if changed else []
-    return _receipt("diff", base=base, functions=[list(pair) for pair in changed],
-                    complete=complete, stats_failures=left_out,
-                    results=[asdict(row) for row in rows])
+    rows = outcome.rows
+    return _judge(rows, update=False) | _say_mismatched(outcome.mismatched)
 
 
 def _diff_run(args) -> int:
-    base = args.base or weekly_base(REPO, datetime.datetime.now(datetime.timezone.utc))
-    touched, gained = since(base)
-    changed = touched + gained
-    rows, complete = _run_changed(changed, args.cap_minutes * 60)
-    receipt = _diff_receipt(base, changed, rows, complete)
+    outcome = calc_run(weekly_modules(), os.cpu_count() or 2, args.cap_minutes * 60, args.cold)
+    receipt = _receipt("diff", complete=outcome.complete, **_calc_fields(outcome))
     _write_receipt(receipt, f"diff-{receipt['head'][:12]}.json")
-    if not complete:
+    if not outcome.complete:
         print(f"mutation: incomplete: the {args.cap_minutes:g}-minute cap stopped the run")
         return 1
-    return _judge(rows, update=False, canary=False)
+    return _judge(outcome.rows, update=False, canary=False) | _say_mismatched(outcome.mismatched)
 
 
 def _gate(args) -> int:
@@ -1529,10 +2404,12 @@ def _parser() -> argparse.ArgumentParser:
     weekly.add_argument("--shard", type=int, required=True)
     weekly.add_argument("--of", type=int, required=True)
     weekly.add_argument("--max-children", type=int, default=os.cpu_count() or 2)
+    weekly.add_argument("--cold", action="store_true", help="carry no stored verdict")
     diff = sub.add_parser("diff")
-    diff.add_argument("--since-weekly", action="store_true")
-    diff.add_argument("--base")
+    diff.add_argument("--since-weekly", action="store_true",
+                      help="no effect: every run judges what its stored verdicts do not carry")
     diff.add_argument("--cap-minutes", type=float, default=30)
+    diff.add_argument("--cold", action="store_true", help="carry no stored verdict")
     gate_p = sub.add_parser("gate")
     gate_p.add_argument("results", nargs="+", type=Path)
     gate_p.add_argument("--update", action="store_true")
