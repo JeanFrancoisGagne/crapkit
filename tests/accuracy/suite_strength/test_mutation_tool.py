@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import fnmatch
 import importlib.util
 import inspect
 import io
@@ -893,8 +894,10 @@ def _fake_mutmut(monkeypatch, seen: dict) -> None:
     names.strip_prefix = lambda text, *, prefix, strict=False: text
     modules["mutmut.mutation.trampoline"].set_mutant_under_test = lambda name: None
     modules["mutmut.state"].state = lambda: None
-    modules["mutmut.__main__"].cli = lambda: seen.update(
-        run_stats=harness.PytestRunner.run_stats, strip=names.strip_prefix)
+    main = modules["mutmut.__main__"]
+    main.tests_for_mutant_names = lambda mutant_names: set()
+    main.cli = lambda: seen.update(run_stats=harness.PytestRunner.run_stats,
+                                   strip=names.strip_prefix, tests_for=main.tests_for_mutant_names)
     for name, module in modules.items():
         monkeypatch.setitem(sys.modules, name, module)
 
@@ -916,7 +919,28 @@ def test_the_launcher_puts_its_stats_run_in_mutmut_s_place_before_mutmut_starts(
     assert seen["run_stats"] is namespace["run_stats"]
     assert namespace["_run_stats"] is _mutmut_stats
     assert seen["strip"] is namespace["strip_prefix"]
+    assert seen["tests_for"] is namespace["tests_for_mutant_names"]
     assert namespace["FAILURES"] == tmp_path.resolve() / mutation.STATS_FAILURES
+
+
+def test_a_diff_run_s_glob_finds_the_tests_mutmut_keyed_to_its_function():
+    """The diff run names each changed function's mutants with one glob,
+    crapkit.score.x_crap__mutmut_*. mutmut's clean pass looks the glob up among the
+    keys its stats run filed tests under, which name the function with no
+    __mutmut_ suffix, found no test, and then ran the whole suite with no test
+    named, the stats run's failures included: every diff run since stopped at
+    `Failed to run clean test`, exit 4, no receipt."""
+    namespace: dict = {}
+    exec(compile(mutation.LAUNCHER.split("if __name__")[0], "launcher", "exec"), namespace)
+    keyed = {"crapkit.score.x_crap": {"tests/unit/test_score.py::test_crap"},
+             "crapkit.score.x_crap_load": {"tests/unit/test_score.py::test_load"}}
+    namespace.update(_state=lambda: types.SimpleNamespace(tests_by_mangled_function_name=keyed),
+                     _tests_for=lambda mutant_names: {"mutmut's own answer"})
+    glob = mutation.mutmut_glob("src/crapkit/score.py", "crap")
+
+    assert [key for key in keyed if fnmatch.fnmatch(key, glob)] == []
+    assert namespace["tests_for_mutant_names"]([glob]) == {"tests/unit/test_score.py::test_crap"}
+    assert namespace["tests_for_mutant_names"](["crapkit.score.*"]) == {"mutmut's own answer"}
 
 
 def test_the_launcher_names_a_module_the_way_its_tests_import_it(tmp_path):

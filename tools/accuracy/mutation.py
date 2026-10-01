@@ -1095,6 +1095,19 @@ def record(failed, whole):
     FAILURES.write_bytes("".join(f"{node}\\n" for node in sorted(kept | set(failed))).encode())
 
 
+def tests_for_mutant_names(mutant_names):
+    """mutmut's own, except that the glob naming one function's mutants (the diff
+    run's NAME__mutmut_*) finds the tests mutmut filed under NAME. mutmut matched
+    that glob against the stats run's keys, which carry no __mutmut_ suffix, found
+    no test, and ran its clean pass over the whole suite, stats failures included."""
+    keyed = _state().tests_by_mangled_function_name
+    tests = set()
+    for name in mutant_names:
+        function = name.removesuffix("__mutmut_*")
+        tests |= set(keyed.get(function, ())) if function != name else _tests_for([name])
+    return tests
+
+
 if __name__ == "__main__":
     import sys
     import mutmut.mutation.trampoline as _trampolines
@@ -1115,8 +1128,9 @@ if __name__ == "__main__":
         from mutmut.runners.harness import PytestRunner
         from mutmut.state import state as _state
         _run_stats, PytestRunner.run_stats = PytestRunner.run_stats, run_stats
-        from mutmut.__main__ import cli
-        cli()
+        import mutmut.__main__ as _main
+        _tests_for, _main.tests_for_mutant_names = _main.tests_for_mutant_names, tests_for_mutant_names
+        _main.cli()
 '''
 
 
