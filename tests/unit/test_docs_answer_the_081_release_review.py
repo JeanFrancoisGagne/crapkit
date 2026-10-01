@@ -295,3 +295,36 @@ def test_worklist_reads_ratchet_mark_from_the_working_tree(repo, capsys):  # noq
     for page in ("README.md", "docs/agent-json.md", "docs/handbook.html"):
         assert "committed mark" not in _prose(page).replace("committed marks", ""), page
 
+
+# --- what adding a language asks of the hooks (docs[6]) -----------------------------
+
+def test_adding_a_language_edits_no_hook_file_and_the_contributor_guide_says_so():
+    """CONTRIBUTING said to "regenerate plugin/hooks/hooks.json from
+    languages.LANGUAGE_EXTENSIONS (a test rebuilds it and diffs)". hooks.json is
+    one Edit|Write handler with no extension in it, so there is nothing to
+    rebuild, and claude-hook screens each edit by the map itself."""
+    from crapkit.cli.claude_hook import _suffixes
+    from crapkit.languages import LANGUAGE_EXTENSIONS
+
+    raw = _doc("plugin/hooks/hooks.json")
+    hooks = json.loads(raw)["hooks"]
+    handlers = [(group["matcher"], handler["command"])
+                for groups in hooks.values() for group in groups for handler in group["hooks"]]
+    suffixes = {e.lower() for exts in LANGUAGE_EXTENSIONS.values() for e in exts}
+
+    assert handlers == [("Edit|Write", "crapkit claude-hook --protocol 1")]
+    assert [s for s in suffixes if s in raw.lower()] == []
+    assert _suffixes() == suffixes
+
+    guide = _section("CONTRIBUTING.md", "## Adding a language")
+    polyglot = _doc("tests/unit/test_polyglot_constants.py")
+    assert "a test rebuilds it" not in guide and "regenerate `plugin/hooks/hooks.json`" not in guide
+    assert ("Nothing in `plugin/hooks/hooks.json` changes: it registers one `Edit|Write` handler "
+            "and lists no extension, and `claude-hook` screens each edit by "
+            "`languages.LANGUAGE_EXTENSIONS`") in guide
+    assert ("give it a `cc-only` row in the handbook's language table "
+            "(`<table id=\"languages\">`) listing its suffixes") in guide
+    assert "add its display name to `DISPLAY` in `tests/unit/test_polyglot_constants.py`" in guide
+    assert "def test_the_handbook_table_carries_a_row_for_every_supported_language" in polyglot
+    assert "def test_every_supported_language_has_a_display_name" in polyglot
+

@@ -222,11 +222,14 @@ prove it:
 | `src/crapkit/languages.py` | add its suffixes to `LANGUAGE_EXTENSIONS` |
 | `src/crapkit/_pygdefer.py` | name it in the module docstring's list, which a test pins to the language set |
 
-Run `python tools/docs/generate.py` to update the editor schema. Then regenerate
-`plugin/hooks/hooks.json` from `languages.LANGUAGE_EXTENSIONS` (a test rebuilds it
-and diffs), and name the language in the README intro and the handbook standfirst, both
-pinned to the same set. Bump `ANALYSIS_VERSION` in `analyze.py` so existing stores
-re-analyze. Coverage joins only where a parser exists, so a new language's scopes declare
+Run `python tools/docs/generate.py` to update the editor schema. Nothing in
+`plugin/hooks/hooks.json` changes: it registers one `Edit|Write` handler and lists no
+extension, and `claude-hook` screens each edit by `languages.LANGUAGE_EXTENSIONS`, so the
+advisory reads the new suffixes once the map has them. Name the language in the README
+intro and the handbook standfirst, give it a `cc-only` row in the handbook's language
+table (`<table id="languages">`) listing its suffixes, and add its display name to
+`DISPLAY` in `tests/unit/test_polyglot_constants.py`, whose tests pin all four to the
+language set. Bump `ANALYSIS_VERSION` in `analyze.py` so existing stores re-analyze. Coverage joins only where a parser exists, so a new language's scopes declare
 `coverage_optional = true` until one does.
 
 Bumping `ANALYSIS_VERSION` touches `analyze.py`, which `calcs.tsv` rows name, so declare
