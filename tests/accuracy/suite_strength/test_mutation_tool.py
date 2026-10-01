@@ -402,24 +402,6 @@ def _receipts(directory: Path, *receipts: dict) -> Path:
 HEAD_A, HEAD_B = "a" * 40, "b" * 40
 
 
-def test_the_release_row_reads_every_weekly_shard_and_diff_receipt_in_one_directory(tmp_path):
-    weekly = [{"kind": "weekly", "head": HEAD_A, "shard": shard, "of": 2} for shard in (1, 2)]
-    diff = {"kind": "diff", "complete": True, "functions": []}
-    weeklies, diffs = mutation.receipts_in(_receipts(tmp_path / "r", *weekly, diff))
-
-    assert (mutation.weekly_head(weeklies), diffs) == (HEAD_A, [diff])
-
-
-@pytest.mark.parametrize("weekly, says", [
-    ([{"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 3}], "weekly shards [2, 3] have no"),
-    ([{"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 2},
-      {"kind": "weekly", "head": HEAD_B, "shard": 2, "of": 2}], "measured 2 heads"),
-])
-def test_a_weekly_run_the_receipts_do_not_hold_whole_is_refused(weekly, says):
-    with pytest.raises(mutation.MutationError, match=re.escape(says)):
-        mutation.weekly_head(weekly)
-
-
 def test_no_weekly_receipt_is_an_infra_miss_that_names_the_download(tmp_path, capsys):
     code = mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "empty"))])
 
@@ -1120,59 +1102,8 @@ def _text_at(texts: dict):
     return lambda commit, module, name: texts.get((commit, module, name))
 
 
-def _same_scope(monkeypatch) -> list:
-    """Stand in for scope_gained: the calc scope did not grow since the weekly
-    head, which here is no commit git could read. Records each (repo, base)."""
-    asked = []
-    monkeypatch.setattr(mutation, "scope_gained", lambda repo, base: asked.append((repo, base)) or [])
-    return asked
-
-
-def test_the_covered_command_names_each_changed_function_no_diff_run_mutated(
-        tmp_path, monkeypatch, capsys):
-    weekly = {"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 1}
-    diff = {"kind": "diff", "complete": True, "head": HEAD_B, "functions": [list(CRAP)],
-            "results": [KILLED_CRAP]}
-    receipts = _receipts(tmp_path / "r", weekly, diff)
-    seen, read, asked = [], [], _same_scope(monkeypatch)
-    monkeypatch.setattr(mutation, "calc_modules", lambda: ["src/crapkit/score.py"])
-    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: seen.append(
-        (repo, base, modules)) or [CRAP, ("src/crapkit/score.py", "grade")])
-    monkeypatch.setattr(mutation, "function_text", lambda repo: read.append(repo) or _text_at(
-        SAME_CRAP))
-
-    assert mutation.main(["covered", "--receipts", str(receipts)]) == 1
-    assert seen == [(mutation.REPO, HEAD_A, ["src/crapkit/score.py"])]
-    assert read == [mutation.REPO] and asked == [(mutation.REPO, HEAD_A)]
-    assert capsys.readouterr().out == (
-        f"mutation: src/crapkit/score.py:grade changed since the weekly run at {HEAD_A[:12]} "
-        "and no complete diff run mutated it\n")
-
-
-def test_the_covered_command_passes_when_every_change_was_mutated(tmp_path, monkeypatch):
-    weekly = {"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 1}
-    _same_scope(monkeypatch)
-    monkeypatch.setattr(mutation, "calc_modules", lambda: [])
-    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [])
-
-    assert mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "r", weekly))]) == 0
-
-
 UNJUDGED = mutation.Result("crapkit.score.x_crap__mutmut_1", "src/crapkit/score.py", "crap",
                            "not checked").__dict__
-
-
-def test_the_covered_command_refuses_a_weekly_shard_whose_receipt_judged_nothing(
-        tmp_path, monkeypatch, capsys):
-    """A receipt from a run whose stats pass died holds every mutant `not
-    checked`: it says the shard ran, and the run proved nothing."""
-    weekly = [{"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 2, "results": []},
-              {"kind": "weekly", "head": HEAD_A, "shard": 2, "of": 2, "results": [UNJUDGED]}]
-    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [])
-
-    assert mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "r", *weekly))]) == 1
-    said = capsys.readouterr().err
-    assert "weekly shard 2's receipt proves nothing: 1 mutant was never judged" in said
 
 
 def test_a_diff_receipt_holding_a_mutant_mutmut_never_judged_covers_no_function():
@@ -1265,113 +1196,6 @@ def test_changed_functions_name_what_a_diff_from_the_base_touches(tmp_path):
     assert mutation.changed_functions(repo, base, ["m.py", "gone.py"]) == [("m.py", "b")]
 
 
-# `covered` once took any complete diff receipt that listed a changed function.
-# mutmut 3.8 makes no mutant of a function decorated with anything but a lone
-# staticmethod or classmethod, so a receipt listed churn_log._commit_date
-# (lru_cache) with no mutant of it judged; and a receipt from Monday covered a
-# function edited again on Tuesday, since nothing read the receipt's head.
-
-IN_THE_WEEKLY_RUN = ("import functools\n\n\ndef f():\n    return 1\n\n\n"
-                     "@functools.cache\ndef g():\n    return 2\n")
-
-
-def _covered_on(tmp_path, monkeypatch) -> tuple[Path, str, str, Path]:
-    """A repo whose m.py changed f and the decorated g after the weekly run, and
-    a complete diff receipt at that change holding one killed mutant of f."""
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _dated_repo(repo, [("2026-09-18T12:00:00Z", IN_THE_WEEKLY_RUN)])
-    weekly = mutation._git(repo, "rev-parse", "HEAD").strip()
-    measured = _commit_m(repo, "2026-09-20T12:00:00Z", IN_THE_WEEKLY_RUN.replace(
-        "return 1", "return 10").replace("return 2", "return 20"))
-    killed = mutation.Result("m.x_f__mutmut_1", "m.py", "f", "killed").__dict__
-    receipts = _receipts(tmp_path / "r", {"kind": "weekly", "head": weekly, "shard": 1, "of": 1},
-                         {"kind": "diff", "complete": True, "head": measured, "base": weekly,
-                          "functions": [["m.py", "f"], ["m.py", "g"]], "results": [killed]})
-    monkeypatch.setattr(mutation, "REPO", repo)
-    monkeypatch.setattr(mutation, "calc_modules", lambda: ["m.py"])
-    monkeypatch.setattr(mutation, "calc_functions", lambda root=None: {})
-    _same_scope(monkeypatch)
-    return repo, weekly, measured, receipts
-
-
-@pytest.mark.process
-def test_covered_takes_a_diff_receipt_only_for_a_function_it_mutated_as_head_holds_it(
-        tmp_path, monkeypatch, capsys):
-    repo, weekly, measured, receipts = _covered_on(tmp_path, monkeypatch)
-    no_mutant = (f"mutation: m.py:g changed since the weekly run at {weekly[:12]} and the diff "
-                 f"run at {measured[:12]} made no mutant of it\n")
-
-    assert mutation.main(["covered", "--receipts", str(receipts)]) == 1
-    assert capsys.readouterr().out == no_mutant
-
-    _commit_m(repo, "2026-09-21T12:00:00Z", (repo / "m.py").read_text(encoding="utf-8").replace(
-        "return 10", "return 100"))
-
-    assert mutation.main(["covered", "--receipts", str(receipts)]) == 1
-    assert capsys.readouterr().out == (
-        f"mutation: m.py:f changed since the weekly run at {weekly[:12]} and changed again "
-        f"after the diff run at {measured[:12]}\n" + no_mutant)
-
-
-@pytest.mark.process
-def test_covered_passes_a_function_whose_text_at_head_is_the_text_the_diff_run_mutated(
-        tmp_path, monkeypatch, capsys):
-    repo, _, _, receipts = _covered_on(tmp_path, monkeypatch)
-    _commit_m(repo, "2026-09-21T12:00:00Z", "import os\n" + (repo / "m.py").read_text(
-        encoding="utf-8") + "\n\ndef h():\n    return 3\n")
-    monkeypatch.setattr(mutation, "changed_functions", lambda repo, base, modules: [("m.py", "f")])
-
-    assert mutation.main(["covered", "--receipts", str(receipts)]) == 0
-    assert capsys.readouterr().out == ""
-
-
-# A module a calcs.tsv row brings in after the weekly run was never mutated by
-# it, whether its text changed or not: lane_freshness.py and lane_results.py
-# entered calc scope after the weekly run at f4def958, and `covered` read their
-# unchanged functions as the weekly run's.
-
-CALCS = "calc\tindependent_test\tmodules\tfunctions\n"
-ROW_M = "M\tt.py::test_m\tm.py\tm.py:f\n"
-ROW_N = "N\tt.py::test_n\tn.py\tn.py:k\n"
-CALCS_AT = "tests/accuracy/p/calcs.tsv"
-
-
-def _scope_grew(tmp_path, monkeypatch) -> tuple[Path, str]:
-    """A repo whose calcs.tsv names m.py at the weekly commit and n.py too after
-    it; n.py's text is the same at both."""
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _dated_repo(repo, [])
-    weekly = _commit_files(repo, "2026-09-18T12:00:00Z", {
-        "m.py": "def f():\n    return 1\n", "n.py": "def k():\n    return 2\n",
-        CALCS_AT: CALCS + ROW_M})
-    _commit_files(repo, "2026-09-20T12:00:00Z", {CALCS_AT: CALCS + ROW_M + ROW_N})
-    monkeypatch.setattr(mutation, "REPO", repo)
-    monkeypatch.setattr(mutation, "calc_modules", lambda: ["m.py", "n.py"])
-    return repo, weekly
-
-
-@pytest.mark.process
-def test_covered_asks_a_diff_run_for_a_function_that_entered_calc_scope_after_the_weekly_run(
-        tmp_path, monkeypatch, capsys):
-    repo, weekly = _scope_grew(tmp_path, monkeypatch)
-    receipts = _receipts(tmp_path / "r", {"kind": "weekly", "head": weekly, "shard": 1, "of": 1})
-
-    assert mutation.main(["covered", "--receipts", str(receipts)]) == 1
-    assert capsys.readouterr().out == (
-        f"mutation: n.py:k entered the calc scope after the weekly run at {weekly[:12]} and no "
-        "complete diff run mutated it\n")
-
-    head = mutation._git(repo, "rev-parse", "HEAD").strip()
-    killed = mutation.Result("n.x_k__mutmut_1", "n.py", "k", "killed").__dict__
-    (receipts / "diff.json").write_text(json.dumps(
-        {"kind": "diff", "complete": True, "head": head, "base": weekly,
-         "functions": [["n.py", "k"]], "results": [killed]}), encoding="utf-8")
-
-    assert mutation.main(["covered", "--receipts", str(receipts)]) == 0
-
-
 def test_a_change_to_a_decorator_line_is_a_change_to_its_function():
     source = "import functools\n\n\nclass A:\n    @functools.cache\n    def f(self):\n        return 1\n"
 
@@ -1420,23 +1244,6 @@ def test_a_floor_rate_is_rounded_to_two_places():
     (core, _) = mutation.floors(run, [], GROUPS)
 
     assert (core.rate, core.killed, core.counted) == (33.33, 1, 3)
-
-
-def test_a_missing_first_shard_is_named():
-    weekly = [{"kind": "weekly", "head": HEAD_A, "shard": shard, "of": 3} for shard in (2, 3)]
-
-    with pytest.raises(mutation.MutationError, match=r"weekly shards \[1\] have no receipt"):
-        mutation.weekly_head(weekly)
-
-
-def test_two_heads_are_both_named():
-    weekly = [{"kind": "weekly", "head": head, "shard": shard, "of": 2}
-              for shard, head in ((1, HEAD_A), (2, HEAD_B))]
-
-    with pytest.raises(mutation.MutationError) as refused:
-        mutation.weekly_head(weekly)
-
-    assert str(refused.value) == f"the weekly receipts measured 2 heads: {HEAD_A}, {HEAD_B}"
 
 
 @pytest.mark.parametrize("call, says", [
@@ -1977,14 +1784,6 @@ def test_a_calc_run_with_nothing_to_judge_starts_no_mutmut(tmp_path, monkeypatch
 CLI = "src/crapkit/cli/scoring.py"
 
 
-def _named_cli(monkeypatch) -> None:
-    """A cli module whose calcs rows name one function of it, `_named`."""
-    monkeypatch.setattr(mutation, "calc_modules", lambda: [CLI])
-    monkeypatch.setattr(mutation, "calc_functions", lambda root=None: {CLI: {"_named"}})
-    monkeypatch.setattr(mutation, "changed_functions",
-                        lambda repo, base, modules: [(CLI, "_named"), (CLI, "_other")])
-
-
 @pytest.mark.parametrize("argv, globs", [
     (["weekly", "--shard", "1", "--of", "1"],
      ["crapkit.cli.scoring.x__named__mutmut_*", "crapkit.score.x_crap__mutmut_*"]),
@@ -1998,18 +1797,6 @@ def test_a_calc_run_mutates_a_cli_module_at_its_named_functions_only(tmp_path, m
     mutation.main(argv)
 
     assert recorder.calls[0]["globs"] == globs
-
-
-def test_the_covered_command_asks_only_after_a_cli_module_s_named_functions(
-        tmp_path, monkeypatch, capsys):
-    _named_cli(monkeypatch)
-    _same_scope(monkeypatch)
-    weekly = {"kind": "weekly", "head": HEAD_A, "shard": 1, "of": 1}
-
-    assert mutation.main(["covered", "--receipts", str(_receipts(tmp_path / "r", weekly))]) == 1
-    assert capsys.readouterr().out == (
-        f"mutation: {CLI}:_named changed since the weekly run at {HEAD_A[:12]} "
-        "and no complete diff run mutated it\n")
 
 
 def test_a_cli_module_no_calcs_row_names_is_out_of_calc_scope():

@@ -302,9 +302,9 @@ in-process crapkit call the test kit logged as stuck past its bound, and exits
 gets its serial rerun, and its verdict never carries to another run. Only the
 `diff` run's cap stops mutmut short without a
 death, and that run reports `incomplete`. Exit 1 stays a check that failed, and
-exit 3 a receipt missing on this machine. `covered` refuses a weekly receipt that
-holds a mutant its run never judged, and a diff receipt that holds one covers no
-function (see [Release](#release)).
+exit 3 a receipt missing on this machine. A function with a mutant its run never
+judged stores no verdict, so `covered` counts it uncovered (see
+[Release](#release)).
 
 mutmut runs its stats pass in its own process, so inside a stage the test kit
 never ends the process when a call is stuck in C code. It writes every thread's
@@ -321,31 +321,27 @@ python tools/accuracy/run.py --tier release --receipt .crapkit/release-accuracy-
 
 The release tool runs this in its `accuracy` stage (see [Releases](#releases)).
 
-Its mutation row, `python tools/accuracy/mutation.py covered`, reads the weekly
-and diff receipts under `.crapkit/accuracy/mutation/`. It asks for every weekly
-shard judged at one head. The weekly run mutated nothing that changed after that
-head, and nothing the `calcs.tsv` tables at that head left out of calc scope. So
-each calculation function changed since that head (a change to a decorator line
-counts), and each one a `calcs.tsv` row brought into calc scope after it, needs
-a diff receipt that covers it: a run that finished and judged every mutant, that
-holds at least one mutant of the function, and whose head holds the same text
-for the function, decorators included, as HEAD does. The `diff` run mutates both
-kinds. A function without such a receipt counts as uncovered, and `covered`
-prints why and exits 1:
+Its mutation row, `python tools/accuracy/mutation.py covered`, reads the verdicts
+the weekly and diff receipts under `.crapkit/accuracy/mutation/` store (see
+[Weekly](#weekly)). It passes when every function of the calculation modules at
+HEAD holds stored verdicts that carry to HEAD under the weekly run's conditions,
+and the survivor gate and the floors pass over those verdicts. A timeout counts
+only at the tree it was judged at, a mutant mutmut never judged (`not checked`,
+`suspicious`) stores nothing, and the row takes the environment key of the
+newest receipt, since it runs outside the image. For each function whose
+verdicts do not carry, `covered` prints the first condition that broke, such
+as:
 
-| Printed reason | What happened |
-|---|---|
-| `no complete diff run mutated it` | No finished, judged diff receipt lists the function |
-| `the diff run at SHA made no mutant of it` | The run listed it, and mutmut made no mutant of it |
-| `changed again after the diff run at SHA` | Its text at HEAD differs from its text at the run's head |
-| `this clone cannot read PATH at the head of the diff run at SHA` | Fetch that commit |
+```
+mutation: src/crapkit/score.py:grade has no stored verdict that carries to HEAD: its text, or its module's code outside any function, changed
+```
 
-mutmut 3.8 makes no mutant of a function decorated with anything but a lone
-`staticmethod` or `classmethod`, or of one that holds nothing it mutates (a
-bare `return x`, a lone call). Such a function, changed or brought into scope
-after the weekly head, fails `covered` until a weekly run measures a head that
-holds it. The weekly run makes no mutant of it either, so `covered` passes an
-unchanged one without any mutant behind it.
+and exits 1. It exits 1 too on a survivor on neither table or a group below its
+floor, and 3 when no receipt here stores a verdict. mutmut 3.8 makes no mutant
+of a function decorated with anything but a lone `staticmethod` or
+`classmethod`, or of one that holds nothing it mutates (a bare `return x`, a
+lone call, a `property`). Such a function counts as covered once a run that
+finished judged it, and `covered` lists it as one with no mutant.
 
 ## When a check fails
 

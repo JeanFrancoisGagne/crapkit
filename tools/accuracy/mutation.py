@@ -44,9 +44,7 @@ whatever the mutant, and a crash on a degraded host can fail one too, and either
 reads as a kill. No verdict of a mutant whose test process a signal ended (a
 timeout or mutmut's `segfault`) carries to another run. mutmut runs its stats
 pass in its own process, so every run names that file to the kit (HANGS_ENV),
-and the kit then never ends the process on a stuck call. `covered` refuses a receipt holding a mutant its run never judged,
-and a diff receipt covers a changed function only when it holds a mutant of
-that function and its head holds the function's text as HEAD does (uncovered).
+and the kit then never ends the process on a stuck call.
 
 Carrying a verdict. Each weekly and diff receipt stores, beside its results,
 what each function's verdicts rest on (carry_problem): the function's key (its
@@ -55,7 +53,10 @@ covering tests mutmut's stats pass mapped to it, every file those tests read,
 each folder they list, whether they start a program, and the functions they
 also run; and per run the environment key (Python, the installed packages,
 dpkg's list, the launcher and the stage's pytest and mutmut tables), the tree
-it judged and what the suite read outside any test. A later run carries those
+it judged and what the suite read outside any test. `covered` passes when every
+function in scope holds verdicts that carry to HEAD (a timeout's only at the tree
+it was judged at), and the gate and the floors pass over them; a function mutmut
+makes no mutant of counts as covered and is listed as such. A later run carries those
 verdicts only while every one of those still holds, any .py file outside the
 mutated modules and the test modules is unchanged, and the verdicts are under
 28 days old; a surviving or unfinished mutant's verdict holds only at the tree
@@ -650,44 +651,6 @@ def _why_uncovered(diffs: list[dict], module: str, name: str, text) -> str:
             return ""
         reasons.append(reason)
     return "; ".join(dict.fromkeys(reasons)) or NOT_MUTATED
-
-
-def _of_kind(receipts: list[dict], kind: str) -> list[dict]:
-    return [receipt for receipt in receipts if receipt.get("kind") == kind]
-
-
-def receipts_in(directory: Path) -> tuple[list[dict], list[dict]]:
-    """(weekly shard receipts, nightly diff receipts) saved under `directory`."""
-    loaded = [json.loads(_read(path))
-              for path in sorted(Path(directory).glob("*.json"))]
-    return _of_kind(loaded, "weekly"), _of_kind(loaded, "diff")
-
-
-def _missing_shards(weeklies: list[dict]) -> list[int]:
-    of = max(receipt["of"] for receipt in weeklies)
-    return sorted(set(range(1, of + 1)) - {receipt["shard"] for receipt in weeklies})
-
-
-def weekly_head(weeklies: list[dict]) -> str:
-    """The commit the last weekly run mutated: one head across every shard 1..of."""
-    if not weeklies:
-        raise MissingReceipts(f"no weekly mutation receipt here; download them with `gh run "
-                              f"download RUN_ID --pattern '{RECEIPT_ARTIFACTS}' -D {RECEIPTS}`")
-    heads = sorted({str(receipt.get("head")) for receipt in weeklies})
-    if len(heads) != 1:
-        raise MutationError(f"the weekly receipts measured {len(heads)} heads: {', '.join(heads)}")
-    missing = _missing_shards(weeklies)
-    if missing:
-        raise MutationError(f"weekly shards {missing} have no receipt")
-    _refuse_unjudged(weeklies)
-    return heads[0]
-
-
-def _refuse_unjudged(weeklies: list[dict]) -> None:
-    for receipt in weeklies:
-        problem = receipt_problem(receipt)
-        if problem:
-            raise MutationError(f"weekly shard {receipt['shard']}'s receipt proves nothing: {problem}")
 
 
 def uncovered(changed: list[tuple[str, str]], diffs: list[dict], text) -> list[tuple[str, str]]:
@@ -2378,16 +2341,44 @@ def _floors_cmd(args) -> int:
     return 0 if all(floor.ok for floor in checked) else 1
 
 
+def newest_env(receipts: list[dict]) -> str:
+    """The environment key of the newest run: `covered` runs outside the image, so
+    it takes that run's, and verdicts judged in another environment do not carry."""
+    newest = max(receipts, key=_created)
+    return str(newest.get("env", ""))
+
+
+def stored_receipts(directory: Path) -> list[dict]:
+    """The trusted receipts under `directory` that store verdicts; MissingReceipts
+    when there is none."""
+    found = [receipt for receipt in trusted(loaded(directory)) if receipt.get("carry")]
+    if not found:
+        raise MissingReceipts(f"no weekly or diff mutation receipt with stored verdicts here; "
+                              f"download them with `gh run download RUN_ID --pattern "
+                              f"'{RECEIPT_ARTIFACTS}' -D {RECEIPTS}`")
+    return found
+
+
+def _say_covered(found: Plan) -> None:
+    for function in found.todo:
+        print(f"mutation: {_fid(function)} has no stored verdict that carries to HEAD: "
+              f"{found.why[function]}")
+    for function, stored in found.carried.items():
+        if not stored.rows:
+            print(f"mutation: {_fid(function)} holds no mutant mutmut makes, so it counts as covered")
+
+
 def _covered(args) -> int:
-    weeklies, diffs = receipts_in(args.receipts)
-    head = weekly_head(weeklies)
-    touched, gained = since(head)
-    missing = uncovered(touched + gained, diffs, function_text(REPO))
-    entered = {f"{module}:{name}" for module, name in gained}
-    for function, why in missing:
-        how = "entered the calc scope after" if function in entered else "changed since"
-        print(f"mutation: {function} {how} the weekly run at {head[:12]} and {why}")
-    return 1 if missing else 0
+    """Pass when every function of the calc modules holds stored verdicts that carry
+    to HEAD (see carry_problem; a timeout's only at the tree it was judged at) and
+    the gate and the floors pass over them."""
+    receipts = stored_receipts(args.receipts)
+    head = Head(head_tree(REPO), newest_env(receipts), _now())
+    found = plan(scope_functions(weekly_modules(), head), stored_verdicts(receipts), head,
+                 select=False)
+    _say_covered(found)
+    gated = _judge([row for stored in found.carried.values() for row in stored.rows], update=False)
+    return 1 if found.todo else gated
 
 
 def _key(args) -> int:

@@ -127,7 +127,7 @@ class World:
         self.repo, self.stage, self.mutmut = tmp_path / "repo", tmp_path / "stage", FakeMutmut()
         self.stage.mkdir(parents=True)
         self.repo.mkdir()
-        tables = tmp_path / "tables"
+        self.tables = tables = tmp_path / "tables"
         tables.mkdir()
         for name, columns in (("survivors.tsv", mutation.SURVIVOR_COLUMNS),
                               ("equivalent.tsv", mutation.EQUIVALENT_COLUMNS),
@@ -397,6 +397,119 @@ def test_a_cold_run_that_judges_a_carried_verdict_otherwise_voids_every_older_re
             "verdict") in capsys.readouterr().out
     receipts = mutation.loaded(world.repo / mutation.RECEIPTS)
     assert [receipt["kind"] for receipt in mutation.trusted(receipts)] == ["weekly"]
+
+
+# --- covered: the release row reads the stored verdicts ---------------------------------------------
+#
+# `covered` asked for every weekly shard at one head and a diff receipt holding
+# each changed function's text, and never read a verdict: at c3fa1d42 the 8 weekly
+# receipts held 1,017 survivors on neither table and the row passed. It also read
+# 3 of 93 functions as gaps only because mutmut makes no mutant of them.
+
+def _covered(world: World) -> int:
+    return mutation.main(["covered", "--receipts", str(world.repo / mutation.RECEIPTS)])
+
+
+def test_covered_passes_when_every_function_holds_a_verdict_that_carries(world, capsys):
+    _first_run(world)
+    capsys.readouterr()
+
+    assert _covered(world) == 0
+
+    said = capsys.readouterr().out
+    assert ("mutation: src/crapkit/digest.py:Shown.size holds no mutant mutmut makes, so it counts "
+            "as covered\n") in said
+    assert "no stored verdict" not in said
+
+
+def test_covered_names_each_function_whose_verdicts_do_not_carry_and_why(world, capsys):
+    _first_run(world)
+    world.files["src/crapkit/score.py"] = SCORE.replace("value > 5", "value >= 5")
+    world.files["tests/unit/data/rows.txt"] = "9\n"
+    capsys.readouterr()
+
+    assert _covered(world) == 1
+
+    said = capsys.readouterr().out
+    assert ("mutation: src/crapkit/score.py:grade has no stored verdict that carries to HEAD: its "
+            "text, or its module's code outside any function, changed\n") in said
+    assert ("mutation: src/crapkit/digest.py:totals has no stored verdict that carries to HEAD: "
+            "tests/unit/data/rows.txt, which a test that reaches it reads, changed\n") in said
+    assert "score.py:crap has no" not in said
+
+
+def test_covered_fails_on_a_survivor_the_tables_do_not_list(world, capsys):
+    world.mutmut.codes[GRADE]["crapkit.score.x_grade__mutmut_1"] = 0
+    world.run()
+    capsys.readouterr()
+
+    assert _covered(world) == 1
+
+    assert ("mutation: new survivor src/crapkit/score.py grade crapkit.score.x_grade__mutmut_1: kill "
+            "it with a test") in capsys.readouterr().out
+
+
+def test_covered_fails_on_a_floor_the_stored_verdicts_miss(world, capsys):
+    """The survivor is listed, so only the floor can fail the row."""
+    world.mutmut.codes[GRADE]["crapkit.score.x_grade__mutmut_1"] = 0
+    world.run()
+    mutation.write_table(world.tables / "survivors.tsv", mutation.SURVIVOR_COLUMNS, [
+        {"module": GRADE[0], "function": GRADE[1], "diff_sha256": "crapkit.score.x_grade__mutmut_1",
+         "reason": "r", "added": "d"}])
+    mutation.write_table(world.tables / "floors.tsv", mutation.FLOOR_COLUMNS, [
+        {"group": "core", "paths": "src/crapkit/score.py", "floor": "95", "source": "s"}])
+    capsys.readouterr()
+
+    assert _covered(world) == 1
+
+    assert "mutation: floor core: 66.67% (2/3), floor 95.0% BELOW" in capsys.readouterr().out
+
+
+def test_covered_takes_an_unfinished_verdict_only_at_the_tree_it_was_judged_at(world, capsys):
+    world.mutmut.codes[GRADE]["crapkit.score.x_grade__mutmut_1"] = 36
+    world.run()
+    assert _covered(world) == 0
+
+    world.files["README.md"] = "changed\n"
+    capsys.readouterr()
+
+    assert _covered(world) == 1
+    assert ("mutation: src/crapkit/score.py:grade has no stored verdict that carries to HEAD: a "
+            "surviving or unfinished mutant's verdict holds only at the tree it was judged at, and "
+            "README.md changed\n") in capsys.readouterr().out
+
+
+def test_covered_counts_no_function_a_mutant_was_never_judged_in(world, capsys):
+    world.mutmut.codes[GRADE]["crapkit.score.x_grade__mutmut_1"] = None
+    world.run()
+    capsys.readouterr()
+
+    assert _covered(world) == 1
+    assert ("mutation: src/crapkit/score.py:grade has no stored verdict that carries to HEAD: no "
+            "stored verdict names it\n") in capsys.readouterr().out
+
+
+def test_covered_reads_the_environment_of_the_newest_run(world):
+    """The row runs on the release machine, outside the image: it takes the newest
+    receipt's environment, so verdicts from an older image never mix in."""
+    _first_run(world)
+    world.env = "env-2"
+    world.files["src/crapkit/score.py"] = SCORE.replace("value > 5", "value >= 5")
+    world.mutmut.complete = False
+    world.run("diff")
+    world.mutmut.calls.clear()
+
+    assert _covered(world) == 1
+
+    world.mutmut.complete = True
+    world.run("diff")
+    assert world.judged() == _globs(CRAP, SIZE)
+    assert _covered(world) == 0
+
+
+def test_covered_with_no_stored_verdict_is_an_infra_miss_that_names_the_download(world, capsys):
+    assert _covered(world) == 3
+    assert "gh run download" in capsys.readouterr().err
 
 
 # --- the pieces ----------------------------------------------------------------------------------
