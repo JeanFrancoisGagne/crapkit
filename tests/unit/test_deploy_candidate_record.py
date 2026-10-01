@@ -7,6 +7,7 @@ commands on the tree it checked out, with --source-hash, and fails the run
 when the tree hashes otherwise. Both sides must reach one hash for one commit,
 whichever directory they write into.
 """
+import hashlib
 import io
 import json
 import subprocess
@@ -154,3 +155,62 @@ def test_the_stage_and_the_scope_job_reach_one_hash_for_one_commit(tmp_path, loc
     outside = _hash_checkout(root, tmp_path / "runner-temp" / "deploy-record", lock)
 
     assert inside == outside
+
+
+# Four names whose order a Path sort sets by platform. WindowsPath compares
+# case-folded, so action.yml sorted before AGENTS.md there and after it on
+# Linux. PosixPath compares part by part, so tools/deploy/ sorted before
+# tools/deploy-notes.md, where the plain names sort the other way.
+MIXED = {"pyproject.toml": '[project]\nname = "crapkit"\nversion = "0.9.0"\n',
+         "AGENTS.md": "# agents\n", "action.yml": "name: crapkit\n",
+         "tools/deploy/candidate.py": "X = 1\n", "tools/deploy-notes.md": "notes\n"}
+
+
+def _hashes_by_name(files: dict) -> tuple[str, str]:
+    """source_hash and file_list_hash, computed here over the plain names in str order."""
+    sources, listing = hashlib.sha256(), hashlib.sha256()
+    for name in sorted(files):
+        listing.update(name.encode("utf-8") + b"\0")
+        sources.update(name.encode("utf-8") + b"\0" + hashlib.sha256(files[name].encode("utf-8")).digest())
+    return sources.hexdigest(), listing.hexdigest()
+
+
+def test_the_hash_orders_files_by_their_posix_name_on_every_os(tmp_path, lock, monkeypatch):
+    """The release hashes the tag commit on Windows, and deploy.yml's scope job
+    hashes it again on Linux. Sorting Path objects gave one 0.8.1 tree.tar
+    e07f35f5 on Windows and 2fb2a212 on Linux, so the scope job failed every
+    dispatch."""
+    monkeypatch.setattr(candidate, "build", _refuse_build)
+    expected = _hashes_by_name(MIXED)
+
+    code = _main(_tar(tmp_path, MIXED), tmp_path / "scope", lock, "--no-build", "--source-hash", expected[0])
+
+    record = _record(tmp_path / "scope")
+    assert (record["source_hash"], record["file_list_hash"]) == expected
+    assert code == 0
+
+
+RELEASE_PY = ('from typing import NamedTuple\n'
+              'class Surface(NamedTuple):\n    path: str\n    pattern: str\n    count: int\n'
+              'SURFACES = (Surface("pyproject.toml", \'version = "{v}"\', 1),)\n')
+AT_THE_RELEASE = {"pyproject.toml": '[project]\nname = "crapkit"\nversion = "0.8.0"\n',
+                  "tools/release/release.py": RELEASE_PY}
+
+
+def test_a_stamped_tree_hashes_alike_from_any_out_directory(tmp_path, lock, monkeypatch):
+    """A tree at the newest release is stamped through release.py's SURFACES,
+    read from the staged copy. Importing it wrote
+    tools/release/__pycache__/release.cpython-312.pyc into staged/, whose bytes
+    carry the staged path, so the stage and the scope job hashed one tree.tar
+    to two values. A python that writes bytecode, as the scope job's does."""
+    monkeypatch.setattr(candidate, "build", _refuse_build)
+    monkeypatch.setattr(sys, "dont_write_bytecode", False)
+    tree = _tar(tmp_path, AT_THE_RELEASE)
+
+    stage = candidate.candidate(tree, tmp_path / "stage", lock, build_dist=False)
+    scope = candidate.candidate(tree, tmp_path / "runner-temp" / "scope", lock, build_dist=False)
+
+    assert stage["stamped"] == ["pyproject.toml"]
+    assert stage["source_hash"] == scope["source_hash"]
+    assert sorted(path.relative_to(tmp_path / "stage" / "staged").as_posix()
+                  for path in (tmp_path / "stage" / "staged").rglob("*") if path.is_file()) == sorted(AT_THE_RELEASE)

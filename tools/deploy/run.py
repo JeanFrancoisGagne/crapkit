@@ -257,8 +257,11 @@ def _reincluded(rules: list[tuple[bool, str]]) -> list[str]:
 
 
 def _candidates(root: Path, rules: list[tuple[bool, str]]) -> list[Path]:
-    """Every file under a path some line lets back in."""
-    return sorted({path for pattern in _reincluded(rules) for path in _files_under(root / pattern)})
+    """Every file under a path some line lets back in, in str order of its POSIX
+    name: a sort of Path objects folds case on Windows alone, so the fingerprint
+    a Windows shell wrote never matched the one a Linux shell computed."""
+    found = {path for pattern in _reincluded(rules) for path in _files_under(root / pattern)}
+    return sorted(found, key=lambda path: path.relative_to(root).as_posix())
 
 
 def context_files(root: Path = ROOT) -> list[Path]:

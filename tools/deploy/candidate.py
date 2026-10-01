@@ -30,11 +30,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import subprocess
 import sys
 import tomllib
+import types
 from pathlib import Path
 
 import export
@@ -72,10 +72,14 @@ def extract(tree: Path, dest: Path) -> Path:
 
 
 def surfaces(root: Path) -> tuple:
-    """release.py's SURFACES table, read from the tree under test itself."""
-    spec = importlib.util.spec_from_file_location("_deploy_release", root / "tools/release/release.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    """release.py's SURFACES table, read from the tree under test itself. Its
+    source runs in a bare module: an import writes __pycache__ bytecode into
+    the staged tree, bytecode carries the staged path, and hashes() would then
+    hash a file each out directory writes differently."""
+    path = root / "tools/release/release.py"
+    module = types.ModuleType("_deploy_release")
+    module.__file__ = str(path)
+    exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
     return module.SURFACES
 
 
@@ -97,15 +101,19 @@ def stamp(root: Path, old: str, new: str) -> list[str]:
             if (root / path).exists() and _stamp_file(root / path, patterns, old, new)]
 
 
-def _files(root: Path) -> list[Path]:
-    return sorted(path for path in root.rglob("*") if path.is_file())
+def _files(root: Path) -> list[tuple[str, Path]]:
+    """Each file under root with its POSIX name relative to root, in str order
+    of that name. A sort of Path objects folds case on Windows alone, and the
+    release hashes on Windows the tree deploy.yml's scope job hashes on Linux."""
+    named = ((path.relative_to(root).as_posix(), path) for path in root.rglob("*") if path.is_file())
+    return sorted(named, key=lambda item: item[0])
 
 
 def hashes(root: Path) -> dict[str, str]:
     """sha256 of the staged sources (paths and bytes) and of the file list alone."""
     sources, listing = hashlib.sha256(), hashlib.sha256()
-    for path in _files(root):
-        name = path.relative_to(root).as_posix().encode("utf-8")
+    for relative, path in _files(root):
+        name = relative.encode("utf-8")
         listing.update(name + b"\0")
         sources.update(name + b"\0" + hashlib.sha256(path.read_bytes()).digest())
     return {"source_hash": sources.hexdigest(), "file_list_hash": listing.hexdigest()}
