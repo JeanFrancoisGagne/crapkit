@@ -345,9 +345,10 @@ jobs:
       # installs its venvs with uv. The cache serves a later run of the same
       # release only (a re-run attempt or a new dispatch on its branch): each
       # release dispatches on its own branch, so its first attempt replays every
-      # stale row.
+      # stale row. The nightly tier's Python producer reruns build their venvs
+      # with uv too, in both cells: without it each ends as an infra miss.
       - uses: astral-sh/setup-uv@v6
-        if: matrix.python == '3.13' && (needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'release')
+        if: needs.plan.outputs.tier == 'nightly' || (matrix.python == '3.13' && needs.plan.outputs.mode == 'release')
         with:
           version: "0.12.17"  # tools/accuracy/pins.toml, [oracle.uv]
           enable-cache: true

@@ -162,21 +162,37 @@ def test_the_windows_nightly_cell_replays_the_past_bugs_the_image_cannot():
     assert f"uv {setup['with']['version']}" == pins["oracle"]["uv"]["version_line"]
 
 
-def test_every_windows_cell_that_replays_a_past_bug_has_uv_before_it():
-    """A replay installs each commit's venv with `uv pip install`, and the runner
-    image ships no uv: without setup-uv a stale row in the release cell ends in
-    FileNotFoundError instead of a verdict."""
+GROUND_TRUTH = "ground truth: every probe function in every recording"
+# The plan step's tier for each mode that starts the Windows cells; a pull
+# request's `accuracy` label runs the nightly tier.
+TIER_OF = {"nightly": "nightly", "label": "nightly", "release": "release"}
+
+
+def _needs_uv(windows: dict, mode: str, row: dict) -> bool:
+    """A replay installs each commit's venv with `uv pip install`, and the ground
+    truth check's nightly producer reruns build each Python producer's venv with
+    uv: without it each rerun ends as an infra miss, and a tier whose only misses
+    are infra runs again whole."""
+    nightly = step(windows, "run", "python tools/accuracy/retro.py")
+    replays = _holds(nightly["if"], mode, row) or (
+        mode == "release" and _runs_retro_release(windows, row, "win32"))
+    tier = TIER_OF[mode]
+    return replays or (tier == "nightly" and GROUND_TRUTH in _cell_checks(windows, row, "win32", tier))
+
+
+def test_every_windows_cell_that_runs_uv_has_it_before_its_tier():
+    """The runner image ships no uv: without setup-uv a stale row in the release
+    cell ends in FileNotFoundError instead of a verdict, and in the 3.11 nightly
+    cell seven Python producer reruns failed with 'uv is not on PATH'."""
     windows = _jobs("accuracy.yml")["windows"]
     setup = step(windows, "uses", "astral-sh/setup-uv@")
     nightly = step(windows, "run", "python tools/accuracy/retro.py")
     first = min(_tier_index(windows), windows["steps"].index(nightly))
-    for mode in ("nightly", "release"):
+    for mode, tier in TIER_OF.items():
         for python in windows["strategy"]["matrix"]["python"]:
             row = {"python": python}
-            replays = _holds(nightly["if"], mode, row) or (
-                mode == "release" and _runs_retro_release(windows, row, "win32"))
 
-            assert _holds(setup["if"], mode, row) == replays, (mode, python)
+            assert _holds(setup["if"], mode, row, tier) == _needs_uv(windows, mode, row), (mode, python)
     assert windows["steps"].index(setup) < first
 
 
@@ -231,11 +247,12 @@ RETRO_RELEASE = "retro replays for the release"
 VERDICTS = ".crapkit/accuracy/retro-verdicts"  # retro.verdicts_dir() with no CRAPKIT_RETRO_VERDICTS
 
 
-def _holds(condition, mode: str, row: dict) -> bool:
-    """A step's `if:` as the runner reads it for one mode and matrix row; the
-    operators these steps use map one to one onto Python's."""
+def _holds(condition, mode: str, row: dict, tier: str | None = None) -> bool:
+    """A step's `if:` as the runner reads it for one mode, its tier (the mode's
+    name when None) and one matrix row; the operators these steps use map one to
+    one onto Python's."""
     text = re.sub(r"matrix\.(\w+)", lambda found: repr(str(row[found.group(1)])), condition or "true")
-    for name, value in (("needs.plan.outputs.mode", repr(mode)), ("needs.plan.outputs.tier", repr(mode)),
+    for name, value in (("needs.plan.outputs.mode", repr(mode)), ("needs.plan.outputs.tier", repr(tier or mode)),
                         ("always()", "True"), ("&&", " and "), ("||", " or "), ("true", "True")):
         text = text.replace(name, value)
     return eval(text)
@@ -256,20 +273,20 @@ def _release_cells():
     yield jobs["macos"], {"python": macos}, "darwin"
 
 
-def _release_checks(job: dict, row: dict, platform: str) -> set:
-    """The names of the checks the cell's release tier runs, read by run.py's own
+def _cell_checks(job: dict, row: dict, platform: str, tier: str = "release") -> set:
+    """The names of the checks the cell runs in `tier`, read by run.py's own
     parser and check selection."""
     command = job["steps"][_tier_index(job)]["run"].replace("\\\n", " ")
-    command = command[command.index("python tools/accuracy/run.py"):].replace('"$TIER"', "release")
-    command = rendered(command.replace("${{ needs.plan.outputs.tier }}", "release"), row)
+    command = command[command.index("python tools/accuracy/run.py"):].replace('"$TIER"', tier)
+    command = rendered(command.replace("${{ needs.plan.outputs.tier }}", tier), row)
     args = arguments(RUN_TOOL["_run_parser"]().parse_args, command, "tools/accuracy/run.py")
-    checks = RUN_TOOL["selected"](RUN_TOOL["load_checks"](), "release", args.shard, platform, args.os_sensitive,
+    checks = RUN_TOOL["selected"](RUN_TOOL["load_checks"](), tier, args.shard, platform, args.os_sensitive,
                                   python=row["python"], local=args.local)
     return {check.name for check in checks}
 
 
 def _runs_retro_release(job: dict, row: dict, platform: str) -> bool:
-    return RETRO_RELEASE in _release_checks(job, row, platform)
+    return RETRO_RELEASE in _cell_checks(job, row, platform)
 
 
 def test_one_release_cell_per_os_replays_the_past_bugs_and_none_reads_mutation_receipts():
@@ -280,7 +297,7 @@ def test_one_release_cell_per_os_replays_the_past_bugs_and_none_reads_mutation_r
     retro = [(platform, row["python"]) for job, row, platform in _release_cells()
              if _runs_retro_release(job, row, platform)]
     mutation = [row for job, row, platform in _release_cells()
-                if MUTATION_RELEASE in _release_checks(job, row, platform)]
+                if MUTATION_RELEASE in _cell_checks(job, row, platform)]
 
     assert sorted(retro) == [("linux", "3.12"), ("win32", "3.13")]
     assert mutation == []
