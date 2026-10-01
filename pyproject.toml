@@ -105,6 +105,18 @@ accuracy-push = [
     "html5lib==1.1",
     "jsonschema==4.26.0",
     "rfc3986==2.0.0",
+    # The analysis shard's probe checks count spans, ccn, cognitive, nesting and
+    # sizes with tree-sitter on every push; only the corpus runs are nightly.
+    "tree-sitter==0.26.0",
+    "tree-sitter-bash==0.25.1",
+    "tree-sitter-c==0.24.2",
+    "tree-sitter-cpp==0.23.4",
+    "tree-sitter-go==0.25.0",
+    "tree-sitter-java==0.23.5",
+    "tree-sitter-objc==3.0.2",
+    "tree-sitter-rust==0.24.2",
+    "tree-sitter-swift==0.7.3",
+    "tree-sitter-zig==1.1.2",
 ]
 accuracy = [
     "hypothesis==6.168.1",
