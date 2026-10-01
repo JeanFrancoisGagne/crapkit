@@ -247,11 +247,26 @@ def gather(args: argparse.Namespace) -> tuple[list[Check], str]:
 
 # --- fetching a job's log -------------------------------------------------------------
 
+ESCAPES_FLAG = "--allow-escape-sequences"
+
+
 def gh_api(path: str) -> str:
     """`gh api PATH`'s output. gh is looked up the way a shell would, so a gh.cmd
-    on Windows is found where CreateProcess alone looks for gh.exe."""
+    on Windows is found where CreateProcess alone looks for gh.exe. A gh newer than
+    2.85.0 refuses a response holding terminal escape sequences, as a job's log
+    does, unless asked with --allow-escape-sequences, a flag 2.85.0 does not know:
+    the flag goes only on a call gh refused for it."""
     gh = shutil.which("gh") or "gh"
-    return subprocess.run([gh, "api", path], check=True, capture_output=True, encoding="utf-8").stdout
+    try:
+        return _gh(gh, path)
+    except subprocess.CalledProcessError as refused:
+        if ESCAPES_FLAG not in (refused.stderr or ""):
+            raise
+        return _gh(gh, ESCAPES_FLAG, path)
+
+
+def _gh(gh: str, *args: str) -> str:
+    return subprocess.run([gh, "api", *args], check=True, capture_output=True, encoding="utf-8").stdout
 
 
 def job_id(repo: str, run: str, name: str) -> int | None:

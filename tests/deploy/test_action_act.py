@@ -586,6 +586,39 @@ def test_assert_action_names_why_it_could_not_read_the_jobs_log(box):
     assert "no line matches" not in step.stdout
 
 
+def _log_calls(box, version: str) -> list[list[str]]:
+    """assert_action on a log whose runner lines are coloured, as a GitHub job's are,
+    under a gh of `version`: the gh api calls it made after the job lookup."""
+    state = box.root / "gh-state"
+    (state / "logs").mkdir(parents=True)
+    (state / "version").write_text(version, encoding="utf-8")
+    box.prepend_path(act.install_stub(box.root / "gh-bin"))
+    jobs = [{"id": 11, "name": "deploy-action", "status": "completed"}]
+    (state / "jobs.json").write_text(json.dumps({"total_count": 1, "jobs": jobs}), encoding="utf-8")
+    coloured = "2026-10-01T09:28:34.9214296Z \x1b[36;1mcrapkit verify\x1b[0m\n"
+    (state / "logs" / "11.txt").write_text(coloured + runner_log(ACT_LOG), encoding="utf-8")
+    env = {"STUB_GH_STATE": str(state), "GH_TOKEN": act.TOKEN, "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "5"}
+    script = wheels.SRC / "tools" / "deploy" / "assert_action.py"
+
+    box.run([box.toolchain["runner_python"], str(script), "--job", "deploy-action", "--wait", "0", *PUSH_ARGS],
+            env=env, expect=0)
+    return [call["argv"] + [call["exit"]] for call in json_lines(state / "calls.jsonl")][1:]
+
+
+@pytest.mark.kit
+def test_assert_action_asks_a_newer_gh_for_a_log_that_holds_escape_sequences(box):
+    """deploy-action-log failed on 38531c54 with gh's "the response contains terminal
+    escape sequences; pass --allow-escape-sequences to output it anyway"."""
+    path = "repos/o/r/actions/jobs/11/logs"
+
+    assert _log_calls(box, "new") == [[path, 1], ["--allow-escape-sequences", path, 0]]
+
+
+@pytest.mark.kit
+def test_assert_action_never_hands_an_older_gh_the_flag_it_does_not_know(box):
+    assert _log_calls(box, "old") == [["repos/o/r/actions/jobs/11/logs", 0]]
+
+
 @pytest.mark.kit
 def test_the_act_job_is_readmes_job_with_the_cells_edits():
     job = act.crapkit_job("./crapkit", install=False, permission="read", gate="true", delta="false")

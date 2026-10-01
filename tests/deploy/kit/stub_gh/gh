@@ -11,6 +11,9 @@ The directory is $STUB_GH_STATE:
   calls.jsonl   one line per call: argv, method, path, the --input body, exit
   jobs.json     what `repos/R/actions/runs/N/jobs` answers
   logs/<id>.txt what `repos/R/actions/jobs/<id>/logs` answers
+  version       "old" for gh 2.85.0 and before, which prints a response that holds
+                terminal escape sequences and knows no --allow-escape-sequences;
+                a newer gh (the default) refuses such a response without that flag
 
 Only `gh api` is answered. Like gh it refuses to start without GH_TOKEN or
 GITHUB_TOKEN, prints the error JSON's message as `gh: <message> (HTTP <n>)`
@@ -26,13 +29,18 @@ from pathlib import Path
 STATE = Path(os.environ.get("STUB_GH_STATE", "."))
 MARKER = "<!-- crapkit-action -->"
 FLAGS = {"--method": "method", "-X": "method", "--jq": "jq", "-q": "jq", "--input": "input"}
-SWITCHES = {"--silent": "silent", "--paginate": "paginate"}
+SWITCHES = {"--silent": "silent", "--paginate": "paginate", "--allow-escape-sequences": "escapes"}
+ESCAPES = "the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway"
 FORBIDDEN = (403, "Resource not accessible by integration")
 NOT_FOUND = (404, "Not Found")
 
 
 class HttpError(Exception):
     pass
+
+
+class Refused(Exception):
+    """gh's own refusal, printed as it is."""
 
 
 def parse(argv):
@@ -56,6 +64,21 @@ def read_json(name, default):
 
 def write_json(name, data):
     (STATE / name).write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def older():
+    path = STATE / "version"
+    return path.exists() and path.read_text(encoding="utf-8").strip() == "old"
+
+
+def checked(call, printed):
+    """What gh prints: an older gh knows no --allow-escape-sequences, and a newer one
+    prints a response holding terminal escape sequences only with it."""
+    if call.get("escapes") and older():
+        raise Refused("unknown flag: --allow-escape-sequences")
+    if "" in printed and not call.get("escapes") and not older():
+        raise Refused(ESCAPES)
+    return printed
 
 
 def readonly():
@@ -138,10 +161,13 @@ def record(argv, call, code):
 def api(argv):
     call = parse(argv)
     try:
-        printed, code = answer(call), 0
+        printed, code = checked(call, answer(call)), 0
     except HttpError as error:
         status, message = error.args
         print(f"gh: {message} (HTTP {status})", file=sys.stderr)
+        printed, code = "", 1
+    except Refused as refusal:
+        print(refusal, file=sys.stderr)
         printed, code = "", 1
     record(argv, call, code)
     if printed and not call.get("silent"):
