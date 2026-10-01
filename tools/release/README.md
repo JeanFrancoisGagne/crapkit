@@ -163,7 +163,9 @@ listed gate, stage 2b and the registry stage print each problem as
 `advisory (GATE): LINE` and write the gate, its reason and its problems into
 `.crapkit/release-receipt.json` under `advisory`; they publish past it. A gate that the
 table does not list for the version refuses as before, and the local accuracy receipt
-is never advisory.
+is never advisory. The ruling goes into the gate functions themselves: stage 2b calls
+the same `accuracy_gate` the accuracy stage ends on, and `deploy_gate`, so the
+"Release accuracy gate" calc's mutants reach stage 2b's refusal too.
 
 0.8.1 shipped with both gates advisory: accuracy.yml's release mode and deploy.yml's
 release cadence had never run before it and could not pass at its tag. That ruling

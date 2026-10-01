@@ -141,3 +141,59 @@ def test_every_row_names_a_gate_that_can_be_advisory_and_says_why():
 
 def test_081_shipped_with_both_remote_gates_advisory():
     assert {gate for version, gate in release.ADVISORY if version == "0.8.1"} == {"accuracy-remote", "deploy"}
+
+
+# --- one gate function for the accuracy stage and stage 2b -------------------------------------
+#
+# The calc row "Release accuracy gate" mutates release.accuracy_gate and the
+# problem functions it calls. Round 1 gave stage 2b a copy of that logic, so a
+# mutant in accuracy_gate no longer reached stage 2b's refusal. Both stages
+# now refuse through accuracy_gate itself.
+
+class Spy:
+    """release.accuracy_gate, with what each call raised."""
+
+    def __init__(self, monkeypatch):
+        self.real, self.raised, self.calls = release.accuracy_gate, [], 0
+        monkeypatch.setattr(release, "accuracy_gate", self)
+
+    def __call__(self, *args, **kwargs):
+        self.calls += 1
+        try:
+            return self.real(*args, **kwargs)
+        except release.ReleaseError as exc:
+            self.raised.append(str(exc))
+            raise
+
+
+def test_a_planted_receipt_problem_refuses_both_stages_through_accuracy_gate(accuracy_repo, monkeypatch):
+    root, adapter = accuracy_repo
+    head = git(root, "rev-parse", "HEAD")
+    _accuracy_receipt(root, _saved(head=head, tier="push"))
+    monkeypatch.setattr(release, "_remote_json", _answer(adapter, [], [_accuracy_run(head=head)]))
+    monkeypatch.setattr(release, "_local_accuracy", lambda *args: None)
+    monkeypatch.setattr(release, "_remote_accuracy", lambda *args: None)
+    spy = Spy(monkeypatch)
+
+    (step,) = [s for s in release.plan(VERSION) if s.name == "accuracy"]
+    with pytest.raises(release.ReleaseError, match="not a passing release tier") as accuracy_stage:
+        release._run_accuracy(step, root, VERSION, {"head": head})
+    with pytest.raises(release.ReleaseError, match="not a passing release tier") as stage2b:
+        release.run("stage2b", VERSION, root)
+
+    assert spy.raised == [str(accuracy_stage.value), str(stage2b.value)]
+    assert adapter.events == []
+
+
+def test_a_listed_remote_problem_passes_accuracy_gate_as_an_advisory_line(accuracy_repo, capsys, monkeypatch):
+    root, adapter = accuracy_repo
+    _accuracy_receipt(root, _saved(head=git(root, "rev-parse", "HEAD")))
+    spy = Spy(monkeypatch)
+
+    release.run("stage2b", VERSION, root)
+
+    (line,) = _saved_receipt(root)["advisory"]["accuracy-remote"]["problems"]
+    assert spy.calls > 0 and spy.raised == [] and "push" in adapter.events
+    assert f"advisory (accuracy-remote): {line}" in capsys.readouterr().out
+    with pytest.raises(release.ReleaseError, match="GitHub holds no successful accuracy.yml run"):
+        release.accuracy_gate(root, VERSION, git(root, "rev-parse", "HEAD"))

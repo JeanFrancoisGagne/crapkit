@@ -893,32 +893,47 @@ def _guard_verified(root: Path, version: str) -> dict:
 
 def _guard_publish(root: Path, version: str) -> dict:
     """One record per required check: the verify run, then the
-    accuracy and deploy records, each at the tag commit. A gate ADVISORY
+    accuracy and deploy gates, each at the tag commit. A gate ADVISORY
     lists for this version is reported, not refused."""
     receipt = _guard_verified(root, version)
-    found = _gate_problems(root, version, receipt)
-    refused = [line for gate, lines in found.items() if (version, gate) not in ADVISORY for line in lines]
-    if refused:
-        raise ReleaseError(NL.join(refused))
-    _note_advisory(root, version, receipt, found)
+    advisory = frozenset(gate for listed, gate in ADVISORY if listed == version and gate in ADVISORY_GATES)
+    noted = _gate_outcomes((lambda: accuracy_gate(root, version, receipt["head"], advisory),
+                            lambda: deploy_gate(root, version, receipt, advisory)))
+    _note_advisory(root, version, receipt, noted)
     return receipt
 
 
-def _gate_problems(root: Path, version: str, receipt: dict) -> dict:
-    """Every reason each stage 2b gate refuses, by gate name."""
-    head, found = receipt["head"], {}
-    if gates_accuracy(root):
-        found["accuracy-local"] = receipt_problems(root, _read_accuracy_receipt(root, version), head, version)
-        found["accuracy-remote"] = _remote_problems(version, head)
-    if gates_deploy(root):
-        found["deploy"] = deploy_problems(version, receipt)
-    return found
+def _gate_outcomes(gates: tuple) -> dict:
+    """Ask every gate; refuse with all their refusals at once, else return the
+    advisory problems they reported, by gate name."""
+    refusals, noted = [], {}
+    for gate in gates:
+        try:
+            noted.update(gate() or {})
+        except ReleaseError as exc:
+            refusals.append(str(exc))
+    if refusals:
+        raise ReleaseError(NL.join(refusals))
+    return noted
+
+
+def _refused(found: dict, advisory: frozenset) -> list:
+    return [line for gate in found if gate not in advisory for line in found[gate]]
+
+
+def _ruled(found: dict, advisory: frozenset) -> dict | None:
+    """Refuse on every problem of a gate `advisory` does not name. The problems
+    of the gates it names come back by gate name; None when there are none."""
+    refused = _refused(found, advisory)
+    if refused:
+        raise ReleaseError(NL.join(refused))
+    noted = {gate: lines for gate, lines in found.items() if lines}
+    return noted or None
 
 
 def _note_advisory(root: Path, version: str, receipt: dict, found: dict) -> None:
     """Print each advisory gate's problems and keep them in the release receipt."""
-    noted = {gate: {"reason": ADVISORY[(version, gate)], "problems": lines}
-             for gate, lines in found.items() if lines}
+    noted = {gate: {"reason": ADVISORY[(version, gate)], "problems": lines} for gate, lines in found.items()}
     for gate, entry in noted.items():
         print(NL.join(f"advisory ({gate}): {line}" for line in entry["problems"]))
     if receipt.get("advisory", {}) != noted:
@@ -1083,15 +1098,17 @@ def _remote_problems(version: str, head: str) -> list:
             f"{head[:12]}; {_rerun(version)}"]
 
 
-def accuracy_gate(root: Path, version: str, head: str) -> None:
-    """Stage 2b's refusal: the local receipt must be this tree's passing release tier,
-    and GitHub must hold a successful release-mode run at the tag commit."""
+def accuracy_gate(root: Path, version: str, head: str, advisory: frozenset = frozenset()) -> dict | None:
+    """The accuracy refusal of the accuracy stage and of stage 2b: the local receipt
+    must be this tree's passing release tier, and GitHub must hold a successful
+    release-mode run at the tag commit. A gate `advisory` names (stage 2b passes
+    the ADVISORY rows for the version; the local receipt is never one) does not
+    refuse: its problems come back by gate name. None when nothing is wrong."""
     if not gates_accuracy(root):
-        return
+        return None
     saved = _read_accuracy_receipt(root, version)
-    problems = receipt_problems(root, saved, head, version) + _remote_problems(version, head)
-    if problems:
-        raise ReleaseError(NL.join(problems))
+    return _ruled({"accuracy-local": receipt_problems(root, saved, head, version),
+                   "accuracy-remote": _remote_problems(version, head)}, advisory)
 
 
 # --- the accuracy stage: the local tier, then the remote run -------------------------------
@@ -1339,14 +1356,15 @@ def deploy_problems(version: str, receipt: dict) -> list:
         return [f"deploy gate: {exc}"]
 
 
-def deploy_gate(root: Path, version: str, receipt: dict) -> None:
+def deploy_gate(root: Path, version: str, receipt: dict, advisory: frozenset = frozenset()) -> dict | None:
     """Stage 2b's refusal beside the accuracy gate: the receipt's deploy record
     names the release commit, and GitHub holds a green release-cadence run of
     deploy.yml at that commit, named for the record's tree id. A tree without
-    the deploy kit is not gated."""
-    problems = deploy_problems(version, receipt) if gates_deploy(root) else []
-    if problems:
-        raise ReleaseError(NL.join(problems))
+    the deploy kit is not gated. When `advisory` names "deploy", the problems
+    come back instead of refusing; None when nothing is wrong."""
+    if not gates_deploy(root):
+        return None
+    return _ruled({"deploy": deploy_problems(version, receipt)}, advisory)
 
 
 def _for_run(command: tuple, run: dict) -> tuple:
