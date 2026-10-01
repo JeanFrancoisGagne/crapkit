@@ -1093,17 +1093,18 @@ def _call_tool(root, name: str, arguments: dict, run_cli=None) -> dict:
 
 
 # What a connected model needs before its first call, in the one field the
-# protocol reserves for it. The ten error results a model would otherwise
-# collect from an unmeasured repo teach the same thing ten times, slower.
+# protocol reserves for it. The nine error results a model would otherwise
+# collect from a repo with no run teach the same thing nine times, slower.
 _INSTRUCTIONS = (
     "crapkit scores every function as ccn^2 x (1 - coverage)^3 + ccn; these twelve tools "
     "read scores and source without running test suites or editing source files. Calls can "
     "write caches, initialize or migrate the snapshot store, and fill rollups. "
     "get_next_item takes no claim; check_gate runs rescore and records no verification run. "
-    "Most need a repo measured once (crapkit init, then crapkit coverage) and answer an "
-    "unmeasured one with a one-line pointer instead of data, while check_config and "
-    "get_ratchet_report need no run. Start "
-    "with get_next_item for one function to fix, list_worklist for the whole ranking, "
+    "Every tool needs crapkit init. check_config, get_ratchet_report and list_coupled_files "
+    "need no run, get_next_item, get_function_brief and check_gate need a coverage run, and "
+    "the other six need a snapshot store, which crapkit inventory or crapkit coverage makes. "
+    "A tool called before what it needs answers with a one-line pointer instead of data. "
+    "Start with get_next_item for one function to fix, list_worklist for the whole ranking, "
     "get_function_brief for everything about one function, and check_gate after an edit to "
     "learn whether the file clears rescore --gate, which is stricter than the commit hook.")
 

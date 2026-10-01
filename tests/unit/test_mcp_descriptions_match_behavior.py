@@ -20,7 +20,10 @@ after the first coverage run, and after each commit, walked git log.
 get_ratchet_report said a repo that never committed a marks file reports
 zeros, and a seeded file reports its marks before its first commit. list_runs,
 get_trend and list_claims named the first coverage run as the point they stop
-answering isError true, and an inventory run's store answered them first.
+answering isError true, and an inventory run's store answered them first. The
+server instructions named check_config and get_ratchet_report as the tools that
+need no run, while list_coupled_files needs none either and an inventory run's
+store answers six more.
 
 Each test reads the description and runs the call it describes. The CLI the
 server spawns runs in this process (the `exits` fixture), and GIT_TRACE, which
@@ -366,16 +369,67 @@ def test_no_file_and_no_history_reports_zeros(repo, exits, monkeypatch, tmp_path
     assert REPORT_OPEN in _tool("get_ratchet_report")["description"]
 
 
-# --- the server instructions: what an unmeasured repo answers ------------------------
+# --- the server instructions: what each tool needs before it answers ----------------
+# The instructions said most tools need a coverage run, and named check_config and
+# get_ratchet_report as the two that need none. list_coupled_files answers before
+# any run too, and an inventory run's store answers six more. Each state below
+# calls all twelve tools and holds the answers to the sentence.
 
-def test_the_instructions_name_the_tools_an_unmeasured_repo_still_answers(repo, exits):  # noqa: F811
-    """The instructions said every tool answers an unmeasured repo with a
-    pointer instead of data; get_ratchet_report reads only the marks file and
-    git, and answers with data before any run."""
-    assert _call(repo, "get_next_item")["isError"] is True
-    assert _call(repo, "get_ratchet_report")["isError"] is False
+NEEDS = ("Every tool needs crapkit init. check_config, get_ratchet_report and "
+         "list_coupled_files need no run, get_next_item, get_function_brief and check_gate "
+         "need a coverage run, and the other six need a snapshot store, which crapkit "
+         "inventory or crapkit coverage makes. A tool called before what it needs answers "
+         "with a one-line pointer instead of data.")
+NO_RUN = {"check_config", "get_ratchet_report", "list_coupled_files"}
+COVERAGE_RUN = {"get_next_item", "get_function_brief", "check_gate"}
+TOOL_ARGUMENTS = {"get_function_brief": {"path": "src/app.ts", "name": "dispatch"},
+                  "get_function_history": {"path": "src/app.ts", "name": "dispatch"},
+                  "check_gate": {"path": "src/app.ts"}}
 
-    assert "an unmeasured repo answers with a one-line pointer" not in mcp_server._INSTRUCTIONS
-    assert ("Most need a repo measured once (crapkit init, then crapkit coverage) and answer "
-            "an unmeasured one with a one-line pointer instead of data, while check_config and "
-            "get_ratchet_report need no run.") in mcp_server._INSTRUCTIONS
+
+def _answers(root: Path) -> tuple[set[str], set[str]]:
+    """The tools that answered with data, and each refusal's text."""
+    answered, refusals = set(), set()
+    for tool in mcp_server.TOOLS:
+        reply = _call(root, tool["name"], **TOOL_ARGUMENTS.get(tool["name"], {}))
+        if reply["isError"]:
+            refusals.add(reply["content"][0]["text"].strip())
+        else:
+            answered.add(tool["name"])
+    return answered, refusals
+
+
+def _one_line_each(refusals: set[str]) -> bool:
+    return all("\n" not in text for text in refusals)
+
+
+def test_every_tool_needs_init_first(tmp_path, exits):
+    git(tmp_path, "init", "-q")
+
+    answered, refusals = _answers(tmp_path)
+
+    assert answered == set(), answered
+    assert _one_line_each(refusals) and all("crapkit init" in text for text in refusals), refusals
+    assert NEEDS in mcp_server._INSTRUCTIONS
+
+
+def test_before_any_run_three_tools_answer(repo, exits):  # noqa: F811
+    answered, refusals = _answers(repo)
+
+    assert answered == NO_RUN, answered
+    assert _one_line_each(refusals), refusals
+    assert NEEDS in mcp_server._INSTRUCTIONS
+    assert "check_config and get_ratchet_report need no run" not in mcp_server._INSTRUCTIONS
+
+
+def test_an_inventory_store_answers_all_but_the_three_that_need_a_coverage_run(repo, exits):  # noqa: F811
+    assert main(["inventory", "--repo", str(repo)]) == 0
+
+    answered, refusals = _answers(repo)
+
+    every = {tool["name"] for tool in mcp_server.TOOLS}
+    assert answered == every - COVERAGE_RUN, answered
+    assert len(every - NO_RUN - COVERAGE_RUN) == 6 and len(every) == 12
+    assert _one_line_each(refusals) and all("crapkit coverage" in text for text in refusals), \
+        refusals
+    assert NEEDS in mcp_server._INSTRUCTIONS
