@@ -3,7 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
-  # The Windows legs on Python 3.12 and 3.13, which no push runs (see `test`).
+  # The Windows legs on Python 3.12 and 3.13 and the macOS leg on 3.11, which
+  # no push runs (see `test`).
   schedule:
     - cron: "41 4 * * *"
 
@@ -44,7 +45,7 @@ jobs:
           # Windows on 3.12 and 3.13 showed no failure of its own in 3 weeks
           # (gate audit 2026-10-01) and cost 91.7 machine-min per push. 3.11
           # and 3.14, the ends of the classified range, stay on every push;
-          # the middle two run nightly, and the nightly runs nothing else.
+          # the middle two run nightly.
           - cadence: push
             os: windows-latest
             python: "3.12"
@@ -54,8 +55,6 @@ jobs:
           - cadence: nightly
             os: ubuntu-latest
           - cadence: nightly
-            os: macos-latest
-          - cadence: nightly
             os: windows-latest
             python: "3.11"
           - cadence: nightly
@@ -63,11 +62,17 @@ jobs:
             python: "3.14"
           # macOS is here for the letter-case rows: APFS opens SRC/a.py for a
           # tracked src/a.py under POSIX path rules, a pairing no other job
-          # has. The rows read paths, not the interpreter, so one Python and
-          # one job holding both suites run them all. A Python added above
-          # needs its own macOS exclude here.
-          - os: macos-latest
+          # has. The rows read paths, not the interpreter, so one job holding
+          # both suites runs them all: 3.13 on every push. The nightly runs
+          # macOS on 3.11, which has no os.waitid there (3.13 added it): 0.8.0
+          # crashed every lane on such a Python, and no leg ran one. A Python
+          # added above needs its own macOS exclude here.
+          - cadence: push
+            os: macos-latest
             python: "3.11"
+          - cadence: nightly
+            os: macos-latest
+            python: "3.13"
           - os: macos-latest
             python: "3.12"
           - os: macos-latest

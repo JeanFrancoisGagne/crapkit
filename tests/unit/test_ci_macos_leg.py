@@ -17,16 +17,22 @@ from test_ci_parallel_jobs import RUNNER, arguments, matrix_rows, rendered, step
 MACOS = "macos-latest"
 
 
-def _macos_rows(job) -> list[dict]:
-    return [row for row in matrix_rows(job["strategy"]["matrix"]) if row["os"] == MACOS]
+def _macos_rows(job, event) -> list[dict]:
+    return [row for row in matrix_rows(job["strategy"]["matrix"], events=(event,)) if row["os"] == MACOS]
 
 
-def test_one_macos_job_runs_both_suites_on_python_3_13():
+@pytest.mark.parametrize(("event", "python"), [
+    ("push", "3.13"), ("pull_request", "3.13"),
+    # 3.13 has os.waitid on macOS and 3.11 does not. 0.8.0 crashed every lane
+    # on a macOS Python without it, and no CI leg ran one, so the nightly does.
+    ("schedule", "3.11"),
+])
+def test_one_macos_job_runs_both_suites_on_the_python_of_its_event(event, python):
     job = workflow()["jobs"]["test"]
     command = step(job, "run", "python tools/testing/run.py")["run"]
-    rows = _macos_rows(job)
+    rows = _macos_rows(job, event)
 
-    assert [row["python"] for row in rows] == ["3.13"], rows
+    assert [row["python"] for row in rows] == [python], rows
     args = arguments(RUNNER["parse_arguments"], rendered(command, rows[0]), "tools/testing/run.py")
     assert tuple(args.suite) == RUNNER["SUITES"]
 

@@ -5,10 +5,15 @@ between Python versions, while the 3.12 and 3.13 Windows legs cost 91.7
 machine-min per push. 3.11 and 3.14, the ends of the classified range, stay on
 every push and pull request; the middle two run once a night, so a
 version-specific break still shows within a day.
+
+The nightly also runs macOS on Python 3.11. The push leg runs macOS on 3.13,
+which has os.waitid, so the path a Python without it takes, the one that
+crashed every lane on macOS in 0.8.0, never ran in CI.
 """
 from test_ci_parallel_jobs import matrix_rows, workflow
 
 WINDOWS = "windows-latest"
+MACOS = "macos-latest"
 SKIPS_SCHEDULE = "github.event_name != 'schedule'"
 
 
@@ -23,10 +28,11 @@ def test_a_push_or_pull_request_runs_windows_on_the_ends_of_the_classified_range
         assert windows == {"3.11", "3.14"}, event
 
 
-def test_the_nightly_runs_windows_on_3_12_and_3_13_and_nothing_a_push_already_ran():
+def test_the_nightly_runs_windows_on_3_12_and_3_13_macos_on_3_11_and_nothing_a_push_already_ran():
     nightly = _legs("schedule")
 
-    assert nightly == {(WINDOWS, python, suite) for python in ("3.12", "3.13") for suite in ("unit", "e2e")}
+    windows = {(WINDOWS, python, suite) for python in ("3.12", "3.13") for suite in ("unit", "e2e")}
+    assert nightly == windows | {(MACOS, "3.11", "unit e2e")}
     assert not nightly & _legs("push")
 
 
