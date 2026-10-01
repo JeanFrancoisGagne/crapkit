@@ -484,3 +484,69 @@ def test_every_check_names_targets_that_exist():
                for target in run.missing_targets(check)]
 
     assert missing == []
+
+
+# --- the push tier imports with the push tier's packages alone --------------------------------------
+
+# Run in a child interpreter: every package only requirements-nightly.txt pins
+# raises ModuleNotFoundError there, the way it does on CI's accuracy-push runner.
+_BLOCKED_IMPORTS = """
+import importlib, importlib.abc, sys
+blocked = set(sys.argv[1].split(","))
+class Blocked(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] in blocked:
+            raise ModuleNotFoundError(f"No module named {name!r}", name=name)
+sys.meta_path.insert(0, Blocked())
+for module in sys.argv[2:]:
+    try:
+        importlib.import_module(module)
+    except ModuleNotFoundError as error:
+        if (error.name or "").split(".")[0] in blocked:
+            print(f"{module}: {error}")
+"""
+
+
+def _pinned(path: Path) -> set[str]:
+    """The import names of the packages a requirements lock pins."""
+    names = re.findall(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==", path.read_text(encoding="utf-8"), re.M)
+    return {name.lower().replace("-", "_").replace(".", "_") for name in names}
+
+
+def _dotted(path: Path) -> str:
+    return ".".join(path.relative_to(REPO / "tests").with_suffix("").parts)
+
+
+def _conftests(test_file: Path) -> list[Path]:
+    top = REPO / "tests"
+    folders = [folder for folder in reversed(test_file.parents) if folder == top or top in folder.parents]
+    return [folder / "conftest.py" for folder in folders if (folder / "conftest.py").is_file()]
+
+
+def _push_modules(run) -> list[str]:
+    """Every conftest and test module the push tier collects, conftests first."""
+    files = {REPO / target.split("::")[0] for check in run.load_checks()
+             if run._in_tier(check, "push") for target in check.pytest}
+    conftests = {conftest for path in files for conftest in _conftests(path)}
+    ordered = sorted(conftests, key=lambda path: len(path.parts)) + sorted(files)
+    return [_dotted(path) for path in ordered]
+
+
+def test_every_module_the_push_tier_collects_imports_with_the_push_packages_alone():
+    """CI's accuracy-push job installs requirements-push.txt and nothing more.
+    analysis_oracles/conftest.py reached tree_sitter, which only the nightly lock
+    pins, through analysis_tstests, ts_shapes_objc and treesitter_counters: the
+    first push of 0.8.1 to main failed every push row on Ubuntu and Windows,
+    while every machine that held the nightly packages passed."""
+    nightly_only = sorted(_pinned(TOOLS / "requirements-nightly.txt")
+                          - _pinned(TOOLS / "requirements-push.txt"))
+    paths = [REPO / "tests", REPO / "src", TOOLS, REPO / "tools", os.environ.get("PYTHONPATH", "")]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, map(str, paths)))}
+
+    import subprocess
+    done = subprocess.run([sys.executable, "-c", _BLOCKED_IMPORTS, ",".join(nightly_only),
+                           *_push_modules(_run_tool())], cwd=REPO, env=env,
+                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+
+    assert "tree_sitter" in nightly_only, nightly_only
+    assert done.stdout.splitlines() == [], done.stdout + done.stderr[-2000:]

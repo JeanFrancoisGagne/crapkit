@@ -24,8 +24,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import importlib
+from typing import TYPE_CHECKING
 
-from tree_sitter import Language, Parser
+if TYPE_CHECKING:
+    from tree_sitter import Parser
 
 
 @dataclass(frozen=True)
@@ -135,6 +137,10 @@ def language_of(path: str) -> str | None:
 
 
 def parser(language: str) -> Parser:
+    """tree_sitter is imported here, not at the top: only the nightly lock pins it,
+    and push-tier modules import this one through ts_defect_shapes."""
+    from tree_sitter import Language, Parser
+
     if language not in _PARSERS:
         module = importlib.import_module(SPECS[language].grammar)
         _PARSERS[language] = Parser(Language(module.language()))
