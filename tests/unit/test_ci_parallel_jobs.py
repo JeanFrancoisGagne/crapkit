@@ -177,3 +177,14 @@ def test_a_pull_request_cancels_its_older_run_and_every_push_to_main_finishes():
     main, next_main = run_of("push", "refs/heads/main", 201), run_of("push", "refs/heads/main", 202)
     assert group(main)[0] != group(next_main)[0], "a queued main run would replace a pending one"
     assert group(main)[1] is False
+
+
+def test_every_workflow_job_ends_at_its_own_bound():
+    """A job with no timeout-minutes runs until GitHub's 6 h default. The 2026-10-01
+    gate audit found 553 machine-minutes spent that way: an Ubuntu test leg ran 360
+    min, the candidate measurement 121.7 and dogfood 71.6 before a cancel."""
+    unbounded = [f"{path.name}:{name}" for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
+                 for name, job in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"].items()
+                 if "uses" not in job and "timeout-minutes" not in job]
+
+    assert unbounded == []

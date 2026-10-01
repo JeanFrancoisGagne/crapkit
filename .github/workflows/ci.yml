@@ -50,6 +50,8 @@ jobs:
           - os: macos-latest
             suite: e2e
     runs-on: ${{ matrix.os }}
+    # Twice the slowest leg measured on 2026-10-01: Windows unit 27.5 min, macOS 16.7, Ubuntu 8.7.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 55 || matrix.os == 'macos-latest' && 40 || 25 }}
     # The Latin-1 locale rows build en_US.ISO-8859-1 and fr_FR.UTF-8 with
     # localedef into a temp directory. Where a host cannot, they skip; here a
     # skip would leave every Linux Latin-1 row unguarded, so they fail instead.
@@ -106,6 +108,7 @@ jobs:
   # that stops hands off failure.json instead, with the phase and the error.
   verdict-measure:
     runs-on: ubuntu-latest
+    timeout-minutes: 40  # the candidate measured 19.7 min on 2026-10-01
     permissions:
       contents: read
     strategy:
@@ -143,6 +146,7 @@ jobs:
   verdict:
     needs: verdict-measure
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -333,6 +337,7 @@ jobs:
   # add JeanFrancoisGagne/crapkit` fetches, and nothing else checks it.
   plugin:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -374,6 +379,7 @@ jobs:
   # JUnit check below rejects failures even though the action stays advisory.
   dogfood:
     runs-on: ubuntu-latest
+    timeout-minutes: 40  # 18.1 min measured on 2026-10-01
     permissions:
       pull-requests: write
     # As in `test`: the Latin-1 locale rows fail here rather than skip.
