@@ -180,17 +180,24 @@ def _edited_driver(ci, tmp_path, monkeypatch, name):
     monkeypatch.setattr(ci, "DRIVER_FILES", tuple(copies / source.name for source in ci.DRIVER_FILES))
 
 
-@pytest.mark.parametrize("moved", ["packages", "ci.py", "_ci_linux.py", "python"])
-def test_a_different_freeze_driver_or_python_calls_the_runner_once(tmp_path, monkeypatch, moved):
+@pytest.mark.parametrize("moved", ["packages", "ci.py", "_ci_linux.py", "python", "ImageOS", "ImageVersion"])
+def test_a_different_freeze_driver_python_or_runner_image_calls_the_runner_once(tmp_path, monkeypatch, moved):
+    """The runner image decides which tests skip: several skip when the image
+    lacks gh, ssh-keygen, script or bash. A base measured days earlier under an
+    older image was reused for a candidate measured under the new one."""
     ci = driver()
     repo, _ = repository(tmp_path)
     runs = Runs(ci, monkeypatch)
     cache = tmp_path / "cache"
+    monkeypatch.setenv("ImageOS", "ubuntu24")
+    monkeypatch.setenv("ImageVersion", "20260928.1")
     assert measure(ci, repo, "HEAD~1", "candidate", tmp_path / "push-1", cache) == 0
     if moved == "packages":
         runs.packages = ["coverage==7.13.2", "pytest==8.4.2"]
     elif moved == "python":
         monkeypatch.setattr(ci.sys, "version", ci.sys.version + " (another build)")
+    elif moved.startswith("Image"):
+        monkeypatch.setenv(moved, "moved")
     else:
         _edited_driver(ci, tmp_path, monkeypatch, moved)
 
@@ -199,7 +206,8 @@ def test_a_different_freeze_driver_or_python_calls_the_runner_once(tmp_path, mon
     assert runs.calls == ["candidate", "base"]
     stored = json.loads((cache / "proof.json").read_text(encoding="utf-8"))
     assert stored["commit"] == git(repo, "rev-parse", "HEAD") and stored["suite_exit"] == 0
-    assert stored["inputs_key"] == proof(tmp_path / "push-2", "base")["inputs_key"],         "the new measurement replaced the stored one"
+    assert stored["inputs_key"] == proof(tmp_path / "push-2", "base")["inputs_key"], \
+        "the new measurement replaced the stored one"
 
 
 def test_the_candidate_always_measures_and_a_failing_suite_is_never_stored(tmp_path, monkeypatch):

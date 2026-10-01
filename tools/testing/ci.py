@@ -196,9 +196,12 @@ def _packages(python: Path, environment: dict) -> list[str]:
 
 def measurement_inputs(root: Path, python: Path, environment: dict) -> dict:
     """What decides a measurement's coverage: the tree, this driver's two files,
-    the Python (the venv is made from this interpreter) and the venv's packages."""
+    the Python (the venv is made from this interpreter), the venv's packages and
+    the hosted runner's image, whose tools decide which tests skip (gh,
+    ssh-keygen, script, bash); outside a runner the image fields are empty."""
     return {"tree": tree_key(root, "HEAD"), "driver": {path.name: _sha(path) for path in DRIVER_FILES},
-            "python": sys.version, "packages": _packages(python, environment)}
+            "python": sys.version, "packages": _packages(python, environment),
+            "image": [os.environ.get("ImageOS", ""), os.environ.get("ImageVersion", "")]}
 
 
 def _inputs_key(inputs: dict) -> str:
