@@ -126,6 +126,23 @@ DEPLOY_WORKFLOW = "deploy.yml"
 DEPLOY_RELEASE_CADENCE = "release"
 DEPLOY_PUBLISHED_CADENCE = "published"
 
+# Gates a release ships past while they cannot pass, one row per (version, gate)
+# with the reason a person ruled on. Stage 2b prints a listed gate's problems as
+# advisory and writes them into the release receipt under "advisory"; a gate not
+# listed for the version refuses. The local accuracy receipt is never advisory.
+ADVISORY_GATES = ("accuracy-remote", "deploy")
+ADVISORY = {
+    ("0.8.1", "accuracy-remote"): (
+        "accuracy.yml's release mode had never run before 0.8.1 and could not pass at its tag: "
+        "the ghcr crapkit-accuracy package did not exist (image job 110321883823), the corpus "
+        "asset corpus-27bfc7258750 was unpublished, and the retro and mutation rows exit 3 in "
+        "every CI cell; ruled advisory on 2026-10-01"),
+    ("0.8.1", "deploy"): (
+        "deploy.yml's release cadence had never run before 0.8.1: the record's working-tree hash "
+        "2d2b705b never matched the runner's fedbb54a, and six cells of run 36848030191 failed "
+        "before anyone classified them; ruled advisory on 2026-10-01"),
+}
+
 # The contract files stage 2a runs on the tagged tree. Two of them read the
 # newest tag (the README rev contracts), which is why the tag comes first.
 CONTRACT_FILES = (
@@ -876,11 +893,37 @@ def _guard_verified(root: Path, version: str) -> dict:
 
 def _guard_publish(root: Path, version: str) -> dict:
     """One record per required check: the verify run, then the
-    accuracy and deploy records, each at the tag commit."""
+    accuracy and deploy records, each at the tag commit. A gate ADVISORY
+    lists for this version is reported, not refused."""
     receipt = _guard_verified(root, version)
-    accuracy_gate(root, version, receipt["head"])
-    deploy_gate(root, version, receipt)
+    found = _gate_problems(root, version, receipt)
+    refused = [line for gate, lines in found.items() if (version, gate) not in ADVISORY for line in lines]
+    if refused:
+        raise ReleaseError(NL.join(refused))
+    _note_advisory(root, version, receipt, found)
     return receipt
+
+
+def _gate_problems(root: Path, version: str, receipt: dict) -> dict:
+    """Every reason each stage 2b gate refuses, by gate name."""
+    head, found = receipt["head"], {}
+    if gates_accuracy(root):
+        found["accuracy-local"] = receipt_problems(root, _read_accuracy_receipt(root, version), head, version)
+        found["accuracy-remote"] = _remote_problems(version, head)
+    if gates_deploy(root):
+        found["deploy"] = deploy_problems(version, receipt)
+    return found
+
+
+def _note_advisory(root: Path, version: str, receipt: dict, found: dict) -> None:
+    """Print each advisory gate's problems and keep them in the release receipt."""
+    noted = {gate: {"reason": ADVISORY[(version, gate)], "problems": lines}
+             for gate, lines in found.items() if lines}
+    for gate, entry in noted.items():
+        print(NL.join(f"advisory ({gate}): {line}" for line in entry["problems"]))
+    if receipt.get("advisory", {}) != noted:
+        receipt["advisory"] = noted
+        _write_receipt(root, receipt)
 
 
 def _preflight(stage: str, root: Path, version: str) -> dict:

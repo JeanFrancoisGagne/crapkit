@@ -154,6 +154,22 @@ deploy gate: gh is not on PATH, so the deploy stage cannot dispatch deploy.yml o
 deploy gate: gh auth token returned nothing, so the deploy stage cannot dispatch deploy.yml or read its runs; run gh auth login
 ```
 
+## Advisory gates
+
+A remote gate that cannot pass yet can be ruled advisory for one version. The ruling is
+a row in `ADVISORY` in `release.py`, keyed by version and gate (`accuracy-remote` or
+`deploy`) with the reason, and it lands through review like any other change. For a
+listed gate, stage 2b and the registry stage print each problem as
+`advisory (GATE): LINE` and write the gate, its reason and its problems into
+`.crapkit/release-receipt.json` under `advisory`; they publish past it. A gate that the
+table does not list for the version refuses as before, and the local accuracy receipt
+is never advisory.
+
+0.8.1 shipped with both gates advisory: accuracy.yml's release mode and deploy.yml's
+release cadence had never run before it and could not pass at its tag. That ruling
+first ran through a scratch wrapper that patched release.py's problem functions; the
+table replaces it.
+
 ## Preflight: prove the environment before anything is pushed
 
 Every fault in the 0.7.2 release fired after PyPI and the GitHub release were
