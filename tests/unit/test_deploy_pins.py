@@ -1091,6 +1091,72 @@ def test_the_runner_venv_is_made_again_when_its_requirements_change(tmp_path, mo
     assert made == ["venv", "pip", "venv", "pip"]
 
 
+# uv links cpython-3.12-<platform> to the installed cpython-3.12.14-<platform>, a
+# junction on Windows. The hosted deploy-windows job restored the toolchain cache
+# with tar, which made that link a file symlink to the folder, and `uv python install`
+# refused to replace it: error 267 (a copy in its place is error 145).
+
+PYTHON_PINS = {"python": {"old": "3.10.21", "versions": ["3.12.14"]}}
+
+
+def _installed(python_dir: Path, version: str) -> Path:
+    install = python_dir / f"cpython-{version}-windows-x86_64-none"
+    install.mkdir(parents=True)
+    (install / "python.exe").write_text("kept", encoding="utf-8")
+    return install
+
+
+def _directory_link(link: Path, target: Path) -> None:
+    """What uv makes: a junction on Windows, a symlink elsewhere."""
+    if sys.platform == "win32":
+        import _winapi
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
+def _uv_sees(monkeypatch, python_dir: Path) -> list:
+    """The entries of python_dir when uv is asked to install."""
+    seen = []
+
+    def run_step(argv, **kwargs):
+        if argv[1:3] == ["python", "install"]:
+            seen.extend(sorted(entry.name for entry in python_dir.iterdir()))
+        return subprocess.CompletedProcess(argv, 0, "found", "")
+    monkeypatch.setattr(toolchain, "run_step", run_step)
+    return seen
+
+
+def test_uv_finds_no_minor_link_a_cache_restore_left_and_the_installs_stay(tmp_path, monkeypatch):
+    python_dir = tmp_path / "python"
+    old, new = _installed(python_dir, "3.10.21"), _installed(python_dir, "3.12.14")
+    (python_dir / "cpython-3.10-windows-x86_64-none").write_text("!<symlink>", encoding="utf-8")
+    shutil.copytree(new, python_dir / "cpython-3.12-windows-x86_64-none")
+    seen = _uv_sees(monkeypatch, python_dir)
+
+    toolchain.install_pythons(PYTHON_PINS, Path("uv"), tmp_path)
+
+    assert seen == [old.name, new.name]
+    assert (old / "python.exe").read_text(encoding="utf-8") == "kept"
+
+
+@pytest.mark.parametrize("kind", ["file symlink", "directory link"])
+def test_a_minor_link_goes_and_the_install_it_points_at_stays(tmp_path, monkeypatch, kind):
+    python_dir = tmp_path / "python"
+    install = _installed(python_dir, "3.12.14")
+    link = python_dir / "cpython-3.12-windows-x86_64-none"
+    if kind == "file symlink":
+        link.symlink_to(install, target_is_directory=False)
+    else:
+        _directory_link(link, install)
+    seen = _uv_sees(monkeypatch, python_dir)
+
+    toolchain.install_pythons({"python": {"old": "3.12.14", "versions": []}}, Path("uv"), tmp_path)
+
+    assert seen == [install.name]
+    assert (install / "python.exe").read_text(encoding="utf-8") == "kept"
+
+
 # A failed build ended in a CalledProcessError that spelled out every build arg
 # and named no log, and an arm64 build whose QEMU handler went away mid-build
 # said only `cut: Exec format error` in a log nobody was pointed at.

@@ -45,6 +45,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import stat
 import subprocess
@@ -225,9 +226,34 @@ def exe(name: str) -> str:
     return name + ".exe" if WINDOWS else name
 
 
+# uv links cpython-3.12-<platform> to the installed cpython-3.12.14-<platform>: a
+# junction on Windows, a symlink elsewhere.
+MINOR_LINK = re.compile(r"cpython-\d+\.\d+-.+")
+
+
+def drop_minor_links(python_dir: Path) -> list[str]:
+    """Remove what sits at each minor-version link, so `uv python install` makes the
+    link again. The deploy-windows job restores the toolchain with actions/cache's tar,
+    which turned the junction into a file symlink, and uv refused to replace it (error
+    267; a copy in its place is error 145)."""
+    names = sorted(entry.name for entry in python_dir.glob("cpython-*") if MINOR_LINK.fullmatch(entry.name))
+    for name in names:
+        _drop(python_dir / name)
+    return names
+
+
+def _drop(entry: Path) -> None:
+    """Remove a file, a link of any kind (never what it points at) or a folder."""
+    try:
+        entry.unlink()
+    except (IsADirectoryError, PermissionError):
+        shutil.rmtree(entry, **RMTREE_HANDLER)
+
+
 def install_pythons(pins: dict, uv: Path, root: Path) -> dict[str, str]:
     versions = [pins["python"]["old"], *pins["python"]["versions"]]
     env = dict(os.environ, UV_PYTHON_INSTALL_DIR=str(root / "python"), UV_PYTHON_DOWNLOADS="automatic")
+    drop_minor_links(root / "python")
     run_step([uv, "python", "install", *versions], env=env)
     found = {}
     for version in versions:
