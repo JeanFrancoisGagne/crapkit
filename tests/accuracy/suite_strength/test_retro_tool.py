@@ -637,7 +637,7 @@ def tables(tmp_path, monkeypatch):
     monkeypatch.setattr(retro, "LEDGER", ledger)
     monkeypatch.setenv(retro.VERDICTS_ENV, str(tmp_path / "verdicts"))
     monkeypatch.setenv("CRAPKIT_ACCURACY_TIER", "push")
-    for name in retro.RUNNER_IMAGE:
+    for name in (*retro.RUNNER_IMAGE, *retro.CI_CELL, retro.BUNDLE_ENV):
         monkeypatch.delenv(name, raising=False)
     env = {"image": "0a1b2c3d4e5f"}
     monkeypatch.setattr(retro, "_image_tag", lambda: env["image"])
@@ -734,21 +734,41 @@ def test_a_nightly_replays_exactly_the_row_whose_inputs_moved(tables, moved):
 
 
 def test_a_kept_verdict_judges_its_row_as_the_fresh_replay_did(tables, capsys):
-    """A nightly that reuses a contradicting verdict still exits 1 with the same
-    words: a red night stays red until the row or its ledger changes."""
     tables.write([_bug_row("R1"), _bug_row("R2")], [_ledger_row("R1"), _ledger_row("R2")])
-    tables.answers["R1"] = (retro.Outcome("not replayable", "KeyError", "k"), retro.Outcome("pass"))
+    assert retro.main(["nightly"]) == 0
+    fresh = capsys.readouterr()
+    tables.replayed.clear()
+
+    assert retro.main(["nightly"]) == 0
+
+    kept = capsys.readouterr()
+    assert tables.replayed == []
+    assert kept.err == fresh.err == ""
+    today = datetime.date.today().isoformat()
+    assert kept.out == fresh.out.replace(", fix pass\n", f", fix pass (kept from {today})\n") != fresh.out
+
+
+def test_a_replay_that_contradicts_its_ledger_keeps_no_verdict_and_replays_next_time(tables, capsys):
+    """A red from the machine, not the check (pwsh missing from PATH, a 120 s child
+    limit under eight containers' load), would stick to a kept verdict until the
+    row's digest moved. Only an agreeing verdict is kept, so a red night replays
+    its red rows again and says the same until they agree."""
+    tables.write([_bug_row("R1"), _bug_row("R2")], [_ledger_row("R1"), _ledger_row("R2")])
+    tables.answers["R1"] = (retro.Outcome("red", "AssertionError", "wrong"),
+                            retro.Outcome("fail", "RuntimeError", "pwsh is not installed here"))
     assert retro.main(["nightly"]) == 1
     fresh = capsys.readouterr()
     tables.replayed.clear()
 
     assert retro.main(["nightly"]) == 1
 
-    kept = capsys.readouterr()
-    assert tables.replayed == []
-    assert kept.err == fresh.err != ""
-    today = datetime.date.today().isoformat()
-    assert kept.out == fresh.out.replace(", fix pass\n", f", fix pass (kept from {today})\n") != fresh.out
+    assert tables.replayed == ["R1"]
+    assert capsys.readouterr().err == fresh.err != ""
+    del tables.answers["R1"]
+    tables.replayed.clear()
+    assert retro.main(["nightly"]) == 0
+    assert retro.main(["nightly"]) == 0
+    assert tables.replayed == ["R1"]
 
 
 def _moves_the_image(tables, monkeypatch):
@@ -885,7 +905,7 @@ def test_the_env_parts_are_every_input_a_verdict_depends_on_past_the_row(tables,
     assert retro.env_parts("3.12") == {
         "os": sys.platform, "image": "0a1b2c3d4e5f", "host": host, "lizard": retro.LIZARD,
         "runner": list(retro.RUNNER), "python": "3.12", "checks_python": platform.python_version(),
-        "git": "git version 1", "node": "node version 1", "tier": "push"}
+        "git": "git version 1", "node": "node version 1", "pwsh": "pwsh version 1", "tier": "push"}
     monkeypatch.setenv("ImageOS", "win22")
     monkeypatch.setenv("ImageVersion", "20260928.1")
     assert retro.env_parts("3.12")["host"] == "win22 20260928.1"
@@ -951,17 +971,33 @@ def test_adopt_reads_the_env_key_it_is_named(tables, capsys):
     assert tables.replayed == ["R1"]
 
 
-def test_adopt_keeps_a_contradicting_verdict_pending_and_exits_one(tables, capsys):
+def test_adopt_finds_no_verdict_for_a_replay_that_contradicted_its_ledger(tables, capsys):
     tables.write([_bug_row("R1")], [_ledger_row("R1")])
     tables.answers["R1"] = (retro.Outcome("green", "", "1 item(s) passed"), retro.Outcome("pass"))
     retro.main(["nightly"])
+    before = tables.ledger.read_bytes()
+    capsys.readouterr()
+
+    assert retro.main(["adopt"]) == 0
+
+    assert tables.ledger.read_bytes() == before
+    assert capsys.readouterr().out.endswith("retro: adopted 0 row(s) from "
+                                            f"{retro.env_key(retro.CURRENT)}; 1 row(s) have no verdict there\n")
+
+
+def test_adopt_keeps_a_verdict_its_ledger_now_contradicts_pending_and_exits_one(tables, capsys):
+    tables.write([_bug_row("R1")], [_ledger_row("R1", before="not replayable")])
+    tables.answers["R1"] = (retro.Outcome("not replayable", "KeyError", "k"), retro.Outcome("pass"))
+    retro.main(["nightly"])
+    tables.write([_bug_row("R1")], [_ledger_row("R1")])
     capsys.readouterr()
 
     assert retro.main(["adopt"]) == 1
 
     (row,) = retro.read_table(tables.ledger, retro.LEDGER_COLUMNS)
     assert (row["before"], row["fix"]) == ("pending", "pending")
-    assert "R1: the check passes on its before commit, so it catches nothing" in capsys.readouterr().err
+    assert ("R1: the ledger says red on the before commit, the replay says not replayable"
+            in capsys.readouterr().err)
 
 
 THIS_OS = {"win32": "windows", "darwin": "macos"}.get(sys.platform, "linux")
@@ -980,14 +1016,106 @@ def test_a_platform_only_nightly_replays_this_os_rows_with_no_verdict(tables):
     assert tables.replayed == []
 
 
-def test_release_replays_stale_rows_and_every_bundle_row(tables):
+OTHER_OS = "macos" if not sys.platform.startswith("darwin") else "linux"
+
+
+def test_release_replays_stale_rows_and_a_bundle_row_only_when_it_is_stale(tables, monkeypatch):
+    """The release tier replayed all 24 bundle rows at every release, unchanged or
+    not: 460 s for 0.8.1. A current bundle row's ledger record answers for it."""
+    monkeypatch.setenv(retro.BUNDLE_ENV, "history.bundle")
     rows = [_bug_row("R1"), _bug_row("R2", replay="bundle"), _bug_row("R3"),
-            _bug_row("R4", platform="macos" if not sys.platform.startswith("darwin") else "linux")]
-    tables.write(rows, [_ledger_row("R1"), _ledger_row("R2"), _ledger_row("R4")])
+            _bug_row("R4", platform=OTHER_OS), _bug_row("R5", replay="bundle")]
+    tables.write(rows, [_ledger_row("R1"), _ledger_row("R2"), _ledger_row("R4"),
+                        _ledger_row("R5", digest="0" * 16)])
 
     assert retro.main(["release"]) == 0
-    # R3 has no ledger row (stale), R2 is a bundle row, R4 runs on another platform.
-    assert sorted(tables.replayed) == ["R2", "R3"]
+    # R3 has no ledger row and R5's digest moved; R2 is current; R4 runs on another platform.
+    assert sorted(tables.replayed) == ["R3", "R5"]
+
+
+def _no_bundle(tables, monkeypatch, held: bool = False) -> None:
+    """Two stale rows, R1 public and R5 a bundle row, and a current bundle row R2,
+    with no CRAPKIT_RETRO_BUNDLE and the bundle's commits `held` in the clone or not."""
+    monkeypatch.setattr(retro, "have_commit", lambda sha, repo=retro.REPO: held)
+    rows = [_bug_row("R1"), _bug_row("R2", replay="bundle"), _bug_row("R5", replay="bundle")]
+    tables.write(rows, [_ledger_row("R1", digest="0" * 16), _ledger_row("R2"),
+                        _ledger_row("R5", digest="0" * 16)])
+
+
+BUNDLE_LINE = (f"retro: R5 {NODE}: a stale bundle row this clone cannot replay: its commits are in "
+               f"neither this clone nor {retro.BUNDLE_ENV}; the local release stage replays it\n")
+
+
+@pytest.mark.parametrize("cell", [{"GITHUB_ACTIONS": "true"}, {"CRAPKIT_ACCURACY_IMAGE": "ghcr.io/o/a:1"}])
+def test_release_in_a_ci_cell_without_the_bundle_names_the_stale_bundle_rows_and_exits_0(
+        tables, monkeypatch, capsys, cell):
+    """GitHub holds no bundle commit and no workflow sets CRAPKIT_RETRO_BUNDLE, so
+    every CI release cell raised, exited 3 and reran its whole attempt as infra."""
+    _no_bundle(tables, monkeypatch)
+    for name, value in cell.items():
+        monkeypatch.setenv(name, value)
+
+    assert retro.main(["release"]) == 0
+
+    assert tables.replayed == ["R1"]
+    assert BUNDLE_LINE in capsys.readouterr().out
+
+
+def test_the_local_release_stage_refuses_a_stale_bundle_row_it_cannot_replay(tables, monkeypatch, capsys):
+    """Outside CI nothing else replays the row, so a missing bundle stays an infra
+    miss the release stage refuses, as before, now only for a stale bundle row."""
+    _no_bundle(tables, monkeypatch)
+
+    assert retro.main(["release"]) == 3
+
+    said = capsys.readouterr()
+    assert tables.replayed == ["R1"]
+    assert BUNDLE_LINE in said.out
+    assert said.err == (f"retro: 1 stale bundle row(s) need {retro.BUNDLE_ENV}, the history bundle "
+                        "their commits live in\n")
+
+
+def test_the_local_release_stage_reports_a_contradiction_before_a_missing_bundle(tables, monkeypatch):
+    _no_bundle(tables, monkeypatch)
+    tables.answers["R1"] = (retro.Outcome("green", "", "1 item(s) passed"), retro.Outcome("pass"))
+
+    assert retro.main(["release"]) == 1
+
+
+def test_a_stale_bundle_row_replays_without_the_variable_when_the_clone_holds_its_commits(
+        tables, monkeypatch, capsys):
+    _no_bundle(tables, monkeypatch, held=True)
+
+    assert retro.main(["release"]) == 0
+    assert sorted(tables.replayed) == ["R1", "R5"]
+    assert "cannot replay" not in capsys.readouterr().out
+
+
+def test_a_stale_bundle_row_with_a_kept_release_verdict_is_judged_without_the_bundle(
+        tables, monkeypatch, capsys):
+    monkeypatch.setenv("CRAPKIT_ACCURACY_TIER", "release")
+    _no_bundle(tables, monkeypatch, held=True)
+    retro.main(["release"])
+    _no_bundle(tables, monkeypatch, held=False)
+    tables.replayed.clear()
+    capsys.readouterr()
+
+    assert retro.main(["release"]) == 0
+
+    assert tables.replayed == []
+    out = capsys.readouterr().out
+    assert f"retro: R5 {NODE}: before red, fix pass (kept from " in out and "cannot replay" not in out
+
+
+def test_release_with_every_key_kept_replays_nothing(tables, monkeypatch):
+    monkeypatch.setenv(retro.BUNDLE_ENV, "history.bundle")
+    monkeypatch.setenv("CRAPKIT_ACCURACY_TIER", "release")
+    _no_bundle(tables, monkeypatch, held=True)
+    assert retro.main(["release"]) == 0
+    tables.replayed.clear()
+
+    assert retro.main(["release"]) == 0
+    assert tables.replayed == []
 
 
 def test_stale_lists_the_rows_to_replay(tables, capsys):

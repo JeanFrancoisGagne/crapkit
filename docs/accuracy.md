@@ -358,15 +358,18 @@ nothing, and one that fails at the fix proves nothing; both are refused, the row
 stays `pending`, and its ledger note says why. A row whose test is not written
 yet never replays and stays `pending`.
 
-Every replay keeps its verdict in `CRAPKIT_RETRO_VERDICTS` (default
-`.crapkit/accuracy/retro-verdicts`), as `<env key>/<id>/<row digest>.json`. The
-row digest covers the row's id, node id, commits and probe and its check's
-digest. The env key covers what the replay ran on: the OS, the image tag
-(`run.py image-tag`, a hash of the image inputs and both locks), the hosted
-runner's `ImageOS` and `ImageVersion` (outside a runner on Windows, the Windows
-build), LIZARD, RUNNER, the venv and check Pythons, the git and node versions,
-and `CRAPKIT_ACCURACY_TIER`. A push-tier verdict never answers for the release
-tier, since the tier sizes Hypothesis.
+A replay whose verdict agrees with the ledger keeps it in
+`CRAPKIT_RETRO_VERDICTS` (default `.crapkit/accuracy/retro-verdicts`), as
+`<env key>/<id>/<row digest>.json`. A contradicting verdict is not kept, so a red
+row replays again on the next run: a red the machine caused, such as pwsh missing
+from PATH or a child limit hit under load, never sticks. The row digest covers
+the row's id, node id, commits and probe and its check's digest. The env key
+covers what the replay ran on: the OS, the image tag (`run.py image-tag`, a hash
+of the image inputs and both locks), the hosted runner's `ImageOS` and
+`ImageVersion` (outside a runner on Windows, the Windows build), LIZARD, RUNNER,
+the venv and check Pythons, the git, node and pwsh versions, and
+`CRAPKIT_ACCURACY_TIER`. A push-tier verdict never answers for the release tier,
+since the tier sizes Hypothesis.
 
 Each night accuracy.yml judges every public row: the `retro` job in the Linux
 image, and the Windows cell the rows whose `platform` is `windows`
@@ -401,8 +404,17 @@ read fewer languages or refused a root scope of `.`. `CRAPKIT_RETRO_WORK` moves
 the worktrees and venvs (default `.crapkit/accuracy/retro`). Keep it between runs:
 a worktree there is reused with its venvs when `git worktree repair` and
 `git rev-parse HEAD` say it holds its commit, and one that dangles (copied into a
-clone that never made it) or holds another commit is rebuilt with its venvs. Rows
-R01 to R12 need `CRAPKIT_RETRO_BUNDLE`, the history bundle their commits live in.
+clone that never made it) or holds another commit is rebuilt with its venvs.
+
+The release tier runs `retro.py release`, which judges every stale row by the
+same verdict cache, keyed at the release tier. Rows R01 to R12 are bundle rows:
+their commits live only in `CRAPKIT_RETRO_BUNDLE`, the history bundle, and
+GitHub holds none of them. A bundle row whose digest has not moved is not
+replayed; its ledger record answers for it. A stale bundle row replays where
+`CRAPKIT_RETRO_BUNDLE` is set or an earlier fetch left its commits in the clone.
+Anywhere else `release` names it ("a stale bundle row this clone cannot
+replay"). A CI cell then passes, and the local release stage exits 3, so set
+`CRAPKIT_RETRO_BUNDLE` there before a release.
 
 ## Change control
 

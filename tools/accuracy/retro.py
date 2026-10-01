@@ -48,20 +48,24 @@ The ledger row carries a digest over the check's file, its static import
 closure under tests/ and tools/, and the data files of its packet, taken in
 repo path order with case so every OS computes the same one, so a replay
 that no longer matches the code it recorded shows as stale. `nightly` judges
-every public row; `release` judges every row whose digest changed plus the bundle
-rows, whose commits live only in the pre-2026-08-24 history bundle
-(CRAPKIT_RETRO_BUNDLE). Both exit 1 when a verdict contradicts its ledger row: a
-before that is no longer red, a fix that no longer passes.
+every public row; `release` judges every row whose digest changed, the bundle
+rows among them. A bundle row's commits live only in the pre-2026-08-24 history
+bundle (CRAPKIT_RETRO_BUNDLE): where neither the bundle nor an earlier fetch
+holds them, a CI cell names each stale bundle row and passes, and the local
+release stage names them and exits 3. Both exit 1 when a verdict contradicts its
+ledger row: a before that is no longer red, a fix that no longer passes.
 
 Every replay keeps its verdict in CRAPKIT_RETRO_VERDICTS under an env key: the
 OS, the image tag (run.py's hash of the image inputs and locks), the hosted
 runner's ImageOS and ImageVersion (on Windows outside a runner, the Windows
-build), LIZARD, RUNNER, the venv and check Pythons, the git and node versions
-and the accuracy tier. `nightly` and `release` judge a row by the verdict kept
-for its row digest and this env key and replay only a row with none, so an
-unchanged row is not replayed twice on one env, and a moved key replays every
-row of that platform once. `run` always replays. `adopt` writes the kept
-verdicts into ledger.tsv as `run --record` would, without a replay.
+build), LIZARD, RUNNER, the venv and check Pythons, the git, node and pwsh
+versions and the accuracy tier. Only a verdict that agrees with the ledger is
+kept, so a red replays again on the next run. `nightly` and `release` judge a
+row by the verdict kept for its row digest and this env key and replay only a
+row with none, so an unchanged row is not replayed twice on one env, and a moved
+key replays every row of that platform once. `run` always replays. `adopt`
+writes the kept verdicts into ledger.tsv as `run --record` would, without a
+replay.
 
 Each packet confirms the check names bugs.tsv proposed and lists the ones it
 landed in its own tests/accuracy/<packet>/retro.tsv. `sync` rewrites a landed
@@ -111,6 +115,9 @@ BUNDLE_ENV = "CRAPKIT_RETRO_BUNDLE"
 VERDICTS_ENV = "CRAPKIT_RETRO_VERDICTS"
 # Set on GitHub's hosted runners: the runner image a native cell replays on.
 RUNNER_IMAGE = ("ImageOS", "ImageVersion")
+# A CI cell: a hosted runner sets GITHUB_ACTIONS, and accuracy.yml hands each
+# image cell its image ref. The local release stage has neither.
+CI_CELL = ("GITHUB_ACTIONS", "CRAPKIT_ACCURACY_IMAGE")
 PYTHON_ENV = "CRAPKIT_ACCURACY_PYTHON"
 # The commit's checkout: a check that runs files beside the package (action.yml,
 # tools/action/comment.py) reads them there, since a wheel install carries only src/.
@@ -756,7 +763,8 @@ def env_parts(python: str) -> dict:
     from accuracy.kit import tiers
     return {"os": sys.platform, "image": _image_tag(), "host": _host(), "lizard": LIZARD,
             "runner": list(RUNNER), "python": python, "checks_python": platform.python_version(),
-            "git": _tool_version("git"), "node": _tool_version("node"), "tier": tiers.current_tier()}
+            "git": _tool_version("git"), "node": _tool_version("node"), "pwsh": _tool_version("pwsh"),
+            "tier": tiers.current_tier()}
 
 
 def env_key(python: str) -> str:
@@ -950,14 +958,18 @@ def _judged(row: dict, ledger: dict, verdict: tuple) -> tuple[str, dict]:
 
 def _replay_one(row: dict, ledger: dict, python: str, path: Path | None = None) -> tuple[str, dict]:
     """(what contradicts the ledger, or "", the fresh ledger row) for one bugs row,
-    replayed now; the verdict is kept at `path` when one is named."""
+    replayed now. The verdict is kept at `path`, when one is named, only when it
+    agrees with the ledger: a red the machine caused (a tool missing from PATH, a
+    child limit hit under load) would otherwise stick until the row's digest
+    moved, so a contradicting row replays again next time."""
     bug = bug_of(row)
     before, fix = replay(bug, python)
-    if path is not None:
-        keep_verdict(path, bug, before, fix)
     verdict = (before, fix, datetime.date.today().isoformat())
     _say(row, verdict, kept=False)
-    return _judged(row, ledger, verdict)
+    problem, recorded = _judged(row, ledger, verdict)
+    if path is not None and not problem:
+        keep_verdict(path, bug, before, fix)
+    return problem, recorded
 
 
 def _kept_one(row: dict, ledger: dict, verdict: tuple) -> tuple[str, dict]:
@@ -990,12 +1002,12 @@ def recorded_row(row: dict, before: Outcome, fix: Outcome, problem: str, day: st
 
 
 def _replay_rows(rows: list[dict], ledger: dict, python: str, record: bool = False,
-                 reuse: bool = True) -> int:
+                 reuse: bool = True, key: str = "") -> int:
     """Judge each row, print what contradicts the ledger, and rewrite the ledger
     only when asked: nightly and release judge, `run --record` records. A row with
     a verdict kept for its digest and this env key is judged by it (unless `reuse`
     is off, as for `run`); every replay keeps its verdict."""
-    key = env_key(python)
+    key = key or env_key(python)
     fresh = dict(ledger)
     problems = []
     for row in rows:
@@ -1030,10 +1042,6 @@ def _run_cmd(args) -> int:
     return _replay_rows(rows, ledger, args.python, args.record, reuse=False)
 
 
-def _union(*groups: list[dict]) -> list[dict]:
-    return list({row_key(row): row for group in groups for row in group}.values())
-
-
 def _public(bugs: list[dict]) -> list[dict]:
     return [row for row in bugs if replayable_here(row) and not _bundle(row)]
 
@@ -1052,11 +1060,55 @@ def _nightly(args) -> int:
     return _replay_rows(public, ledger, args.python)
 
 
+def _bundle_here(row: dict) -> bool:
+    """Whether this clone can replay a bundle row: CRAPKIT_RETRO_BUNDLE names the
+    history bundle, or an earlier fetch left both commits here."""
+    bug = bug_of(row)
+    return bool(os.environ.get(BUNDLE_ENV)) or all(map(have_commit, (bug.before, bug.fix)))
+
+
+def _out_of_reach(row: dict, key: str) -> bool:
+    """A bundle row with no verdict kept for `key` that this clone cannot replay."""
+    return _bundle(row) and kept_verdict(verdict_path(row, key)) is None and not _bundle_here(row)
+
+
+def _in_ci() -> bool:
+    return os.environ.get(CI_CELL[0]) == "true" or bool(os.environ.get(CI_CELL[1]))
+
+
+def _missing_bundle(code: int, far: list[dict]) -> int:
+    """A CI cell names the stale bundle rows it cannot replay and passes: GitHub
+    holds none of their commits. The local release stage, the only place that can
+    replay them, refuses as an infra miss (exit 3) unless a verdict failed already."""
+    if not far or _in_ci():
+        return code
+    print(f"retro: {len(far)} stale bundle row(s) need {BUNDLE_ENV}, the history bundle their "
+          "commits live in", file=sys.stderr)
+    return code or 3
+
+
+BUNDLE_NOTE = (f"a stale bundle row this clone cannot replay: its commits are in neither this clone "
+               f"nor {BUNDLE_ENV}; the local release stage replays it")
+
+
+def _within_reach(rows: list[dict], key: str) -> tuple[list[dict], list[dict]]:
+    """(the rows this clone can judge, the bundle rows it cannot), each of the
+    latter named."""
+    near, far = [], []
+    for row in rows:
+        (far if _out_of_reach(row, key) else near).append(row)
+    for row in far:
+        print(f"retro: {row['id']} {row['test']}: {BUNDLE_NOTE}")
+    return near, far
+
+
 def _release(args) -> int:
+    """Judge every stale row, bundle rows included; a current bundle row's ledger
+    record answers for it."""
     bugs, ledger = _load()
-    rows = [row for row in bugs if replayable_here(row)]
-    chosen = _union(stale(rows, ledger), [row for row in rows if _bundle(row)])
-    return _replay_rows(chosen, ledger, args.python)
+    key = env_key(args.python)
+    near, far = _within_reach(stale(list(filter(replayable_here, bugs)), ledger), key)
+    return _missing_bundle(_replay_rows(near, ledger, args.python, key=key), far)
 
 
 def _named(row: dict, ids: list[str]) -> bool:
