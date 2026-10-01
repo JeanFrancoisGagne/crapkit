@@ -363,12 +363,16 @@ A replay whose verdict agrees with the ledger keeps it in
 `<env key>/<id>/<row digest>.json`. A contradicting verdict is not kept, so a red
 row replays again on the next run: a red the machine caused, such as pwsh missing
 from PATH or a child limit hit under load, never sticks. The row digest covers
-the row's id, node id, commits and probe and its check's digest. The env key
-covers what the replay ran on: the OS, the image tag (`run.py image-tag`, a hash
-of the image inputs and both locks), the hosted runner's `ImageOS` and
-`ImageVersion` (outside a runner on Windows, the Windows build), LIZARD, RUNNER,
-the venv and check Pythons, the git, node and pwsh versions, and
-`CRAPKIT_ACCURACY_TIER`. A push-tier verdict never answers for the release tier,
+the row's id, node id, commits and probe, its check's digest, and the
+`conftest.py` files pytest loads for the check (one per folder from the rootdir
+down to the check's), so a packet's conftest re-judges that packet's rows only.
+The env key covers what the replay ran on and what judges it: the OS, the image
+tag (`run.py image-tag`, a hash of the image inputs and both locks), the hosted
+runner's `ImageOS` and `ImageVersion` (outside a runner on Windows, the Windows
+build), LIZARD, RUNNER, the venv and check Pythons, the git, node and pwsh
+versions, `CRAPKIT_ACCURACY_TIER`, and the sha256 of `tools/accuracy/retro.py`
+and of pyproject.toml's `[tool.pytest.ini_options]` table as parsed (a comment
+there moves nothing). A push-tier verdict never answers for the release tier,
 since the tier sizes Hypothesis.
 
 Each night accuracy.yml judges every public row: the `retro` job in the Linux

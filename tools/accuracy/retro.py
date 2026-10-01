@@ -59,11 +59,13 @@ Every replay keeps its verdict in CRAPKIT_RETRO_VERDICTS under an env key: the
 OS, the image tag (run.py's hash of the image inputs and locks), the hosted
 runner's ImageOS and ImageVersion (on Windows outside a runner, the Windows
 build), LIZARD, RUNNER, the venv and check Pythons, the git, node and pwsh
-versions and the accuracy tier. Only a verdict that agrees with the ledger is
-kept, so a red replays again on the next run. `nightly` and `release` judge a
-row by the verdict kept for its row digest and this env key and replay only a
-row with none, so an unchanged row is not replayed twice on one env, and a moved
-key replays every row of that platform once. `run` always replays. `adopt`
+versions, the accuracy tier, and the sha256 of this tool and of pyproject.toml's
+pytest table. The row digest adds the conftest.py files pytest loads for the
+check, which judge only the rows under them. Only a verdict that agrees with
+the ledger is kept, so a red replays again on the next run. `nightly` and
+`release` judge a row by the verdict kept for its row digest and this env key
+and replay only a row with none, so an unchanged row is not replayed twice on
+one env, and a moved key replays every row of that platform once. `run` always replays. `adopt`
 writes the kept verdicts into ledger.tsv as `run --record` would, without a
 replay.
 
@@ -91,6 +93,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import venv as venv_module
 
 REPO = Path(__file__).resolve().parents[2]
@@ -756,15 +759,59 @@ def _host() -> str:
     return named or (platform.platform() if WINDOWS else "")
 
 
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _pytest_table(pyproject: Path) -> dict:
+    """pyproject.toml's [tool.pytest.ini_options], which every replay's pytest reads."""
+    tool = tomllib.loads(_read(pyproject)).get("tool", {})
+    return tool.get("pytest", {}).get("ini_options", {})
+
+
+def harness_parts() -> dict:
+    """The sha256 of what judges every replay: this tool (the `-p retro` plugin and
+    the verdict rules) and pyproject.toml's pytest table, parsed, so a comment or
+    another table moves nothing. They stand in for the code a replay executes
+    until that is digested."""
+    tool = REPO / "tools" / "accuracy" / "retro.py"
+    table = json.dumps(_pytest_table(REPO / "pyproject.toml"), sort_keys=True)
+    return {"retro": _sha(tool.read_bytes()), "pytest_ini": _sha(table.encode())}
+
+
+def conftests(test: str) -> list[Path]:
+    """The conftest.py files pytest loads for the check: one in each folder from its
+    rootdir down to the check file's folder."""
+    rootdir = _rootdir(test)
+    folder = (REPO / test.split("::")[0]).resolve().parent
+    chain = [where for where in (folder, *folder.parents) if _within(where, rootdir)]
+    return [where / "conftest.py" for where in reversed(chain) if (where / "conftest.py").is_file()]
+
+
+def _within(folder: Path, rootdir: Path) -> bool:
+    return folder == rootdir or rootdir in folder.parents
+
+
+def _conftest_digest(test: str) -> str:
+    """sha256 over each conftest.py's path under the rootdir and its bytes."""
+    rootdir = _rootdir(test)
+    hashed = hashlib.sha256()
+    for path in conftests(test):
+        hashed.update(path.relative_to(rootdir).as_posix().encode() + b"\0")
+        hashed.update(hashlib.sha256(path.read_bytes()).digest())
+    return hashed.hexdigest()
+
+
 def env_parts(python: str) -> dict:
     """Everything a verdict depends on past the row itself. The tier is one: it
     sizes Hypothesis (200 examples at push, 5,000 at release), so a push verdict
-    never answers for the release tier."""
+    never answers for the release tier. The harness is another: a verdict rule or
+    a pytest option that moved re-judges every row."""
     from accuracy.kit import tiers
     return {"os": sys.platform, "image": _image_tag(), "host": _host(), "lizard": LIZARD,
             "runner": list(RUNNER), "python": python, "checks_python": platform.python_version(),
             "git": _tool_version("git"), "node": _tool_version("node"), "pwsh": _tool_version("pwsh"),
-            "tier": tiers.current_tier()}
+            "tier": tiers.current_tier(), "harness": harness_parts()}
 
 
 def env_key(python: str) -> str:
@@ -775,11 +822,14 @@ def env_key(python: str) -> str:
 
 
 def row_digest(row: dict) -> str:
-    """16 hex over the row's id, node id, commits and probe, and its check's digest,
-    which covers the check's files, the probe's bytes and the env cell."""
+    """16 hex over the row's id, node id, commits and probe, its check's digest,
+    which covers the check's files, the probe's bytes and the env cell, and the
+    conftest.py files pytest loads for the check. Those judge only the checks
+    under them, so they sit here and not in the env key."""
     bug = bug_of(row)
     check = digest(bug.test, bug.probe, env=bug.env)
-    identity = "\0".join((bug.id, bug.test, bug.before, bug.fix, bug.probe, check))
+    identity = "\0".join((bug.id, bug.test, bug.before, bug.fix, bug.probe, check,
+                          _conftest_digest(bug.test)))
     return hashlib.sha256(identity.encode()).hexdigest()[:16]
 
 

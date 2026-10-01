@@ -818,6 +818,84 @@ def test_a_moved_env_key_replays_every_row_of_that_platform(tables, monkeypatch,
     assert sorted(tables.replayed) == ["R1", "R2"]
 
 
+PACKET_NODE = ("tests/accuracy/analysis_oracles/test_decode_matrix.py::"
+               "test_non_ascii_names_equal_under_cp1252_and_utf8")
+HARNESS_FILES = ("tools/accuracy/retro.py", "pyproject.toml", "tests/conftest.py",
+                 "tests/accuracy/conftest.py", "tests/accuracy/analysis_oracles/conftest.py",
+                 "docs/accuracy.md")
+
+
+@pytest.fixture
+def harness(tables, tmp_path, monkeypatch):
+    """A copy of the harness files under tmp_path, which retro reads as this tree,
+    and R1 (a suite_strength check) and R2 (an analysis_oracles one) judged once.
+    The check files and their digests stay this tree's."""
+    mirror = (tmp_path / "mirror").resolve()
+    for name in HARNESS_FILES:
+        (mirror / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO / name, mirror / name)
+    monkeypatch.setattr(retro, "REPO", mirror)
+    packet_ledger = {**_ledger_row("R2"), "test": PACKET_NODE, "digest": retro.digest(PACKET_NODE)}
+    tables.write([_bug_row("R1"), {**_bug_row("R2"), "test": PACKET_NODE}],
+                 [_ledger_row("R1"), packet_ledger])
+    assert retro.main(["nightly"]) == 0
+    assert sorted(tables.replayed) == ["R1", "R2"]
+    tables.replayed.clear()
+    return SimpleNamespace(mirror=mirror, replayed=tables.replayed)
+
+
+def _edit(path: Path, old: str, new: str) -> None:
+    text = path.read_bytes().decode()
+    assert old in text
+    path.write_bytes(text.replace(old, new, 1).encode())
+
+
+def _fixture_that_fails_every_check(mirror: Path) -> None:
+    _edit(mirror / "tests/accuracy/conftest.py", "\nimport pytest\n", "\nimport pytest\n\n\n"
+          "@pytest.fixture(autouse=True)\ndef _every_check_fails():\n"
+          "    raise AssertionError('the harness, not the check')\n")
+
+
+def _warnings_become_errors(mirror: Path) -> None:
+    _edit(mirror / "pyproject.toml", 'addopts = "-q', 'addopts = "-W error -q')
+
+
+def _any_failure_is_red(mirror: Path) -> None:
+    _edit(mirror / "tools/accuracy/retro.py", "    red = _red(failed)\n", "    red = failed\n")
+
+
+@pytest.mark.parametrize("move", [_fixture_that_fails_every_check, _warnings_become_errors,
+                                  _any_failure_is_red])
+def test_a_moved_harness_replays_every_row_it_judges(harness, move):
+    """retro.py (the plugin and the verdict rules), the conftest.py files pytest
+    loads for a check and pyproject.toml's pytest table judge every replay. Each of
+    these edits once left every kept verdict standing, so no nightly re-judged a
+    row under the harness that now judges it."""
+    move(harness.mirror)
+
+    assert retro.main(["nightly"]) == 0
+    assert sorted(harness.replayed) == ["R1", "R2"]
+
+
+def test_a_packet_s_conftest_replays_only_the_rows_whose_checks_it_loads(harness):
+    _edit(harness.mirror / "tests/accuracy/analysis_oracles/conftest.py", "\n", "\n# moved\n")
+
+    assert retro.main(["nightly"]) == 0
+    assert harness.replayed == ["R2"]
+
+
+@pytest.mark.parametrize("name, old, new", [
+    ("docs/accuracy.md", "\n", "\n\n"),
+    ("pyproject.toml", "faulthandler_timeout = 600", "faulthandler_timeout = 600  # a comment"),
+    ("pyproject.toml", 'requires-python = ">=3.11"', 'requires-python = ">=3.12"'),
+])
+def test_a_byte_outside_the_harness_replays_nothing(harness, name, old, new):
+    _edit(harness.mirror / name, old, new)
+
+    assert retro.main(["nightly"]) == 0
+    assert harness.replayed == []
+
+
 def test_a_push_tier_verdict_does_not_serve_a_release_lookup(tables, monkeypatch):
     """kit/settings.py sizes Hypothesis at 200 examples at push and 5,000 at release:
     a nightly verdict never answers for the release tier."""
@@ -905,7 +983,8 @@ def test_the_env_parts_are_every_input_a_verdict_depends_on_past_the_row(tables,
     assert retro.env_parts("3.12") == {
         "os": sys.platform, "image": "0a1b2c3d4e5f", "host": host, "lizard": retro.LIZARD,
         "runner": list(retro.RUNNER), "python": "3.12", "checks_python": platform.python_version(),
-        "git": "git version 1", "node": "node version 1", "pwsh": "pwsh version 1", "tier": "push"}
+        "git": "git version 1", "node": "node version 1", "pwsh": "pwsh version 1", "tier": "push",
+        "harness": retro.harness_parts()}
     monkeypatch.setenv("ImageOS", "win22")
     monkeypatch.setenv("ImageVersion", "20260928.1")
     assert retro.env_parts("3.12")["host"] == "win22 20260928.1"
