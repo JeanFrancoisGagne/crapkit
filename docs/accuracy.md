@@ -264,7 +264,8 @@ with its reason, and the stage leaves it out, as it leaves out the tests an open
 defect ruling names. CI still runs it on the tree.
 
 A run that mutmut ends before it judged its mutants proves nothing: a failed stats
-run, a crash, a signal (SIGHUP included). The command then writes no receipt,
+run, a crash, a signal (SIGHUP included). So does a serial rerun of the timeouts
+that mutmut ends that way. The command then writes no receipt,
 prints how mutmut ended and each in-process crapkit call the test kit logged as
 stuck past its bound, and exits 4. Only the `diff` run's cap stops mutmut short
 without a death, and that run reports `incomplete`. Exit 1 stays a check that

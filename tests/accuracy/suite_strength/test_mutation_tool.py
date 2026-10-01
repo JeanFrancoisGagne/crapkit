@@ -1777,6 +1777,23 @@ def test_a_run_a_hangup_ended_is_a_death_and_never_the_budget(tmp_path, monkeypa
         mutation.staged_run(Path("w"), {}, ["crapkit.score.*"], {}, 2, budget=budget)
 
 
+# The serial rerun of the unfinished mutants is a mutmut run like the first: it
+# once ended with exit 1 unread, and the command wrote its receipt.
+
+def test_a_serial_rerun_that_dies_raises_as_the_first_run_does(tmp_path, monkeypatch):
+    _fake_stage(tmp_path, monkeypatch)
+    codes, calls = iter([0, 1]), []
+    monkeypatch.setattr(mutation, "_run_mutmut", lambda repo, args, *rest, **kwargs: (
+        calls.append(args[:3]) or next(codes)))
+
+    with pytest.raises(mutation.RunDied) as died:
+        mutation.staged_run(Path("w"), {}, ["crapkit.score.*"], {}, 2)
+
+    assert calls == [["run", "--max-children", "2"], ["run", "--max-children", "1"]]
+    assert "serial rerun" in str(died.value)
+    assert "ended with exit 1 before it judged its mutants" in str(died.value)
+
+
 @pytest.mark.parametrize("argv", [["weekly", "--shard", "1", "--of", "1"], ["tools"],
                                   ["diff", "--base", "b" * 40]])
 def test_a_command_whose_run_died_writes_no_receipt_and_exits_4(tmp_path, monkeypatch, capsys,

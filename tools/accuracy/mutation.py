@@ -32,7 +32,8 @@ mutant's tests and named in the stage's stats-failures.txt, which the run prints
 and its receipt keeps under `stats_failures`.
 
 A run mutmut ends with anything but 0 (a failed stats run, a crash, a signal,
-SIGHUP included) judged nothing: the command writes no receipt, names how mutmut ended and each
+SIGHUP included) judged nothing, the serial rerun of the unfinished mutants
+included: the command writes no receipt, names how mutmut ended and each
 in-process call the test kit logged as stuck in the stage's in-process-hangs.log,
 and exits 4. mutmut runs its stats pass in its own process, so every run names
 that file to the kit (HANGS_ENV), and the kit then never ends the process on a
@@ -674,14 +675,21 @@ def _run_mutmut(repo: Path, args: list[str], budget: float | None, mutmut: tuple
         return None
 
 
-def died(repo: Path, code: int | None) -> str:
+def died(repo: Path, code: int | None, run: str = "mutmut's run") -> str:
     """Why mutmut's run in `repo` proves nothing, or "". mutmut ends a run it
     finished with 0, and None is the budget stopping it; any other end (a failed
     stats run, a crash, a signal) leaves its mutants unjudged."""
     if code is None or code == 0:
         return ""
-    return (f"mutmut's run in {repo} ended with {_ending(code)} before it judged its mutants, "
+    return (f"{run} in {repo} ended with {_ending(code)} before it judged its mutants, "
             f"so the run proves nothing and writes no receipt{_stuck_calls(repo)}")
+
+
+def _refuse_dead(repo: Path, code: int | None, run: str = "mutmut's run") -> None:
+    """RunDied when mutmut's `run` in `repo` ended before it judged its mutants."""
+    problem = died(repo, code, run)
+    if problem:
+        raise RunDied(problem)
 
 
 def _ending(code: int) -> str:
@@ -749,11 +757,13 @@ def collect(repo: Path, wanted: list[str] | None = None, mutmut: tuple = LAUNCH)
 
 def _rerun_timeouts(repo: Path, rows: list[Result], mutmut: tuple = LAUNCH,
                     env: dict | None = None) -> list[Result]:
-    """One serial rerun per unfinished mutant; what still does not finish keeps its status."""
+    """One serial rerun per unfinished mutant; what still does not finish keeps its
+    status. RunDied when mutmut ends the rerun as it may not end the first run."""
     names = [row.name for row in rows if row.status in UNFINISHED]
     if not names:
         return rows
-    _run_mutmut(repo, ["run", "--max-children", "1", *names], None, mutmut, env)
+    code = _run_mutmut(repo, ["run", "--max-children", "1", *names], None, mutmut, env)
+    _refuse_dead(repo, code, "mutmut's serial rerun of the unfinished mutants")
     return collect(repo, [row.name for row in rows], mutmut)
 
 
@@ -1178,9 +1188,7 @@ def staged_run(where: Path, targets: dict, globs: list[str], env: dict, children
     stage = _prepare_stage(targets, where, tuple(deselect))
     (stage / HANGS_FILE).unlink(missing_ok=True)
     code = _run_mutmut(stage, ["run", "--max-children", str(children), *globs], budget, env=env)
-    problem = died(stage, code)
-    if problem:
-        raise RunDied(problem)
+    _refuse_dead(stage, code)
     rows = collect(stage, globs)
     if code is None:
         return rows, False
