@@ -274,6 +274,27 @@ def test_the_tree_key_reads_the_side_the_workflow_names(tmp_path, capsys):
     assert capsys.readouterr().out == f"key={git(repo, 'rev-parse', 'HEAD^{tree}')}\n"
 
 
+UNFETCHED = "0" * 40  # github.event.before after a force push: a commit this clone never fetched
+
+
+def test_a_base_this_clone_cannot_resolve_gets_an_empty_key_and_its_measurement_says_why(tmp_path, capsys):
+    """The tree key step ran before the measure step and exited 1 on a base the
+    checkout never fetched, so the measure step skipped and wrote no
+    failure.json, and the verdict job died at download-artifact without the
+    phase and error the hand-off names. The key is now empty (a cache miss) and
+    the measure step records the failure."""
+    ci = driver()
+    repo, _ = repository(tmp_path)
+
+    assert ci.main(["--repo", str(repo), "--base", UNFETCHED, "--tree-key", "base"]) == 0
+    printed = capsys.readouterr()
+    assert printed.out == "key=\n" and UNFETCHED in printed.err
+    assert ci.main(["--repo", str(repo), "--base", UNFETCHED, "--measure", "base",
+                    "--measured", str(tmp_path / "measured")]) == 1
+    failure = json.loads((tmp_path / "measured" / "base" / "failure.json").read_text(encoding="utf-8"))
+    assert UNFETCHED in json.dumps(failure)
+
+
 def _rendered(text, side):
     return text.replace("${{ matrix.side }}", side)
 
@@ -298,3 +319,4 @@ def test_the_base_job_restores_the_cache_the_measure_step_reads_and_the_save_ste
     assert restore["with"]["restore-keys"] == "verdict-measure-${{ steps.tree.outputs.key }}-"
     assert save["with"]["key"].startswith("verdict-measure-${{ steps.tree.outputs.key }}-")
     assert names.index(restore["uses"]) < names.index(measure_step["name"]) < names.index(save["uses"])
+    assert measure_step.get("if") == "${{ !cancelled() }}", "a failed key step must not skip the hand-off"

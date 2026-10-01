@@ -167,6 +167,17 @@ def tree_key(repo: Path, ref: str) -> str:
     return _git(repo, "rev-parse", "--verify", "--end-of-options", ref + "^{tree}")
 
 
+def _printed_key(repo: Path, ref: str) -> str:
+    """The tree key, or "" when `ref` does not resolve here (after a force push
+    github.event.before names a commit the checkout never fetched): the cache
+    then misses and the measure step hands off failure.json naming the error."""
+    try:
+        return tree_key(repo, ref)
+    except subprocess.CalledProcessError:
+        print(f"no tree key: {ref} does not resolve in this clone", file=sys.stderr)
+        return ""
+
+
 def _requirement_name(line: str) -> str:
     return re.split(r"[\s=@<>!~;\[]", line, maxsplit=1)[0].lower().replace("_", "-")
 
@@ -536,7 +547,7 @@ def main(argv=None) -> int:
 def _dispatch(args: argparse.Namespace) -> int:
     repo = args.repo.resolve()
     if args.tree_key:
-        print("key=" + tree_key(repo, _side_ref(args.tree_key, args.base)))
+        print("key=" + _printed_key(repo, _side_ref(args.tree_key, args.base)))
         return 0
     if args.measure:
         cache = args.cache.resolve() if args.cache else None

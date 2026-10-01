@@ -182,7 +182,10 @@ jobs:
           path: .crapkit/measure-cache
           key: verdict-measure-${{ steps.tree.outputs.key }}
           restore-keys: verdict-measure-${{ steps.tree.outputs.key }}-
+      # A tree key step that failed must not skip the hand-off: the verdict job
+      # reads failure.json for the phase and the error.
       - name: measure one installed wheel
+        if: ${{ !cancelled() }}
         shell: bash
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
