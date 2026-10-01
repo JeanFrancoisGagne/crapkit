@@ -18,6 +18,7 @@ from cli_inproc_repo import (KNOTTY, add_knotty, commit_all, repo, seed_artifact
 from crapkit import mcp_server
 from crapkit.cli import main
 from crapkit.gitpaths import readable
+from name_bytes import NOT_UTF8_NAMES
 
 
 def _extra_schema(schema: dict):
@@ -115,6 +116,7 @@ def _check_gate_on(scored, name: str) -> dict:
     return mcp_server._call_tool(scored, "check_gate", {"path": name})
 
 
+@NOT_UTF8_NAMES
 def test_check_gates_verdict_on_a_name_that_is_not_utf8_declares_every_field(scored):
     """The verdict on a file a scope takes: a POSIX name holding byte e9, or
     on NTFS a lone surrogate."""
@@ -125,6 +127,7 @@ def test_check_gates_verdict_on_a_name_that_is_not_utf8_declares_every_field(sco
     assert undeclared(result["structuredContent"], _output_schema("check_gate")) == []
 
 
+@NOT_UTF8_NAMES
 def test_check_gates_verdict_on_a_name_that_is_not_utf8_carries_every_key_a_verdict_carries(scored):
     """The verdict held functions, schema and gate only, so a reader of
     baseline_run found no key on an isError false result, where every other
@@ -138,6 +141,7 @@ def test_check_gates_verdict_on_a_name_that_is_not_utf8_carries_every_key_a_verd
         plain["baseline_run"], plain["baseline_commit"], plain["note"])
 
 
+@NOT_UTF8_NAMES
 def test_check_gate_never_hands_a_name_that_is_not_utf8_to_the_cli(scored, monkeypatch):
     """A uv-built venv's launcher on Windows hands a lone surrogate on argv to the child as
     U+FFFD, so the child looked up src/caf\ufffd.ts, a file nobody named, and
@@ -172,6 +176,7 @@ def test_the_changelog_names_the_windows_python_that_read_the_name_as_ufffd():
 
 @pytest.mark.parametrize("name", ["docs/caf\udce9.md", "tools/caf\udce9.ts"],
                          ids=["no-scope-language", "outside-every-scope-path"])
+@NOT_UTF8_NAMES
 def test_check_gate_judges_a_name_no_scope_takes_as_any_unscoped_file(scored, name):
     """A name no scope takes is skipped, not refused. The server failed the
     gate on any existing name that is not UTF-8, scoped or not."""

@@ -14,6 +14,7 @@ import pytest
 from cli_inproc_repo import KNOTTY, add_knotty, commit_all, repo, seed_artifacts, template_repo  # noqa: F401
 
 from crapkit.cli import main
+from name_bytes import NOT_UTF8_NAMES
 
 GATES = pytest.mark.parametrize("gate", [[], ["--gate"]], ids=["rescore", "rescore-gate"])
 
@@ -39,6 +40,7 @@ def _rescore(repo, capsys, name: str, gate: list[str]) -> tuple[int, dict, str]:
 @GATES
 @pytest.mark.parametrize("name", ["docs/caf\udce9.md", "tools/caf\udce9.ts", "src/caf\udce9.txt"],
                          ids=["docs-md", "outside-every-scope-path", "no-scope-language"])
+@NOT_UTF8_NAMES
 def test_a_name_no_scope_takes_is_left_out_with_one_line(measured, capsys, name, gate):
     code, payload, err = _rescore(measured, capsys, name, gate)
 
@@ -52,6 +54,7 @@ def test_a_name_no_scope_takes_is_left_out_with_one_line(measured, capsys, name,
 
 
 @GATES
+@NOT_UTF8_NAMES
 def test_a_name_a_scope_takes_is_still_refused_with_the_rename(measured, capsys, gate):
     code, payload, err = _rescore(measured, capsys, "src/caf\udce9.ts", gate)
 
@@ -60,6 +63,7 @@ def test_a_name_a_scope_takes_is_still_refused_with_the_rename(measured, capsys,
     assert "rename it (git mv) to a UTF-8 name" in err
 
 
+@NOT_UTF8_NAMES
 def test_the_left_out_name_does_not_hide_a_readable_one_beside_it(measured, capsys):
     """The other arguments are still rescored."""
     (measured / "docs").mkdir()

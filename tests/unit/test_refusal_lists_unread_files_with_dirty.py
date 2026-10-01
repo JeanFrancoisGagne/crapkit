@@ -28,6 +28,7 @@ from cli_inproc_repo import (KNOTTY, add_knotty, commit_all, git, repo, seed_art
                              template_repo)
 
 from crapkit.cli import main
+from name_bytes import NOT_UTF8_NAMES
 
 REASON = ("its name is not UTF-8, and crapkit reads every path as UTF-8: "
           "rename it (git mv) to a UTF-8 name")
@@ -75,6 +76,7 @@ ARGUMENT_COMMANDS = [
 
 
 @pytest.mark.parametrize("argv", ARGUMENT_COMMANDS)
+@NOT_UTF8_NAMES
 def test_an_untracked_file_argument_is_listed_dirty(measured, capsys, argv):
     (measured / NAME).write_text(KNOTTY, encoding="utf-8")
 
@@ -87,6 +89,7 @@ def test_an_untracked_file_argument_is_listed_dirty(measured, capsys, argv):
 
 @POSIX_NAME
 @pytest.mark.parametrize("argv", ARGUMENT_COMMANDS)
+@NOT_UTF8_NAMES
 def test_a_committed_file_argument_git_holds_as_is_is_listed_clean(measured, capsys, argv):
     (measured / NAME).write_text(KNOTTY, encoding="utf-8")
     commit_all(measured, "a Latin-1 name")
@@ -98,6 +101,7 @@ def test_a_committed_file_argument_git_holds_as_is_is_listed_clean(measured, cap
 
 
 @POSIX_NAME
+@NOT_UTF8_NAMES
 def test_a_committed_file_argument_edited_since_is_listed_dirty(measured, capsys):
     (measured / NAME).write_text(KNOTTY, encoding="utf-8")
     commit_all(measured, "a Latin-1 name")
@@ -139,6 +143,7 @@ def _listed(error: dict) -> list[tuple[str, bool]]:
 
 
 @pytest.mark.parametrize("argv", SCAN_COMMANDS)
+@NOT_UTF8_NAMES
 def test_a_staged_name_a_scope_takes_is_listed_dirty(measured, capsys, argv):
     _index(measured, LATIN1)
 
@@ -149,6 +154,7 @@ def test_a_staged_name_a_scope_takes_is_listed_dirty(measured, capsys, argv):
 
 
 @pytest.mark.parametrize("argv", SCAN_COMMANDS)
+@NOT_UTF8_NAMES
 def test_a_committed_name_the_working_tree_lacks_is_listed_dirty(measured, capsys, argv):
     """What every Git for Windows clone of such a commit holds: the index
     names the file, the checkout could not, so git reads it deleted."""
@@ -165,6 +171,7 @@ def test_a_committed_name_the_working_tree_lacks_is_listed_dirty(measured, capsy
 
 @POSIX_NAME
 @pytest.mark.parametrize("argv", SCAN_COMMANDS)
+@NOT_UTF8_NAMES
 def test_a_committed_name_git_holds_as_is_is_listed_clean(measured, capsys, argv):
     _index(measured, LATIN1)
     commit_all(measured, "two Latin-1 names")
@@ -183,6 +190,7 @@ def test_a_tree_git_cannot_list_reads_every_name_untracked(tmp_path):
     assert _uncommitted(tmp_path, [NAME]) == frozenset({NAME})
 
 
+@NOT_UTF8_NAMES
 def test_the_error_object_and_the_gate_verdict_share_one_item_shape(measured, capsys):
     """The gate verdict lists a changed unread file; the refusal lists a name
     it cannot read. One reader parses both."""
@@ -203,6 +211,7 @@ def test_the_error_object_and_the_gate_verdict_share_one_item_shape(measured, ca
 # --- an MCP tool handed such a path --------------------------------------------
 
 @pytest.mark.parametrize("tool", ["get_function_brief", "get_function_history"])
+@NOT_UTF8_NAMES
 def test_an_mcp_tool_handed_such_a_path_answers_the_clis_refusal(measured, tool):
     """On Windows the child the server started read the name off argv as
     U+FFFD and answered `no function named 'knotty' in src/caf\\ufffd.ts` at

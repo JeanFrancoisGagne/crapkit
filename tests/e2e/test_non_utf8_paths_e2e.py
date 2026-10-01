@@ -30,6 +30,7 @@ import pytest
 
 from conftest import cli_runner
 from hang_guard import HANG_SECONDS
+from name_bytes import NOT_UTF8_NAMES
 
 run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
@@ -243,6 +244,7 @@ RENAME_ROWS = [
 
 @POSIX_NAME
 @pytest.mark.parametrize(("name", "command"), RENAME_ROWS)
+@NOT_UTF8_NAMES
 def test_a_command_handed_a_name_that_is_not_utf8_names_the_rename(tmp_path, name, command):
     """A Linux shell hands the name over as its own bytes. rescore answered
     'src/caf\ufffd.py does not exist', a file nobody named, where the file does
@@ -260,6 +262,7 @@ def test_a_command_handed_a_name_that_is_not_utf8_names_the_rename(tmp_path, nam
 
 @POSIX_NAME
 @pytest.mark.parametrize("command", [("rescore",), ("rescore", "--gate")], ids=["rescore", "rescore-gate"])
+@NOT_UTF8_NAMES
 def test_rescore_leaves_out_a_name_no_scope_takes_with_one_line(tmp_path, command):
     """hook-precommit leaves such a staged file out, and rescore --gate
     refused the same file at exit 3."""
@@ -290,6 +293,7 @@ def _measured_with_an_unreadable_file(tmp_path: Path) -> Path:
     return repo
 
 
+@NOT_UTF8_NAMES
 def test_the_gates_error_object_lists_the_name_in_unread_files(tmp_path):
     """rescore --gate still exits 3 with its one stderr line; --json adds the
     name, the reason and `dirty` as `unread_files`, the shape a gate verdict
@@ -316,6 +320,7 @@ def _check_gate_reply(repo: Path, path: str) -> dict:
     return json.loads(result.stdout.splitlines()[-1])["result"]
 
 
+@NOT_UTF8_NAMES
 def test_check_gate_answers_such_a_name_with_a_failed_verdict(tmp_path):
     """check_gate answered isError true with the exit-3 error object: no
     verdict, no finding. Under a uv-built venv on Windows it answered `src/caf\ufffd.py does not
@@ -335,6 +340,7 @@ def test_check_gate_answers_such_a_name_with_a_failed_verdict(tmp_path):
 
 @pytest.mark.parametrize("name", ["docs/caf\udce9.md", "tools/caf\udce9.py", "src/caf\udce9.txt"],
                          ids=["docs-md", "outside-scope-path-py", "no-scope-language"])
+@NOT_UTF8_NAMES
 def test_check_gate_judges_a_name_no_scope_takes_as_any_unscoped_file(tmp_path, name):
     """A name no scope takes is skipped. check_gate failed the gate on it."""
     repo = _repo(tmp_path)
@@ -350,6 +356,7 @@ def test_check_gate_judges_a_name_no_scope_takes_as_any_unscoped_file(tmp_path, 
 
 
 @pytest.mark.parametrize("command", ["inventory", "coverage", "verify"])
+@NOT_UTF8_NAMES
 def test_a_refused_scoped_name_is_listed_in_the_error_objects_unread_files(tmp_path, command):
     """The scan's refusal names the first file on stderr and counts the rest;
     --json lists each one. Committed as they are on POSIX, both are clean; Git
@@ -483,6 +490,7 @@ def test_an_untracked_name_is_neither_left_out_nor_refused(tmp_path, name, comma
 
 
 @POSIX_NAME
+@NOT_UTF8_NAMES
 def test_an_untracked_name_reruns_a_whole_tree_lane_and_the_reason_names_it(tmp_path):
     """The whole-tree proof read the tree as clean and reused the lane."""
     repo = _repo(tmp_path, WHOLE_TREE_LANE_CONFIG)
@@ -507,7 +515,8 @@ def _committed_input(repo: Path, name: bytes) -> None:
 # Where a lane's input comes from: untracked on disk (POSIX), or committed since
 # the lane's stamp (every OS, through the index), each beside its controls.
 INPUT_CHANGES = [
-    pytest.param(_untracked_input, b"src/caf\xe9.txt", id="untracked-latin1", marks=POSIX_NAME),
+    pytest.param(_untracked_input, b"src/caf\xe9.txt", id="untracked-latin1",
+                 marks=(POSIX_NAME, NOT_UTF8_NAMES)),
     pytest.param(_untracked_input, b"src/cafe.txt", id="untracked-ascii"),
     pytest.param(_untracked_input, "src/café.txt".encode(), id="untracked-utf8"),
     pytest.param(_committed_input, b"src/caf\xe9.txt", id="committed-latin1"),

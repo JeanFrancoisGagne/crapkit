@@ -31,6 +31,7 @@ from crapkit.gitio import (config_value, file_log, merge_base, worktree_add, wor
 from crapkit.marks_history import marks_history
 from crapkit.procs import own_processes, run_owned
 from crapkit.ratchet_report import mark_events, report_from_events
+from name_bytes import NOT_UTF8_NAMES
 
 LATIN1 = b"Ren\xe9"
 REPLACED = "Ren�"
@@ -364,6 +365,7 @@ def test_a_failing_git_that_echoes_bytes_that_are_not_utf8_raises_git_error(tmp_
 
 @pytest.mark.skipif(sys.platform == "win32",
                     reason="needs a POSIX directory name whose bytes are not UTF-8")
+@NOT_UTF8_NAMES
 def test_a_checkout_under_a_directory_named_in_latin1_finds_its_top(tmp_path):
     root = repository(tmp_path / os.fsdecode(b"caf\xe9") / "repo")
     commit(root)
@@ -402,6 +404,7 @@ def test_a_mutation_pool_tree_is_added_and_reset_at_any_head_subject(tmp_path, m
 
 @pytest.mark.skipif(sys.platform == "win32",
                     reason="needs a POSIX file name whose bytes are not UTF-8")
+@NOT_UTF8_NAMES
 def test_a_kept_pool_tree_cleans_a_leftover_named_in_latin1(tmp_path):
     """`clean -xdff` names each file it removes."""
     root = repository(tmp_path / "repo")

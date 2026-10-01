@@ -24,6 +24,7 @@ from crapkit.agent_fields import (ADDED, ERROR_OBJECT, FIELDS, MCP_TOOLS, PAYLOA
                                   AgentField, added_field)
 from crapkit.cli import main
 from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
+from name_bytes import NOT_UTF8_NAMES
 
 ROOT = Path(__file__).resolve().parents[2]
 MARKS = "crapkit-ratchet.tsv"
@@ -281,6 +282,7 @@ def payloads(repo, capsys, monkeypatch, tmp_path_factory) -> dict[str, list]:
     return out
 
 
+@NOT_UTF8_NAMES
 def test_every_declared_payload_is_printed_here(payloads):
     assert set(PAYLOADS) == set(payloads)
 
@@ -307,6 +309,7 @@ def _mistyped(name: str, samples: list) -> list[str]:
                    if key in declared and not json_type_ok(value, declared[key].types)})
 
 
+@NOT_UTF8_NAMES
 def test_every_key_a_payload_prints_is_declared(payloads):
     """doctor --json printed each lane's `refusal` and nothing declared it."""
     gaps = [gap for name, samples in payloads.items() for gap in _undeclared(name, samples)]
@@ -314,6 +317,7 @@ def test_every_key_a_payload_prints_is_declared(payloads):
     assert gaps == []
 
 
+@NOT_UTF8_NAMES
 def test_every_printed_value_carries_a_declared_type_and_null_only_where_declared(payloads):
     wrong = [bad for name, samples in payloads.items() for bad in _mistyped(name, samples)]
 
@@ -346,6 +350,7 @@ def test_each_added_field_is_the_declaration_its_payload_carries():
     assert [f for f in ADDED if declared.get((f.payload, f.key)) != f] == []
 
 
+@NOT_UTF8_NAMES
 def test_each_added_field_is_printed(payloads):
     missing = [f"{f.payload} {f.key}" for f in ADDED
                if not [v for payload in payloads[f.payload] for v in values_at(payload, f.key)]]
@@ -353,6 +358,7 @@ def test_each_added_field_is_printed(payloads):
     assert missing == []
 
 
+@NOT_UTF8_NAMES
 def test_doctors_lane_refusal_is_declared_as_a_sentence_or_null(payloads):
     """0.8.1 gives each doctor --json lane a `refusal`; the declaration left it
     out, so no check caught a type or a null the key does not allow."""
@@ -362,6 +368,7 @@ def test_doctors_lane_refusal_is_declared_as_a_sentence_or_null(payloads):
     assert _null_forms(payloads, field) == {True, False}
 
 
+@NOT_UTF8_NAMES
 def test_the_nullable_fields_print_both_forms(payloads):
     """The verify trio holds no marks, the marks file on the tree, then none:
     each nullable field shows its value once and its null once."""
@@ -377,6 +384,7 @@ def _null_forms(payloads: dict, field: AgentField) -> set[bool]:
             for value in values_at(payload, field.key)}
 
 
+@NOT_UTF8_NAMES
 def test_the_unread_finding_has_one_shape_in_every_payload(payloads):
     shapes = {f.payload: f.key for f in ADDED if f.key.endswith("unread_files")}
     keys = {payload: _entry_keys(payloads[payload][0], key) for payload, key in shapes.items()}

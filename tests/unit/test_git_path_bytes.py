@@ -26,6 +26,7 @@ from crapkit.errors import ConfigError
 from crapkit.gitio import diff_names_since, index_modes, ls_files, renamed_paths, status_names, untracked_files
 from crapkit.lane_changes import ChangeReads, visible_paths
 from crapkit.universe import assign_files, left_out_lines, scan_files
+from name_bytes import NOT_UTF8_NAMES
 
 NOTE = "crapkit: left out src/caf\\xe9.py: git names it in bytes that are not UTF-8"
 REFUSAL = "is in scope 'src', but git names it in bytes that are not UTF-8"
@@ -237,6 +238,7 @@ def _repo(tmp_path, name: bytes):
 
 @pytest.mark.parametrize("name", [row[1] for row in CLAIMED + UNCLAIMED],
                          ids=[row[0] for row in CLAIMED + UNCLAIMED])
+@NOT_UTF8_NAMES
 def test_every_git_file_list_names_a_name_that_is_not_utf8_as_its_bytes(tmp_path, name, capsys):
     """The listings hand the name on for the reader to judge; only the hook
     mode read, which git answers by ASCII hook names, keeps it out."""
@@ -257,6 +259,7 @@ def test_a_valid_non_ascii_name_is_listed_as_git_spells_it(tmp_path, name):
     assert diff_names_since(root, base) == [name]
 
 
+@NOT_UTF8_NAMES
 def test_a_rename_away_from_a_name_that_is_not_utf8_pairs_with_nothing(tmp_path):
     root, _ = _repo(tmp_path, b"src/caf\xe9.py")
     before = commit(root, files={b"crapkit.toml": CONFIG, b"src/app.py": SOURCE, b"src/caf\xe9.py": SOURCE})
@@ -268,6 +271,7 @@ def test_a_rename_away_from_a_name_that_is_not_utf8_pairs_with_nothing(tmp_path)
 
 @pytest.mark.skipif(sys.platform == "win32",
                     reason="needs a POSIX file system that stores a name whose bytes are not UTF-8")
+@NOT_UTF8_NAMES
 def test_an_untracked_file_named_in_latin1_is_a_change_in_every_status_read(tmp_path):
     """Lane reuse reads these: an untracked Latin-1 file under a lane's inputs
     is a change, as an untracked UTF-8 one is."""
@@ -286,6 +290,7 @@ def test_an_untracked_file_named_in_latin1_is_a_change_in_every_status_read(tmp_
 
 @pytest.mark.parametrize("name", [row[1] for row in CLAIMED], ids=[row[0] for row in CLAIMED])
 @pytest.mark.parametrize("command", [["inventory"], ["doctor"]], ids=["inventory", "doctor"])
+@NOT_UTF8_NAMES
 def test_a_command_refuses_a_name_a_scope_takes(tmp_path, name, command, capsys):
     root, _ = _repo(tmp_path, name)
 
@@ -299,6 +304,7 @@ def test_a_command_refuses_a_name_a_scope_takes(tmp_path, name, command, capsys)
 
 @pytest.mark.parametrize("name", [row[1] for row in UNCLAIMED], ids=[row[0] for row in UNCLAIMED])
 @pytest.mark.parametrize("command", [["inventory"], ["doctor"]], ids=["inventory", "doctor"])
+@NOT_UTF8_NAMES
 def test_a_command_names_the_file_it_leaves_out_and_goes_on(tmp_path, name, command, capsys):
     root, _ = _repo(tmp_path, name)
 
@@ -309,6 +315,7 @@ def test_a_command_names_the_file_it_leaves_out_and_goes_on(tmp_path, name, comm
     assert err.count("crapkit: left out ") == 1 and REFUSAL not in err and "Traceback" not in err
 
 
+@NOT_UTF8_NAMES
 def test_init_names_the_file_it_leaves_out_and_the_next_command_refuses_it(tmp_path, capsys):
     """No scope exists before init writes one, so init warns and writes the
     config; the first command that assigns files under it refuses."""

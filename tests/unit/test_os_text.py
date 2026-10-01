@@ -25,6 +25,7 @@ from crapkit.override import record_override
 from crapkit.ratchet import metric_version
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation
+from name_bytes import NOT_UTF8_NAMES
 
 # A POSIX byte comes back as that one byte; on Windows the same surrogate is
 # three bytes of broken UTF-16, each read as U+FFFD.
@@ -50,7 +51,8 @@ NOT_UTF8 = "caf\udce9"
 DIRECTORIES = [("dir-not-utf8", NOT_UTF8), ("dir-valid-accent", "café"), ("dir-cjk-emoji", "渡辺\U0001f680")]
 
 
-@pytest.mark.parametrize("directory", [row[1] for row in DIRECTORIES], ids=[row[0] for row in DIRECTORIES])
+@pytest.mark.parametrize("directory", [pytest.param(value, id=row_id, marks=NOT_UTF8_NAMES if value == NOT_UTF8 else ())
+                                       for row_id, value in DIRECTORIES])
 @pytest.mark.parametrize("form", ["absolute", "from-below-the-root"])
 def test_an_argument_under_a_directory_named_in_any_bytes_is_placed_in_the_repo(tmp_path, directory, form):
     """The path resolves as the OS spelled it, and only the root-relative
@@ -67,6 +69,7 @@ def test_an_argument_under_a_directory_named_in_any_bytes_is_placed_in_the_repo(
 
 
 @pytest.mark.parametrize("form", ["root-relative", "absolute"])
+@NOT_UTF8_NAMES
 def test_an_argument_naming_a_file_whose_name_is_not_utf8_is_refused_with_the_rename(tmp_path, form):
     """A file that exists under such a name can be keyed by nothing, so the
     answer is the rename, not a lookup of a name with U+FFFD in it."""

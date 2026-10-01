@@ -14,6 +14,7 @@ from crapkit.errors import GitError
 from crapkit.mutate import file_mutants
 from crapkit.mutate_pool import MutantVerdict, drop_pool, run_mutants
 from hang_guard import HANG_SECONDS
+from name_bytes import NOT_UTF8_NAMES
 
 
 def git(root, *args):
@@ -86,6 +87,7 @@ def test_the_index_blob_reader_keys_each_name_as_the_mode_reader_does(repository
 @pytest.mark.skipif(os.name == "nt", reason="needs a file name that is not UTF-8, which only a "
                     "POSIX filesystem holds; runs on the ubuntu CI jobs")
 @pytest.mark.parametrize("nested", [False, True])
+@NOT_UTF8_NAMES
 def test_a_name_that_is_not_utf8_is_hashed_by_its_own_bytes(repository, nested):
     """A name that is not UTF-8 reaches the content record in its surrogateescape
     spelling once git's records decode that way. The hash-object request encoded

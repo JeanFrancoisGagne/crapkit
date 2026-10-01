@@ -26,6 +26,7 @@ import pytest
 from conftest import cli_runner
 from foreign_bytes import (APP, INITIALIZE, LINUX, answered, commit, git, mcp_session, repository,
                            rpc, scored_repo, tool_text)
+from name_bytes import NOT_UTF8_NAMES
 
 run_cli = cli_runner(encoding="utf-8", errors="replace")
 
@@ -52,16 +53,19 @@ def _json(res) -> dict:
 # path as stored. Every row commits src/app.py twice, once as `base` and once
 # with the row's bytes, then reads the window through each command.
 
-def _churn_row(row_id, *, config=None, commits=(), base_files=None, base_age=0, churn=(2, 2), mcp=False):
-    return pytest.param(config or {}, list(commits), base_files or {}, base_age, churn, mcp, id=row_id)
+def _churn_row(row_id, *, config=None, commits=(), base_files=None, base_age=0, churn=(2, 2), mcp=False,
+               marks=()):
+    return pytest.param(config or {}, list(commits), base_files or {}, base_age, churn, mcp, id=row_id,
+                        marks=marks)
 
 
 CHURN_ROWS = [
     _churn_row("author-invalid-utf8", commits=[dict(author=b"Ren\xe9")], mcp=True),
     _churn_row("author-cp1252-smart-quote", commits=[dict(author=b"O\x92Brien")]),
     _churn_row("path-invalid-utf8-deleted", base_files={b"src/caf\xe9.py": APP},
-               commits=[dict(author=b"Ren", deletes=(b"src/caf\xe9.py",))]),
-    _churn_row("tracked-unscored-invalid-path", commits=[dict(author=b"Ren", files={b"docs/caf\xe9.txt": b"x\n"})]),
+               commits=[dict(author=b"Ren", deletes=(b"src/caf\xe9.py",))], marks=NOT_UTF8_NAMES),
+    _churn_row("tracked-unscored-invalid-path", commits=[dict(author=b"Ren", files={b"docs/caf\xe9.txt": b"x\n"})],
+               marks=NOT_UTF8_NAMES),
     # A name stored as UTF-8 that git re-encoded on the way out: two names
     # that differ only where Latin-1 or GBK re-encodes them. Read as U+FFFD
     # they collapse into one author; pinned to UTF-8 they stay two.
@@ -124,6 +128,7 @@ def test_every_churn_reader_reads_the_window_whatever_bytes_it_holds(
         assert json.loads(tool_text(replies[2]))["active"] == read["worklist"]["active"]
 
 
+@NOT_UTF8_NAMES
 def test_a_tracked_name_that_is_not_utf8_is_left_out_of_the_window_and_named(tmp_path):
     repo = _churn_repo(tmp_path / "repo", {}, [dict(author=b"Ren", files={b"docs/caf\xe9.txt": b"x\n"})], {}, 0)
     # A process names each such file once, so this run gets a process of its own.

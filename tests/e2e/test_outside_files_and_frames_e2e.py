@@ -26,6 +26,7 @@ import pytest
 from conftest import cli_runner
 from foreign_bytes import (APP, INITIALIZE, LANE_SCRIPT, SCAFFOLD, TOML, answered, clean, commit, git,
                            mcp_session, repository, rpc, run_bytes, scored_repo, shown, tool_text)
+from name_bytes import NOT_UTF8_NAMES
 
 run_cli = cli_runner(encoding="utf-8", errors="replace")
 ROOT = Path(__file__).resolve().parents[2]
@@ -261,11 +262,11 @@ def _diff_argv(base: str) -> list[str]:
 
 
 PR_ROWS = [
-    pytest.param(b"src/caf\xe9.py", False, id="changed-path-invalid-utf8"),
-    pytest.param(b"docs/caf\xe9.txt", False, id="changed-unscored-path-invalid-utf8"),
-    pytest.param(b"docs/r\xe9sum\xe9.md", False, id="changed-path-latin1-resume"),
-    pytest.param(b"src/o\x92brien.py", False, id="changed-path-cp1252-smart-quote"),
-    pytest.param(b"src/caf\xe9.py", True, id="deleted-in-pr-path-invalid-utf8"),
+    pytest.param(b"src/caf\xe9.py", False, id="changed-path-invalid-utf8", marks=NOT_UTF8_NAMES),
+    pytest.param(b"docs/caf\xe9.txt", False, id="changed-unscored-path-invalid-utf8", marks=NOT_UTF8_NAMES),
+    pytest.param(b"docs/r\xe9sum\xe9.md", False, id="changed-path-latin1-resume", marks=NOT_UTF8_NAMES),
+    pytest.param(b"src/o\x92brien.py", False, id="changed-path-cp1252-smart-quote", marks=NOT_UTF8_NAMES),
+    pytest.param(b"src/caf\xe9.py", True, id="deleted-in-pr-path-invalid-utf8", marks=NOT_UTF8_NAMES),
     pytest.param("src/café.py".encode(), False, id="changed-path-valid-accent"),
     pytest.param("docs/café 李.txt".encode(), False, id="changed-path-valid-accent-cjk-space"),
     pytest.param("src/日本\U0001f680.py".encode(), False, id="changed-path-cjk-emoji"),
@@ -383,8 +384,8 @@ def _payload(repo: Path, rel: str, *, ensure_ascii: bool = False, codec: str = "
     return json.dumps(body, ensure_ascii=ensure_ascii).encode(codec).replace(b"OLD", b"OLD" + extra)
 
 
-def _hook_row(row_id, leaf, *, body=BREACH, env=None, legacy_name=False, **payload):
-    return pytest.param(leaf, body, env or {}, legacy_name, payload, id=row_id)
+def _hook_row(row_id, leaf, *, body=BREACH, env=None, legacy_name=False, marks=(), **payload):
+    return pytest.param(leaf, body, env or {}, legacy_name, payload, id=row_id, marks=marks)
 
 
 HOOK_ROWS = [
@@ -395,7 +396,8 @@ HOOK_ROWS = [
     _hook_row("edited-file-cp1252-body", "big.py", body=BREACH + b"# caf\xe9\n"),
     _hook_row("non-ascii-name-under-pythonioencoding-cp1252", "café.py", env={"PYTHONIOENCODING": "cp1252"}),
     _hook_row("payload-old-string-holds-0xff", "big.py", extra=b"\xff"),
-    _hook_row("repo-holds-a-committed-name-that-is-not-utf8", "big.py", legacy_name=True),
+    _hook_row("repo-holds-a-committed-name-that-is-not-utf8", "big.py", legacy_name=True,
+              marks=NOT_UTF8_NAMES),
 ]
 
 

@@ -10,6 +10,7 @@ import venv
 import pytest
 
 import git_env
+import name_bytes  # noqa: F401  # under CRAPKIT_TEST_REFUSE_BYTE_NAMES=1, refuses names as APFS does
 
 # Run from a hook or `git bisect run`, the suite inherits the variables that
 # point git at the repo running it; each test's git works in its own repo.

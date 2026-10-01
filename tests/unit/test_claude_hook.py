@@ -23,6 +23,7 @@ from crapkit.cli.claude_hook import (_advise, _advisory_lines, _breaches, _comma
                                      _judgeable, _marks_for, _measured, _repo_root,
                                      _sequencing, _status_records, cmd_claude_hook)
 from crapkit.merge import FunctionRecord
+from name_bytes import NOT_UTF8_NAMES
 
 EVENT = {"hook_event_name": "PostToolUse", "tool_name": "Edit",
          "tool_input": {"file_path": "/repo/calc/grade.py"}}
@@ -747,9 +748,9 @@ UNREAD = ("crapkit advisory: calc/caf\\xe9.py is in scope 'calc', but git names 
 RENAME = "the commit gate refuses such a file (exit 3); rename it to a UTF-8 name"
 BASH_WRITTEN = [
     # id, the name as bytes, its source, the exit, a line stderr must hold ("" = silent)
-    pytest.param(b"calc/caf\xe9.py", BREACH, 2, UNREAD, marks=POSIX_NAMES, id="latin1-scoped-breach"),
-    pytest.param(b"calc/caf\xe9.py", CLEAN, 2, UNREAD, marks=POSIX_NAMES, id="latin1-scoped-clean"),
-    pytest.param(b"tools/caf\xe9.py", BREACH, 0, "", marks=POSIX_NAMES, id="latin1-unscoped"),
+    pytest.param(b"calc/caf\xe9.py", BREACH, 2, UNREAD, marks=(POSIX_NAMES, NOT_UTF8_NAMES), id="latin1-scoped-breach"),
+    pytest.param(b"calc/caf\xe9.py", CLEAN, 2, UNREAD, marks=(POSIX_NAMES, NOT_UTF8_NAMES), id="latin1-scoped-clean"),
+    pytest.param(b"tools/caf\xe9.py", BREACH, 0, "", marks=(POSIX_NAMES, NOT_UTF8_NAMES), id="latin1-unscoped"),
     pytest.param("calc/café.py".encode(), BREACH, 2, "in calc/café.py (the edit landed", id="utf8-scoped-breach"),
     pytest.param("calc/李.py".encode(), CLEAN, 0, "", id="utf8-cjk-scoped-clean"),
     pytest.param(b"calc/plain.py", BREACH, 2, "in calc/plain.py (the edit landed", id="ascii-scoped-breach"),

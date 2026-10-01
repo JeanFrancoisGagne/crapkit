@@ -16,6 +16,7 @@ import pytest
 from crapkit.config import Lane
 from crapkit.errors import ToolError
 from crapkit.lanes import run_lane
+from name_bytes import NOT_UTF8_NAMES
 
 PY = sys.executable
 POSIX_NAMES = pytest.mark.skipif(sys.platform == "win32",
@@ -38,6 +39,7 @@ def _shard(directory, host: str) -> None:
 
 
 @POSIX_NAMES
+@NOT_UTF8_NAMES
 def test_shards_under_a_latin1_directory_name_it_and_the_rename(tmp_path):
     _shard(tmp_path / os.fsdecode(b"caf\xe9"), "box")
 
@@ -48,6 +50,7 @@ def test_shards_under_a_latin1_directory_name_it_and_the_rename(tmp_path):
 
 
 @POSIX_NAMES
+@NOT_UTF8_NAMES
 def test_shards_named_for_a_latin1_host_name_the_host_and_the_rename(tmp_path):
     _shard(tmp_path / "pkg", os.fsdecode(b"h\xf4te"))
 
