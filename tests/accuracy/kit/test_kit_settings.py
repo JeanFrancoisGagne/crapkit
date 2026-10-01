@@ -24,12 +24,34 @@ def test_pure_sizes_per_tier(tier, examples, derandomized):
     ("release", 5),
 ])
 def test_process_has_no_deadline_and_fifteen_steps(tier, examples):
-    chosen = settings.profile("process", tier)
+    chosen = settings.profile("process", tier, "linux")
 
     assert chosen.max_examples == examples
     assert chosen.deadline is None
     assert HealthCheck.too_slow in chosen.suppress_health_check
     assert chosen.stateful_step_count == 15
+
+
+@pytest.mark.parametrize("platform, examples", [
+    ("linux", settings.PROCESS_NIGHTLY_EXAMPLES),
+    ("darwin", settings.PROCESS_NIGHTLY_EXAMPLES),
+    ("win32", settings.WINDOWS_PROCESS_NIGHTLY_EXAMPLES),
+])
+def test_a_nightly_process_test_runs_the_examples_sized_for_its_os(platform, examples):
+    """At 200 examples a Windows cell's process tests ran about five times as long
+    as Linux's, and the cell ran past its job bound before its tier ended."""
+    assert settings.profile("process", "nightly", platform).max_examples == examples
+    for tier in ("push", "release", "weekly"):
+        assert settings.profile("process", tier, platform).max_examples == 5
+    assert settings.profile("pure", "nightly", platform).max_examples == 20_000
+
+
+def test_the_windows_count_keeps_the_linux_wall_clock():
+    """The Windows count is the Linux one divided by the measured slowdown."""
+    slowdown = settings.WINDOWS_PROCESS_SECONDS / settings.LINUX_PROCESS_SECONDS
+
+    assert round(settings.PROCESS_NIGHTLY_EXAMPLES / slowdown, -1) == (
+        settings.WINDOWS_PROCESS_NIGHTLY_EXAMPLES)
 
 
 def test_only_a_random_run_keeps_an_example_database(monkeypatch, tmp_path):

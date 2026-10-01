@@ -11,7 +11,8 @@ Two kinds, chosen by what a test does, sized by the running tier:
 - `process` for a test that spawns git or the CLI per example: no deadline, the
   too_slow health check off, 15 steps per state-machine run. Push runs 5
   examples; nightly runs PROCESS_NIGHTLY_EXAMPLES, sized to about 10 minutes of
-  wall clock per test.
+  wall clock per test on a Linux runner, and WINDOWS_PROCESS_NIGHTLY_EXAMPLES
+  on Windows, where the same examples run about five times as long.
 
 A test decorates with `@pure` or `@process`. test_kit_contract refuses any
 other `settings(` call under tests/accuracy.
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import os
+import sys
 
 from hypothesis import HealthCheck, settings
 from hypothesis.database import DirectoryBasedExampleDatabase
@@ -28,9 +30,20 @@ from . import tiers
 
 DATABASE_ENV = "CRAPKIT_HYPOTHESIS_DB"
 # One tmp-repo step (git init, a commit, a coverage run over recorded
-# artifacts) takes about 2 to 3 s on a runner; 200 examples of up to 15 steps
-# land near 10 minutes.
+# artifacts) takes about 2 to 3 s on a Linux runner; 200 examples of up to 15
+# steps land near 10 minutes.
 PROCESS_NIGHTLY_EXAMPLES = 200
+# Windows starts each git and CLI process about five times slower. The ten
+# process tests other than the history machine ran 20 examples each (seed 1,
+# -n 4, one machine, 2026-10-01) in these seconds in all, so a Windows cell
+# runs 200 / 5.07, about 40, to stay near the same wall clock. At 200 the
+# Windows nightly cells ran past their 75-minute job bound with the tier at 97%
+# and 99%.
+LINUX_PROCESS_SECONDS = 110.3
+WINDOWS_PROCESS_SECONDS = 559.3
+WINDOWS_PROCESS_NIGHTLY_EXAMPLES = 40
+# The nightly process examples on each sys.platform that differs from the rest.
+_PROCESS_NIGHTLY_ON = {"win32": WINDOWS_PROCESS_NIGHTLY_EXAMPLES}
 # Near six times the longest pause seen (0.35 s), and far under a runaway example.
 PURE_DEADLINE = timedelta(seconds=2)
 
@@ -60,9 +73,15 @@ def _database(derandomize: bool):
     return DirectoryBasedExampleDatabase(os.environ.get(DATABASE_ENV, ".hypothesis/examples"))
 
 
-def profile(kind: str, tier: str) -> settings:
-    table = {"pure": _PURE, "process": _PROCESS}[kind]
-    values = dict(table[tier])
+def _sized(kind: str, tier: str, platform: str) -> dict:
+    values = dict({"pure": _PURE, "process": _PROCESS}[kind][tier])
+    if kind == "process" and tier == "nightly":
+        values["max_examples"] = _PROCESS_NIGHTLY_ON.get(platform, values["max_examples"])
+    return values
+
+
+def profile(kind: str, tier: str, platform: str = sys.platform) -> settings:
+    values = _sized(kind, tier, platform)
     values.update(_PROCESS_FIXED if kind == "process" else {"deadline": PURE_DEADLINE})
     return settings(database=_database(values["derandomize"]), **values)
 
