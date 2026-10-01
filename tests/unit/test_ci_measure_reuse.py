@@ -2,16 +2,18 @@
 
 A push's base is the commit the previous push measured as its candidate, so the
 base job measured the same tree twice: 16.4 machine-min per push for a result
-CI already held (gate audit 2026-10-01). The measurement is keyed by the blob of
-every tracked *.py file, src/**, pyproject.toml, crapkit.toml and the test
-fixture trees, the driver's own bytes, the Python and the measuring venv's pip
-freeze. On an equal key the base hands off the stored measurement and the
-runner does not run. A reused hand-off carries no suite result: the base's
-suite exit is the earlier tree's, and the join judges only the candidate's.
+CI already held (gate audit 2026-10-01). The measurement is keyed by the side's
+git tree id (every tracked path, mode and blob), the sha256 of ci.py and
+_ci_linux.py in the checkout that runs them, the Python and the measuring
+venv's pip freeze. On an equal key the base hands off the stored measurement
+and the runner does not run. A reused hand-off carries no suite result: the
+base's suite exit is the earlier tree's, and the join judges only the
+candidate's.
 """
 import json
 from pathlib import Path
 import shlex
+import shutil
 
 import pytest
 
@@ -100,34 +102,85 @@ def test_an_empty_commit_as_base_calls_the_runner_zero_times_and_judges_as_a_fre
     assert reuse_verdict["verdict"] == fresh_verdict["verdict"]
 
 
-@pytest.mark.parametrize(("change", "reruns"), [
-    ({"src/app.py": "def f(value):\n    return 7\n"}, True),
-    ({"crapkit.toml": None}, True),
-    ({"pyproject.toml": "[project]\nname = 'app'\n"}, True),
-    ({"tools/helper.py": "VALUE = 1\n"}, True),
-    ({"tests/fixtures/sample/data.txt": "one byte more\n"}, True),
-    ({"docs/x.md": "prose only\n"}, False),
-    ({"README.md": "prose only\n"}, False),
-    ({".github/workflows/ci.yml": "name: ci\n"}, False),
-], ids=["src", "crapkit.toml", "pyproject", "tools-py", "fixture", "docs", "readme", "workflow"])
-def test_a_keyed_byte_calls_the_runner_once_and_any_other_byte_calls_it_zero_times(
-        tmp_path, monkeypatch, change, reruns):
+def test_a_push_whose_parent_was_measured_as_its_candidate_calls_the_base_runner_zero_times(
+        tmp_path, monkeypatch):
+    ci = driver()
+    repo, _ = repository(tmp_path)
+    runs = Runs(ci, monkeypatch)
+    cache = tmp_path / "cache"
+    parent = git(repo, "rev-parse", "HEAD")
+    assert measure(ci, repo, "HEAD~1", "candidate", tmp_path / "push-1", cache) == 0
+    commit(repo, "the next push", changes={"src/app.py": "def f(value):\n    return 5\n"})
+
+    assert measure(ci, repo, parent, "base", tmp_path / "push-2", cache) == 0
+
+    assert runs.calls == ["candidate"]
+    assert proof(tmp_path / "push-2", "base")["commit"] == parent
+
+
+def _chmod(repo):
+    """The file's own mode as well, or `git add` on a POSIX checkout puts 644 back."""
+    (repo / "src/app.py").chmod(0o755)
+    git(repo, "update-index", "--chmod=+x", "src/app.py")
+
+
+def _rename(repo):
+    git(repo, "mv", "src/app.py", "src/moved.py")
+
+
+@pytest.mark.parametrize("change", [
+    {"src/app.py": "def f(value):\n    return 7\n"},
+    {"crapkit.toml": None},
+    {"pyproject.toml": "[project]\nname = 'app'\n"},
+    {"tools/helper.py": "VALUE = 1\n"},
+    {"tests/fixtures/sample/data.txt": "one byte more\n"},
+    {"docs/x.md": "prose only\n"},
+    {"README.md": "prose only\n"},
+    {".github/workflows/ci.yml": "name: ci\n"},
+    {"tests/goldens/claude_hook/case.json": "{}\n"},
+    {"plugin/hooks/hooks.json": "{}\n"},
+    {"crapkit-ratchet.tsv": "path\n"},
+    _chmod,
+    _rename,
+], ids=["src", "crapkit.toml", "pyproject", "tools-py", "fixture", "docs", "readme", "workflow",
+        "golden", "plugin", "ratchet", "mode", "path"])
+def test_any_tracked_byte_mode_or_path_calls_the_base_runner_once(tmp_path, monkeypatch, change):
     ci = driver()
     repo, _ = repository(tmp_path)
     runs = Runs(ci, monkeypatch)
     cache = tmp_path / "cache"
     assert measure(ci, repo, "HEAD~1", "candidate", tmp_path / "push-1", cache) == 0
-    texts = {name: text if text is not None else (repo / name).read_text(encoding="utf-8") + "\n"
-             for name, text in change.items()}
-    changed = commit(repo, "one changed file", changes=texts)
+    if callable(change):
+        change(repo)
+        changed = commit(repo, "one changed entry")
+    else:
+        texts = {name: text if text is not None else (repo / name).read_text(encoding="utf-8") + "\n"
+                 for name, text in change.items()}
+        changed = commit(repo, "one changed file", changes=texts)
 
     assert measure(ci, repo, changed, "base", tmp_path / "push-2", cache) == 0
 
-    assert runs.calls == ["candidate"] + ["base"] * reruns
-    assert (proof(tmp_path / "push-2", "base")["suite_exit"] is None) is not reruns
+    assert runs.calls == ["candidate", "base"]
+    assert proof(tmp_path / "push-2", "base")["suite_exit"] == 0
 
 
-@pytest.mark.parametrize("moved", ["packages", "driver", "python"])
+def test_the_driver_inputs_are_the_two_files_of_the_checkout_that_runs_them():
+    ci = driver()
+    here = Path(ci.__file__).parent
+
+    assert ci.DRIVER_FILES == (here / "ci.py", here / "_ci_linux.py")
+
+
+def _edited_driver(ci, tmp_path, monkeypatch, name):
+    copies = tmp_path / "driver"
+    copies.mkdir()
+    for source in ci.DRIVER_FILES:
+        shutil.copyfile(source, copies / source.name)
+    (copies / name).write_bytes((copies / name).read_bytes() + b"\n")
+    monkeypatch.setattr(ci, "DRIVER_FILES", tuple(copies / source.name for source in ci.DRIVER_FILES))
+
+
+@pytest.mark.parametrize("moved", ["packages", "ci.py", "_ci_linux.py", "python"])
 def test_a_different_freeze_driver_or_python_calls_the_runner_once(tmp_path, monkeypatch, moved):
     ci = driver()
     repo, _ = repository(tmp_path)
@@ -136,20 +189,17 @@ def test_a_different_freeze_driver_or_python_calls_the_runner_once(tmp_path, mon
     assert measure(ci, repo, "HEAD~1", "candidate", tmp_path / "push-1", cache) == 0
     if moved == "packages":
         runs.packages = ["coverage==7.13.2", "pytest==8.4.2"]
-    elif moved == "driver":
-        edited = tmp_path / "ci.py"
-        edited.write_bytes(ci.DRIVER.read_bytes() + b"\n")
-        monkeypatch.setattr(ci, "DRIVER", edited)
-    else:
+    elif moved == "python":
         monkeypatch.setattr(ci.sys, "version", ci.sys.version + " (another build)")
+    else:
+        _edited_driver(ci, tmp_path, monkeypatch, moved)
 
     assert measure(ci, repo, "HEAD", "base", tmp_path / "push-2", cache) == 0
 
     assert runs.calls == ["candidate", "base"]
     stored = json.loads((cache / "proof.json").read_text(encoding="utf-8"))
     assert stored["commit"] == git(repo, "rev-parse", "HEAD") and stored["suite_exit"] == 0
-    assert stored["inputs_key"] == proof(tmp_path / "push-2", "base")["inputs_key"], \
-        "the new measurement replaced the stored one"
+    assert stored["inputs_key"] == proof(tmp_path / "push-2", "base")["inputs_key"],         "the new measurement replaced the stored one"
 
 
 def test_the_candidate_always_measures_and_a_failing_suite_is_never_stored(tmp_path, monkeypatch):
@@ -219,8 +269,9 @@ def test_the_tree_key_reads_the_side_the_workflow_names(tmp_path, capsys):
     repo, base = repository(tmp_path)
 
     assert ci.main(["--repo", str(repo), "--base", base, "--tree-key", "base"]) == 0
-    assert capsys.readouterr().out == f"key={ci.tree_key(repo, base)}\n"
-    assert ci.tree_key(repo, base) != ci.tree_key(repo, "HEAD"), "src/app.py differs"
+    assert capsys.readouterr().out == f"key={git(repo, 'rev-parse', base + '^{tree}')}\n"
+    assert ci.main(["--repo", str(repo), "--base", base, "--tree-key", "candidate"]) == 0
+    assert capsys.readouterr().out == f"key={git(repo, 'rev-parse', 'HEAD^{tree}')}\n"
 
 
 def _rendered(text, side):

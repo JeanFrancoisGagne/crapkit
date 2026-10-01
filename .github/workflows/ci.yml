@@ -157,12 +157,14 @@ jobs:
       - run: python -m pip install build
       # A push's base is the commit the previous push measured as its candidate,
       # so the base job measured that tree again: 16.4 machine-min per push. A
-      # measurement is kept under its inputs: the blob of every tracked *.py,
-      # src/**, pyproject.toml, crapkit.toml and the test fixture trees (the
-      # tree key below), plus ci.py, the Python and the measuring venv's pip
-      # freeze, which ci.py compares once it has built the venv. The base hands
-      # off a kept measurement of equal inputs and runs no suite; the candidate
-      # always measures, since the join judges its suite exit.
+      # measurement is kept under its inputs: the side's git tree id (every
+      # tracked path, mode and blob; the tree key below), plus the sha256 of
+      # ci.py and _ci_linux.py in this checkout, the Python and the measuring
+      # venv's pip freeze, which ci.py compares once it has built the venv. The
+      # candidate stores its measurement under its own tree, the next push's
+      # base. The base hands off a kept measurement of equal inputs and runs no
+      # suite; the candidate always measures, since the join judges its suite
+      # exit.
       - name: the tree key of this side's measurement inputs
         id: tree
         shell: bash

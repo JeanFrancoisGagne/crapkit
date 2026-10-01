@@ -27,12 +27,8 @@ PROOF_FIELDS = ("wheel", "wheel_sha256", "commit", "suite_exit")
 # the error of a hand-off that arrives without its coverage report.
 MEASURE_JOB = "verdict-measure"
 # The driver's own bytes are a measurement input: they install, map and run it.
-DRIVER = Path(__file__)
-# Tracked files that decide a measurement, besides every *.py file: the package,
-# its build and crapkit's config, and what the suite reads from its fixture trees.
-KEYED_PREFIXES = ("src/",)
-KEYED_FILES = ("pyproject.toml", "crapkit.toml")
-FIXTURE_TREE = "/fixtures/"
+# Both files come from the checkout that runs the driver, never the measured one.
+DRIVER_FILES = (Path(__file__), Path(__file__).with_name("_ci_linux.py"))
 _OWNER = ContextVar("ci_command_owner", default=None)
 JUNIT_PROBE = (
     "from pathlib import Path\nimport json\n"
@@ -162,25 +158,13 @@ def _read_proof(measured: Path) -> dict:
     return proof
 
 
-def _keyed(path: str) -> bool:
-    """Whether a tracked file is a measurement input. Docs, CI text and other
-    data stay out: dogfood runs the tests that read them on every tree."""
-    if path.startswith("tests/") and FIXTURE_TREE in path:
-        return True
-    return path.endswith(".py") or path.startswith(KEYED_PREFIXES) or path in KEYED_FILES
-
-
 def tree_key(repo: Path, ref: str) -> str:
-    """sha256 over the mode, blob id and path of each keyed file `ref` tracks.
+    """The git tree id of `ref`: every tracked path, mode and blob.
 
-    One ls-tree and no file reads, so an empty commit keeps its parent's key
-    and a checkout's line endings cannot move it."""
-    listing = _git(repo, "ls-tree", "-r", "-z", "--full-tree", "--end-of-options", ref)
-    digest = hashlib.sha256()
-    for entry in filter(None, listing.split("\0")):
-        if _keyed(entry.split("\t", 1)[1]):
-            digest.update(entry.encode("utf-8", "surrogateescape") + b"\0")
-    return digest.hexdigest()
+    The suite reads goldens, plugin files, docs and CI text as well as code, so
+    the whole tree is the input. An empty commit keeps its parent's key, and a
+    checkout's line endings cannot move it."""
+    return _git(repo, "rev-parse", "--verify", "--end-of-options", ref + "^{tree}")
 
 
 def _requirement_name(line: str) -> str:
@@ -200,10 +184,10 @@ def _packages(python: Path, environment: dict) -> list[str]:
 
 
 def measurement_inputs(root: Path, python: Path, environment: dict) -> dict:
-    """What decides a measurement's coverage: the keyed tree, this driver, the
-    Python (the venv is made from this interpreter) and the venv's packages."""
-    return {"tree": tree_key(root, "HEAD"), "driver": _sha(DRIVER), "python": sys.version,
-            "packages": _packages(python, environment)}
+    """What decides a measurement's coverage: the tree, this driver's two files,
+    the Python (the venv is made from this interpreter) and the venv's packages."""
+    return {"tree": tree_key(root, "HEAD"), "driver": {path.name: _sha(path) for path in DRIVER_FILES},
+            "python": sys.version, "packages": _packages(python, environment)}
 
 
 def _inputs_key(inputs: dict) -> str:
@@ -533,7 +517,7 @@ def parse_arguments(argv=None) -> argparse.Namespace:
     split.add_argument("--join", action="store_true",
                        help="judge both hand-offs after proving each wheel again")
     split.add_argument("--tree-key", choices=SIDES,
-                       help="print key=<the tree part of one side's measurement inputs>, a cache key")
+                       help="print key=<the git tree id of one side>, the cache key of its measurement")
     parser.add_argument("--cache", type=Path,
                         help="with --measure: keep a passing measurement here, and on the base side "
                              "hand off the kept one when its inputs are equal")
