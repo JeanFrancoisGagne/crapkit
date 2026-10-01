@@ -33,7 +33,7 @@ def _agreeing_cli(monkeypatch):
     """The `crapkit` on PATH agrees with the plugin, so the only line left is
     the one about Claude Code."""
     PROBE.cache_clear()
-    monkeypatch.setattr(admin, "_spawned_cli", lambda: ("/usr/local/bin/crapkit", crapkit.__version__))
+    monkeypatch.setattr(admin, "_spawned_cli", lambda: ("/crapkit-test-absent/bin/crapkit", crapkit.__version__))
     yield
     PROBE.cache_clear()
 

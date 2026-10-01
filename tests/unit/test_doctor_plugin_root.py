@@ -30,7 +30,10 @@ from crapkit.doctor import plugin_handshake
 
 CLI = crapkit.__version__
 REPO_PLUGIN = Path(__file__).resolve().parent.parent.parent / "plugin"
-ON_PATH = "/usr/local/bin/crapkit"
+# A directory no machine has: doctor names the interpreter it finds beside the
+# launcher, and the macOS runner's /usr/local/bin holds Homebrew's python3, so
+# /usr/local/bin/crapkit printed `/usr/local/bin/python3 -m pip` there.
+ON_PATH = "/crapkit-test-absent/bin/crapkit"
 # The memoized original, held before the autouse stub replaces the name. Its
 # `__wrapped__` is the uncached function, which is what the two probe tests below
 # drive: they set a PATH of their own and a cached answer would ignore it.

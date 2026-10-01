@@ -307,7 +307,7 @@ def _agreeing_cli(monkeypatch):
     """The crapkit on PATH, stubbed to this CLI's version so the handshake
     answers from the plugin files alone."""
     admin._spawned_cli.cache_clear()
-    monkeypatch.setattr(admin, "_spawned_cli", lambda: ("/usr/local/bin/crapkit", crapkit.__version__))
+    monkeypatch.setattr(admin, "_spawned_cli", lambda: ("/crapkit-test-absent/bin/crapkit", crapkit.__version__))
 
 
 def _plugin(root: Path, version: str) -> Path:
