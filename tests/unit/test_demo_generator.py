@@ -129,7 +129,7 @@ def test_redaction_spells_the_module_run_as_the_console_script(tmp_path, monkeyp
 
 
 @pytest.mark.parametrize("interpreter", [
-    "C:/wt/app/.venv/Scripts/python.exe",
+    "C:/proj/app/.venv/Scripts/python.exe",
     'C:/"Program Files"/Python311/python.exe',
     "C:/Users/JOHNSM~1/app/.venv/Scripts/python.exe",
     "'/home/a b/.venv/bin/python'",

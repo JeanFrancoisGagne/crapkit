@@ -160,7 +160,7 @@ def shell_path(path: str) -> str:
 
     POSIX quoting for sh. On Windows one line has to serve cmd.exe, PowerShell
     and Git Bash, and the obvious spellings each lose one of them. Git Bash
-    reads a bare backslash as an escape, so `C:\wt\x` runs as `C:wtx`, exit
+    reads a bare backslash as an escape, so `C:\proj\x` runs as `C:projx`, exit
     127. PowerShell reads a double quote at the start of a line as a string, so
     `"C:\Program Files\...\python.exe" -m crapkit` stops at `-m`. Forward
     slashes open the file in all three, and a segment that needs quoting is

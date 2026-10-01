@@ -223,10 +223,10 @@ def posix(monkeypatch):
 
 def test_a_windows_path_is_spelled_with_forward_slashes(windows):
     r"""Git Bash reads each bare backslash as an escape, so the next step
-    `C:\wt\app\.venv\Scripts\python.exe -m crapkit coverage` ran as
-    `C:wtapp.venvScriptspython.exe` and exited 127. cmd.exe, PowerShell and Git
+    `C:\proj\app\.venv\Scripts\python.exe -m crapkit coverage` ran as
+    `C:projapp.venvScriptspython.exe` and exited 127. cmd.exe, PowerShell and Git
     Bash all open a path spelled with forward slashes."""
-    assert shell_path(r"C:\wt\app\.venv\Scripts\python.exe") == "C:/wt/app/.venv/Scripts/python.exe"
+    assert shell_path(r"C:\proj\app\.venv\Scripts\python.exe") == "C:/proj/app/.venv/Scripts/python.exe"
 
 
 def test_a_windows_segment_holding_a_space_is_quoted_alone(windows):
@@ -278,9 +278,9 @@ def test_a_posix_argument_is_quoted_the_way_sh_reads_it(posix):
 
 
 def test_a_windows_module_run_names_the_interpreter_with_forward_slashes(windows, monkeypatch):
-    monkeypatch.setattr(sys, "executable", r"C:\wt\app\.venv\Scripts\python.exe")
+    monkeypatch.setattr(sys, "executable", r"C:\proj\app\.venv\Scripts\python.exe")
 
-    assert invocation._module_form() == "C:/wt/app/.venv/Scripts/python.exe -m crapkit"
+    assert invocation._module_form() == "C:/proj/app/.venv/Scripts/python.exe -m crapkit"
 
 
 def test_a_posix_module_run_names_the_interpreter_bare(posix, monkeypatch):
