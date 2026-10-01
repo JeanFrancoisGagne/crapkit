@@ -75,6 +75,8 @@ before it only the in-tree rules do, since no change can be declared yet.
   rows names a rulings row this diff adds or changes, and each moved calc gains a
   hand or probe row with an outside source in the packet that owns the calc.
 - B9 a rulings row that changes needs a fresh fix or definition change naming its calc.
+  A reach row (suite_strength's test_calc_reach) needs a fresh change of any kind whose
+  reason names the row: code outside the calc moves the golden run's reach.
 - B10 the fresh changes' calcs equal the moved calcs: every moved cell's calc is
   declared, and nothing is declared that did not move. A calc no golden shows
   (the pre-commit gate, say) counts as moved when the diff touches its module.
@@ -1707,20 +1709,51 @@ def _ruling_recast(key: str, old: dict, new: dict) -> Problem:
                    f"{new.get('calc')}")
 
 
+def _ruling_what(old: dict, new: dict) -> str:
+    return (f"{old.get('ruling')} to {new.get('ruling')}, crapkit {old.get('crapkit_value')} to "
+            f"{new.get('crapkit_value')}")
+
+
 def _ruling_moved(diff: Diff, key: str, old: dict, new: dict) -> Problem:
     if old.get("calc") != new.get("calc"):
         return _ruling_recast(key, old, new)
-    what = (f"{old.get('ruling')} to {new.get('ruling')}, crapkit {old.get('crapkit_value')} to "
-            f"{new.get('crapkit_value')}")
     calc = new.get("calc", "")
-    return Problem("B9", f"rulings row {key} changed ({what}) with no fresh fix or definition "
-                         f"change naming {calc}",
+    return Problem("B9", f"rulings row {key} changed ({_ruling_what(old, new)}) with no fresh fix "
+                         f"or definition change naming {calc}",
                    declare_command(next_id(diff.head_changes), "fix", {calc}))
 
 
+# A reach row judges whether the golden run reaches its calc's functions, not the calc's
+# value. Code outside the calc moves it (0.8.1's doctor began running read_source), so a
+# change that names the row declares it, whatever its kind.
+REACH_TEST = "tests/accuracy/suite_strength/test_calc_reach.py::"
+
+
+def _reach_row(old: dict, new: dict) -> bool:
+    return old.get("calc") == new.get("calc") and new.get("test", "").startswith(REACH_TEST)
+
+
+def _names_row(diff: Diff, key: str) -> bool:
+    named = re.compile(rf"(?<![\w-]){re.escape(key)}(?![\w-])")
+    return any(named.search(row.get("reason", "")) for row in diff.fresh.values())
+
+
+def _reach_moved(diff: Diff, key: str, old: dict, new: dict) -> Problem:
+    return Problem("B9", f"reach row {key} changed ({_ruling_what(old, new)}) and no fresh change "
+                         f"names {key}",
+                   f"{declare_command(next_id(diff.head_changes), 'none', ())}, a reason that "
+                   f"names {key}")
+
+
+def _b9_problem(diff: Diff, key: str, old: dict, new: dict) -> Problem | None:
+    if _reach_row(old, new):
+        return None if _names_row(diff, key) else _reach_moved(diff, key, old, new)
+    return _ruling_moved(diff, key, old, new) if _uncovered(diff, old, new) else None
+
+
 def rule_b9(diff: Diff) -> list[Problem]:
-    return [_ruling_moved(diff, key, old, new)
-            for key, (old, new) in diff.changed_rulings().items() if _uncovered(diff, old, new)]
+    found = (_b9_problem(diff, key, old, new) for key, (old, new) in diff.changed_rulings().items())
+    return [problem for problem in found if problem]
 
 
 def _ruling_calcs(diff: Diff) -> set[str]:

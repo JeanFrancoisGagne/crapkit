@@ -132,6 +132,21 @@ def _defect_to_fixed_with_no_fix_change(tree, key="C3"):
     return seeds.relock(head, key, seeds.RULINGS)
 
 
+REACH_NODE = ("tests/accuracy/suite_strength/test_calc_reach.py::"
+              "test_each_calc_function_runs_on_the_golden_run_or_its_independent_test"
+              "[Cognitive complexity]")
+# R-D2 as a reach row: it judges whether the golden run reaches the calc, not the calc's value.
+BASE_REACH = seeds.relock(seeds.replace(BASE, seeds.RULINGS, f"{seeds.SEED_TEST}::test_cognitive",
+                                        REACH_NODE), "C2", seeds.RULINGS)
+
+
+def _defect_to_fixed_named(tree, key="C3"):
+    """R-D2 from defect to fixed under a kind-none change whose reason names the row."""
+    head = seeds.replace(tree, seeds.RULINGS, "\t2\t1\tdefect\t", "\t1\t1\tfixed\t")
+    head = seeds.change(head, key, "none", "", reason="R-D2 reads fixed: the golden run reaches it")
+    return seeds.relock(head, key, seeds.RULINGS)
+
+
 def _deleted_rulings_row(tree, key="C3"):
     line = next(line for line in tree[seeds.RULINGS].splitlines() if line.startswith("R-D5\t"))
     head = seeds.replace(tree, seeds.RULINGS, line + "\n", "")
@@ -180,6 +195,9 @@ FAILING = {
                                                  {"T2", "B10"}),
     "a fix row with no bugs row": (BASE, lambda tree: seeds.fixed_crap(tree, bug=False), {"B7"}),
     "defect to fixed with no fix row": (BASE, _defect_to_fixed_with_no_fix_change, {"B9"}),
+    "a calc row read fixed under a none change naming it": (BASE, _defect_to_fixed_named, {"B9"}),
+    "a reach row read fixed under a none change naming no row": (
+        BASE_REACH, _defect_to_fixed_with_no_fix_change, {"B9"}),
     "a moved calc not declared": (BASE_CCN8,
                                   lambda tree: seeds.fixed_ccn(tree, calcs="CRAP score"),
                                   {"B10"}),
@@ -211,6 +229,7 @@ CLEAN = {
         seeds.module_changed(seeds.fixed_ccn(tree)), "C4", "none", "",
         reason="a comment in score.py")),
     "a ruling fixed under a fix naming its calc": (BASE, _ruling_under_a_fix),
+    "a reach row read fixed under a none change naming it": (BASE_REACH, _defect_to_fixed_named),
 }
 
 
@@ -498,6 +517,14 @@ def _facts(name: str, head: dict) -> list[tuple]:
             "B9", "rulings row R-D2 changed (defect to fixed, crapkit 2 to 1) with no fresh fix "
                   "or definition change naming Cognitive complexity",
             f'{DECLARE} C4 --kind fix --calcs "Cognitive complexity" --reason "<why>"')],
+        "a calc row read fixed under a none change naming it": [(
+            "B9", "rulings row R-D2 changed (defect to fixed, crapkit 2 to 1) with no fresh fix "
+                  "or definition change naming Cognitive complexity",
+            f'{DECLARE} C4 --kind fix --calcs "Cognitive complexity" --reason "<why>"')],
+        "a reach row read fixed under a none change naming no row": [(
+            "B9", "reach row R-D2 changed (defect to fixed, crapkit 2 to 1) and no fresh change "
+                  "names R-D2",
+            f'{DECLARE} C4 --kind none --reason "<why>", a reason that names R-D2')],
         "a moved calc not declared": [(
             "B10", "moved calc not declared: Python reader: spans, names, inline_body, "
                    "unread-def net or ccn_std, ccn_mod and gated ccn",
