@@ -268,6 +268,8 @@ SWIFT_CLOSURES = [  # (label, source, start line, Sonar value)
     ("a trailing closure past a default", "func load(_ url: String, retries: Int = 0, done: () -> Void) {\n"
      "  load(url) { }\n}\n", 1, 1),
     ("a trailing closure where no parameter is left", "func each(_ n: Int) {\n  each(n - 1) { }\n}\n", 1, 0),
+    ("a trailing closure after a label took the last parameter",
+     "func f(a: Int = 0, b: Int) {\n  f(b: 1) { }\n}\n", 1, 0),
     ("a structure's block is no closure", "func valid(_ n: Int, _ strict: Bool) -> Bool {\n"
      "  if valid(n - 1) {\n    return true\n  }\n  return false\n}\n", 1, 1),
     ("a closure type's own parameters", "class R {\n"

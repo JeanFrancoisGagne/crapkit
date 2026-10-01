@@ -91,10 +91,11 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # landed, 3,661 once the program merged into the 0.8.1 release tree, 3,668 once
 # the gate named the ceiling it judged, an override with no alert command was
 # refused first, and a deleted marks file read as the marks its history held,
-# 3,673 once the report read which marks a revision held off its own blob.
+# 3,673 once the report read which marks a revision held off its own blob,
+# and 3,672 once lane_stamps dropped unreadable_stamps, which nothing called.
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3673
+SRC_DEFS = 3672
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

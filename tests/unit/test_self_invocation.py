@@ -183,6 +183,20 @@ def test_a_uvx_run_names_uvx(as_uvx):
     assert _self() == "uvx crapkit"
 
 
+def test_a_uvx_run_looks_a_tool_up_on_the_path_its_reader_has(tmp_path, monkeypatch):
+    """uvx puts its cached bin first on this process's PATH alone, so a lookup
+    reads PATH without it: the reader's shell and the plugin's hooks never see
+    that launcher."""
+    launcher_bin = _as_uvx(tmp_path, monkeypatch)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(launcher_bin), "/usr/local/bin", "/usr/bin"]))
+
+    assert invocation.path_without_own_cache() == os.pathsep.join(["/usr/local/bin", "/usr/bin"])
+
+
+def test_a_run_from_no_cache_looks_a_tool_up_on_its_own_path():
+    assert invocation.path_without_own_cache() is None
+
+
 def test_a_cached_run_uv_did_not_start_names_its_interpreter(tmp_path, monkeypatch):
     """`pipx run crapkit` caches its environment the same way and sets no UV.
     Nothing names the runner, and the interpreter running this process resolves

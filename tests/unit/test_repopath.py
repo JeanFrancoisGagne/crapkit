@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from pathlib import Path, PureWindowsPath
 
 import pytest
 
 from crapkit.repopath import (Refused, Reported, declared, disk_spelling, entries,
-                              file_separators, fragments, inside, native, on_a_share, typed,
-                              typed_path)
+                              file_separators, fragments, inside, native, on_a_share,
+                              tracked_spelling, typed, typed_path)
 
 from path_spellings import (admin_share, link_directory, lower_drive, need_case_insensitive,
                             need_case_sensitive, only_posix, only_windows)
@@ -117,6 +118,46 @@ def test_a_given_lister_answers_every_folder_the_walk_reads(tmp_path):
 
     assert disk_spelling(root, "src/pkg/mod.py", listing) == "src/pkg/mod.py"
     assert asked == [root, root / "src", root / "src" / "pkg"]
+
+
+def _tracked(root: Path, *names: str) -> Path:
+    """A repository whose index holds `names`, each a file on disk."""
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    for name in names:
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "--", *names], check=True)
+    return root
+
+
+def _renamed(root: Path, listed: str):
+    """What a folding disk lists after `git mv`-less case-only renames: src/
+    lists `listed`, and the name the walk asks for still opens. Any OS can run
+    this listing, so the folding rows need no case-insensitive disk."""
+    return lambda folder: {listed} if folder == root / "src" else entries(folder)
+
+
+def test_a_case_only_rename_on_a_folding_disk_keeps_the_case_git_tracks(tmp_path):
+    root = _tracked(tmp_path / "repo", "src/app.ts")
+
+    assert disk_spelling(root, "src/app.ts", _renamed(root, "App.ts")) == "src/App.ts"
+    assert tracked_spelling(root, "src/app.ts", _renamed(root, "App.ts")) == "src/app.ts"
+
+
+def test_outside_a_repository_the_listed_case_stands(tmp_path):
+    plain = tmp_path / "plain"
+    (plain / "src").mkdir(parents=True)
+    (plain / "src" / "app.ts").write_text("x = 1\n", encoding="utf-8")
+
+    assert tracked_spelling(plain, "src/app.ts", _renamed(plain, "App.ts")) == "src/App.ts"
+
+
+def test_a_fold_two_tracked_files_share_leaves_the_listed_case(tmp_path):
+    """git names neither file, so the listing's case is the only spelling left."""
+    need_case_sensitive(tmp_path)
+    twins = _tracked(tmp_path / "twins", "src/app.ts", "src/APP.ts")
+
+    assert tracked_spelling(twins, "src/app.ts", _renamed(twins, "App.ts")) == "src/App.ts"
 
 
 REPORTED = {

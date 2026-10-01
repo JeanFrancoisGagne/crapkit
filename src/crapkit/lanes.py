@@ -38,8 +38,7 @@ from .lane_freshness import (Freshness, Proof, ReuseVerdict, measurement_proof, 
 from .lane_outputs import declared_files, declared_outputs, owned, owners, put_back, retest_owner
 from .lane_sources import lane_matchers, lane_record, settled
 from .lane_stamps import (STAMPS_FILE, Stamps, file_sha256, read, read_stamps,  # noqa: F401
-                          recorded_seconds, refusal_entry, stamp_for, unreadable_stamps,
-                          write as write_stamps)
+                          recorded_seconds, refusal_entry, stamp_for, write as write_stamps)
 from .named import first_few
 from .plaintext import strip_escapes
 from .procs import CwdMissing, NoProgress, own_processes, run_bounded

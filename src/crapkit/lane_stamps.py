@@ -203,11 +203,6 @@ def stamp_for(stamps: dict, artifact: str) -> dict:
     return entry if isinstance(entry, dict) else {}
 
 
-def unreadable_stamps(stamps: dict) -> list[str]:
-    """The keys of `read_stamps` whose entry is not an object, sorted."""
-    return sorted(key for key, entry in stamps.items() if not isinstance(entry, dict))
-
-
 def _recorded_seconds(entry: object) -> float | None:
     """The duration one stamp recorded, or None when it has none to give."""
     value = entry.get("seconds") if isinstance(entry, dict) else None

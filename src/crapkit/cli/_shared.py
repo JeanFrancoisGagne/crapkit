@@ -389,10 +389,8 @@ def _from_cwd(path: Path) -> str:
 
 def _roots_below(root: Path) -> list[str]:
     """Each directory below `root` whose crapkit.toml git tracks, spelled from
-    the working directory. Empty outside a repository and for a root that is
-    not a directory, which has nothing below it to list."""
-    if not root.is_dir():
-        return []
+    the working directory. Empty outside a repository. `no_config`, the one
+    caller, hands it a directory: a file has nothing below it to list."""
     from ..gitio import tracked_named
 
     try:
