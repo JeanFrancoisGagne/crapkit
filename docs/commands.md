@@ -214,8 +214,17 @@ enforcement point.
 
 ### What it prints
 
-The advisory is the only thing it ever says. It prints one block per judged file: a head
-line, one line per breaching function and a closing line. For a file a scope takes whose
+It says two things: the advisory, and one line when the hook passes a flag this crapkit
+does not know. That line goes on stderr at exit 0, names the arguments as typed, and the
+edit goes unjudged, because this build cannot know what the flag asks for:
+
+```
+$ crapkit claude-hook --protocol 1 --budget 5
+crapkit claude-hook: this crapkit does not know `--budget 5`; the hook was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, then run `crapkit doctor --plugin-root`
+```
+
+The advisory prints one block per judged file: a head line, one line per breaching
+function and a closing line. For a file a scope takes whose
 name git gives in bytes that are not UTF-8, the block is two lines naming it and the
 rename. For a changed file it could not judge, the block names the file and the reason:
 

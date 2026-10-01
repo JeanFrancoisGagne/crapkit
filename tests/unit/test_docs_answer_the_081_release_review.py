@@ -2,6 +2,7 @@
 code does not do. Each test here runs the code path a sentence describes, or reads
 it, and pins the sentence that now says what it does.
 """
+import io
 import json
 import re
 from functools import lru_cache
@@ -327,4 +328,23 @@ def test_adding_a_language_edits_no_hook_file_and_the_contributor_guide_says_so(
     assert "add its display name to `DISPLAY` in `tests/unit/test_polyglot_constants.py`" in guide
     assert "def test_the_handbook_table_carries_a_row_for_every_supported_language" in polyglot
     assert "def test_every_supported_language_has_a_display_name" in polyglot
+
+
+# --- the version-gap line claude-hook prints (docs[7]) ------------------------------
+
+def test_claude_hook_names_a_flag_it_does_not_know_and_the_commands_page_quotes_it(
+        monkeypatch, capsys):
+    """commands.md said "The advisory is the only thing it ever says". A flag a
+    newer plugin passes gets one stderr line at exit 0, and the edit goes
+    unjudged."""
+    monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
+    code = main(["claude-hook", "--protocol", "1", "--budget", "5"])
+    printed = capsys.readouterr()
+
+    assert (code, printed.out) == (0, "")
+    (line,) = printed.err.splitlines()
+    section = _section("docs/commands.md", "## claude-hook")
+    assert "The advisory is the only thing it ever says" not in section
+    assert line in section, line
+    assert "on stderr at exit 0" in section
 
