@@ -257,8 +257,9 @@ def _print_version_json() -> int:
 # loads on every command and merge is not worth that import; a test holds the two equal.
 _HOOK_PRECOMMIT = (
     "Gate the staged functions of a commit at min-CCN <= their scope ceiling, read from the "
-    "staged blobs. A function the committed ratchet marks passes. Exit 6 on a staged function "
-    "over its ceiling or a staged file no reader could read. An UNREAD line names such a file "
+    "staged blobs. A function with a mark in the working tree's marks file passes, whether or "
+    "not the mark is staged. Exit 6 on a staged function over its ceiling or a staged file no "
+    "reader could read. An UNREAD line names such a file "
     "and the reader's reason: change what the reason names so a reader can parse the file, or "
     "list it under [exclude] globs in crapkit.toml to leave it ungated. Outside a commit (git "
     "sets GIT_INDEX_FILE for the hooks a commit runs) with nothing staged, as under `pre-commit "
@@ -585,7 +586,7 @@ def build_parser() -> argparse.ArgumentParser:
                           "newest in Claude Code's plugin cache, else the newest in Codex's" + _TYPED)
     doc.set_defaults(func=_Handler("admin", "cmd_doctor"))
 
-    rat = sub.add_parser("ratchet", help="manage the committed marks file: seed new debt, prune gone code")
+    rat = sub.add_parser("ratchet", help="manage the marks file: seed new debt, prune gone code")
     rat.add_argument("action", choices=("seed", "prune", "merge", "move", "report"),
                      help="seed: mark over-target functions from the run verify would compare "
                           "against; "
@@ -595,7 +596,9 @@ def build_parser() -> argparse.ArgumentParser:
                           "clone running crapkit through uvx configures as "
                           "`uvx crapkit ratchet merge %%O %%A %%B`; "
                           "move: re-path marks at their recorded values (OLD NEW); "
-                          "report: burn-down from the marks file's git history")
+                          "report: the burn-down: open marks are the file's rows, committed or "
+                          "not, or the rows its history last held when it is missing or blank, "
+                          "and ages and repayments come from its git history")
     # default=[] and not just nargs="*": argparse calls a ZERO_OR_MORE positional
     # with no default REQUIRED, so bare `crapkit ratchet` used to answer "the
     # following arguments are required: action, FILE" while report, seed and prune

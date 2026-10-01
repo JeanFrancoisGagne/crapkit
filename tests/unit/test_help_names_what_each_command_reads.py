@@ -148,3 +148,58 @@ def test_the_schema_names_every_placeholder_the_retest_fills():
         described = contract["properties"]["lane"]["items"]["properties"]["retest_command"]
         for placeholder in ("{tests} (ids)", "{files} (vitest)", "{names} (pytest -k)"):
             assert placeholder in described["description"], described
+
+
+# --- the marks file in the working tree -------------------------------------------
+# hook-precommit's help said "A function the committed ratchet marks passes".
+# The hook loads the marks file in the working tree, so a mark nobody staged or
+# committed pardons a staged function. The ratchet help called the file it
+# manages "the committed marks file", and seed writes the working tree's file
+# and commits nothing. It said report is a burn-down "from the marks file's git
+# history", and report's open marks are the file's rows, committed or not.
+
+MARKS = "crapkit-ratchet.tsv"
+HOOK_MARKS = ("A function with a mark in the working tree's marks file passes, whether or not "
+              "the mark is staged.")
+RATCHET_MANAGES = "ratchet manage the marks file: seed new debt, prune gone code"
+REPORT_READS = ("report: the burn-down: open marks are the file's rows, committed or not, or the "
+                "rows its history last held when it is missing or blank, and ages and repayments "
+                "come from its git history")
+
+
+def test_a_mark_nobody_staged_pardons_a_staged_function(repo, capsys):  # noqa: F811
+    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+
+    add_knotty(repo)
+    git(repo, "add", "src/app.ts")
+    (repo / MARKS).write_text(dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 72.0)],
+                                           stamp=metric_version()), encoding="utf-8", newline="\n")
+
+    assert main(["hook-precommit", "--repo", str(repo)]) == 0
+    assert "1 staged function(s) carry a ratchet mark" in capsys.readouterr().err
+    assert git(repo, "status", "--porcelain", "--", MARKS).startswith("??")
+    words = _screen("hook-precommit")
+    assert "committed ratchet marks" not in words, words
+    assert HOOK_MARKS in words, words
+
+
+def test_seed_writes_marks_that_report_reads_before_any_commit(repo, capsys):  # noqa: F811
+    seed_artifacts(repo)
+    add_knotty(repo)
+    commit_all(repo, "knotty")
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    head = git(repo, "rev-parse", "HEAD")
+
+    assert main(["ratchet", "seed", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    assert main(["ratchet", "report", "--json", "--repo", str(repo)]) == 0
+    report = json.loads(capsys.readouterr().out)
+
+    assert git(repo, "rev-parse", "HEAD") == head, "seed commits nothing"
+    assert git(repo, "status", "--porcelain", "--", MARKS).startswith("??")
+    assert (report["open"], report["uncommitted"]) == (1, 1), report
+    assert "committed marks file" not in _screen("crapkit")
+    assert RATCHET_MANAGES in _screen("crapkit")
+    words = _screen("ratchet")
+    assert "report: burn-down from the marks file's git history" not in words, words
+    assert REPORT_READS in words, words
