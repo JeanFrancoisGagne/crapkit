@@ -1286,13 +1286,13 @@ crapkit: lane 'web': rerunning: the working tree has 1 uncommitted change(s): we
 A rerun names the first condition that failed: `no artifact at PATH`, a last attempt
 that wrote none, `its stamp holds no proof` and why (the uncommitted changes it was
 measured with, a git read that failed while it was measured, or a crapkit that recorded
-none), uncommitted changes, `HEAD is X and its artifact was built at Y`, `crapkit.toml changed`, `its lane table changed`,
-`the crapkit version changed`, `N environment variable(s) changed: NAME`, changes under
-a lane's `inputs` since its commit, an artifact built at a commit that is no longer behind
-HEAD, `nothing proves its inputs unchanged` and what git said when a read of them failed, a
-stamp commit this clone does not hold, or a
-declared file that no longer matches its stamp: `PATH: missing`, `PATH: unreadable
-(why)` or `PATH: bytes differ from its stamp`. `crapkit.toml` is compared with CRLF read as LF, so a
+none), uncommitted changes, `HEAD is X and its artifact was built at Y`,
+`crapkit.toml changed`, `its lane table changed`, `the crapkit version changed`,
+`N environment variable(s) changed: NAME`, changes under a lane's `inputs` since its
+commit, `nothing proves its inputs unchanged` and what git said when a read of them
+failed, a stamp commit this clone does not hold, or a declared file that no longer
+matches its stamp: `PATH: missing`, `PATH: unreadable (why)` or
+`PATH: bytes differ from its stamp`. `crapkit.toml` is compared with CRLF read as LF, so a
 checkout under `core.autocrlf=true` is the file it was. `coverage --json` carries the
 same sentence per lane as `rerun_reason`, `""` for a lane it reused.
 

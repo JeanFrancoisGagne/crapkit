@@ -2,9 +2,11 @@
 code does not do. Each test here runs the code path a sentence describes, or reads
 it, and pins the sentence that now says what it does.
 """
+import ast
 import io
 import json
 import re
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -347,4 +349,69 @@ def test_claude_hook_names_a_flag_it_does_not_know_and_the_commands_page_quotes_
     assert "The advisory is the only thing it ever says" not in section
     assert line in section, line
     assert "on stderr at exit 0" in section
+
+
+# --- the rerun reasons --reuse-unchanged gives (tests[2]) ---------------------------
+
+MAKE_COV = (
+    "import json, os, pathlib, sys\n"
+    "app = os.path.join(os.getcwd(), 'src', 'app.ts')\n"
+    "fn = {'name': 'one', 'decl': {'start': {'line': 1}},\n"
+    "      'loc': {'start': {'line': 1}, 'end': {'line': 3}}}\n"
+    "report = {app: {'fnMap': {'0': fn}, 'f': {'0': 1}, 's': {'0': 1},\n"
+    "                'statementMap': {'0': {'start': {'line': 2}}}, 'branchMap': {}, 'b': {}}}\n"
+    "pathlib.Path('coverage').mkdir(exist_ok=True)\n"
+    "pathlib.Path('coverage', sys.argv[1] + '.json').write_text(json.dumps(report))\n"
+)
+
+
+def _two_lanes() -> str:
+    """One lane that lists its inputs and one that reads the whole tree."""
+    python = sys.executable.replace("\\", "/")
+    lane = ('[[lane]]\nname = "{0}"\ncommand = \'"{1}" make_cov.py {0}\'\n'
+            'artifact = "coverage/{0}.json"\nparser = "istanbul"\nscopes = ["src"]\n')
+    return ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src"]\n'
+            'languages = ["typescript"]\n\n' + lane.format("inputs", python)
+            + 'inputs = ["src", "make_cov.py"]\n\n' + lane.format("tree", python))
+
+
+def test_a_stamp_commit_no_longer_behind_head_is_no_rerun_reason(tmp_path):
+    """lanes.md listed "an artifact built at a commit that is no longer behind
+    HEAD" among the reasons --reuse-unchanged reruns a lane. After a reset past
+    the measured commit, a lane with inputs compares trees and reuses, and a lane
+    without them reruns on the HEAD it needs; `_not_behind` speaks only for the
+    legacy stamp `_commit_drift` reads."""
+    from crapkit.config import load_config_text
+    from crapkit.lanes import lane_reuse_verdict, run_lane, write_stamps
+
+    root = tmp_path / "mini"
+    for rel, text in {"src/app.ts": "export function one(): number {\n  return 1;\n}\n",
+                      "docs/notes.md": "first\n", "make_cov.py": MAKE_COV,
+                      "crapkit.toml": _two_lanes(), ".gitignore": ".crapkit/\ncoverage/\n"}.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text, encoding="utf-8", newline="\n")
+    git(root, "init", "-q")
+    commit_all(root, "first")
+    first = git(root, "rev-parse", "HEAD").strip()
+    (root / "docs" / "notes.md").write_text("second\n", encoding="utf-8")
+    commit_all(root, "second")
+    measured = git(root, "rev-parse", "HEAD").strip()
+    lanes = load_config_text((root / "crapkit.toml").read_text(encoding="utf-8")).lanes
+    write_stamps(root, {lane.artifact: run_lane(root, lane).stamp for lane in lanes})
+    git(root, "reset", "--hard", "-q", first)
+
+    inputs, tree = (lane_reuse_verdict(root, lane).reason for lane in lanes)
+
+    assert inputs == ""
+    assert tree == f"HEAD is {first[:11]} and its artifact was built at {measured[:11]}"
+    tree = ast.parse(_doc("src/crapkit/lane_freshness.py"))
+    callers = {fn.name for fn in ast.walk(tree) if isinstance(fn, ast.FunctionDef)
+               for call in ast.walk(fn)
+               if isinstance(call, ast.Call) and getattr(call.func, "id", None) == "_not_behind"}
+    assert callers == {"_commit_drift"}
+
+    reruns = (_prose("docs/lanes.md").split("A rerun names the first condition that failed:", 1)[1]
+              .split("`crapkit.toml` is compared with CRLF", 1)[0])
+    assert "no longer behind HEAD" not in reruns
+    assert "`HEAD is X and its artifact was built at Y`" in reruns
 
