@@ -101,6 +101,12 @@ def test_the_repo_pins_file_is_the_default():
 # --- the command line's contract -------------------------------------------------------------
 # Each command's usage line and the help it shows, as the module docstring states the
 # commands; the options only a test or a packet author passes stay out of the help.
+# From Python 3.13 argparse names the metavar of an option with a short and a long
+# flag once, after the last flag: "-n, --workers WORKERS" where 3.12 printed
+# "-n WORKERS, --workers WORKERS". The usage line spells "[-n WORKERS]" on both.
+
+WORKERS = ("-n, --workers WORKERS" if sys.version_info >= (3, 13)
+           else "-n WORKERS, --workers WORKERS")
 
 HELP = {
     (): ("usage: run.py [-h] [--tier {push,nightly,weekly,release}] [--shard SHARD] "
@@ -110,7 +116,7 @@ HELP = {
              "(CI's Windows push job)",
              "--local the releasing machine (release.py's accuracy stage): also run the "
              "checks that read local state, and each check in any cell",
-             "-n WORKERS, --workers WORKERS pytest-xdist workers for the pytest session",
+             f"{WORKERS} pytest-xdist workers for the pytest session",
              "--receipt RECEIPT where to write the receipt")),
     ("merge",): ("usage: run.py merge [-h] --out OUT receipts [receipts ...]", ()),
     ("kit-goldens",): ("usage: run.py kit-goldens [-h] --declare ID --kind KIND --reason REASON "
