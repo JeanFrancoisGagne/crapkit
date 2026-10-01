@@ -392,6 +392,18 @@ changing a check, or anything it imports, list the rows with
 them into `ledger.tsv` as `run --record` would, with no replay. Then commit
 `ledger.tsv`.
 
+When the Linux env key moves (a new image, a change to `retro.py` or the pytest
+table), the next night has no verdict kept: all 174 Linux rows replay at about
+51.5 s each, and the 2400 s bound would cut about four nights short in a row.
+Seed the cache in one run instead:
+
+```
+gh workflow run accuracy.yml --ref main -f mode=nightly -f retro_seconds=10800
+```
+
+The `retro` job's step and job timeouts follow `retro_seconds`, and the run
+saves its verdicts where the next scheduled night restores them.
+
 When the check cannot ask its question of the old commit (it reads a field the fix
 added, or a later bug fails it too), write a probe: a script in `retro/probes/`
 that asks only this bug's question through the CLI or API both commits have. It

@@ -47,6 +47,12 @@ on:
         description: the version a release run is for; the release gate finds the run by it
         required: false
         default: ""
+      retro_seconds:
+        description: the retro job's bound on its replays, in seconds; 10800 judges every Linux row with nothing kept, to seed the verdict cache
+        required: false
+        default: "2400"
+        type: choice
+        options: ["2400", "10800"]
 
 permissions:
   contents: read
@@ -441,11 +447,14 @@ jobs:
     # night that runs out of time keeps what it judged, and they are uploaded
     # for `retro.py adopt --env-key`. uv's cache is kept; CRAPKIT_RETRO_WORK is
     # not, since 254 commits at about 50 MB of worktree and venv each would
-    # outgrow the 10 GB repository cache.
+    # outgrow the 10 GB repository cache. A night with no verdict kept for its
+    # env key replays all 174 Linux rows at about 51.5 s each, past the 2400 s
+    # bound; a dispatch with retro_seconds 10800 judges them all in one run, and
+    # the step and job bounds follow the input.
     needs: [plan, image]
     if: needs.plan.outputs.mode == 'nightly'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: ${{ fromJSON('{"2400":60,"10800":200}')[inputs.retro_seconds || '2400'] }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -466,13 +475,14 @@ jobs:
       # verdicts while the save step reads them.
       - env:
           REF: ${{ needs.image.outputs.ref }}
-        timeout-minutes: 45
+          RETRO_SECONDS: ${{ inputs.retro_seconds || '2400' }}
+        timeout-minutes: ${{ fromJSON('{"2400":45,"10800":185}')[inputs.retro_seconds || '2400'] }}
         run: |
           docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src \
             -e UV_CACHE_DIR=/src/.crapkit/accuracy/wheelhouse \
             -e CRAPKIT_RETRO_WORK=/src/.crapkit/accuracy/retro \
             -e CRAPKIT_RETRO_VERDICTS=/src/.crapkit/accuracy/retro-verdicts \
-            "$REF" timeout 2400 python tools/accuracy/retro.py nightly
+            "$REF" timeout "$RETRO_SECONDS" python tools/accuracy/retro.py nightly
       - uses: actions/cache/save@v4
         if: always()
         with:

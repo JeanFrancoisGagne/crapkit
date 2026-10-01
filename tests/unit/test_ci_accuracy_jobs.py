@@ -7,7 +7,9 @@ two measured wheels, and `accuracy-green` moves the ref change control judges
 against. These read each command the way the runner does: through the argument
 parser of the script it calls, with every `${{ matrix.* }}` filled.
 """
+import json
 from pathlib import Path
+import re
 import runpy
 import shlex
 import tomllib
@@ -116,6 +118,53 @@ def test_the_windows_nightly_cell_replays_the_past_bugs_the_image_cannot():
     assert (native.command, native.platform_only) == ("nightly", True)
     assert f"uv {setup['with']['version']}" == pins["oracle"]["uv"]["version_line"]
     assert setup["if"] == step(windows, "run", "python tools/accuracy/retro.py")["if"]
+
+
+COLD_SECONDS_A_ROW = 51.5  # a Linux row replayed with no worktree, venv or verdict kept, measured 2026-10-01
+BOUND = re.compile(r"\$\{\{\s*fromJSON\('(\{.*?\})'\)\[inputs\.retro_seconds \|\| '(\d+)'\]\s*\}\}")
+
+
+def _by_input(value, seconds: str) -> int:
+    """A timeout-minutes the runner reads from the retro_seconds input, which a
+    scheduled run leaves empty."""
+    table, default = BOUND.fullmatch(str(value)).groups()
+    return json.loads(table)[seconds or default]
+
+
+def _workflow_inputs() -> dict:
+    loaded = yaml.safe_load((ROOT / ".github/workflows/accuracy.yml").read_text(encoding="utf-8"))
+    return loaded[True]["workflow_dispatch"]["inputs"]  # YAML 1.1 reads the key `on` as True
+
+
+def _in_container_seconds(job: dict, seconds: str) -> int:
+    replays = step(job, "run", "docker run")
+    bound = replays["env"]["RETRO_SECONDS"].replace("${{ inputs.retro_seconds || '2400' }}", seconds or "2400")
+    assert 'timeout "$RETRO_SECONDS" python tools/accuracy/retro.py nightly' in replays["run"]
+    return int(bound)
+
+
+def _linux_rows() -> int:
+    bugs = RETRO_TOOL["read_table"](RETRO_TOOL["BUGS"], RETRO_TOOL["BUG_COLUMNS"])
+    return sum(row["platform"] == "any" for row in RETRO_TOOL["_public"](bugs))
+
+
+def test_one_dispatched_retro_run_can_judge_every_linux_row_cold():
+    """The first nightly after the verdict cache's key moves replays every public
+    Linux row, about 51.5 s each with nothing kept, and the scheduled bound cuts
+    it at 2400 s. A dispatch with a larger retro_seconds seeds the cache in one
+    run; the job and step bounds follow the input, so the container ends first."""
+    retro_input = _workflow_inputs().get("retro_seconds", {})
+    options = retro_input.get("options", [])
+    job = _jobs("accuracy.yml")["retro"]
+
+    assert retro_input.get("default") == "2400" and "2400" in options
+    assert max(map(int, options)) >= _linux_rows() * COLD_SECONDS_A_ROW
+    for seconds in ["", *options]:
+        inside = _in_container_seconds(job, seconds)
+        step_minutes = _by_input(step(job, "run", "docker run")["timeout-minutes"], seconds)
+        job_minutes = _by_input(job["timeout-minutes"], seconds)
+        assert inside == int(seconds or "2400")
+        assert inside + 120 <= step_minutes * 60 and step_minutes + 10 <= job_minutes <= 360, seconds
 
 
 def _nightly_npm_prefixes() -> list[str]:
