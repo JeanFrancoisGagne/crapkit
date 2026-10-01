@@ -484,7 +484,7 @@ def suite_dropped(before: int | None, now: int | None) -> bool:
     return Fraction(before - now, 1) > Fraction(before, 10)
 
 
-# --- lane reuse (docs/lanes.md:1071-1205) -------------------------------------------------------
+# --- lane reuse (docs/lanes.md:1215-1372) -------------------------------------------------------
 
 # `--reuse-unchanged` names the first condition that failed, in the order the
 # docs list them. A lane without `inputs` answers for the whole tree, the
@@ -493,14 +493,15 @@ def suite_dropped(before: int | None, now: int | None) -> bool:
 # version, and compares trees, not history: an amend or a rebase that leaves
 # the inputs alone reuses it, while a stamp commit this clone does not hold
 # ("commit absent") and a git read of its inputs that failed ("inputs unread")
-# rerun it. The docs still list a commit no longer behind HEAD ("not behind"),
-# which neither kind reruns on: HEAD's move comes first for a whole-tree lane.
+# rerun it. A stamp commit that is no longer behind HEAD is no condition of its
+# own, and the docs list none: a lane with `inputs` compares trees, and a lane
+# without them reruns on HEAD's move ("head").
 REUSE_ORDER = ("no artifact", "wrote none", "no proof", "uncommitted", "head", "crapkit.toml",
-               "lane table", "crapkit version", "environment", "inputs", "not behind",
-               "inputs unread", "commit absent", "bytes")
+               "lane table", "crapkit version", "environment", "inputs", "inputs unread",
+               "commit absent", "bytes")
 WITH_INPUTS = frozenset({"no artifact", "wrote none", "no proof", "lane table", "crapkit version",
                          "inputs", "inputs unread", "commit absent", "bytes"})
-WHOLE_TREE = frozenset(REUSE_ORDER) - {"inputs", "not behind", "inputs unread", "commit absent"}
+WHOLE_TREE = frozenset(REUSE_ORDER) - {"inputs", "inputs unread", "commit absent"}
 
 
 def rerun_condition(failed: set, with_inputs: bool = False) -> str | None:
