@@ -124,7 +124,8 @@ def test_marks_are_read_from_a_zero_context_patch():
         (1000, ("src/a.ts", "f( )"), "added", 50.0),
         (1000, ("src/b.ts", "g( )"), "dropped", 30.0),
     ]
-    report = report_from_events(events)
+    seeded = _patch(500, added=[("src/b.ts", "g( )", 30.0)])
+    report = report_from_events(mark_events([seeded]) + events)
     assert report["open"] == 1
     assert report["dropped_total"] == 1
 

@@ -484,14 +484,12 @@ def _report_basis(root: Path, ratchet_file: str) -> tuple[list, dict | None]:
     repaid every mark: verify judges it against the newest committed marks, so
     the report reads those as open (working None, the committed state) and the
     commit that deleted or emptied the file repays none (held_history)."""
-    from ..marks_history import marks_history
-    from ..ratchet_report import held_history
+    from ..marks_history import held_history, marks_history
     from ..ratchetfile import RatchetFile
 
-    patches = marks_history(root, ratchet_file)
     if RatchetFile.read(root / ratchet_file).blank:
-        return held_history(patches), None
-    return patches, _working_marks(root, ratchet_file)
+        return held_history(root, ratchet_file), None
+    return marks_history(root, ratchet_file), _working_marks(root, ratchet_file)
 
 
 def _warn_marks_stand_in(root: Path, ratchet_file: str, report: dict, working) -> None:

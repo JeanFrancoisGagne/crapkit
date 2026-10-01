@@ -267,3 +267,40 @@ def test_the_stand_in_reads_a_revision_in_any_encoding_the_marks_file_takes(tmp_
 
     assert commit == git(tmp_path, "rev-parse", "HEAD~1")
     assert [(e.path, e.long_name, e.crap) for e in committed.entries] == [("src/a.py", "hot( n )", 10.0)]
+
+
+# --- one rule for a revision that held marks -------------------------------------
+# The working tree reads as blank through repotext.marks_text, which drops a
+# byte-order mark. The stand-in tested a past revision's raw bytes, so a revision
+# holding a byte-order mark and blank lines held marks to it: verify judged a
+# blank file against that revision's no marks, the case the stand-in exists for.
+
+BLANK_REVISIONS = [
+    pytest.param(b"\xef\xbb\xbf\n", id="utf8-bom"),
+    pytest.param(b"\xff\xfe" + "\n\n".encode("utf-16-le"), id="utf16-le-bom"),
+]
+
+
+@pytest.mark.parametrize("blank", BLANK_REVISIONS)
+def test_a_revision_of_a_byte_order_mark_and_blank_lines_holds_no_marks(history, blank):
+    root = Path(history["root"])
+    (root / MARKS).write_bytes(blank)
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "blank again", date="2026-05-01T12:00:00+00:00")
+
+    commit, committed = newest_committed_marks(root, history["base"], MARKS)
+
+    assert commit == history["newer"]
+    assert [e.crap for e in committed.entries] == [10.0]
+
+
+def test_the_held_history_ticks_every_commit_after_the_newest_that_held_marks(history):
+    """ratchet report replays a blank or missing marks file from here: the
+    deletion moves the clock and repays nothing."""
+    from crapkit.marks_history import held_history
+
+    root = Path(history["root"])
+    full = marks_history(root, MARKS)
+
+    assert held_history(root, MARKS) == [*full[:2], (full[2][0], "")]
+    assert held_history(root, "never.tsv") == []

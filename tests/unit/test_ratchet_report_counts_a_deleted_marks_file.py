@@ -120,14 +120,3 @@ def test_a_repo_that_never_committed_marks_reports_zeros(repo, capsys):  # noqa:
 
     assert (code, _counts(report), err) == (0, (0, 0, 0), "")
 
-
-def test_the_pure_history_turns_the_commits_after_the_last_held_one_into_ticks():
-    from crapkit.ratchet_report import held_history
-
-    add = "+++ b/m.tsv\n@@ -0,0 +1,2 @@\n+# crapkit analysis 13\n+a.py\tf( )\t9.0"
-    drop = "--- a/m.tsv\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-# crapkit analysis 13\n-a.py\tf( )\t9.0"
-    blank = "--- /dev/null\n+++ b/m.tsv\n@@ -0,0 +1,2 @@\n+\n+   "
-
-    assert held_history([(1, add), (2, drop), (3, blank)]) == [(1, add), (2, ""), (3, "")]
-    assert held_history([(1, blank)]) == [(1, "")]
-    assert held_history([]) == []

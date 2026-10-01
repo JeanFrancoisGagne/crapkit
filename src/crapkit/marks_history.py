@@ -1,8 +1,10 @@
 """The marks file's git history: every past revision a command reads, one reader.
 
 `ratchet report` and `brief` read mark ages and repayments off the commits that
-changed the marks file, and verify judges a deleted or emptied marks file
-against the newest marks a commit since the baseline held. The log walks no
+changed the marks file. For a deleted or emptied marks file, verify judges
+against the newest marks a commit since the baseline held, and ratchet report
+replays the history up to the newest commit that held any. Both read that
+commit's own revision of the file, never a count of patch lines. The log walks no
 renames on its own (gitio.file_log says why), so when the first commit that
 touched the marks file renamed it with `git mv`, this module goes on reading
 the log of the old path from that commit's parent, back through every rename
@@ -26,12 +28,37 @@ from .ratchetfile import RatchetFile
 def marks_history(root: Path, ratchet_file: str) -> list[tuple[int, str]]:
     """The marks file's commits, oldest first, as (timestamp, patch), across
     every rename git pairs. [] when no commit touched it."""
-    patches: list[tuple[int, str]] = []
+    return [(ts, patch) for ts, _, patch in _history(root, ratchet_file)]
+
+
+def held_history(root: Path, ratchet_file: str) -> list[tuple[int, str]]:
+    """The history a missing or blank marks file reports from: each commit up
+    to the newest one whose revision of the file held more than blank lines,
+    and every later commit as a clock tick that changes no mark.
+
+    Replayed as written, the commit that deleted or emptied the file dropped
+    every mark, the burn-down counted each one as repaid, and `--enforce`
+    passed a repayment quota the restored file fails.
+
+    Each commit's own revision says whether it held marks, read newest first
+    by the rule the stand-in reads with. A running count of the lines the
+    patches added and removed said it wrong: `git log -p` prints no patch for
+    a merge, so a line both sides of one added or removed counted twice.
+    """
+    history = _history(root, ratchet_file)
+    last = next((index for index in range(len(history) - 1, -1, -1)
+                 if _held(root, *history[index][1]) is not None), -1)
+    return [(ts, patch if index <= last else "") for index, (ts, _, patch) in enumerate(history)]
+
+
+def _history(root: Path, ratchet_file: str) -> list[tuple[int, tuple[str, str], str]]:
+    """(timestamp, (commit, the file's path at it), patch) per commit, oldest first."""
+    entries: list[tuple[int, tuple[str, str], str]] = []
     path, rev = ratchet_file, None
     while path is not None:
         segment, path, rev = _segment(root, path, rev)
-        patches[:0] = segment
-    return patches
+        entries[:0] = segment
+    return entries
 
 
 def _segment(root: Path, path: str, rev: str | None):
@@ -42,12 +69,13 @@ def _segment(root: Path, path: str, rev: str | None):
     rename changes no mark and moves only the clock."""
     log = file_log(root, path, rev)
     old = _renamed_from(root, log[0].commit, path) if log else None
-    patches = [(entry.timestamp, entry.patch) for entry in log]
+    entries = [(entry.timestamp, (entry.commit, path), entry.patch) for entry in log]
     if old is None:
-        return patches, None, None
+        return entries, None, None
     first = log[0]
-    patches[0] = (first.timestamp, _rename_patch(root, first.commit, old, path))
-    return patches, old, f"{first.commit}^"
+    entries[0] = (first.timestamp, (first.commit, path),
+                  _rename_patch(root, first.commit, old, path))
+    return entries, old, f"{first.commit}^"
 
 
 def _renamed_from(root: Path, commit: str, path: str) -> str | None:
@@ -77,7 +105,16 @@ def newest_committed_marks(root: Path, base: str, ratchet_file: str):
 
 def _newest_marks(root: Path, base: str, ratchet_file: str):
     for commit in (*commits_touching(root, f"{base}..HEAD", ratchet_file), base):
-        data = blob_at(root, commit, ratchet_file)
-        if data and data.strip():
-            return commit, RatchetFile.committed(root / ratchet_file, data)
+        held = _held(root, commit, ratchet_file)
+        if held is not None:
+            return commit, held
     return None
+
+
+def _held(root: Path, commit: str, path: str) -> RatchetFile | None:
+    """The marks file `commit` held at `path`, or None when it held none or
+    only blank lines. Blank reads as it does for the file on disk
+    (RatchetFile.blank), so a byte-order mark and blank lines hold no marks."""
+    data = blob_at(root, commit, path)
+    held = None if data is None else RatchetFile.committed(root / path, data)
+    return None if held is None or held.blank else held
