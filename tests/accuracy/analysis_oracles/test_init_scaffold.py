@@ -29,6 +29,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import sysconfig
 import tomllib
 import venv
@@ -65,9 +66,9 @@ SOURCE = {"calc/grade.py": "def grade(score):\n    return score\n"}
 PYPROJECT = {"pyproject.toml": "[project]\nname = \"calc\"\nversion = \"0\"\n"}
 
 
-def _init(files: dict, tmp_path):
+def _init(files: dict, tmp_path, env: dict | None = None):
     root = analysis_inventory.build(files, tmp_path / "repo")
-    done = drive.Driver(root).run("init")
+    done = drive.Driver(root, env=env).run("init")
     return root, done
 
 
@@ -395,6 +396,27 @@ def test_init_refuses_to_clobber_a_config(tmp_path):
 
 # --- cross-surface: init, then doctor ------------------------------------------------------------
 
+# The file names a `crapkit` launcher can have in a PATH directory.
+LAUNCHER_NAMES = ["crapkit", *("crapkit" + ext
+                               for ext in os.environ.get("PATHEXT", "").split(os.pathsep) if ext)]
+
+
+def _holds_crapkit(entry: str) -> bool:
+    return any((Path(entry.strip('"')) / name).is_file() for name in LAUNCHER_NAMES)
+
+
+def _one_crapkit() -> dict:
+    """The PATH of a machine with one crapkit: the driving interpreter's directory,
+    whose launcher (if any) is the crapkit under test, then every host PATH entry
+    that holds no `crapkit` launcher. Doctor WARNs when PATH holds launchers that
+    answer different versions (a pipx or uv tool install, another venv), which
+    describes the host, not the fresh config."""
+    python = Path(os.environ.get(drive.PYTHON_ENV) or sys.executable)
+    others = [entry for entry in os.environ.get("PATH", "").split(os.pathsep)
+              if entry and not _holds_crapkit(entry)]
+    return {"PATH": os.pathsep.join([str(python.parent), *others])}
+
+
 @pytest.mark.parametrize("files, warnings", [
     ({**PYPROJECT, **SOURCE, "tests/test_grade.py": "def test_grade():\n    pass\n"},
      [CONTAINER_WARN] if IN_CONTAINER else []),
@@ -404,8 +426,9 @@ def test_init_refuses_to_clobber_a_config(tmp_path):
       "src/a.ts": "export const a = 1;\n"}, [VITEST_WARN]),
 ])
 def test_doctor_finds_nothing_wrong_with_a_fresh_config(files, warnings, tmp_path):
-    root, _ = _init(files, tmp_path)
-    report = drive.Driver(root).json("doctor")
+    env = _one_crapkit()
+    root, _ = _init(files, tmp_path, env)
+    report = drive.Driver(root, env=env).json("doctor")
     assert report["problems"] == []
     assert [line for line in report["warnings"]
             if not any(line.startswith(prefix) for prefix in warnings)] == []
