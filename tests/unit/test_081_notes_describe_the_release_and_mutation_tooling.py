@@ -9,6 +9,7 @@ describes, and pins the sentence.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 from pathlib import Path
 import re
 import shutil
@@ -137,3 +138,48 @@ def test_covered_takes_a_diff_receipt_only_for_a_judged_mutant_at_heads_text():
             "that holds a judged mutant of it") in contributors
     assert ("mutmut 3.8 makes no mutant of a function decorated with anything but a lone "
             "`staticmethod` or `classmethod`") in contributors
+
+
+# --- For contributors: the known gap in the mutation floors -----------------------------------
+
+CHANGELOG = ROOT / "CHANGELOG.md"
+
+
+def _rows(mutation, module: str, killed: int, counted: int) -> list:
+    stem = Path(module).stem
+    return [mutation.Result(f"crapkit.{stem}.x_f__mutmut_{n}", module, "f",
+                            "killed" if n < killed else mutation.SURVIVED)
+            for n in range(counted)]
+
+
+def test_each_weekly_shard_judges_a_floor_over_the_modules_it_holds():
+    """At f4def958 both floors hold over each whole group, while shard 6, whose one
+    reader is lizardjava.py, reports the readers floor below: `weekly` judges the
+    floors over the rows of its own shard."""
+    mutation = _load_mutation()
+    groups = mutation.read_table(mutation.TABLES / "floors.tsv", mutation.FLOOR_COLUMNS)
+    java = _rows(mutation, "src/crapkit/lizardjava.py", 199, 240)
+    readers = java + _rows(mutation, "src/crapkit/lizardpython.py", 5630 - 199, 6101 - 240)
+    core = _rows(mutation, "src/crapkit/score.py", 3455, 3526)
+
+    def judged(results: list, group: str):
+        found = next(floor for floor in mutation.floors(results, [], groups) if floor.group == group)
+        return found.rate, found.floor, found.ok
+
+    assert judged(core, "core") == (97.99, 95.0, True)
+    assert judged(readers, "readers") == (92.28, 85.0, True)
+    assert judged(java, "readers") == (82.92, 85.0, False)
+    assert "return _judge(rows, update=False)" in inspect.getsource(mutation._weekly)
+    contributors = _section("## For contributors")
+    assert ("passes both floors over each group as a whole: at f4def958 the calculation modules "
+            "score 97.99% (3455 of 3526) against 95% and the lizard readers 92.28% (5630 of "
+            "6101) against 85%.") in contributors
+    assert ("Each weekly shard also judges a floor over only the modules it holds, so shard 6, "
+            "whose one reader is lizardjava.py at 82.92% (199 of 240, the rate the full floor "
+            "run measured for it), reports the readers floor below.") in contributors
+    assert "0.9.0 judges each floor over its whole group" in contributors
+    summary = " ".join(CHANGELOG.read_text(encoding="utf-8").split("\n## 0.8.0 ", 1)[0].split())
+    assert ("The weekly mutation run passes both floors over each whole group: the calculation "
+            "modules score 97.99% against 95% and the lizard readers 92.28% against 85%.") in summary
+    assert ("Each shard also judges the floors over its own modules, so shard 6, whose one "
+            "reader is lizardjava.py at 82.92%, reports the readers floor below.") in summary
