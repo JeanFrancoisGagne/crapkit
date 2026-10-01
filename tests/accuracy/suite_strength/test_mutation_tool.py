@@ -1652,6 +1652,53 @@ def test_a_launcher_that_leaves_mutants_undiffed_is_quoted(tmp_path):
         + "x" * 500)
 
 
+# A diffs launcher that answers `answers` names per call and then exits 3, until
+# `calls` calls have died; after that it answers every name. calls.txt counts calls.
+DYING_LAUNCHER = """import json, os, sys
+from pathlib import Path
+count = Path("calls.txt")
+call = int(count.read_text()) + 1 if count.exists() else 1
+count.write_text(str(call))
+names = sys.stdin.read().split()
+dying = call <= {calls}
+for name in names[:{answers}] if dying else names:
+    print(json.dumps([name, "--- " + name]), flush=True)
+if dying:
+    print("crashed", file=sys.stderr)
+    os._exit(3)
+"""
+
+
+def _dying_launcher(tmp_path, calls: int, answers: int) -> tuple[str]:
+    (tmp_path / "dying.py").write_text(DYING_LAUNCHER.format(calls=calls, answers=answers),
+                                       encoding="utf-8")
+    return ("dying.py",)
+
+
+def test_a_diffs_launcher_that_dies_is_asked_once_more_for_the_names_it_never_answered(
+        tmp_path, capsys):
+    """A crash at the end of a 75-minute diff run left 18 mutants without a diff, and
+    the run read them as mutants mutmut gives no diff for."""
+    names = [f"m.x_f__mutmut_{n}" for n in range(1, 6)]
+
+    found = mutation._diffs(tmp_path, names, _dying_launcher(tmp_path, calls=1, answers=2))
+
+    assert found == {name: "--- " + name for name in names}
+    assert (tmp_path / "calls.txt").read_text() == "2"
+    assert "the diffs launcher ended with exit 3 after 2 of 5 mutant(s); asking again for " \
+           "the other 3" in capsys.readouterr().out
+
+
+def test_a_diffs_launcher_that_dies_twice_stops_the_run_saying_how_it_ended(tmp_path):
+    names = [f"m.x_f__mutmut_{n}" for n in range(1, 6)]
+
+    with pytest.raises(mutation.MutationError) as refused:
+        mutation._diffs(tmp_path, names, _dying_launcher(tmp_path, calls=2, answers=1))
+
+    assert str(refused.value) == ("the diffs launcher ended with exit 3 again, after 1 of the 4 "
+                                  "mutant(s) it was asked for again: crashed")
+
+
 # --- the calc modules, the receipts and the tables a run writes -------------------------------------
 
 def test_the_calc_modules_are_every_module_a_calcs_table_names(tmp_path):

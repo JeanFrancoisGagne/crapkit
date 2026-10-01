@@ -814,17 +814,41 @@ def parse_diffs(printed: str) -> dict[str, str]:
     return {name: diff for name, diff in pairs}
 
 
+def _ask_diffs(repo: Path, names: list[str],
+               mutmut: tuple) -> tuple[dict[str, str], subprocess.CompletedProcess]:
+    done = captured([sys.executable, *mutmut, "diffs"], repo, "\n".join(names))
+    return parse_diffs(done.stdout), done
+
+
+def _answered(repo: Path, names: list[str], mutmut: tuple) -> tuple[dict[str, str], str]:
+    """The diffs the launcher printed, and what it wrote to stderr. A launcher that
+    died part way is asked once more for the names it never answered: a segfault at
+    the end of a 75-minute diff run left 18 mutants with no diff. A second death
+    stops the run."""
+    found, done = _ask_diffs(repo, names, mutmut)
+    if done.returncode == 0:
+        return found, done.stderr
+    rest = [name for name in names if name not in found]
+    print(f"mutation: the diffs launcher ended with {_ending(done.returncode)} after "
+          f"{len(found)} of {len(names)} mutant(s); asking again for the other {len(rest)}")
+    more, again = _ask_diffs(repo, rest, mutmut)
+    if again.returncode != 0:
+        raise MutationError(f"the diffs launcher ended with {_ending(again.returncode)} again, "
+                            f"after {len(more)} of the {len(rest)} mutant(s) it was asked for "
+                            f"again: {again.stderr.strip()[-500:]}")
+    return {**found, **more}, again.stderr
+
+
 def _diffs(repo: Path, names: list[str], mutmut: tuple) -> dict[str, str]:
     """Every named mutant's diff from one process: a `mutmut show` per mutant starts
     Python once each, about a second apiece, and a run can leave thousands alive."""
     if not names:
         return {}
-    done = captured([sys.executable, *mutmut, "diffs"], repo, "\n".join(names))
-    found = parse_diffs(done.stdout)
+    found, stderr = _answered(repo, names, mutmut)
     missing = [name for name in names if not found.get(name)]
     if missing:
         raise MutationError(f"no diff for {len(missing)} mutant(s) ({', '.join(missing[:3])}): "
-                            f"{done.stderr.strip()[-500:]}")
+                            f"{stderr.strip()[-500:]}")
     return found
 
 
