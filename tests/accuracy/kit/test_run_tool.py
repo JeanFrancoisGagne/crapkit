@@ -391,8 +391,8 @@ def test_a_refusal_exits_1_with_one_line(tmp_path, capsys):
 OS_NAME = {"win32": "windows", "linux": "linux", "darwin": "macos"}.get(sys.platform, sys.platform)
 PYTHON = f"{sys.version_info.major}.{sys.version_info.minor}"
 RECEIPT_KEYS = ["attempts", "checks", "digests", "events", "exports", "head", "hypothesis_seed",
-                "image", "infra", "oracles", "os", "outcome", "python", "schema", "shard",
-                "skipped_files", "tier"]
+                "image", "infra", "local", "oracles", "os", "os_sensitive", "outcome", "python",
+                "schema", "shard", "skipped_files", "tier"]
 
 
 def _repo_head() -> str:

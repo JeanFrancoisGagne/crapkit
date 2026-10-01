@@ -104,10 +104,12 @@ def test_the_repo_pins_file_is_the_default():
 
 HELP = {
     (): ("usage: run.py [-h] [--tier {push,nightly,weekly,release}] [--shard SHARD] "
-         "[--os-sensitive] [-n WORKERS] [--receipt RECEIPT] Run an accuracy tier.", (
+         "[--os-sensitive] [--local] [-n WORKERS] [--receipt RECEIPT] Run an accuracy tier.", (
              "--shard SHARD run only the checks modules whose SHARD is this",
              "--os-sensitive run only the checks whose answer can change with the OS "
              "(CI's Windows push job)",
+             "--local the releasing machine (release.py's accuracy stage): also run the "
+             "checks that read local state, and each check in any cell",
              "-n WORKERS, --workers WORKERS pytest-xdist workers for the pytest session",
              "--receipt RECEIPT where to write the receipt")),
     ("merge",): ("usage: run.py merge [-h] --out OUT receipts [receipts ...]", ()),
@@ -164,17 +166,17 @@ def test_a_missing_or_unknown_argument_is_a_usage_error(argv, tmp_path, capsys, 
 def test_the_run_command_reads_its_defaults_and_types():
     parse = run_tool._run_parser().parse_args
 
-    assert vars(parse([])) == {"tier": "push", "shard": None, "os_sensitive": False, "workers": 0,
-                               "receipt": None, "checks": run_tool.CHECKS_DIR}
-    assert vars(parse(["--tier", "nightly", "--shard", "one", "--os-sensitive", "-n", "3",
-                       "--receipt", "r.json", "--checks", "c"])) == {
-        "tier": "nightly", "shard": "one", "os_sensitive": True, "workers": 3,
+    assert vars(parse([])) == {"tier": "push", "shard": None, "os_sensitive": False, "local": False,
+                               "workers": 0, "receipt": None, "checks": run_tool.CHECKS_DIR}
+    assert vars(parse(["--tier", "nightly", "--shard", "one", "--os-sensitive", "--local",
+                       "-n", "3", "--receipt", "r.json", "--checks", "c"])) == {
+        "tier": "nightly", "shard": "one", "os_sensitive": True, "local": True, "workers": 3,
         "receipt": Path("r.json"), "checks": Path("c")}
 
 
 def _recorder(seen: list, name: str, answer):
-    def record(*args):
-        seen.append((name, *args))
+    def record(*args, **named):
+        seen.append((name, *args, *([named] if named else [])))
         return answer
     return record
 
@@ -185,13 +187,13 @@ def test_the_run_command_hands_each_argument_on(monkeypatch, tmp_path):
                          ("run_tier", {"outcome": "infra"}), ("_publish", None)):
         monkeypatch.setattr(run_tool, name, _recorder(seen, name, answer))
 
-    code = run_tool.main(["--tier", "nightly", "--shard", "one", "--os-sensitive", "-n", "2",
-                          "--checks", str(tmp_path)])
+    code = run_tool.main(["--tier", "nightly", "--shard", "one", "--os-sensitive", "--local",
+                          "-n", "2", "--checks", str(tmp_path)])
 
     assert code == 3
     assert seen == [("load_checks", tmp_path),
-                    ("selected", ["loaded"], "nightly", "one", sys.platform, True),
-                    ("run_tier", ["chosen"], "nightly", "one", 2),
+                    ("selected", ["loaded"], "nightly", "one", sys.platform, True, {"local": True}),
+                    ("run_tier", ["chosen"], "nightly", "one", 2, True, True),
                     ("_publish", {"outcome": "infra"}, run_tool.default_receipt("nightly", "one"))]
 
 
