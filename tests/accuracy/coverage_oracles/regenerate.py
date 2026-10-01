@@ -322,13 +322,17 @@ def check_one(producer: Producer, root: Path, scenario: str, out: Path) -> list[
 
 
 def _each(names: list[str], act) -> list[str]:
+    """Each producer in a scratch root spelled as its real path: jest reports files
+    by realpath, and a temp directory reached through a short name (a GitHub
+    Windows runner's TEMP) or a link would otherwise stay in every key."""
     problems = []
     for name in names:
         producer = PRODUCERS[name]
         with tempfile.TemporaryDirectory(prefix="probe-") as scratch:
-            root = stage(Path(scratch), producer)
+            work = Path(scratch).resolve()
+            root = stage(work, producer)
             for scenario in SCENARIOS:
-                problems += act(producer, root, scenario, Path(scratch) / f"out-{scenario}") or []
+                problems += act(producer, root, scenario, work / f"out-{scenario}") or []
     return problems
 
 

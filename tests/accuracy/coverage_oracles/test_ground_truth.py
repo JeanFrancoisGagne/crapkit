@@ -24,6 +24,7 @@ import json
 from pathlib import Path
 import re
 import sys
+import tempfile
 
 import pytest
 
@@ -405,3 +406,22 @@ def test_a_rerun_that_gains_start_line_differs_from_a_refused_recording(tmp_path
     found = regenerate.differences(regenerate.PRODUCERS[producer], fresh, recording)
 
     assert "call.json: crapkit's parsed FnCoverage differs" in found
+
+
+@pytest.mark.process
+def test_the_probe_root_is_spelled_as_the_producers_report_it(tmp_path, monkeypatch):
+    """jest reports each file by its real path. A GitHub Windows runner's TEMP is
+    the short name C:/Users/RUNNER~1/..., so a probe root kept as tempfile
+    spelled it stayed in every jest key, and both jest reruns read as changed
+    recordings. A junction (a symlink elsewhere) spells one directory two ways,
+    as a short name does."""
+    from accuracy.coverage_oracles import regenerate
+    (tmp_path / "real").mkdir()
+    regenerate._link(tmp_path / "real", tmp_path / "alias")
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "alias"))
+    seen = []
+
+    regenerate._each(["coveragepy-7.16.1"], lambda producer, root, scenario, out: seen.append(
+        (root, out)))
+
+    assert seen and all(path == path.resolve() for pair in seen for path in pair)
