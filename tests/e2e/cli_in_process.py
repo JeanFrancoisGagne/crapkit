@@ -411,15 +411,27 @@ class _Watch:
             self._fire()
 
     def _fire(self) -> None:
+        """Say which call ran past its bound, then stop it.
+
+        The line goes first. Python 3.11 marks the stopped call's pending
+        exception in a flag every thread reads, until the call's thread runs
+        Python again. A traced thread, as coverage traces this one, that enters
+        a function then sees the flag at the function's first instruction and
+        goes back to that instruction without end. A call stuck in C code never
+        clears the flag, so a line written after the stop never came, and the
+        stacks at the end of the grace named no test. After _set_async this
+        thread enters no Python function."""
+        then = ("every thread's stack follows each time until it returns" if _STAGE_HANGS
+                else "every thread's stack follows and the worker exits")
+        line = (f"{self._test}: {self._argv!r} past its {self._timeout} s bound. Stopping it; "
+                f"if it has not returned {GRACE_SECONDS} s from now, {then}.")
         with self._lock:
             if self._done:
                 return
-            _set_async(self._call, ctypes.py_object(_PastBound))
-        then = ("every thread's stack follows each time until it returns" if _STAGE_HANGS
-                else "every thread's stack follows and the worker exits")
-        print(f"{self._test}: {self._argv!r} past its {self._timeout} s bound. Stopping it; "
-              f"if it has not returned {GRACE_SECONDS} s from now, {then}.",
-              file=_hang_log(), flush=True)
+            try:
+                print(line, file=_hang_log(), flush=True)
+            finally:
+                _set_async(self._call, ctypes.py_object(_PastBound))
 
     def stop(self) -> None:
         with self._lock:
