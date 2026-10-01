@@ -25,6 +25,11 @@ KILLED = "which is what a killed parallel run leaves behind"
 RENAME = "holds bytes that are not UTF-8, and coverage.py stores every path as UTF-8. Rename it to UTF-8"
 
 
+@pytest.fixture(autouse=True)
+def _host(on_a_host):
+    """The lane runs no suite; the refusal inside a container is not the subject."""
+
+
 def _failed(root, cwd: str) -> str:
     lane = Lane(name="py", command=f'"{PY}" -c "import sys; sys.exit(1)"',
                 artifact=".crapkit/cov/coverage.json", parser="coveragepy", scopes=(), cwd=cwd)

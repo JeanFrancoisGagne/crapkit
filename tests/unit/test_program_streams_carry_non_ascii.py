@@ -53,6 +53,8 @@ files = {{{FILE!r}: {{"functions": {{"grade": entry}}, "missing_lines": [3, 5, 6
 with open("cov.json", "w", encoding="utf-8") as fh:
     json.dump({{"meta": {{"branch_coverage": True}}, "files": files}}, fh)
 '''
+# The lane writes a recorded report and runs no suite, so it says container_ok:
+# the accuracy image's mutation stage runs these tests inside docker.
 TOML = """[crapkit]
 target = 4
 
@@ -67,6 +69,7 @@ command = "python make_cov.py"
 artifact = "cov.json"
 parser = "coveragepy"
 scopes = ["pkg"]
+container_ok = true
 """
 
 KNOBS = ("PYTHONIOENCODING", "PYTHONUTF8", "LANG", "LC_ALL")

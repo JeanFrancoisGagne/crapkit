@@ -40,9 +40,11 @@ def latin1_env(directory: Path) -> dict[str, str]:
     if localedef is None:
         missing(f"no localedef on this host to build {LATIN1}")
     # localedef exits 1 on a portability warning and still writes the locale.
+    # Without its charmaps it also exits 1 and leaves the locale's directory
+    # behind, empty, so the proof of a build is the LC_CTYPE file inside.
     directory.mkdir(parents=True, exist_ok=True)
     hang_guard.run([localedef, "-i", "en_US", "-f", "ISO-8859-1", str(directory / LATIN1)])
-    if not (directory / LATIN1).is_dir():
+    if not (directory / LATIN1 / "LC_CTYPE").is_file():
         missing(f"localedef could not build {LATIN1}: the host lacks /usr/share/i18n sources")
     env = {"LOCPATH": str(directory), "LANG": LATIN1, "LC_ALL": LATIN1}
     probe = hang_guard.run([sys.executable, "-c", "import locale; print(locale.getencoding())"],

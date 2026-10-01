@@ -52,3 +52,23 @@ def test_posix_asks_the_operating_system_nothing_beyond_path_home(monkeypatch):
 @pytest.mark.skipif(os.name != "nt", reason="the profile folder comes from the Windows shell")
 def test_windows_names_the_profile_folder_with_no_variable_set(without_home_variables):
     assert os.path.normcase(userhome._windows_profile()) == os.path.normcase(without_home_variables)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX reads the home from the password database")
+def test_a_uid_the_password_database_does_not_know_skips_the_rows_without_home_variables(
+        monkeypatch, request):
+    """`docker run --user "$(id -u):$(id -g)"` starts the suite as a uid with no
+    entry in the image's /etc/passwd. Without HOME the operating system then
+    names no home for that user, so the rows that compare crapkit's home with
+    the one the OS names have nothing to compare: they skip, and say why."""
+    import pwd
+
+    def unknown(uid):
+        raise KeyError(f"getpwuid(): uid not found: {uid}")
+
+    monkeypatch.setattr(pwd, "getpwuid", unknown)
+    with pytest.raises(pytest.skip.Exception) as skipped:
+        request.getfixturevalue("without_home_variables")
+
+    assert str(skipped.value) == (f"uid {os.getuid()} has no password-database entry, so the "
+                                  "operating system names no home for this user to compare with")

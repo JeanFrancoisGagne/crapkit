@@ -91,11 +91,17 @@ HOME_VARIABLES = ("HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH")
 def _os_home() -> Path:
     """The home this user's other processes see: USERPROFILE as logon set it on
     Windows, the password database's entry on POSIX, which is what Path.home()
-    reads there once HOME is gone."""
+    reads there once HOME is gone. A uid the database does not know, as
+    `docker run --user "$(id -u):$(id -g)"` starts, has no such home: the test
+    skips, since there is nothing to compare crapkit's answer with."""
     if os.name == "nt":
         return Path.home()
     import pwd
-    return Path(pwd.getpwuid(os.getuid()).pw_dir)
+    try:
+        return Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except KeyError:
+        pytest.skip(f"uid {os.getuid()} has no password-database entry, so the operating "
+                    "system names no home for this user to compare with")
 
 
 @pytest.fixture

@@ -789,6 +789,8 @@ command = "python py.py"
 artifact = "cov-py.json"
 parser = "coveragepy"
 scopes = ["py"]
+# Writes a report and runs no suite, so it may run in the accuracy image.
+container_ok = true
 
 [[lane]]
 name = "b-js"
@@ -833,6 +835,8 @@ command = "python noise.py && python report.py"
 artifact = "cov-py.json"
 parser = "coveragepy"
 scopes = ["py"]
+# Writes a report and runs no suite, so it may run in the accuracy image.
+container_ok = true
 """
 
 
