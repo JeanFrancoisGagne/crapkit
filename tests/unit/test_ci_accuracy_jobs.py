@@ -295,12 +295,30 @@ def test_a_release_cell_judges_an_unchanged_row_by_its_kept_verdict():
             continue
         assert (len(restores), len(saves)) == (1, 1), row
         key = rendered(restores[0]["with"]["key"], row)
-        assert key == rendered(saves[0]["with"]["key"], row) and key.endswith("${{ github.run_id }}")
+        assert key == rendered(saves[0]["with"]["key"], row) and key.endswith("${{ github.run_id }}-${{ github.run_attempt }}")
         assert key.startswith(rendered(restores[0]["with"]["restore-keys"], row))
         assert "always()" in saves[0]["if"]
         keys.append(key)
 
     assert len(keys) == len(set(keys)) == 2
+
+
+def test_a_rerun_attempt_saves_what_it_judged_under_a_key_of_its_own():
+    """GitHub keeps run_id across a re-run, and actions/cache/save refuses a key
+    that exists: a key of run_id alone dropped every verdict attempt 2 judged,
+    so attempt 3 replayed them again. The attempt makes the key new, and the
+    restore-keys prefix still finds the newest earlier entry."""
+    saves = [(name, item) for name, job in _jobs("accuracy.yml").items() for item in job.get("steps", [])
+             if str(item.get("uses", "")).startswith("actions/cache/save@")]
+    for name, job in _jobs("accuracy.yml").items():
+        for item in job.get("steps", []):
+            if str(item.get("uses", "")).startswith("actions/cache/restore@"):
+                key, prefix = item["with"]["key"], item["with"]["restore-keys"]
+                assert key.endswith("-${{ github.run_id }}-${{ github.run_attempt }}") and key.startswith(prefix), name
+
+    assert len(saves) >= 6
+    for name, item in saves:
+        assert item["with"]["key"].endswith("-${{ github.run_id }}-${{ github.run_attempt }}"), name
 
 
 def _nightly_npm_prefixes() -> list[str]:

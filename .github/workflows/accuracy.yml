@@ -212,7 +212,7 @@ jobs:
         if: needs.plan.outputs.mode == 'release' && matrix.shard == 'verdict-score'
         with:
           path: .crapkit/accuracy/retro-verdicts
-          key: retro-verdicts-release-linux-${{ matrix.python }}-${{ github.run_id }}
+          key: retro-verdicts-release-linux-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: retro-verdicts-release-linux-${{ matrix.python }}-
       # The fetched corpus goes where the image looks for it, /corpus.
       - name: run.py in the image
@@ -232,7 +232,7 @@ jobs:
         if: always() && needs.plan.outputs.mode == 'release' && matrix.shard == 'verdict-score'
         with:
           path: .crapkit/accuracy/retro-verdicts
-          key: retro-verdicts-release-linux-${{ matrix.python }}-${{ github.run_id }}
+          key: retro-verdicts-release-linux-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -335,7 +335,7 @@ jobs:
         if: matrix.python == '3.13' && needs.plan.outputs.mode == 'release'
         with:
           path: .crapkit/accuracy/retro-verdicts
-          key: retro-verdicts-release-windows-${{ matrix.python }}-${{ github.run_id }}
+          key: retro-verdicts-release-windows-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: retro-verdicts-release-windows-${{ matrix.python }}-
       # The checks whose os list names win32, plus every check with no os list.
       - run: python tools/accuracy/run.py --tier ${{ needs.plan.outputs.tier }} -n 4 --receipt .crapkit/accuracy/receipts/windows-${{ matrix.python }}.json
@@ -343,7 +343,7 @@ jobs:
         if: always() && matrix.python == '3.13' && needs.plan.outputs.mode == 'release'
         with:
           path: .crapkit/accuracy/retro-verdicts
-          key: retro-verdicts-release-windows-${{ matrix.python }}-${{ github.run_id }}
+          key: retro-verdicts-release-windows-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
       # The past bugs that replay on Windows only (bugs.tsv platform windows); the
       # retro job replays the others in the image. A row replays only when no
       # verdict is kept for its row digest and env key, where ImageOS and
@@ -354,7 +354,7 @@ jobs:
         if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
         with:
           path: .crapkit/accuracy/retro-verdicts
-          key: retro-verdicts-windows-${{ github.run_id }}
+          key: retro-verdicts-windows-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: retro-verdicts-windows-
       - if: matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
         timeout-minutes: 30
@@ -366,7 +366,7 @@ jobs:
         if: always() && matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
         with:
           path: .crapkit/accuracy/retro-verdicts
-          key: retro-verdicts-windows-${{ github.run_id }}
+          key: retro-verdicts-windows-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v4
         if: always() && matrix.python == '3.13' && needs.plan.outputs.mode == 'nightly'
         with:
@@ -511,7 +511,7 @@ jobs:
       - uses: actions/cache/restore@v4
         with:
           path: .crapkit/accuracy/retro-verdicts
-          key: retro-verdicts-linux-${{ github.run_id }}
+          key: retro-verdicts-linux-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: retro-verdicts-linux-
       # `timeout` ends the replays inside the container: the step's own timeout
       # would stop only the docker client and leave the container writing
@@ -530,7 +530,7 @@ jobs:
         if: always()
         with:
           path: .crapkit/accuracy/retro-verdicts
-          key: retro-verdicts-linux-${{ github.run_id }}
+          key: retro-verdicts-linux-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
