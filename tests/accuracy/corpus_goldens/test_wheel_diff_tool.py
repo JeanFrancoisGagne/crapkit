@@ -748,6 +748,29 @@ def test_a_release_is_fetched_once_into_a_wheelhouse_made_on_demand(monkeypatch,
                      "https://pypi.org/pypi/crapkit/9.9.8/json", "https://files.invalid/9.9.8.whl"]
 
 
+def test_a_wheel_in_the_wheelhouse_is_whole_even_when_a_write_dies_part_way(monkeypatch, tmp_path):
+    """The wheelhouse is shared, so a wheel's name there must mean a whole wheel: a
+    process that finds the name while another is still writing it, or after a writer
+    died, reads it as fetched. A write that stops after half the bytes leaves no wheel
+    behind, and the next call fetches it again."""
+    asked = _pypi(monkeypatch, "9.9.9")
+    house = tmp_path / "wheelhouse"
+    real_write = Path.write_bytes
+
+    def dies_part_way(path, data):
+        real_write(path, data[: len(data) // 2])
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(Path, "write_bytes", dies_part_way)
+    with pytest.raises(OSError):
+        wheel_diff.download("9.9.9", house)
+    monkeypatch.setattr(Path, "write_bytes", real_write)
+
+    assert not (house / "crapkit-9.9.9-py3-none-any.whl").exists()
+    assert wheel_diff.download("9.9.9", house).read_bytes() == b"wheel 9.9.9"
+    assert asked.count("https://files.invalid/9.9.9.whl") == 2
+
+
 def test_a_release_without_a_wheel_is_named(monkeypatch):
     monkeypatch.setattr(wheel_diff, "_fetch",
                         lambda url: json.dumps(_release("0.1.0", "sdist")).encode())

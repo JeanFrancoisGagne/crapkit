@@ -251,8 +251,19 @@ def download(version: str, wheelhouse: Path) -> Path:
         if hashlib.sha256(data).hexdigest() != entry["digests"]["sha256"]:
             raise WheelDiffError(f"{entry['filename']} does not hash to PyPI's sha256")
         wheelhouse.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+        _write_whole(target, data)
     return target
+
+
+def _write_whole(target: Path, data: bytes) -> None:
+    """Write under a name of this process's own, then rename: the wheelhouse is shared,
+    and a wheel's name there must only ever mean a whole wheel."""
+    partial = target.with_name(f".{target.name}.{os.getpid()}.part")
+    try:
+        partial.write_bytes(data)
+        os.replace(partial, target)
+    finally:
+        partial.unlink(missing_ok=True)
 
 
 def _serves_a_wheel(files: list) -> bool:
