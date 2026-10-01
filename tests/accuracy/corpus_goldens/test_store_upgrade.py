@@ -4,7 +4,9 @@ upgrade_runs writes the history with each release's own wheel: coverage
 (run 1), worklist and coupling, a ccn-7 edit, a verify that fails (run 2) and
 another coverage (run 3). The releases are the newest five on PyPI at or
 below the version under test, so a replay of an old commit reads the
-releases that came before it. The expected values come from outside
+releases that came before it, less any that cannot run a lane on this Python
+(NEED_WAITID): nobody there has a history from them. Each test checks every
+release and names the ones that fail. The expected values come from outside
 crapkit's code:
 
 - hand and model: the README's taint rule picks run 1, and model_baseline
@@ -25,49 +27,78 @@ crapkit's code:
 """
 from pathlib import Path
 
+from packaging.specifiers import SpecifierSet
 import pytest
 
+import hang_guard
 from accuracy.corpus_goldens import model_baseline, releases, upgrade_diff, upgrade_runs
 from accuracy.kit import drive, rulings, surfaces
 
 pytestmark = [pytest.mark.nightly, pytest.mark.release, pytest.mark.process]
 RELEASES = 5
+WROTE = (("coverage --json", 0), ("worklist --json", 0), ("coupling --json", 0),
+         ("verify --json", 6), ("coverage --json", 0))
 # README "The trusted baseline": run 2 is a failed verify no verify cleared.
 HAND_RUNS = [(1, "coverage", None), (2, "verify", 0), (3, "coverage", None)]
+# These releases wait on every POSIX lane with os.waitid, which python.org's
+# macOS builds of Python 3.11 and 3.12 lack: there every lane they start dies
+# with AttributeError, so they never wrote a history on that Python (0.8.1
+# fixed it, 9b214486).
+NEED_WAITID = SpecifierSet(">=0.7.0,<0.8.1")
+
+
+def _lanes_wait(driver: drive.Driver) -> bool:
+    """Whether NEED_WAITID releases can wait on a lane under the driver's Python:
+    on Windows they never call os.waitid."""
+    probe = "import os; print(os.name == 'nt' or hasattr(os, 'waitid'))"
+    done = hang_guard.run([driver.python, "-c", probe], env=driver.env, text=True, encoding="utf-8")
+    return done.stdout.strip() == "True"
 
 
 @pytest.fixture(scope="module")
 def versions(tmp_path_factory):
+    """The newest five releases, less those that cannot write a history on this Python."""
     probe = drive.Driver(tmp_path_factory.mktemp("version"), spawn=True)
-    return releases.last(RELEASES, at_most=upgrade_runs.version_of(probe))
+    newest = releases.last(RELEASES, at_most=upgrade_runs.version_of(probe))
+    kept = newest if _lanes_wait(probe) else [name for name in newest if name not in NEED_WAITID]
+    assert kept, f"none of {newest} can write a history under {probe.python}"
+    return kept
 
 
-@pytest.fixture(scope="module", params=range(RELEASES), ids=[f"release-{n}" for n in range(RELEASES)])
-def history(request, versions, tmp_path_factory):
-    version = versions[request.param]
-    return upgrade_runs.write_history(version, tmp_path_factory.mktemp(f"upgrade-{version}"))
+@pytest.fixture(scope="module")
+def histories(versions, tmp_path_factory):
+    return [upgrade_runs.write_history(version, tmp_path_factory.mktemp(f"upgrade-{version}"))
+            for version in versions]
 
 
 def _runs(driver: drive.Driver) -> list[dict]:
     return driver.store("select id, kind, verdict_ok from runs order by id")
 
 
-def test_the_release_wrote_the_history_the_readme_describes(history):
-    old = history.driver(history.root, history.site)
-
-    assert history.codes == (("coverage --json", 0), ("worklist --json", 0),
-                             ("coupling --json", 0), ("verify --json", 6), ("coverage --json", 0))
-    assert [tuple(run.values()) for run in _runs(old)] == HAND_RUNS
+def _hand_runs(history: upgrade_runs.History) -> list[tuple]:
+    return [tuple(run.values()) for run in _runs(history.driver(history.root, history.site))]
 
 
-def test_the_candidate_marks_the_baseline_the_readme_picks(history, tmp_path):
-    new = history.driver(history.copy(tmp_path / "repo"))
+def test_the_release_wrote_the_history_the_readme_describes(versions, histories):
+    assert {history.version: history.codes for history in histories} == dict.fromkeys(versions, WROTE)
+    assert {history.version: _hand_runs(history) for history in histories} == \
+        dict.fromkeys(versions, HAND_RUNS)
+
+
+def _baseline(history: upgrade_runs.History, where: Path) -> tuple:
+    """The runs `runs list` marks, the model's pick over the runs table, and verify's baseline."""
+    new = history.driver(history.copy(where / "repo"))
     listed = new.json("runs", "list")["runs"]
-    marked = [run["id"] for run in listed if run["baseline"]]
     verdict = new.json("verify")
+    return ([run["id"] for run in listed if run["baseline"]],
+            [model_baseline.baseline(_runs(new))], verdict["baseline_run"])
 
-    assert marked == [model_baseline.baseline(_runs(new))] == [upgrade_runs.BASELINE]
-    assert verdict["baseline_run"] == upgrade_runs.BASELINE
+
+def test_the_candidate_marks_the_baseline_the_readme_picks(versions, histories, tmp_path):
+    found = {history.version: _baseline(history, tmp_path / history.version) for history in histories}
+    picked = upgrade_runs.BASELINE
+
+    assert found == dict.fromkeys(versions, ([picked], [picked], picked))
 
 
 def _normalized(results: dict, root: Path) -> dict:
@@ -76,17 +107,27 @@ def _normalized(results: dict, root: Path) -> dict:
             for command, result in results.items()}
 
 
-def test_warm_churn_cache_equals_cold_after_upgrade(history, tmp_path):
-    """R100: the candidate answers from the release's caches as it does from none."""
-    warm = history.copy(tmp_path / "warm")
-    cold = history.copy(tmp_path / "cold")
+def _warm_and_cold(history: upgrade_runs.History, where: Path) -> dict:
+    warm = history.copy(where / "warm")
+    cold = history.copy(where / "cold")
     upgrade_runs.drop_caches(cold)
+    return {name: _normalized(upgrade_runs.read(history.driver(root)), root)
+            for name, root in (("warm", warm), ("cold", cold))}
 
-    found = {name: _normalized(upgrade_runs.read(history.driver(root)), root)
-             for name, root in (("warm", warm), ("cold", cold))}
 
-    assert found["warm"] == found["cold"]
-    assert found["warm"]["coupling --json"]["pairs"], "the history must couple a.py and b.py"
+def _uncoupled(answers: dict) -> list[str]:
+    """The releases whose history couples no pair of files."""
+    return [version for version, read in answers.items() if not read["coupling --json"]["pairs"]]
+
+
+def test_warm_churn_cache_equals_cold_after_upgrade(histories, tmp_path):
+    """R100: the candidate answers from the release's caches as it does from none."""
+    found = {history.version: _warm_and_cold(history, tmp_path / history.version)
+             for history in histories}
+    warm = {version: both["warm"] for version, both in found.items()}
+
+    assert warm == {version: both["cold"] for version, both in found.items()}
+    assert _uncoupled(warm) == [], "the history must couple a.py and b.py"
 
 
 def _rewrites(root: Path, before: dict, readers: list) -> list[str]:
@@ -101,14 +142,21 @@ def _rewrites(root: Path, before: dict, readers: list) -> list[str]:
     return changed
 
 
-def test_two_installs_never_rewrite_each_others_caches(history, tmp_path):
-    """R100 (b3e14d6): 0.4.3 and 0.4.4 read each other's churn cache as cold and
-    rewrote it on every command."""
-    root = history.copy(tmp_path / "repo")
+def _shared_tree_rewrites(history: upgrade_runs.History, where: Path) -> list[str]:
+    """Once the candidate has read, what a read by the release and then the candidate rewrote."""
+    root = history.copy(where / "repo")
     old, new = history.driver(root, history.site), history.driver(root)
     _rewrites(root, {}, [("candidate", new)])
+    return _rewrites(root, upgrade_runs.caches(root), [("release", old), ("candidate", new)])
 
-    assert _rewrites(root, upgrade_runs.caches(root), [("release", old), ("candidate", new)]) == []
+
+def test_two_installs_never_rewrite_each_others_caches(versions, histories, tmp_path):
+    """R100 (b3e14d6): 0.4.3 and 0.4.4 read each other's churn cache as cold and
+    rewrote it on every command."""
+    found = {history.version: _shared_tree_rewrites(history, tmp_path / history.version)
+             for history in histories}
+
+    assert found == dict.fromkeys(versions, [])
 
 
 # The last release of each retired cache format that shares a file name with
@@ -139,16 +187,21 @@ def test_a_retired_format_under_a_shared_name_is_never_rewritten(retired, tmp_pa
     rulings.pin_ruling("CG5", crapkit=_rewritten(found), oracle="none")
 
 
-def test_the_release_and_the_candidate_answer_alike_or_declare_it(history, tmp_path):
-    root = history.copy(tmp_path / "repo")
+def _undeclared(history: upgrade_runs.History, where: Path) -> list[str]:
+    root = history.copy(where / "repo")
     old = {command: result.json() for command, result in
            upgrade_runs.read(history.driver(root, history.site)).items()}
     new = {command: result.json() for command, result in upgrade_runs.read(history.driver(root)).items()}
     found = [difference for command in upgrade_runs.COMMANDS
              for difference in upgrade_diff.differences(command, *_pair(old, new, command, root))]
+    return upgrade_diff.undeclared(found, upgrade_diff.read_changes(),
+                                   releases.upload_date(history.version))
 
-    assert upgrade_diff.undeclared(found, upgrade_diff.read_changes(),
-                                   releases.upload_date(history.version)) == []
+
+def test_the_release_and_the_candidate_answer_alike_or_declare_it(versions, histories, tmp_path):
+    found = {history.version: _undeclared(history, tmp_path / history.version) for history in histories}
+
+    assert found == dict.fromkeys(versions, [])
 
 
 def _pair(old: dict, new: dict, command: str, root: Path) -> tuple:
