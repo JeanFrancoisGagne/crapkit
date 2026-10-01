@@ -118,8 +118,8 @@ SURFACES = (
 
 # The deploy suite (.github/workflows/deploy.yml) installs the candidate the way
 # users do, through every channel and harness it models. A release waits for a
-# green run of its release cadence at the tag commit, keyed on the source_hash
-# the deploy kit's candidate.py computes for that tree; the published cadence
+# green run of its release cadence at the tag commit, keyed on that commit's
+# git tree id; the published cadence
 # then repeats the install from the real surfaces once they hold it.
 DEPLOY_WORKFLOW = "deploy.yml"
 DEPLOY_RELEASE_CADENCE = "release"
@@ -1133,28 +1133,29 @@ def _run_accuracy(step: Step, root: Path, version: str, receipt: dict) -> None:
 #
 # The deploy stage runs deploy.yml's release cadence on the tag commit through a
 # scratch branch, as the accuracy stage runs accuracy.yml. Its record in the
-# release receipt is keyed on that commit's sha and on candidate.json's
-# source_hash: the stage hashes the tagged tree with the deploy kit's own
-# export.py and candidate.py, dispatches the run with that hash, and the
-# workflow's scope job refuses a tree that hashes otherwise, so the run's name
-# carries the hash of the source it tested. Stage 2b checks the record's sha
-# against the receipt's head and reads the run back from GitHub. This proves the
-# suite tested the release's source, not the bytes PyPI gets: the deploy kit
+# release receipt is keyed on that commit's sha and on its git tree id
+# (`git rev-parse vVERSION^{tree}`): the stage dispatches the run with that tree
+# id, and the workflow's scope job refuses a checkout whose HEAD^{tree} differs,
+# so the run's name carries the tree it tested. A tree id names the committed
+# content, so a Windows checkout that holds CRLF on disk and the runner's LF
+# checkout read one key. The record once held candidate.py's hash of the
+# working-tree bytes: the 0.8.1 Windows checkout hashed to 2d2b705b, the runner
+# to fedbb54a, and the scope job refused every run. Stage 2b checks the record's
+# sha against the receipt's head and reads the run back from GitHub. This proves
+# the suite tested the release's source, not the bytes PyPI gets: the deploy kit
 # builds its own wheel from the tree.
 
-DEPLOY_RECORD_DIR = ".crapkit/deploy-record"
-DEPLOY_CANDIDATE = f"{DEPLOY_RECORD_DIR}/candidate/candidate.json"
-SOURCE_HASH_ARG = "source_hash=$(the tagged tree's candidate.json source_hash)"
-DEPLOY_RUN_ARG = "$(the dispatched deploy run)"
+DEPLOY_RUN_ARG = "$(the deploy run)"
+TREE_ARG = re.compile(r"tree=\$\(git rev-parse (\S+\^\{tree\})\)")
 # The longest release-cadence entry in tests/deploy/MAP.toml has a 100-minute
 # timeout, and every entry starts once the 5-minute scope job ends. The rest is
 # room for a runner queue.
 DEPLOY_WATCH = Watched(DEPLOY_WORKFLOW, "deploy", 150 * 60)
 
 
-def deploy_title(source_hash: str) -> str:
-    """deploy.yml's run-name for a release dispatch: `deploy release <source_hash>`."""
-    return f"deploy {DEPLOY_RELEASE_CADENCE} {source_hash}"
+def deploy_title(tree: str) -> str:
+    """deploy.yml's run-name for a release dispatch: `deploy release <tree id>`."""
+    return f"deploy {DEPLOY_RELEASE_CADENCE} {tree}"
 
 
 def deploy_branch(version: str) -> str:
@@ -1163,37 +1164,33 @@ def deploy_branch(version: str) -> str:
     return f"deploy-release/{version}"
 
 
+def deploy_key(root: Path, version: str) -> str:
+    """The tag commit's git tree id: the deploy record's key."""
+    try:
+        return _git(root, "rev-parse", "--verify", "--quiet", f"v{version}^{{tree}}")
+    except ReleaseError as exc:
+        raise ReleaseError(f"v{version} names no tree to key the deploy record on; "
+                           f"{_rerun(version, 'stage2a')}") from exc
+
+
 def _deploy_step(version: str) -> Step:
     branch = deploy_branch(version)
     return Step("deploy", "deploy", (
-        (PY, "tools/deploy/export.py", "--repo", ".", "--out", DEPLOY_RECORD_DIR),
-        (PY, DEPLOY_KIT, "--tree", f"{DEPLOY_RECORD_DIR}/tree.tar",
-         "--out", f"{DEPLOY_RECORD_DIR}/candidate", "--no-build"),
         ("git", "push", "-q", "origin", f"v{version}^{{commit}}:refs/heads/{branch}"),
         ("gh", "workflow", "run", DEPLOY_WORKFLOW, "--repo", GITHUB_REPO, "--ref", branch,
-         "-f", f"cadence={DEPLOY_RELEASE_CADENCE}", "-f", SOURCE_HASH_ARG),
+         "-f", f"cadence={DEPLOY_RELEASE_CADENCE}", "-f", f"tree=$(git rev-parse v{version}^{{tree}})"),
+        ("gh", "run", "rerun", DEPLOY_RUN_ARG, "--failed", "--repo", GITHUB_REPO),
         ("gh", "run", "watch", DEPLOY_RUN_ARG, "--repo", GITHUB_REPO, "--exit-status"),
         ("git", "push", "-q", "origin", "--delete", branch)), background=True,
-        note="hashes the tag commit's tree with the deploy kit's export.py and candidate.py, then "
-             "runs deploy.yml's release cadence on that commit through a scratch branch (up to "
-             "150 min); its scope job refuses a tree that hashes otherwise. The receipt keeps the "
-             "record, keyed on the commit and the source_hash; a rerun reuses a run already "
-             "passed or running")
+        note="runs deploy.yml's release cadence on the tag commit through a scratch branch (up to "
+             "150 min), named for the commit's git tree id; its scope job refuses a checkout "
+             "whose tree differs. The receipt keeps the record, keyed on the commit and the tree "
+             "id. A rerun reuses a run already passed or running, and after a red or cancelled "
+             "run under that key reruns only its failed and cancelled jobs")
 
 
-def _is_sha256(value) -> bool:
-    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
-
-
-def source_hash(root: Path) -> str:
-    """candidate.json's source_hash for the tree the deploy stage hashed."""
-    try:
-        value = json.loads((root / DEPLOY_CANDIDATE).read_text(encoding="utf-8")).get("source_hash")
-    except (OSError, ValueError, AttributeError) as exc:
-        raise ReleaseError(f"{DEPLOY_CANDIDATE} is unreadable: {exc}") from exc
-    if not _is_sha256(value):
-        raise ReleaseError(f"{DEPLOY_CANDIDATE} names no source_hash: {value!r}")
-    return value
+def _is_tree_id(value) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", value) is not None
 
 
 def _deploy_runs(head: str) -> list:
@@ -1208,8 +1205,8 @@ def _deploy_runs(head: str) -> list:
 
 
 def _record_runs(runs: list, record: dict) -> list:
-    """The release-cadence runs at the record's commit named for its source_hash."""
-    wanted = (deploy_title(record["source_hash"]), record["sha"])
+    """The release-cadence runs at the record's commit named for its tree id."""
+    wanted = (deploy_title(record["tree"]), record["sha"])
     return [run for run in runs if (run.get("display_title"), run.get("head_sha")) == wanted]
 
 
@@ -1229,8 +1226,8 @@ def _record_problems(record, head: str, version: str) -> list:
     if made != head:
         return [f"deploy gate: the deploy record was made at {made[:12]} and the release is at "
                 f"{head[:12]}; {redo}"]
-    if not _is_sha256(record.get("source_hash")):
-        return [f"deploy gate: the deploy record names no candidate.json source_hash; {redo}"]
+    if not _is_tree_id(record.get("tree")):
+        return [f"deploy gate: the deploy record names no git tree id; {redo}"]
     return []
 
 
@@ -1240,7 +1237,7 @@ def _run_problems(record: dict, version: str) -> list:
         return []
     seen = f" (runs by that name: {', '.join(map(_run_label, found))})" if found else ""
     return [f"deploy gate: GitHub holds no successful {DEPLOY_WORKFLOW} run named "
-            f"`{deploy_title(record['source_hash'])}` at {record['sha'][:12]}{seen}; "
+            f"`{deploy_title(record['tree'])}` at {record['sha'][:12]}{seen}; "
             f"{_rerun(version, 'deploy')}"]
 
 
@@ -1258,39 +1255,56 @@ def deploy_problems(version: str, receipt: dict) -> list:
 def deploy_gate(root: Path, version: str, receipt: dict) -> None:
     """Stage 2b's refusal beside the accuracy gate: the receipt's deploy record
     names the release commit, and GitHub holds a green release-cadence run of
-    deploy.yml at that commit, named for the record's source_hash. A tree
-    without the deploy kit is not gated."""
+    deploy.yml at that commit, named for the record's tree id. A tree without
+    the deploy kit is not gated."""
     problems = deploy_problems(version, receipt) if gates_deploy(root) else []
     if problems:
         raise ReleaseError(NL.join(problems))
 
 
-def _hash_tree(step: Step, root: Path, version: str) -> str:
-    """Hash the tag commit's tree the way deploy.yml's scope job does. An earlier
-    attempt's output goes first: candidate.py refuses a staged/ that exists."""
-    target = _inside(root, DEPLOY_RECORD_DIR)
-    if target.exists():
-        shutil.rmtree(target)
-    _run_or_untag(step._replace(commands=step.commands[:2]), root, version, False)
-    return source_hash(root)
+def _for_run(command: tuple, run: dict) -> tuple:
+    return tuple(str(run["id"]) if arg == DEPLOY_RUN_ARG else arg for arg in command)
+
+
+def _newest_red(runs: list) -> dict | None:
+    """The newest finished run under the record's key that did not pass."""
+    red = [run for run in runs if run.get("status") == "completed" and run.get("conclusion") != "success"]
+    return max(red, key=lambda run: run.get("id") or 0, default=None)
+
+
+def _rerun_failed(step: Step, root: Path, version: str, record: dict, red: dict) -> dict:
+    """Rerun only the failed and cancelled jobs of a red run under the same key.
+    Every deploy entry needs only the scope job and downloads nothing another
+    job wrote, so a green entry from the earlier attempt still holds for this
+    tree. The branch goes back first: the rerun checks the commit out again."""
+    commands = (step.commands[0], _for_run(step.commands[2], red))
+    _run_or_untag(step._replace(commands=commands), root, version, False)
+    return _dispatched(lambda: [run for run in _record_runs(_deploy_runs(record["sha"]), record)
+                                if run.get("id") == red.get("id") and run.get("status") != "completed"],
+                       set(), f"{_run_label(red)} was rerun but never left its finished state; "
+                              f"{_rerun(version, 'deploy')}")
 
 
 def _deploy_to_watch(step: Step, root: Path, version: str, record: dict, runs: list) -> dict:
-    """A release run already going for this record, else a new dispatch's run."""
+    """A release run already going for this record, else the newest red one
+    rerun, else a new dispatch's run."""
     run = _unfinished(runs)
     if run is not None:
         return run
-    _run_or_untag(step._replace(commands=step.commands[2:4]), root, version, False)
+    red = _newest_red(runs)
+    if red is not None:
+        return _rerun_failed(step, root, version, record, red)
+    _run_or_untag(step._replace(commands=step.commands[:2]), root, version, False)
     return _dispatched(lambda: _record_runs(_deploy_runs(record["sha"]), record),
                        {old.get("id") for old in runs},
                        f"{DEPLOY_WORKFLOW} was dispatched but no run named "
-                       f"`{deploy_title(record['source_hash'])}` appeared at {record['sha'][:12]}; "
+                       f"`{deploy_title(record['tree'])}` appeared at {record['sha'][:12]}; "
                        f"{_rerun(version, 'deploy')}")
 
 
 def _remote_deploy(step: Step, root: Path, version: str, record: dict) -> None:
     """Watch the record's release run to its end, dispatching one only when none
-    passed or is running. The scratch branch goes afterwards, whichever attempt
+    ran under its key. The scratch branch goes afterwards, whichever attempt
     pushed it; a branch already gone is fine."""
     runs = _record_runs(_deploy_runs(record["sha"]), record)
     if not _green(runs):
@@ -1299,9 +1313,9 @@ def _remote_deploy(step: Step, root: Path, version: str, record: dict) -> None:
 
 
 def _run_deploy(step: Step, root: Path, version: str, receipt: dict) -> None:
-    """Hash the tagged tree, run the release cadence on it, and keep the record
-    stage 2b reads, keyed on the commit and the source_hash."""
-    record = {"sha": receipt["head"], "source_hash": _hash_tree(step, root, version)}
+    """Run the release cadence on the tag commit and keep the record stage 2b
+    reads, keyed on the commit and its tree id."""
+    record = {"sha": receipt["head"], "tree": deploy_key(root, version)}
     _remote_deploy(step, root, version, record)
     receipt["deploy"] = record
     deploy_gate(root, version, receipt)
@@ -1354,8 +1368,9 @@ def _expanded(arg: str, root: Path) -> list[str]:
         return _release_files(root)
     if arg == GH_TOKEN_ARG:
         return [_login_token()]
-    if arg == SOURCE_HASH_ARG:
-        return [f"source_hash={source_hash(root)}"]
+    tree = TREE_ARG.fullmatch(arg)
+    if tree:
+        return [f"tree={_git(root, 'rev-parse', tree.group(1))}"]
     return [arg]
 
 

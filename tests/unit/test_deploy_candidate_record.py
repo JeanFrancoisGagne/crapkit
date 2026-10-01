@@ -1,11 +1,10 @@
-"""candidate.py's hash-only run, which keys the release's deploy record.
+"""candidate.py's hash-only run and the hashes candidate.json records.
 
-`release.py run deploy` runs export.py and then candidate.py with --no-build on
-the tag commit's tree, and dispatches deploy.yml's release cadence with the
-source_hash candidate.json records. The workflow's scope job runs the same two
-commands on the tree it checked out, with --source-hash, and fails the run
-when the tree hashes otherwise. Both sides must reach one hash for one commit,
-whichever directory they write into.
+One tree.tar must reach one source_hash whichever directory candidate.py writes
+into and whichever OS runs it. The release's deploy record no longer reads this
+hash: it is keyed on the tag commit's git tree id, because a checkout with
+core.autocrlf=true writes other bytes for the same commit
+(tests/unit/test_release_deploy_tree_key.py).
 """
 import hashlib
 import io
@@ -22,9 +21,6 @@ sys.path.append(str(ROOT / "tools" / "deploy"))
 
 import candidate  # noqa: E402
 import export  # noqa: E402
-
-OTHER = "0" * 64
-
 
 def _tar(tmp_path, files):
     path = tmp_path / "tree.tar"
@@ -92,24 +88,19 @@ def test_building_does_not_move_the_source_hash(tree, lock, tmp_path, monkeypatc
     assert (built["wheel"], built["sdist"]) == ("crapkit-0.9.0-py3-none-any.whl", "crapkit-0.9.0.tar.gz")
 
 
-def test_the_hash_the_release_dispatched_with_passes(tree, lock, tmp_path, monkeypatch, capsys):
+def test_a_hash_only_run_prints_its_source_hash(tree, lock, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(candidate, "build", _refuse_build)
-    _main(tree, tmp_path / "release", lock, "--no-build")
-    expected = _record(tmp_path / "release")["source_hash"]
-    capsys.readouterr()
 
-    assert _main(tree, tmp_path / "scope", lock, "--no-build", "--source-hash", expected) == 0
+    assert _main(tree, tmp_path / "scope", lock, "--no-build") == 0
+
+    expected = _record(tmp_path / "scope")["source_hash"]
     assert capsys.readouterr().out == f"candidate: crapkit 0.9.0 (not built; source_hash {expected})\n"
 
 
-def test_another_hash_fails_the_run_and_names_both(tree, lock, tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(candidate, "build", _refuse_build)
-
-    assert _main(tree, tmp_path / "scope", lock, "--no-build", "--source-hash", OTHER) == 1
-
-    found = _record(tmp_path / "scope")["source_hash"]
-    assert capsys.readouterr().err == (f"candidate: the tree hashes to source_hash {found}, and the "
-                                       f"release dispatched this run for {OTHER}\n")
+def test_the_kit_no_longer_takes_a_source_hash_to_match(tree, lock, tmp_path):
+    """The record's key is the git tree id; a byte hash split one commit in two."""
+    with pytest.raises(SystemExit):
+        _main(tree, tmp_path / "scope", lock, "--no-build", "--source-hash", "0" * 64)
 
 
 def test_a_built_candidate_still_prints_its_artifacts(tree, lock, tmp_path, monkeypatch, capsys):
@@ -144,10 +135,9 @@ def _hash_checkout(root, out, lock) -> str:
     return _record(out / "candidate")["source_hash"]
 
 
-def test_the_stage_and_the_scope_job_reach_one_hash_for_one_commit(tmp_path, lock, monkeypatch):
-    """The stage writes under the checkout's ignored .crapkit/deploy-record; the
-    scope job writes under the runner's temp directory. Neither output reaches
-    the tree it hashes."""
+def test_two_out_directories_reach_one_hash_for_one_commit(tmp_path, lock, monkeypatch):
+    """One out directory under the checkout's ignored .crapkit/, one under a
+    runner's temp directory. Neither output reaches the tree it hashes."""
     monkeypatch.setattr(candidate, "build", _refuse_build)
     root = _checkout(tmp_path)
 
@@ -183,7 +173,7 @@ def test_the_hash_orders_files_by_their_posix_name_on_every_os(tmp_path, lock, m
     monkeypatch.setattr(candidate, "build", _refuse_build)
     expected = _hashes_by_name(MIXED)
 
-    code = _main(_tar(tmp_path, MIXED), tmp_path / "scope", lock, "--no-build", "--source-hash", expected[0])
+    code = _main(_tar(tmp_path, MIXED), tmp_path / "scope", lock, "--no-build")
 
     record = _record(tmp_path / "scope")
     assert (record["source_hash"], record["file_list_hash"]) == expected

@@ -97,34 +97,44 @@ GitHub holds no successful accuracy.yml run named `accuracy release VERSION` at 
 A tree that holds `tools/deploy/candidate.py` publishes only past deploy.yml's release
 cadence at the tag commit: the run that installs the candidate through every channel and
 harness the deploy suite models, fresh and as an upgrade. `run deploy VERSION` comes
-after verify and does two things. Keep it in its own background process: the run can
-take two and a half hours.
+after verify. Keep it in its own background process: the run can take two and a half
+hours.
 
-1. Here: `python tools/deploy/export.py --repo . --out .crapkit/deploy-record`, then
-   `python tools/deploy/candidate.py --tree .crapkit/deploy-record/tree.tar --out .crapkit/deploy-record/candidate --no-build`.
-   The deploy kit's own commands hash the tag commit's tree into candidate.json's
-   `source_hash`.
+1. Here: it reads the key, the tag commit's git tree id (`git rev-parse vVERSION^{tree}`).
 2. On GitHub: it pushes the tag commit to the scratch branch `deploy-release/VERSION`,
-   dispatches deploy.yml with `cadence=release` and `source_hash=` that hash, watches the
-   run for up to 150 minutes, and deletes the branch. The run is named
-   `deploy release SOURCE_HASH`. Its scope job runs the same two commands on the tree it
-   checked out, and when that tree hashes otherwise the run fails before any cell starts.
+   dispatches deploy.yml with `cadence=release` and `tree=` that id, watches the run for
+   up to 150 minutes, and deletes the branch. The run is named `deploy release TREE`. Its
+   scope job compares `git rev-parse HEAD^{tree}` with the input, and when the checkout's
+   tree differs the run fails before any cell starts.
+
+A tree id names the committed content, not the bytes a checkout writes. The key used to
+be candidate.py's hash of the working-tree bytes, and a Windows checkout with
+`core.autocrlf=true` holds two text fixtures with CRLF on disk while `git status` stays
+clean: 0.8.1 hashed to 2d2b705b here and to fedbb54a on the runner, so the scope job
+refused every run.
 
 The stage then writes a deploy record into `.crapkit/release-receipt.json`: the tag
-commit's sha and the source_hash. A rerun reuses a run that passed or is still running,
-so it dispatches nothing new after a timeout.
+commit's sha and its tree id. A rerun of the stage reuses a run under that key that
+passed or is still running. After a red or cancelled run under the key it runs
+`gh run rerun ID --failed` and watches that run again: every deploy entry needs only the
+scope job and downloads nothing another job wrote, so the green entries of the earlier
+attempt still hold for the same tree. A different tree id dispatches a new run.
 
 Stage 2b and the registry stage require the record's sha to be the receipt's head. They
 then read deploy.yml's runs at that commit from GitHub and require one named
-`deploy release SOURCE_HASH` that completed with success. The record proves the suite
-tested the release's source, not the bytes PyPI gets: the deploy kit builds its own wheel
-from that tree. Each refusal ends with the rerun:
+`deploy release TREE` that completed with success. The record proves the suite tested
+the release's source, not the bytes PyPI gets: the deploy kit builds its own wheel from
+that tree. Each refusal ends with the rerun:
 
 ```
 deploy gate: the release receipt holds no deploy record; rerun `python tools/release/release.py run deploy VERSION`
 deploy gate: the deploy record was made at 0123456789ab and the release is at 8fb7b45c7248; rerun `python tools/release/release.py run deploy VERSION`
-deploy gate: GitHub holds no successful deploy.yml run named `deploy release SOURCE_HASH` at 8fb7b45c7248; rerun `python tools/release/release.py run deploy VERSION`
+deploy gate: GitHub holds no successful deploy.yml run named `deploy release TREE` at 8fb7b45c7248; rerun `python tools/release/release.py run deploy VERSION`
 ```
+
+The release cadence leaves out `weekly-online`: its cells check vVERSION out of GitHub,
+and the tag reaches GitHub only when stage 2b pushes it. `published-online` runs after
+the push.
 
 `check` reads no deploy.yml run: before the bump there is no tag commit to test. It
 refuses a machine whose gh cannot dispatch and read the run later:

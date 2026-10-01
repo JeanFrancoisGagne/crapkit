@@ -2,7 +2,7 @@
 stamped with a version newer than every release in the wheelhouse.
 
     python tools/deploy/candidate.py --tree tree.tar --out DIR [--lock wheelhouse.lock]
-        [--no-build] [--source-hash SHA256]
+        [--no-build]
 
 Writes into DIR:
 
@@ -21,10 +21,10 @@ A tree whose version is not above the newest release in wheelhouse.lock is
 stamped one patch past that release, so pip, uv and pipx always see the
 candidate as the upgrade.
 
-source_hash keys the release's deploy record. `release.py run deploy` hashes
-the tag commit's tree with --no-build and dispatches deploy.yml with the
-result; the workflow's scope job reruns this with --source-hash, which exits 1
-when the tree it checked out hashes otherwise.
+source_hash names the staged bytes a deploy run installed. It does not key
+the release's deploy record: a Windows checkout with core.autocrlf=true holds
+CRLF on disk, so the 0.8.1 tag commit hashed to 2d2b705b there and to fedbb54a
+on the runner. The record is keyed on the commit's git tree id instead.
 """
 from __future__ import annotations
 
@@ -150,14 +150,6 @@ def candidate(tree: Path, out: Path, lock: Path, python: str = sys.executable,
     return record
 
 
-def source_problem(record: dict, expected: str | None) -> str | None:
-    """Why the staged tree is not the one a release dispatched this run for."""
-    if expected is None or record["source_hash"] == expected:
-        return None
-    return (f"candidate: the tree hashes to source_hash {record['source_hash']}, and the release "
-            f"dispatched this run for {expected}")
-
-
 def summary(record: dict) -> str:
     if "wheel" not in record:
         return f"candidate: crapkit {record['version']} (not built; source_hash {record['source_hash']})"
@@ -171,18 +163,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--lock", type=Path, default=HERE / "wheelhouse.lock")
     parser.add_argument("--no-build", action="store_true",
                         help="stage and hash the tree only; candidate.json names no artifact")
-    parser.add_argument("--source-hash", metavar="SHA256",
-                        help="exit 1 unless the staged tree hashes to this source_hash")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     record = candidate(args.tree, args.out, args.lock, build_dist=not args.no_build)
-    problem = source_problem(record, args.source_hash)
-    if problem:
-        print(problem, file=sys.stderr)
-        return 1
     print(summary(record))
     return 0
 

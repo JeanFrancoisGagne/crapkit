@@ -4,14 +4,16 @@
 pre-bump HEAD. The release never tags that commit, so the run proved nothing
 about what it shipped, and no guard after the bump looked at deploy.yml again.
 
-The deploy stage now hashes the tag commit's tree with the deploy kit's own
-export.py and candidate.py, pushes the commit to a scratch branch, dispatches
-the release cadence there with candidate.json's source_hash, and watches the
-run. deploy.yml's scope job refuses a tree that hashes otherwise, so a green
-run named `deploy release <source_hash>` at the tag commit is the suite's word
-on that source. The stage keeps a deploy record in the release receipt, keyed
-on the commit sha and the source_hash, and stage 2b refuses unless the
-record's sha is the receipt's head and GitHub still holds that green run.
+The deploy stage now reads the tag commit's git tree id, pushes the commit to
+a scratch branch, dispatches the release cadence there with that tree id, and
+watches the run. deploy.yml's scope job refuses a checkout whose tree differs,
+so a green run named `deploy release <tree>` at the tag commit is the suite's
+word on that source. The stage keeps a deploy record in the release receipt,
+keyed on the commit sha and the tree id, and stage 2b refuses unless the
+record's sha is the receipt's head and GitHub still holds that green run. After
+a red or cancelled run under the same key the stage reruns only its failed and
+cancelled jobs: on 0.8.1 one red cell redispatched every entry, up to 845
+job-minutes.
 `check` keeps what stage 1 can know: gh can dispatch and read the run later.
 
 The run objects keep the fields of the REST API's workflow runs listing, as
@@ -33,26 +35,26 @@ from test_release_tool import _tree, release
 VERSION = "0.5.2"
 HEAD = "8fb7b45c7248c2ff71a472b40e1111c4a93674ce"
 OTHER = "0123456789abcdef0123456789abcdef01234567"
-SOURCE = "3f1c09a2b7de" + "0" * 52
-OTHER_SOURCE = "9a0e44c1d2f3" + "1" * 52
+TREE = "3f1c09a2b7de" + "0" * 28
+OTHER_TREE = "9a0e44c1d2f3" + "1" * 28
 REDEPLOY = f"rerun `python tools/release/release.py run deploy {VERSION}`"
 RUNS_URL = ("https://api.github.com/repos/JeanFrancoisGagne/crapkit/actions/workflows/deploy.yml/"
             "runs?head_sha={head}&event=workflow_dispatch&per_page=100")
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github" / "workflows" / "deploy.yml"
 
 
-def _run(head=HEAD, source=SOURCE, **changes) -> dict:
+def _run(head=HEAD, tree=TREE, **changes) -> dict:
     """A release-cadence dispatch of deploy.yml as the runs listing reports it."""
     return {"id": 36011909180, "name": "deploy", "path": ".github/workflows/deploy.yml",
             "event": "workflow_dispatch", "head_branch": f"deploy-release/{VERSION}",
-            "head_sha": head, "display_title": f"deploy release {source}", "status": "completed",
+            "head_sha": head, "display_title": f"deploy release {tree}", "status": "completed",
             "conclusion": "success",
             "html_url": "https://github.com/JeanFrancoisGagne/crapkit/actions/runs/36011909180",
             **changes}
 
 
 def _receipt(**record) -> dict:
-    return {"head": HEAD, "version": VERSION, "deploy": {"sha": HEAD, "source_hash": SOURCE, **record}}
+    return {"head": HEAD, "version": VERSION, "deploy": {"sha": HEAD, "tree": TREE, **record}}
 
 
 def _kit(root: Path) -> Path:
@@ -88,14 +90,14 @@ def _refusal(root, receipt) -> str:
 
 # --- the workflow names the run the gate reads ---------------------------------------------------
 
-def _rendered(cadence: str, source: str) -> str:
+def _rendered(cadence: str, tree: str) -> str:
     title = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["run-name"]
     return (title.replace("${{ inputs.cadence || github.event_name }}", cadence)
-            .replace("${{ inputs.source_hash }}", source))
+            .replace("${{ inputs.tree }}", tree))
 
 
-def test_a_release_dispatch_is_named_for_the_source_hash_it_was_given():
-    assert _rendered("release", SOURCE) == release.deploy_title(SOURCE) == f"deploy release {SOURCE}"
+def test_a_release_dispatch_is_named_for_the_tree_it_was_given():
+    assert _rendered("release", TREE) == release.deploy_title(TREE) == f"deploy release {TREE}"
     assert _rendered("nightly", "").split() == ["deploy", "nightly"]
 
 
@@ -104,24 +106,18 @@ def _dispatch_inputs() -> dict:
     return on.get("on", on.get(True))["workflow_dispatch"]["inputs"]
 
 
-def test_the_workflow_takes_the_source_hash_as_a_dispatch_input():
-    assert _dispatch_inputs()["source_hash"]["default"] == ""
+def test_the_workflow_takes_the_tree_as_a_dispatch_input():
+    assert _dispatch_inputs()["tree"]["default"] == ""
 
 
-def test_the_scope_job_hashes_its_tree_with_the_kit_and_refuses_another_hash():
-    """No cell runs unless the tree the run checked out hashes to the source_hash
-    the release dispatched with: the scope job gates every other job."""
+def test_the_scope_job_matches_the_tree_before_it_plans_any_cell():
+    """No cell runs unless the tree the run checked out is the one the release
+    dispatched with: the scope job gates every other job."""
     jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
     names = [step.get("name", "") for step in jobs["scope"]["steps"]]
-    (step,) = [s for s in jobs["scope"]["steps"] if "source_hash" in s.get("name", "")]
-    lines = step["run"].strip().splitlines()
+    (step,) = [s for s in jobs["scope"]["steps"] if s.get("if") == "inputs.tree != ''"]
 
     assert names.index(step["name"]) < names.index("choose the cadence and the jobs it runs")
-    assert step["if"] == "inputs.source_hash != ''"
-    assert step["env"] == {"SOURCE_HASH": "${{ inputs.source_hash }}"}
-    assert lines[0].startswith("python tools/deploy/export.py --repo . --out ")
-    assert lines[1].startswith("python tools/deploy/candidate.py --tree ")
-    assert lines[1].endswith('--no-build --source-hash "$SOURCE_HASH"')
 
 
 # --- stage 2b's guard reads the record ------------------------------------------------------------
@@ -148,18 +144,25 @@ def test_a_record_made_at_another_commit_refuses_before_asking_github(kit, githu
     assert github["asked"] == []
 
 
-@pytest.mark.parametrize("value", [None, "", "abc", SOURCE.upper(), SOURCE + "0", 7])
-def test_a_record_without_a_source_hash_refuses(kit, github, value):
-    assert _refusal(kit, _receipt(source_hash=value)) == (
-        f"deploy gate: the deploy record names no candidate.json source_hash; {REDEPLOY}")
+@pytest.mark.parametrize("value", [None, "", "abc", TREE.upper(), TREE + "0", "0" * 64 + "0", 7])
+def test_a_record_without_a_tree_id_refuses(kit, github, value):
+    assert _refusal(kit, _receipt(tree=value)) == (
+        f"deploy gate: the deploy record names no git tree id; {REDEPLOY}")
+
+
+def test_a_record_still_keyed_on_a_source_hash_refuses(kit, github):
+    """A receipt the old stage wrote names no tree; its runs were never named for one."""
+    receipt = {"head": HEAD, "version": VERSION, "deploy": {"sha": HEAD, "source_hash": "3f" * 32}}
+
+    assert _refusal(kit, receipt) == f"deploy gate: the deploy record names no git tree id; {REDEPLOY}"
 
 
 @pytest.mark.parametrize("runs", [
     [],
     [_run(head=OTHER)],
-    [_run(source=OTHER_SOURCE)],
+    [_run(tree=OTHER_TREE)],
     [_run(display_title="deploy release")],
-    [_run(display_title=f"deploy nightly {SOURCE}")],
+    [_run(display_title=f"deploy nightly {TREE}")],
     [_run(conclusion="failure")],
     [_run(status="in_progress", conclusion=None)],
 ], ids=["none", "other-commit", "other-source", "unnamed", "nightly", "failed", "running"])
@@ -169,7 +172,7 @@ def test_no_green_run_named_for_the_record_refuses(kit, github, runs):
     said = _refusal(kit, _receipt())
 
     assert said.startswith(f"deploy gate: GitHub holds no successful deploy.yml run named "
-                           f"`deploy release {SOURCE}` at {HEAD[:12]}")
+                           f"`deploy release {TREE}` at {HEAD[:12]}")
     assert said.endswith(REDEPLOY)
 
 
@@ -267,12 +270,13 @@ def test_the_deploy_stage_follows_verify_and_precedes_every_publication():
     assert (step.stage, step.background) == ("deploy", True)
 
 
-def test_the_stage_hashes_the_tree_with_the_deploy_kits_own_commands():
+def test_the_stage_runs_no_deploy_kit_command_to_key_the_record():
+    """The key is git's tree id; candidate.py's hash of working-tree bytes split
+    one 0.8.1 commit into 2d2b705b on Windows and fedbb54a on the runner."""
     commands = _deploy_step().commands
 
-    assert commands[0][1:] == ("tools/deploy/export.py", "--repo", ".", "--out", ".crapkit/deploy-record")
-    assert commands[1][1:] == ("tools/deploy/candidate.py", "--tree", ".crapkit/deploy-record/tree.tar",
-                               "--out", ".crapkit/deploy-record/candidate", "--no-build")
+    assert [command[0] for command in commands] == ["git", "gh", "gh", "gh", "git"]
+    assert not any("tools/deploy/" in arg for command in commands for arg in command)
 
 
 def test_the_stage_runs_the_release_cadence_on_the_tag_commit_and_publishes_no_release_ref():
@@ -283,26 +287,15 @@ def test_the_stage_runs_the_release_cadence_on_the_tag_commit_and_publishes_no_r
     assert pushed == [f"v{VERSION}^{{commit}}:refs/heads/deploy-release/{VERSION}", f"deploy-release/{VERSION}"]
     assert dispatch[3] == "deploy.yml"
     assert dispatch[dispatch.index("--ref") + 1] == f"deploy-release/{VERSION}"
-    assert dispatch[-4:] == ("-f", "cadence=release", "-f", release.SOURCE_HASH_ARG)
+    assert dispatch[-4:] == ("-f", "cadence=release", "-f", f"tree=$(git rev-parse v{VERSION}^{{tree}})")
 
 
-def test_the_dispatch_hands_the_workflow_the_hash_candidate_py_wrote(tmp_path):
-    (tmp_path / ".crapkit" / "deploy-record" / "candidate").mkdir(parents=True)
-    (tmp_path / release.DEPLOY_CANDIDATE).write_text(json.dumps({"source_hash": SOURCE}), encoding="utf-8")
+def test_the_dispatch_hands_the_workflow_the_tag_commits_tree(tmp_path):
+    root = repo(tmp_path, bumped=True)
+    git(root, "tag", f"v{VERSION}")
     (dispatch,) = [command for command in _deploy_step().commands if command[:3] == ("gh", "workflow", "run")]
 
-    assert release._arguments(dispatch, tmp_path)[-1] == f"source_hash={SOURCE}"
-
-
-@pytest.mark.parametrize("text", [None, "", "[]", "{}", '{"source_hash": "abc"}'],
-                         ids=["missing", "empty", "list", "no-key", "short"])
-def test_a_candidate_json_without_a_source_hash_dispatches_nothing(tmp_path, text):
-    if text is not None:
-        (tmp_path / ".crapkit" / "deploy-record" / "candidate").mkdir(parents=True)
-        (tmp_path / release.DEPLOY_CANDIDATE).write_text(text, encoding="utf-8")
-
-    with pytest.raises(release.ReleaseError, match="^.crapkit/deploy-record/candidate/candidate.json "):
-        release.source_hash(tmp_path)
+    assert release._arguments(dispatch, root)[-1] == f"tree={git(root, 'rev-parse', 'HEAD^{tree}')}"
 
 
 def test_the_stage_list_names_the_deploy_stage(tmp_path, capsys):
@@ -328,18 +321,22 @@ def test_the_deploy_stage_refuses_a_tree_verify_never_passed(tmp_path, monkeypat
 class Stage:
     """The commands the stage runs, GitHub's runs, and what `gh run watch` answers."""
 
-    def __init__(self, runs, watch=0, appear=True, source=SOURCE):
-        self.runs, self.watch, self.appear, self.source = runs, watch, appear, source
+    def __init__(self, runs, watch=0, appear=True, tree=TREE):
+        self.runs, self.watch, self.appear, self.tree = runs, watch, appear, tree
         self.commands, self.watched = [], []
+
+    def key(self, root, version):
+        if self.tree is None:
+            raise release.ReleaseError(f"v{version} names no tree to key the deploy record on")
+        return self.tree
 
     def execute(self, command, root, dry_run):
         self.commands.append(command)
-        if command[1:2] == ("tools/deploy/candidate.py",):
-            (root / release.DEPLOY_CANDIDATE).parent.mkdir(parents=True, exist_ok=True)
-            (root / release.DEPLOY_CANDIDATE).write_text(json.dumps({"source_hash": self.source}),
-                                                         encoding="utf-8")
         if command[:3] == ("gh", "workflow", "run") and self.appear:
             self.runs.append(_run(status="queued", conclusion=None, id=99))
+        if command[:3] == ("gh", "run", "rerun") and self.appear:
+            self.runs = [{**run, "status": "queued", "conclusion": None} if str(run["id"]) == command[3]
+                         else run for run in self.runs]
 
     def remote_json(self, url, *, absent=False):
         return {"total_count": len(self.runs), "workflow_runs": list(self.runs)}
@@ -361,6 +358,7 @@ def stage(kit, monkeypatch):
         fake = Stage(runs, **kwargs)
         monkeypatch.setattr(release, "_execute", fake.execute)
         monkeypatch.setattr(release, "_remote_json", fake.remote_json)
+        monkeypatch.setattr(release, "deploy_key", fake.key)
         monkeypatch.setattr(release.subprocess, "run", fake.run)
         monkeypatch.setattr(release, "READBACK_PAUSE", 0)
         monkeypatch.setattr(release.time, "sleep", lambda seconds: None)
@@ -382,17 +380,14 @@ def _saved(kit) -> dict:
     return json.loads((kit / ".crapkit" / "release-receipt.json").read_text(encoding="utf-8"))
 
 
-HASHED = [f"{release.PY} tools/deploy/export.py --repo", f"{release.PY} tools/deploy/candidate.py --tree"]
-
-
-def test_no_run_hashes_the_tree_dispatches_watches_and_keeps_the_record(kit, stage):
+def test_no_run_dispatches_watches_and_keeps_the_record(kit, stage):
     fake = stage([])
 
     receipt = _deploy(kit)
 
-    assert _names(fake) == [*HASHED, "git push -q", "gh workflow run", "git push -q"]
+    assert _names(fake) == ["git push -q", "gh workflow run", "git push -q"]
     assert fake.watched == [("99", 150 * 60)]
-    assert receipt["deploy"] == _saved(kit)["deploy"] == {"sha": HEAD, "source_hash": SOURCE}
+    assert receipt["deploy"] == _saved(kit)["deploy"] == {"sha": HEAD, "tree": TREE}
 
 
 def test_a_green_run_for_the_record_dispatches_nothing(kit, stage):
@@ -400,13 +395,13 @@ def test_a_green_run_for_the_record_dispatches_nothing(kit, stage):
 
     _deploy(kit)
 
-    assert _names(fake) == [*HASHED, "git push -q"] and fake.watched == []
+    assert _names(fake) == ["git push -q"] and fake.watched == []
     assert fake.commands[-1][-2:] == ("--delete", f"deploy-release/{VERSION}")
 
 
 def test_a_green_run_for_another_tree_is_not_the_record(kit, stage):
-    """The tree hashes to SOURCE; a green run named for another hash tested other source."""
-    fake = stage([_run(source=OTHER_SOURCE)])
+    """The tag's tree is TREE; a green run named for another tree tested other source."""
+    fake = stage([_run(tree=OTHER_TREE)])
 
     _deploy(kit)
 
@@ -421,16 +416,44 @@ def test_a_run_already_going_is_watched_not_redispatched(kit, stage):
     assert "gh workflow run" not in _names(fake) and fake.watched == [("7", 150 * 60)]
 
 
-def test_an_earlier_attempts_output_is_cleared_before_the_tree_is_hashed(kit, stage):
-    """candidate.py refuses a staged/ that exists."""
-    leftover = kit / ".crapkit" / "deploy-record" / "candidate" / "staged" / "old.txt"
-    leftover.parent.mkdir(parents=True)
-    leftover.write_text("an earlier attempt", encoding="utf-8")
-    stage([_run()])
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out"])
+def test_a_red_run_under_the_same_key_reruns_only_its_failed_jobs(kit, stage, conclusion):
+    """Green entries of the earlier attempt hold for this tree: every entry
+    needs only the scope job and downloads nothing another job wrote."""
+    fake = stage([_run(conclusion=conclusion, id=7)])
+
+    receipt = _deploy(kit)
+
+    assert _names(fake) == ["git push -q", "gh run rerun", "git push -q"]
+    assert fake.commands[1] == ("gh", "run", "rerun", "7", "--failed",
+                                "--repo", "github.com/JeanFrancoisGagne/crapkit")
+    assert fake.watched == [("7", 150 * 60)]
+    assert receipt["deploy"] == {"sha": HEAD, "tree": TREE}
+
+
+def test_the_newest_red_run_is_the_one_rerun(kit, stage):
+    fake = stage([_run(conclusion="failure", id=7), _run(conclusion="cancelled", id=12),
+                  _run(conclusion="failure", id=9)])
 
     _deploy(kit)
 
-    assert not leftover.exists()
+    assert fake.commands[1][3] == "12" and fake.watched == [("12", 150 * 60)]
+
+
+def test_a_red_run_for_another_tree_is_not_rerun(kit, stage):
+    """A different key dispatches anew: nothing the red run tested is this tree."""
+    fake = stage([_run(tree=OTHER_TREE, conclusion="failure", id=7)])
+
+    _deploy(kit)
+
+    assert "gh run rerun" not in _names(fake) and fake.watched == [("99", 150 * 60)]
+
+
+def test_a_rerun_that_never_leaves_its_finished_state_stops_the_stage(kit, stage):
+    stage([_run(conclusion="failure", id=7)], appear=False)
+
+    with pytest.raises(release.ReleaseError, match="was rerun but never left its finished state"):
+        _deploy(kit)
 
 
 @pytest.mark.parametrize("watch, says", [("timeout", "still runs after 150 minutes"),
@@ -449,18 +472,18 @@ def test_a_run_that_fails_or_outlasts_the_wait_stops_the_stage_and_keeps_no_reco
 def test_a_dispatch_whose_run_never_appears_stops_the_stage(kit, stage):
     stage([], appear=False)
 
-    with pytest.raises(release.ReleaseError, match=f"no run named `deploy release {SOURCE}` appeared "
+    with pytest.raises(release.ReleaseError, match=f"no run named `deploy release {TREE}` appeared "
                                                    f"at {HEAD[:12]}"):
         _deploy(kit)
 
 
-def test_a_tree_the_kit_cannot_hash_pushes_and_dispatches_nothing(kit, stage):
-    fake = stage([], source="not a hash")
+def test_a_tag_with_no_tree_pushes_and_dispatches_nothing(kit, stage):
+    fake = stage([], tree=None)
 
-    with pytest.raises(release.ReleaseError, match="names no source_hash"):
+    with pytest.raises(release.ReleaseError, match="names no tree"):
         _deploy(kit)
 
-    assert _names(fake) == HASHED
+    assert fake.commands == []
 
 
 # --- stage 2b, end to end -------------------------------------------------------------------------
@@ -497,9 +520,9 @@ def test_stage2b_publishes_nothing_without_the_deploy_record(tmp_path, monkeypat
     head = git(root, "rev-parse", "HEAD")
     adapter = publish_adapter(root, monkeypatch)
     if missing == "record at the pre-bump head":
-        _record(root, sha=git(root, "rev-parse", "HEAD~1"), source_hash=SOURCE)
+        _record(root, sha=git(root, "rev-parse", "HEAD~1"), tree=TREE)
     elif missing == "remote run":
-        _record(root, sha=head, source_hash=SOURCE)
+        _record(root, sha=head, tree=TREE)
     monkeypatch.setattr(release, "_remote_json", _answer_runs(adapter, [_run(head=head)]
                                                               if missing != "remote run" else []))
 
@@ -513,7 +536,7 @@ def test_stage2b_publishes_past_a_deploy_record_at_the_tag_commit(tmp_path, monk
     root = _gated_repo(tmp_path, monkeypatch)
     head = git(root, "rev-parse", "HEAD")
     adapter = publish_adapter(root, monkeypatch)
-    _record(root, sha=head, source_hash=SOURCE)
+    _record(root, sha=head, tree=TREE)
     monkeypatch.setattr(release, "_remote_json", _answer_runs(adapter, [_run(head=head)]))
 
     release.run("stage2b", VERSION, root)
