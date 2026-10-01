@@ -854,7 +854,7 @@ from it:
 
 ```sh
 codex plugin marketplace remove crapkit
-codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.1 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 codex plugin list --marketplace crapkit --json
 crapkit doctor --plugin-root PATH

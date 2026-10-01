@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.1 — unreleased
+## 0.8.1 — 2026-10-01
 
 0.8.1 fixes what two new test suites found in 0.8.0: one installs crapkit the way the
 docs say, through each channel and into each agent, and one checks every number crapkit

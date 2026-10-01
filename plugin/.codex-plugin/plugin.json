@@ -1,6 +1,6 @@
 {
   "name": "crapkit",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "crapkit's agent tools for Codex: three skills and the MCP server for score inspection and gate checks. The MCP server spawns the bare `crapkit` console script, so it has to be on PATH, and it has to be the same crapkit release as the plugin, since the skills run that release's commands and flags. `hooks` is empty on purpose: without the key Codex loads hooks/hooks.json, the advisory hook written for the Edit and Write events other agents send, and Codex reports an edit as apply_patch patch text that hook does not read.",
   "author": {
     "name": "Jean-Francois Gagne"

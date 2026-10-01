@@ -255,7 +255,7 @@ Codex users can install the three skills and MCP server through its own plugin m
 Codex 0.131.0 or newer:
 
 ```
-codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.1 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 ```
 

@@ -277,7 +277,7 @@ files. Review those commands before running crapkit in a repository you do not t
 
 ```
 $ crapkit --version
-crapkit 0.8.0
+crapkit 0.8.1
 ```
 
 `python -m crapkit` works identically to the console script and is what to use from a
@@ -470,7 +470,7 @@ Codex 0.131.0 or newer installs the same marketplace's plugin through its own ma
 0.130.0 has no `codex plugin add`:
 
 ```
-codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.1 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 ```
 
@@ -496,7 +496,7 @@ older Codex.
 
 ```
 codex plugin marketplace remove crapkit
-codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.0 --sparse .claude-plugin --sparse plugin
+codex plugin marketplace add https://github.com/JeanFrancoisGagne/crapkit.git --ref v0.8.1 --sparse .claude-plugin --sparse plugin
 codex plugin add crapkit@crapkit
 codex plugin list --marketplace crapkit --json
 ```
@@ -825,7 +825,7 @@ crapkit ships a `.pre-commit-hooks.yaml` declaring `id: crapkit-gate`. In your
 repos:
   - repo: https://github.com/JeanFrancoisGagne/crapkit
     # crapkit's release step rewrites this line to the tag it just cut
-    rev: v0.8.0
+    rev: v0.8.1
     hooks:
       - id: crapkit-gate
 ```
@@ -937,7 +937,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install "crapkit==0.8.0"
+      - run: pip install "crapkit==0.8.1"
       - run: pip install -e ".[dev]"   # your own test dependencies
       - run: crapkit verify --baseline-tsv crapkit-baseline.tsv --github
 ```
@@ -976,7 +976,7 @@ to a workflow, and every input has a default:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: JeanFrancoisGagne/crapkit@v0.8.0
+      - uses: JeanFrancoisGagne/crapkit@v0.8.1
 ```
 
 The whole job those four lines sit in:
@@ -997,7 +997,7 @@ jobs:
         with:
           python-version: "3.12"       # the interpreter the install below lands in
       - run: pip install -e ".[dev]"   # whatever your lanes need to run
-      - uses: JeanFrancoisGagne/crapkit@v0.8.0
+      - uses: JeanFrancoisGagne/crapkit@v0.8.1
         with:
           gate: "false"
 ```
