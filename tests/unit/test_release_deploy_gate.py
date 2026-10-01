@@ -467,11 +467,22 @@ def test_a_red_run_for_another_tree_is_not_rerun(kit, stage):
     assert "gh run rerun" not in _names(fake) and fake.watched == [("99", 150 * 60)]
 
 
-def test_a_rerun_that_never_leaves_its_finished_state_stops_the_stage(kit, stage):
+def test_a_rerun_whose_attempt_never_appears_stops_the_stage(kit, stage):
     stage([_run(conclusion="failure", id=7)], appear=False)
 
-    with pytest.raises(release.ReleaseError, match="was rerun but never left its finished state"):
+    with pytest.raises(release.ReleaseError, match="was rerun, but GitHub lists no attempt after #1"):
         _deploy(kit)
+
+
+def test_a_rerun_that_ends_between_polls_still_counts(kit, stage):
+    """The scope job can fail again within seconds, so the run reads completed
+    by the first poll. Its run_attempt moved, and the stage watches that attempt."""
+    fake = stage([_run(conclusion="failure", id=7)], rerun_ends=True)
+
+    _deploy(kit)
+
+    assert _names(fake) == ["git push -q", "gh run rerun", "git push -q"]
+    assert fake.watched == [("7", 150 * 60)]
 
 
 # --- a rerun only while the green entries it keeps are recent ---------------------------------

@@ -1419,11 +1419,19 @@ def _rerun_red(root: Path, command: tuple, red: dict | None, listed: Callable, r
     return _rerun_seen(red, listed, redo)
 
 
+def _attempt_number(run: dict) -> int:
+    number = run.get("run_attempt")
+    return number if type(number) is int else 1
+
+
 def _rerun_seen(red: dict, listed: Callable, redo: str) -> dict:
-    """The rerun run as GitHub lists it once the rerun took."""
+    """The rerun run as GitHub lists it once its next attempt shows. The attempt
+    number, not the status: a rerun whose scope job fails again within seconds
+    reads completed by the first poll and still counts."""
+    after = _attempt_number(red)
     return _dispatched(lambda: [run for run in listed()
-                                if run.get("id") == red.get("id") and run.get("status") != "completed"],
-                       set(), f"{_run_label(red)} was rerun but never left its finished state; {redo}")
+                                if run.get("id") == red.get("id") and _attempt_number(run) > after],
+                       set(), f"{_run_label(red)} was rerun, but GitHub lists no attempt after #{after}; {redo}")
 
 
 def _deploy_to_watch(step: Step, root: Path, version: str, record: dict, runs: list) -> dict:
