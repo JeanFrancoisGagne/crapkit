@@ -1128,12 +1128,16 @@ BUNDLE_WHY = ("The release tier's retro row replays the bundle rows, whose commi
               "that bundle;")
 
 
+def _names_something(line: str) -> bool:
+    return bool(line) and not line.startswith("#")
+
+
 def _named_lines(path: Path) -> list[str]:
     """The lines of `path` that are neither blank nor a # comment; none when it is absent."""
     if not path.is_file():
         return []
     lines = (line.strip() for line in path.read_text(encoding="utf-8").splitlines())
-    return [line for line in lines if line and not line.startswith("#")]
+    return list(filter(_names_something, lines))
 
 
 def _bundle_setting(root: Path) -> tuple[str, str]:
