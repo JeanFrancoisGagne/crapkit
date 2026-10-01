@@ -292,7 +292,7 @@ class Stage:
         self.root, self.runs, self.watch, self.appear = root, runs, watch, appear
         self.commands, self.watched = [], []
 
-    def execute(self, command, root, dry_run):
+    def execute(self, command, root, dry_run, env=None):
         self.commands.append(command)
         if command[:2] == ("gh", "workflow") and self.appear:
             self.runs.append(_run(status="queued", conclusion=None, id=99))
@@ -314,7 +314,11 @@ class Stage:
 
 
 @pytest.fixture
-def stage(tree, monkeypatch):
+def stage(tree, monkeypatch, tmp_path):
+    bundle = tmp_path / "history.bundle"
+    bundle.write_bytes(b"# v2 git bundle\n")
+    monkeypatch.setenv("CRAPKIT_RETRO_BUNDLE", str(bundle))
+
     def make(runs, **kwargs):
         fake = Stage(tree, runs, **kwargs)
         monkeypatch.setattr(release, "_execute", fake.execute)
@@ -391,7 +395,7 @@ def test_a_failing_local_tier_names_its_rows_and_never_dispatches(tree, stage, m
     (tree / ".crapkit" / f"release-accuracy-{VERSION}.json").unlink()
     fake = stage([])
 
-    def red_tier(command, root, dry_run):
+    def red_tier(command, root, dry_run, env=None):
         fake.commands.append(command)
         failed = _saved(outcome="fail")
         failed["checks"][0]["outcome"] = "fail"

@@ -69,6 +69,16 @@ commit. Keep it in its own background process: it can take two hours.
 1. Here: `python tools/accuracy/run.py --tier release --receipt .crapkit/release-accuracy-VERSION.json`,
    about 30 minutes. It runs the push tier, both wheel diffs, the store upgrade check,
    the consumer replay, the retro replays and the mutation coverage check.
+   The retro replays include the bundle rows, whose commits live only in the
+   pre-2026-08-24 history bundle, so the stage sets `CRAPKIT_RETRO_BUNDLE` for the tier:
+   from the environment when it is set, else from the path
+   `tools/release/retro-bundle.path` names (`~` is the home directory). When that path
+   holds no file the stage refuses before the tier starts, instead of retro.py exiting 3
+   inside the tier:
+
+   ```
+   the accuracy stage needs the retro history bundle: CRAPKIT_RETRO_BUNDLE names C:\gone.bundle, which is not a file. The release tier's retro row replays the bundle rows, whose commits live only in that bundle; put it there, then rerun `python tools/release/release.py run accuracy VERSION`
+   ```
 2. On GitHub: it pushes the tag commit to the scratch branch `accuracy-release/VERSION`,
    dispatches `accuracy.yml` with `mode=release` and `release_key=VERSION`, watches the run
    for up to 90 minutes, and deletes the branch. A dispatched run needs its commit on the

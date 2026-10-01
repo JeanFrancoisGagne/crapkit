@@ -1053,6 +1053,47 @@ def accuracy_gate(root: Path, version: str, head: str) -> None:
 
 # --- the accuracy stage: the local tier, then the remote run -------------------------------
 
+# The release tier's retro row replays the bundle rows, whose commits live only in
+# the pre-2026-08-24 history bundle; retro.py reads it from CRAPKIT_RETRO_BUNDLE
+# and exits 3 without it. The stage sets that variable for the tier from the
+# environment, else from the path BUNDLE_FILE names (`~` is the home directory).
+BUNDLE_ENV = "CRAPKIT_RETRO_BUNDLE"
+BUNDLE_FILE = "tools/release/retro-bundle.path"
+BUNDLE_WHY = ("The release tier's retro row replays the bundle rows, whose commits live only in "
+              "that bundle;")
+
+
+def _named_lines(path: Path) -> list[str]:
+    """The lines of `path` that are neither blank nor a # comment; none when it is absent."""
+    if not path.is_file():
+        return []
+    lines = (line.strip() for line in path.read_text(encoding="utf-8").splitlines())
+    return [line for line in lines if line and not line.startswith("#")]
+
+
+def _bundle_setting(root: Path) -> tuple[str, str]:
+    """(where the bundle path came from, the path), or ("", "") when nothing names one."""
+    if os.environ.get(BUNDLE_ENV):
+        return BUNDLE_ENV, os.environ[BUNDLE_ENV]
+    named = _named_lines(root / BUNDLE_FILE)
+    return (BUNDLE_FILE, named[0]) if named else ("", "")
+
+
+def retro_bundle(root: Path, version: str) -> Path:
+    """The history bundle the local tier's retro row replays from, or a refusal
+    that says where to name it."""
+    source, named = _bundle_setting(root)
+    if not named:
+        raise ReleaseError(f"the accuracy stage needs the retro history bundle: set {BUNDLE_ENV}, or "
+                           f"name it in {BUNDLE_FILE}. {BUNDLE_WHY} then {_rerun(version)}")
+    bundle = Path(named).expanduser()
+    if not bundle.is_file():
+        raise ReleaseError(f"the accuracy stage needs the retro history bundle: {source} names "
+                           f"{bundle}, which is not a file. {BUNDLE_WHY} put it there, then "
+                           f"{_rerun(version)}")
+    return bundle
+
+
 def _local_problems(root: Path, version: str, head: str) -> list:
     try:
         saved = _read_accuracy_receipt(root, version)
@@ -1066,7 +1107,8 @@ def _local_accuracy(step: Step, root: Path, version: str, head: str) -> None:
     after a remote timeout does not repeat half an hour of local checks."""
     if not _local_problems(root, version, head):
         return
-    failure = _attempt(root, step.commands[0])
+    bundle = retro_bundle(root, version)
+    failure = _attempt(root, step.commands[0], {BUNDLE_ENV: str(bundle)})
     problems = _local_problems(root, version, head)
     if problems or failure:
         raise ReleaseError(NL.join(problems) or f"the release tier failed: {failure}")
@@ -1576,9 +1618,10 @@ def _record_publication(root: Path, receipt: dict, key: str) -> None:
     _clear_pending(root, receipt, key)
 
 
-def _attempt(root: Path, command: tuple) -> Exception | None:
+def _attempt(root: Path, command: tuple, env: dict | None = None) -> Exception | None:
+    """Run one command; the failure, or None. `env` adds variables to the child's."""
     try:
-        _execute(command, root, False)
+        _execute(command, root, False, **({"env": env} if env else {}))
     except (subprocess.CalledProcessError, OSError) as exc:
         return exc
     return None
@@ -1699,11 +1742,11 @@ def _publish_step(step: Step, root: Path, receipt: dict) -> None:
     handlers[step.name]()
 
 
-def _execute(command: tuple, root: Path, dry_run: bool) -> None:
+def _execute(command: tuple, root: Path, dry_run: bool, env: dict | None = None) -> None:
     print(f"$ {subprocess.list2cmdline(command)}")
     if dry_run:
         return
-    subprocess.run(_arguments(command, root), cwd=root, check=True, env=_child_env())
+    subprocess.run(_arguments(command, root), cwd=root, check=True, env={**_child_env(), **(env or {})})
 
 
 def _stage1_files(root: Path) -> None:

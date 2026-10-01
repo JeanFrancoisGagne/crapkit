@@ -1,0 +1,4 @@
+# The history bundle the release tier's retro row replays the bundle rows from:
+# their commits predate 2026-08-24 and live only there. release.py reads this
+# path (~ is the home directory) unless CRAPKIT_RETRO_BUNDLE is set.
+~/crapkit-history-2026-08-24.bundle
