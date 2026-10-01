@@ -123,7 +123,9 @@ def _latin1_description(manifest: bytes) -> bytes:
 
 
 MANIFESTS = [
-    # id, plugin.json bytes from crapkit's own, whether Claude Code loads it
+    # id, plugin.json bytes from crapkit's own, whether doctor passes it: what
+    # every Claude Code release loads. 2.1.238 refused a byte-order mark and
+    # 2.1.286 loads one, so doctor refuses it; removing the BOM loads on both.
     ("plain", lambda manifest: manifest, True),
     ("latin1-byte-in-description", _latin1_description, True),
     ("utf8-bom", lambda manifest: codecs.BOM_UTF8 + manifest, False),
@@ -144,8 +146,9 @@ def _plugin_copy(tmp_path: Path, edit) -> Path:
 def test_doctor_reads_a_plugin_manifest_the_way_claude_code_does(tmp_path, edit, loads):
     """Claude Code is the reader doctor --plugin-root answers for. Checked with
     `claude plugin validate` 2.1.238: it reads a byte that is not UTF-8 as
-    U+FFFD and refuses a byte-order mark. doctor read the first as no manifest
-    at all, and reading past the second would pass a plugin that never loads."""
+    U+FFFD and refuses a byte-order mark, which 2.1.286 loads. doctor read the
+    first as no manifest at all, and reading past the second would pass a plugin
+    that 2.1.238 never loads."""
     from crapkit.cli import admin
 
     root = _plugin_copy(tmp_path, edit)
@@ -156,22 +159,26 @@ def test_doctor_reads_a_plugin_manifest_the_way_claude_code_does(tmp_path, edit,
 REQUIRE_CLAUDE = os.environ.get("CRAPKIT_REQUIRE_CLAUDE") == "1"
 
 
+PASSED = [row for row in MANIFESTS if row[2]]
+
+
 @pytest.mark.skipif(CLAUDE is None and not REQUIRE_CLAUDE,
-                    reason="Claude Code is not on PATH; MANIFESTS' loads column is what `claude plugin "
-                           "validate` 2.1.238 answered, and CI's plugin job runs this beside Claude Code")
-@pytest.mark.parametrize("edit, loads", [row[1:] for row in MANIFESTS], ids=[row[0] for row in MANIFESTS])
-def test_claude_code_loads_the_manifests_doctor_reads(tmp_path, edit, loads):
-    """The oracle for MANIFESTS' loads column. CI's plugin job installs Claude
-    Code and runs this with CRAPKIT_REQUIRE_CLAUDE=1, so a Claude Code release
-    that reads a manifest another way fails there, and a job that lost the
-    binary fails instead of skipping. Elsewhere it runs where a developer has
-    Claude Code, and test_doctor_reads_a_plugin_manifest_the_way_claude_code_does
-    holds the recorded answers everywhere."""
+                    reason="Claude Code is not on PATH; CI's plugin job runs this beside the newest Claude Code")
+@pytest.mark.parametrize("edit", [row[1] for row in PASSED], ids=[row[0] for row in PASSED])
+def test_claude_code_loads_every_manifest_doctor_passes(tmp_path, edit):
+    """The oracle for MANIFESTS' passing rows. CI's plugin job installs the newest
+    Claude Code and runs this with CRAPKIT_REQUIRE_CLAUDE=1, so a release that
+    refuses a manifest doctor passes fails there, and a job that lost the binary
+    fails instead of skipping. It holds that one direction only: a manifest doctor
+    refuses and a later release loads costs one rewrite of the file, while a
+    manifest doctor passes and Claude Code refuses is a plugin that never loads.
+    Releases disagree on a byte-order mark (2.1.238 refused it, 2.1.286 loads it),
+    and asking both ways failed this job the day 2.1.286 shipped."""
     assert CLAUDE, "CRAPKIT_REQUIRE_CLAUDE=1 and no `claude` on PATH: install @anthropic-ai/claude-code first"
     done = subprocess.run([CLAUDE, "plugin", "validate", str(_plugin_copy(tmp_path, edit))],
                           capture_output=True, timeout=HANG_SECONDS)
 
-    assert (done.returncode == 0) is loads, done.stdout
+    assert done.returncode == 0, done.stdout
 
 
 def _launcher(directory: Path, answer: bytes) -> Path:

@@ -341,15 +341,16 @@ jobs:
         run: claude plugin validate plugin --strict
       - name: the marketplace manifest validates
         run: claude plugin validate .
-      # doctor --plugin-root reads a manifest the way Claude Code reads it: a
-      # byte that is not UTF-8 as U+FFFD, a byte-order mark refused. The test
-      # asks this Claude Code, so a release that reads another way fails here.
+      # doctor --plugin-root passes only a manifest every Claude Code release
+      # loads: a byte that is not UTF-8 reads as U+FFFD, and a byte-order mark,
+      # which 2.1.238 refused, is refused. The test asks the newest Claude Code
+      # to load every manifest doctor passes, so a release that refuses one fails here.
       # CRAPKIT_REQUIRE_CLAUDE turns a missing binary into a failure, not a skip.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - name: doctor reads a plugin manifest the way this Claude Code loads it
+      - name: this Claude Code loads every plugin manifest doctor passes
         env:
           CRAPKIT_REQUIRE_CLAUDE: "1"
         run: python -m pytest tests/unit/test_r2_interface_paths.py -k claude_code_loads -p no:randomly
@@ -652,6 +653,10 @@ jobs:
           python-version: "3.12"
       - name: build the consumer at the workspace root
         run: python crapkit/tools/deploy/consumer.py
+      # The README's Action recipe installs what the lanes run before the Action;
+      # consumer.py seeded in its own venv, so the runner's Python has no pytest.
+      - name: install what the consumer's py lane runs
+        run: python -m pip install pytest pytest-cov
       - id: action
         name: the action scores the consumer
         continue-on-error: true
