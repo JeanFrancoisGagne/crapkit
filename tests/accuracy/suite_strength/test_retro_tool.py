@@ -1944,11 +1944,14 @@ def test_a_venv_is_built_beside_its_tree_with_the_site_s_packages_and_the_extras
 
 
 def test_a_venv_already_built_is_reused(tmp_path, monkeypatch):
+    """The patch is pinned: on another minor with uv on PATH, `uv python find 3.12`
+    names whatever 3.12 the machine holds, never this interpreter's patch."""
     venv = tmp_path / "abc-venv-3.12-wheel"
     retro.venv_python(venv).parent.mkdir(parents=True)
     retro.venv_python(venv).write_bytes(b"")
-    built = [f"python {retro.platform.python_version()}", *retro.Site().packages]
+    built = ["python 3.12.7", *retro.Site().packages]
     (venv / retro.BUILT).write_bytes("".join(f"{line}\n" for line in built).encode())
+    monkeypatch.setattr(retro, "_venv_patch", lambda python: "3.12.7")
     monkeypatch.setattr(retro, "_create_venv", lambda *args: pytest.fail("built again"))
 
     assert retro.build_venv(tmp_path / "abc", "3.12", retro.Site(work=tmp_path)) == retro.venv_python(venv)
