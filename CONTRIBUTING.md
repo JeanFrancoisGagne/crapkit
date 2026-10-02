@@ -8,6 +8,7 @@ cd crapkit
 pip install -e ".[dev,accuracy-push]"
 npm ci --prefix tools/accuracy/node/push
 git config core.hooksPath git-hooks
+git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
 ```
 
 Quote `".[dev,accuracy-push]"`: zsh globs the bare form and the install fails before pip
@@ -29,6 +30,11 @@ Without it the hook stops the push and prints the install line. The Node tools `
 puts under `tools/accuracy/node/push` are what the pre-push checks of a JavaScript or
 TypeScript calculation and `change_control.py declare` run; without them both stop and
 print the `npm ci` line.
+
+The `merge.crapkit-ratchet.driver` line defines the merge driver `.gitattributes` names
+for `crapkit-ratchet.tsv`, and git takes a driver command only from a clone's own
+config. Without it git merges the marks file as text, and a hand-resolved conflict is
+where a mark gets raised ([docs/ratchet.md](docs/ratchet.md#the-git-merge-driver)).
 
 ## Tests
 
