@@ -1,8 +1,10 @@
 """Every strategy reaches every shape it names, and each shape's literal carries it."""
+from collections import Counter
 from fractions import Fraction
 import math
 
 from hypothesis import find, given
+from hypothesis.errors import NoSuchExample
 import pytest
 
 from accuracy.kit import exact, strategies
@@ -52,6 +54,41 @@ def test_an_example_decorated_test_runs_every_shape():
 
     literals = set(map(repr, strategies.REQUIRED["coverage_pair"].values()))
     assert literals <= set(map(repr, seen))
+
+
+# accuracy.yml's nightly summary runs `run.py events --min 50` on the merged
+# Linux 3.12 receipt.
+FLOOR = 50
+
+
+def _drawn(name: str) -> Counter:
+    """How many of one @pure run's values carry each shape of a strategy."""
+    drawn: Counter = Counter()
+
+    @given(STRATEGIES[name]())
+    @pure
+    def draw(value):
+        drawn.update(strategies.CLASSIFIERS[name](value))
+
+    draw()
+    return drawn
+
+
+def test_one_nightly_run_draws_each_broken_coverage_pair_twice_the_floor():
+    """A shape drawn only as a sampled literal reaches a run once (kit.strategies
+    says why): drawn from the six literals, a run held R27 twice."""
+    drawn = _drawn("coverage_pair")
+
+    short = {shape: drawn[shape] for shape in strategies.REQUIRED["coverage_pair"]
+             if drawn[shape] < 2 * FLOOR}
+    assert short == {}
+
+
+@pytest.mark.parametrize("shape", sorted(strategies._PAIR_FAMILIES))
+def test_each_broken_family_draws_only_pairs_of_its_shape(shape):
+    with pytest.raises(NoSuchExample):
+        find(strategies._PAIR_FAMILIES[shape],
+             lambda pair: shape not in strategies._pair_shapes(pair), settings=pure)
 
 
 @given(strategies.ccn())

@@ -6,8 +6,11 @@ crapkit before. Each shape has an event name: the R id of the bug it reproduces
 (tests/accuracy/suite_strength/retro/bugs.tsv), or `shape:...` for an edge the
 docs name without a past bug. A drawn value emits hypothesis.event() for every
 shape it has, so the nightly summary can require each one to have occurred,
-and the same counts reach run.py through kit.runlog. Each shape's literal value
-is also returned by examples(), so a test runs it every time:
+and the same counts reach run.py through kit.runlog. Hypothesis runs each
+choice sequence once, so a shape drawn only as a sampled literal reaches a test
+once a run whatever its example count; a shape the summary counts draws from a
+family of values. Each shape's literal value is also returned by examples(), so
+a test runs it every time:
 
     @examples("coverage_pair")
     @given(strategies.coverage_pair())
@@ -131,10 +134,40 @@ def _pair_shapes(pair: CoveragePair) -> list[str]:
     return _checked(_PAIR_CHECKS, pair)
 
 
+_COUNT = st.integers(0, 400)
+
+
+def _either_slot(odd, count):
+    """A pair with `odd` as covered or as total and `count` in the other slot."""
+    return st.builds(CoveragePair, odd, count) | st.builds(CoveragePair, count, odd)
+
+
+def _covered_past_total():
+    return st.builds(lambda total, past: CoveragePair(total + past, total), _COUNT,
+                     st.integers(1, 400))
+
+
+# Each broken shape's family of pairs. The six literals of _BAD_PAIRS alone
+# reached each 20,000-example test once: nightly 36940595657's coverage leg
+# drew R27 4 times in 40,000 examples.
+_PAIR_FAMILIES = {
+    "R27": _either_slot(st.sampled_from([math.nan, math.inf, -math.inf]), _COUNT),
+    "R28": _either_slot(st.integers(-400, -1), _COUNT) | _covered_past_total(),
+    "R89": _either_slot(st.none(), st.none() | _COUNT),
+    "shape:total-zero": st.builds(CoveragePair, _COUNT, st.just(0)),
+}
+
+
 def coverage_pair():
+    """Half the draws are counts a producer writes and half are broken: a
+    literal of _BAD_PAIRS or a pair of one shape's family. The broken half is
+    one flatmap so one_of keeps it one branch, where it would spread a nested
+    one_of's branches beside `good`."""
     bad = [pair for pairs in _BAD_PAIRS.values() for pair in pairs]
     good = counts().map(lambda pair: CoveragePair(*pair))
-    return _tagged(st.one_of(good, st.sampled_from(bad)), _pair_shapes)
+    broken = st.sampled_from([st.sampled_from(bad), *_PAIR_FAMILIES.values()]).flatmap(
+        lambda family: family)
+    return _tagged(st.one_of(good, broken), _pair_shapes)
 
 
 # --- function spans ---------------------------------------------------------------
