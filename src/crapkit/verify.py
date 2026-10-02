@@ -16,7 +16,7 @@ from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Iterator, Mapping
 from typing import NamedTuple
 
-from .keys import key_names, key_of
+from .keys import MarkIndex, key_names, key_of, mark_key, rows_by_key
 from .ratchet import RatchetEntry
 from .repopath import file_separators
 from .score import CRAP_PLACES, ScoredRow, over_ceiling, parse_scored_tsv, scored_tsv_lines
@@ -281,34 +281,12 @@ def touched_rows(rows: list[ScoredRow],
     return [r for r in rows if _touched(r, changed_ranges)]
 
 
-def rows_by_key(fresh: list[ScoredRow]) -> dict[tuple[str, str], ScoredRow]:
-    """Scored rows by their ratchet key: `keys.key_names` gives each twin its own.
-
-    Twins used to share (path, long_name) and the worst of them represented the
-    key, which let a repaid twin's high mark pardon a sibling's growth. The
-    ordinal ends that. The worst-wins rule stays for the one collision left —
-    two scopes claiming one path score the same span twice — so a regression
-    still cannot hide behind a clean sibling.
-    """
-    names = key_names(fresh)
-    worst: dict[tuple[str, str], ScoredRow] = {}
-    for r in fresh:
-        key = key_of(names, r)
-        if key not in worst or r.crap > worst[key].crap:
-            worst[key] = r
-    return worst
-
-
 def _ceiling(row: ScoredRow, target: int, scope_targets: dict[str, int] | None) -> int:
     return (scope_targets or {}).get(row.scope, target)
 
 
-def _marks_of(ratchet: list[RatchetEntry]) -> dict[tuple[str, str], float]:
-    return {(e.path, e.long_name): e.crap for e in ratchet}
-
-
 def _within_mark(row: ScoredRow, key: tuple[str, str],
-                 marks: dict[tuple[str, str], float]) -> bool:
+                 marks: MarkIndex | Mapping[tuple[str, str], float]) -> bool:
     """Signed debt as `rescore --gate` reads it: a mark the fresh score sits at or
     under, compared at the 4dp the mark is stored at. Above the mark the gate
     fires, as rescore's does, and the ratchet check reports the rise beside it,
@@ -321,7 +299,7 @@ def _within_mark(row: ScoredRow, key: tuple[str, str],
 def _gate_violations(fresh, changed_ranges, target, scope_targets, dirty,
                      ratchet) -> list[GateViolation]:
     names = key_names(fresh)
-    marks = _marks_of(ratchet)
+    marks = MarkIndex(ratchet)
     gate = [
         GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
                       r.path in dirty, key_of(names, r)[1])
@@ -344,8 +322,8 @@ def _worst_first(row: ScoredRow | GateViolation) -> tuple:
 def _ratchet_regressions(fresh, ratchet, dirty) -> list[RatchetRegression]:
     worst_by_key = rows_by_key(fresh)
     regressions = []
-    for entry in ratchet:
-        row = worst_by_key.get((entry.path, entry.long_name))
+    for entry in MarkIndex(ratchet).entries():
+        row = worst_by_key.get(mark_key(entry))
         # Compare at the precision the mark is STORED at: marks live as 4dp
         # strings, and cov = covered/total makes longer decimals routine — an
         # unrounded compare wedges an unchanged tree against its own mark.
@@ -374,7 +352,7 @@ def unmarked_over_ceiling(fresh: list[ScoredRow], ratchet: list[RatchetEntry], t
     A marked function that rose is a regression already; this is the debt
     `ratchet seed` was never run on.
     """
-    marks = _marks_of(ratchet)
+    marks = MarkIndex(ratchet)
     rows = [row for key, row in rows_by_key(fresh).items()
             if over_ceiling(row.crap, _ceiling(row, target, scope_targets)) and key not in marks]
     rows.sort(key=_worst_first)
