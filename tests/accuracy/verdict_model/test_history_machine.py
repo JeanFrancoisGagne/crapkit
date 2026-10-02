@@ -4,9 +4,9 @@ Each step changes the repository one way (edit a function's complexity or
 coverage, add or remove a function, fail or pass a test, break or mend lane b,
 commit) and then runs one command that writes a run or a mark: coverage (full,
 one lane, with a failed lane), inventory, verify (passing and failing), verify
---override, the hook's override, ratchet seed and prune, runs prune --keep 1,
-or an upgrade that leaves the marks under an older analysis version. After
-every step:
+--override, the hook's override (of what is staged, or of a breach it stages),
+ratchet seed and prune, runs prune --keep 1, or an upgrade that leaves the
+marks under an older analysis version. After every step:
 
 - the store holds the runs the model says each command wrote, with their kinds
   and verdicts, and `runs list` marks the model's baseline;
@@ -31,6 +31,10 @@ it lists the run history.
 
 test_every_step_in_one_scripted_history walks one fixed history through every
 command, so each is exercised on every push whatever the machine draws.
+
+Each run the machine appends, and each verify that refuses, counts as its
+kit.strategies run_kinds shape (COUNTED), so the nightly events floor on those
+shapes is carried by runs crapkit wrote.
 """
 from __future__ import annotations
 
@@ -53,7 +57,7 @@ import pytest
 import yaml
 
 import hang_guard
-from accuracy.kit import repos
+from accuracy.kit import repos, strategies
 from accuracy.kit.settings import process, split
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import test_retention as retention
@@ -77,13 +81,24 @@ RECORD = ".crapkit/record.tsv"
 # The two answers differ here by design: the record names no run (README.md:794,
 # --baseline-tsv), and each store numbers its own runs.
 RUN_IDS = frozenset({"baseline_run", "run_id"})
-# Weighted: a verify is the step most worth repeating.
-COMMANDS = ("verify", "verify", "verify", "coverage", "coverage", "one_lane", "inventory",
-            "override", "hook", "hook_grant", "seed", "prune", "runs_prune", "upgrade", "tsv")
+# Weighted: a verify is the step most worth repeating. one_lane, inventory and
+# grant run twice as often, so each run kind the machine counts (COUNTED) clears
+# twice the nightly events floor of 50: at one weight each, a nightly run wrote 90
+# inventories (seed 4109362107) and 107 hook runs (seed 2026).
+COMMANDS = ("verify", "verify", "verify", "coverage", "coverage", "one_lane", "one_lane",
+            "failed_lane", "inventory", "inventory", "override", "hook", "hook_grant", "grant",
+            "grant", "seed", "prune", "runs_prune", "upgrade", "tsv")
 # How often each command ran this session, and how each state's record check ended,
 # printed so a reader sees what was explored.
 STEPS: Counter = Counter()
 RECORDS: Counter = Counter()
+# The kind each appended run has in kit.strategies.RUN_KINDS, and the kind the store writes.
+STORED = {"coverage": model.COVERAGE, "partial": model.PARTIAL, "lane-subset": model.PARTIAL,
+          "inventory": model.INVENTORY, "verify-ok": model.VERIFY, "verify-fail": model.VERIFY,
+          "hook-override": model.HOOK}
+# Every run kind the machine counts: each run it appends, a verify that refused and
+# stored none, and a run that met marks an older analysis version recorded.
+COUNTED = (*STORED, "refused", "version-upgrade")
 
 
 @dataclass
@@ -181,7 +196,12 @@ def _covered(decisions: int, share: int) -> int:
 
 EDITS = st.tuples(st.just("edit"), st.sampled_from(sorted(vw.FILES)), st.integers(0, 2),
                   st.integers(0, 7), st.integers(0, 4))
-CHANGES = st.one_of(st.just(("none",)), st.just(("commit",)), EDITS,
+# EDITS put a function past the ceiling only at 6 or 7 decisions, and a nightly
+# run of the machine (seed 4109362107) stored 56 failed verifies in 545. BREACH
+# is the edit at its worst: ccn 8, no coverage, CRAP 72.
+BREACH = st.tuples(st.just("edit"), st.sampled_from(sorted(vw.FILES)), st.integers(0, 2),
+                   st.just(7), st.just(0))
+CHANGES = st.one_of(st.just(("none",)), st.just(("commit",)), EDITS, BREACH,
                     st.tuples(st.just("toggle"), st.sampled_from(sorted(vw.FILES))),
                     st.tuples(st.just("flaky"), st.booleans()),
                     st.tuples(st.just("lane_b"), st.booleans()))
@@ -231,12 +251,20 @@ class History(RuleBasedStateMachine):
 
     # --- model helpers ---------------------------------------------------------------------
 
-    def _append(self, kind: str, ok=None, world=None, lanes=()) -> Measured:
-        run = model.Run(self.next_id, kind, self.sc.head(), ok, self.running or "")
+    def _append(self, kind: str, world=None, lanes=()) -> Measured:
+        """Append a run of `kind`, a RUN_KINDS name, and count it."""
+        ok = {"verify-ok": True, "verify-fail": False}.get(kind)
+        run = model.Run(self.next_id, STORED[kind], self.sc.head(), ok, self.running or "")
         measured = Measured(run, world, failed_tests(world) if world else frozenset(), lanes)
         self.history.append(measured)
         self.next_id += 1
+        self._count(kind)
         return measured
+
+    def _count(self, kind: str) -> None:
+        """Count a run as its kind, and as a version upgrade when the marks it met
+        were recorded under an older analysis version (`upgrade`)."""
+        strategies.count_runs([kind, "version-upgrade"] if self._stamp_refused() else [kind])
 
     def _learn_metric(self) -> None:
         """The running metric is an input, read off the first scored run."""
@@ -302,26 +330,36 @@ class History(RuleBasedStateMachine):
         result = self.sc.run("coverage")
         partial = bool(self.sc.world.failing_lanes)
         assert result.code == (5 if partial else 0), result.stdout + result.stderr
-        self._append(model.PARTIAL if partial else model.COVERAGE, world=self.sc.world,
+        self._append("partial" if partial else "coverage", world=self.sc.world,
                      lanes=self._lanes())
         self._learn_metric()
 
     def one_lane(self):
         result = self.sc.run("coverage", "--lane", "a")
         assert result.code == 0, result.stdout + result.stderr
-        self._append(model.PARTIAL, world=self.sc.world, lanes=("a",))
+        self._append("lane-subset", world=self.sc.world, lanes=("a",))
+
+    def failed_lane(self):
+        """coverage while lane b fails, then lane b as the step left it. Without
+        it a nightly run (seed 2026) wrote 55 partial runs."""
+        broken = "b" in self.sc.world.failing_lanes
+        self.change_lane_b(True)
+        self.coverage()
+        self.change_lane_b(broken)
 
     def inventory(self):
         assert self.sc.run("inventory").code == 0
-        self._append(model.INVENTORY)
+        self._append("inventory")
 
     def _refused(self, result) -> bool:
-        """The verifies that store no run: no trusted baseline (exit 1), marks
-        under another metric (exit 3), a lane that failed (exit 5)."""
+        """The verifies that store no run, each counted as a refused run: no
+        trusted baseline (exit 1), marks under another metric (exit 3), a lane
+        that failed (exit 5)."""
         expected = (1 if self._baseline() is None else 3 if self._stamp_refused()
                     else 5 if self.sc.world.failing_lanes else None)
         if expected is not None:
             assert result.code == expected, result.stdout + result.stderr
+            self._count("refused")
         return expected is not None
 
     def verify(self):
@@ -334,7 +372,7 @@ class History(RuleBasedStateMachine):
         assert (result.code, payload["baseline_run"]) == (expected.exit, base.id), payload
         assert json_verdict(payload) == expected
         ok = expected.exit == 0
-        measured = self._append(model.VERIFY, ok, self.sc.world, self._lanes())
+        measured = self._append(_verify_kind(ok), self.sc.world, self._lanes())
         if ok:
             self._tighten(measured, before)
 
@@ -364,7 +402,7 @@ class History(RuleBasedStateMachine):
         result = self.sc.run("verify", "--override", "accepted by the machine", "--json")
         granted = not (expected.ratchet or expected.new_failures)
         assert result.code == _override_exit(expected, granted), result.stdout + result.stderr
-        measured = self._append(model.VERIFY, granted, self.sc.world, self._lanes())
+        measured = self._append(_verify_kind(granted), self.sc.world, self._lanes())
         if granted:
             self._grant(measured, expected.gate)
 
@@ -404,13 +442,29 @@ class History(RuleBasedStateMachine):
     def hook_grant(self):
         self.hook(grant=True)
 
+    def grant(self):
+        """The hook's override of a breach it stages on the first function with no
+        mark. The hook skips a marked function, so in a nightly run (seed
+        4109362107) hook_grant alone wrote 18 hook runs."""
+        unmarked = self._unmarked()
+        if unmarked:
+            self.change_edit(*unmarked[0], 7, 0)
+        self.hook_grant()
+
+    def _unmarked(self) -> list[tuple[str, int]]:
+        """(scope, index) of each function the world holds that carries no mark."""
+        marks = self._marks()
+        return [(scope, NAMES[scope].index(fn.name)) for scope in sorted(vw.FILES)
+                for fn in self.sc.world.functions[scope]
+                if (vw.FILES[scope], fn.long_name) not in marks]
+
     def _hook_grant(self, violations, ccn) -> None:
         """The hook synthesizes the worst case, ccn^2 + ccn, keeps the recorded
         stamp and records a hook run."""
         worst = {key: model.mark_value(ccn[key] * ccn[key] + ccn[key]) for key in violations}
         self.stamp = model.stamp_after("hook-override", self._recorded(), self.running)
         self.marks = {**self._marks(), **worst}
-        self.overrides.add(self._append(model.HOOK).id)
+        self.overrides.add(self._append("hook-override").id)
 
     # --- commands that write marks ---------------------------------------------------------
 
@@ -570,6 +624,11 @@ def _clear_and_retry(function, path, _error) -> None:
     function(path)
 
 
+def _verify_kind(ok: bool) -> str:
+    """The RUN_KINDS name of a verify the store keeps."""
+    return "verify-ok" if ok else "verify-fail"
+
+
 def _override_exit(expected: Verdict, granted: bool) -> int:
     """A granted override exits 0; a refused one keeps the verdict's exit."""
     return 0 if granted else expected.exit
@@ -597,6 +656,11 @@ def test_the_run_history_follows_the_model(repo_templates, tmp_path, part, reque
     machine = part.seeded(_machine(tmp_path, repo_templates), request.config)
     run_state_machine_as_test(machine, settings=part.chosen)
     print("history machine commands:", dict(STEPS), "record checks:", dict(RECORDS))
+
+
+def test_every_run_kind_is_counted_by_the_machine_or_drawn_by_the_kit():
+    """kit.strategies draws only the kinds the machine never writes (DRAWN_ONLY)."""
+    assert sorted(COUNTED) == sorted(set(strategies.RUN_KINDS) - set(strategies.DRAWN_ONLY))
 
 
 def test_the_parts_of_the_history_machine_hold_the_tier_s_examples():
@@ -685,17 +749,26 @@ SCRIPT = (
     (("edit", "app", 1, 7, 0), "override"),       # a2 past the ceiling, granted
     (("none",), "tsv"),
     (("none",), "runs_prune"),
+    (("none",), "grant"),                         # the first function with no mark, granted
+    (("none",), "failed_lane"),                   # a partial run, and lane b mended again
 )
 
 
 @pytest.mark.process
 def test_every_step_in_one_scripted_history(repo_templates, tmp_path):
+    """The script also writes every run kind the machine counts: three failed
+    verifies (a gate, a new failure, a regression), two partial runs, a lane
+    subset, an inventory, two hook runs, and a verify the upgraded marks refuse."""
     machine = History(tmp_path, repo_templates)
+    before = Counter(strategies.EVENTS)
     machine.measured()
     machine.agrees_with_the_model()
     for change, command in SCRIPT:
         machine.step(change, command)
         machine.agrees_with_the_model()
+    counted = Counter(strategies.EVENTS) - before
+    assert counted == {"R06": 3, "R83": 2, "R74": 1, "shape:inventory-run": 1, "R107": 2,
+                       "R56": 1, "shape:refused-run": 1}
 
 
 @pytest.mark.nightly

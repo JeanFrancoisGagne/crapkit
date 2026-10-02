@@ -9,8 +9,10 @@ shape it has, so the nightly summary can require each one to have occurred,
 and the same counts reach run.py through kit.runlog. Hypothesis runs each
 choice sequence once, so a shape drawn only as a sampled literal reaches a test
 once a run whatever its example count, which is why coverage_pair draws its broken
-shapes, and nonfinite_marks the text of R32, from families of values. Each shape's
-literal value is also returned by examples(), so a test runs it every time:
+shapes, and nonfinite_marks the text of R32, from families of values. A test
+that drives runs through crapkit counts them with count_runs(), as the history
+machine does for every run kind but DRAWN_ONLY. Each shape's literal value is
+also returned by examples(), so a test runs it every time:
 
     @examples("coverage_pair")
     @given(strategies.coverage_pair())
@@ -28,7 +30,7 @@ import random
 import sys
 import unicodedata
 
-from hypothesis import event, example, strategies as st
+from hypothesis import currently_in_test_context, event, example, strategies as st
 
 from . import exact
 
@@ -213,16 +215,31 @@ RUN_KINDS = {
     "hook-override": "R107", "count-less": "R98", "lane-subset": "R74",
     "version-upgrade": "R56",
 }
+# The history machine (verdict_model/test_history_machine.py) counts every other
+# kind as it runs crapkit; it never writes a lane that reports no test count, so
+# test_kit_strategies draws these at the nightly count instead.
+DRAWN_ONLY = ("count-less",)
 
 
 def _run_shapes(kinds: list[str]) -> list[str]:
     return sorted({RUN_KINDS[kind] for kind in kinds} - {""})
 
 
-def run_kinds():
-    """A store's run history, oldest first, one kind per run."""
-    return _tagged(st.lists(st.sampled_from(sorted(RUN_KINDS)), min_size=1, max_size=12),
+def run_kinds(kinds: tuple[str, ...] = tuple(RUN_KINDS)):
+    """A store's run history, oldest first, one kind of `kinds` per run."""
+    return _tagged(st.lists(st.sampled_from(sorted(kinds)), min_size=1, max_size=12),
                    _run_shapes)
+
+
+def count_runs(kinds: list[str]) -> None:
+    """Count runs a test drove through crapkit, as run_kinds() counts a drawn
+    history. Outside a Hypothesis test, where hypothesis.event() refuses to
+    run, only EVENTS counts them."""
+    shapes = _run_shapes(kinds)
+    if currently_in_test_context():
+        _emit(shapes, None)
+    else:
+        EVENTS.update(shapes)
 
 
 # --- commit times ------------------------------------------------------------------

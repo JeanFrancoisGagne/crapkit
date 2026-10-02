@@ -91,18 +91,18 @@ FLOOR = 50
 READER_NIGHTLY = profile("process", "nightly", "linux")
 
 
-def _drawn(name: str, chosen=pure) -> Counter:
+def _drawn(name: str, *args, chosen=pure, logged=False) -> Counter:
     """How many of one run's values carry each shape of a strategy, at `chosen`
-    settings. No draw of it reaches crapkit, so the run log's events stay as
-    they were."""
+    settings. No draw of it reaches crapkit, so the run log keeps none of them
+    unless the caller is the floor's only source of a shape (`logged`)."""
     drawn: Counter = Counter()
 
-    @given(STRATEGIES[name]())
+    @given(STRATEGIES[name](*args))
     @chosen
     def draw(value):
         drawn.update(strategies.CLASSIFIERS[name](value))
 
-    with _unlogged():
+    with nullcontext() if logged else _unlogged():
         draw()
     return drawn
 
@@ -128,7 +128,7 @@ def test_one_nightly_run_draws_each_mark_shape_twice_the_floor():
 def test_one_nightly_run_of_the_reader_test_draws_r32_twice_the_floor():
     """Drawn from three literals, R32 reached a run three times: nightly
     36980041697's Linux 3.12 receipt counted it 12 times in all."""
-    drawn = _drawn("nonfinite_marks", READER_NIGHTLY)
+    drawn = _drawn("nonfinite_marks", chosen=READER_NIGHTLY)
 
     assert drawn["R32"] >= 2 * FLOOR
 
@@ -149,6 +149,21 @@ def test_a_measured_run_adds_nothing_to_the_run_log():
     _drawn("ccn")
 
     assert strategies.EVENTS == logged
+
+
+def test_one_nightly_run_draws_each_run_kind_no_crapkit_test_writes_twice_the_floor():
+    """The history machine counts each run it writes as its run_kinds shape;
+    the kinds it never writes (a count-less run, R98) are drawn here among the
+    kinds with no shape, so no other shape's count comes from a draw. Count-less
+    runs alone make 12 histories, and Hypothesis runs each once: a run drew 12.
+    No crapkit test writes R98, so these draws stay in the run log as its only
+    source for the events floor."""
+    plain = tuple(kind for kind, shape in strategies.RUN_KINDS.items() if not shape)
+
+    drawn = _drawn("run_kinds", strategies.DRAWN_ONLY + plain, logged=True)
+
+    assert strategies.DRAWN_ONLY == ("count-less",)
+    assert set(drawn) == {"R98"} and drawn["R98"] >= 2 * FLOOR, drawn
 
 
 @pytest.mark.parametrize("shape", sorted(strategies._PAIR_FAMILIES))
