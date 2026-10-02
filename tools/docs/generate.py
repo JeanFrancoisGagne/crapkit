@@ -191,6 +191,10 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, **PLAIN_HELP)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv)
+    # The schema comes from this checkout's own config contract, never from the
+    # crapkit this python has installed (in a linked worktree, another
+    # checkout's code or a release wheel).
+    sys.path.insert(0, str(ROOT / "src"))
     stale = _refresh(args.check)
     if stale:
         print("generated files: " + ", ".join(stale))

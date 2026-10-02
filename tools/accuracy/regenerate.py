@@ -275,8 +275,20 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _this_tree_first() -> None:
+    """This checkout's src/ first in this process, and src/ then tests/ first on
+    the PYTHONPATH the commands it starts inherit, as change control's own run of
+    this script gets them: the goldens measure this tree's crapkit, never the one
+    this python has installed (in a linked worktree, another checkout's code or a
+    release wheel)."""
+    sys.path.insert(0, str(REPO / "src"))
+    paths = (str(REPO / "src"), str(REPO / "tests"), os.environ.get("PYTHONPATH"))
+    os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, paths))
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    _this_tree_first()
     commands = {
         "record": lambda: [f"recorded {name}" for name in record(args.python314,
                                                                  args.node_modules)],

@@ -17,9 +17,13 @@ def generate(root):
 
 
 def documented_repo(tmp_path):
+    """The release fixture plus the files generate.py reads. Its schema comes
+    from the tree's own src/crapkit, so the fixture's src carries the config
+    contract and the one module that imports."""
     root = repo(tmp_path)
     for name in ("SECURITY.md", "CONTRIBUTING.md", "AGENTS.md", "crapkit.schema.json",
-                 "tools/docs/generate.py", "tools/testing/run.py"):
+                 "tools/docs/generate.py", "tools/testing/run.py",
+                 "src/crapkit/config_contract.py", "src/crapkit/errors.py"):
         target = root / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, target)
