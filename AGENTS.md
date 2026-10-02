@@ -153,9 +153,14 @@ what you are editing, `gate_rule.ceiling` is the number to land under.
 - `remedy: decompose`: extract helpers until every piece sits at or under `target`.
   Comprehension `for`/`if`, ternaries, and `and`/`or` all count toward ccn. Exactly the
   target passes, one over does not. `file_functions` is what the file already holds, so
-  a new helper does not collide with a name that is there.
+  a new helper does not collide with a name that is there. Run the scope's tests before
+  the first extraction and after each one, and give each helper a decision of its own: a
+  helper that only forwards its arguments moves the number and leaves the risk where it
+  was.
 - `remedy: add-tests`: write the failing test first, at the public seam, then cover the
-  lines `uncovered_lines` names. `params` gives the call signature.
+  lines `uncovered_lines` names. `params` gives the call signature. Each test asserts
+  what the lines it runs decide; a test that only runs them raises coverage and catches
+  nothing.
 - `remedy: split-lines`: another function shares this one's source lines, so coverage
   cannot tell them apart and the score stays at uncovered whatever you test. Put each
   definition on its own lines, then `crapkit coverage`. The next run says whether tests
