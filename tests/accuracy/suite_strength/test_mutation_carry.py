@@ -100,17 +100,24 @@ class FakeMutmut:
 
     def __init__(self):
         self.codes, self.map, self.reach = copy.deepcopy(CODES), copy.deepcopy(MAP), copy.deepcopy(REACH)
-        self.calls, self.complete = [], True
+        self.calls, self.complete, self.stats, self.failures = [], True, True, []
 
     def __call__(self, stage, globs, env, children, budget=None):
         self.calls.append(sorted(globs))
-        _put(stage / mutation.STATS_MAP, {"tests_by_mangled_function_name": self.map})
-        _put(stage / mutation.REACH_FILE, self.reach)
+        if self.stats:  # False: the cap stopped mutmut inside its stats pass
+            self.write_stats(stage)
         for module in MODULES:
             placed = {mutation.mangled(*function).rpartition(".")[2]: "h"
                       for function in self.codes if function[0] == module}
             _put(stage / "mutants" / f"{module}.meta", {"hash_by_function_name": placed})
         return self.rows(globs), self.complete
+
+    def write_stats(self, stage):
+        """What mutmut's stats pass and the launcher leave when the pass ends."""
+        _put(stage / mutation.STATS_MAP, {"tests_by_mangled_function_name": self.map})
+        _put(stage / mutation.REACH_FILE, self.reach)
+        (stage / mutation.STATS_FAILURES).write_bytes(
+            "".join(f"{node}\n" for node in self.failures).encode())
 
     def rows(self, globs):
         return [self.row(function, name, code) for function, named in self.codes.items()
@@ -130,9 +137,9 @@ class World:
         self.files, self.modes, self.env = dict(FILES), {}, "env-1"
         self.trees: dict[str, dict] = {}  # another commit's files, by the revision that names it
         self.now = datetime.datetime(2026, 10, 1, 12, 0, tzinfo=datetime.timezone.utc)
-        self.repo, self.stage, self.mutmut = tmp_path / "repo", tmp_path / "stage", FakeMutmut()
+        self.repo, self.mutmut = tmp_path / "repo", FakeMutmut()
+        self.stage = self.repo / mutation.CALC_STAGE
         self.stage.mkdir(parents=True)
-        self.repo.mkdir()
         self.tables = tables = tmp_path / "tables"
         tables.mkdir()
         for name, columns in (("survivors.tsv", mutation.SURVIVOR_COLUMNS),
@@ -421,6 +428,65 @@ def test_a_diff_run_its_cap_stopped_is_incomplete_and_keeps_the_verdicts_it_has(
     world.mutmut.complete = True
     world.run("diff")
     assert world.judged() == _globs(CRAP, SIZE)
+
+
+def test_an_incomplete_diff_run_says_what_the_mutants_it_judged_show(world, capsys):
+    """Job 110631509678 judged 3,966 of 9,627 mutants before the cap and printed only
+    that the cap stopped it; its receipt sat in the actions cache. Whether the
+    mutants it judged hold a new survivor, and whether its stats run left a test
+    out, is what the 0.9.0 launch reads off such a run."""
+    world.mutmut.complete = False
+    world.mutmut.codes[GRADE]["crapkit.score.x_grade__mutmut_1"] = 0
+    world.mutmut.codes[TOTALS]["crapkit.digest.x_totals__mutmut_1"] = 0
+    world.mutmut.codes[TOTALS]["crapkit.digest.x_totals__mutmut_2"] = None
+    mutation.write_table(world.tables / "survivors.tsv", mutation.SURVIVOR_COLUMNS, [
+        {"module": TOTALS[0], "function": TOTALS[1], "diff_sha256": "crapkit.digest.x_totals__mutmut_1",
+         "reason": "r", "added": "d"}])
+    world.mutmut.failures = ["tests/unit/t.py::a", "tests/unit/t.py::b"]
+
+    assert world.run("diff", "--cap-minutes", "78") == 1
+
+    said = capsys.readouterr().out
+    assert said.endswith(
+        "mutation: incomplete: the 78-minute cap stopped the run\n"
+        "mutation: incomplete: it judged 4 of 5 mutant(s); 2 stats failure(s)\n"
+        "mutation: incomplete: new survivor src/crapkit/score.py grade "
+        "crapkit.score.x_grade__mutmut_1: kill it with a test, or add a survivors.tsv row with its "
+        "reason\n"
+        "mutation: incomplete: 1 new survivor(s) and 1 listed one(s) among the mutants it judged\n")
+    assert world.receipt(f"diff-{'f' * 12}.json")["incomplete"] == {
+        "mutants": 5, "judged": 4, "stats_failures": 2, "listed_survivors": 1,
+        "new_survivors": [["src/crapkit/score.py", "grade", "crapkit.score.x_grade__mutmut_1"]]}
+
+
+def test_an_incomplete_diff_run_with_no_new_survivor_names_none(world, capsys):
+    world.mutmut.complete = False
+
+    assert world.run("diff") == 1
+
+    said = capsys.readouterr().out
+    assert "mutation: incomplete: it judged 5 of 5 mutant(s); 0 stats failure(s)\n" in said
+    assert "new survivor src" not in said
+    assert ("mutation: incomplete: 0 new survivor(s) and 0 listed one(s) among the mutants it "
+            "judged\n") in said
+    incomplete = world.receipt(f"diff-{'f' * 12}.json")["incomplete"]
+    assert (incomplete["stats_failures"], incomplete["new_survivors"]) == (0, [])
+
+
+def test_an_incomplete_run_its_cap_stopped_inside_the_stats_pass_knows_no_failure_count(
+        world, capsys):
+    """A list an earlier stats pass left in the stage says nothing about this tree, and
+    no list at all is no proof that no test failed."""
+    world.mutmut.complete, world.mutmut.stats = False, False
+    world.mutmut.codes = {function: dict.fromkeys(names) for function, names in CODES.items()}
+    (world.stage / mutation.STATS_FAILURES).write_bytes(b"tests/unit/t.py::a\n")
+
+    assert world.run("diff") == 1
+
+    said = capsys.readouterr().out
+    assert ("mutation: incomplete: it judged 0 of 5 mutant(s); its stats pass did not finish, so "
+            "no count of its stats failures exists\n") in said
+    assert world.receipt(f"diff-{'f' * 12}.json")["incomplete"]["stats_failures"] is None
 
 
 def test_a_cold_run_that_judges_a_carried_verdict_otherwise_voids_every_older_receipt(
@@ -723,18 +789,22 @@ def test_the_suite_s_variables_are_read_from_its_src_and_tests(keyed_stage):
 
 
 def test_a_stats_map_made_at_another_tree_is_dropped_before_mutmut_runs(tmp_path):
+    """The stats run's list of failed tests goes with them: a run its cap stopped
+    inside the stats pass would otherwise print an older tree's list as its own."""
     head = mutation.Head(_tree(FILES), "env-1", datetime.datetime.now(datetime.timezone.utc))
-    for name in (mutation.STATS_MAP, mutation.REACH_FILE):
+    for name in (mutation.STATS_MAP, mutation.REACH_FILE, mutation.STATS_FAILURES):
         _put(tmp_path / name, {})
 
     mutation._stamp_stats(tmp_path, head)
     mutation._fresh_stats(tmp_path, head)
     assert (tmp_path / mutation.STATS_MAP).is_file() and (tmp_path / mutation.REACH_FILE).is_file()
+    assert (tmp_path / mutation.STATS_FAILURES).is_file()
 
     mutation._fresh_stats(tmp_path, mutation.Head(_tree({**FILES, "README.md": "x\n"}), "env-1",
                                                   head.now))
     assert not (tmp_path / mutation.STATS_MAP).exists()
     assert not (tmp_path / mutation.REACH_FILE).exists()
+    assert not (tmp_path / mutation.STATS_FAILURES).exists()
 
 
 # --- the launcher's reach record ----------------------------------------------------------------------

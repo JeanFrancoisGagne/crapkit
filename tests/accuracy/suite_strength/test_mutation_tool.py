@@ -1801,6 +1801,39 @@ def test_a_diff_run_judges_every_calc_module_and_says_when_its_cap_stopped_it(
     assert ("incomplete: the 2-minute cap stopped the run" in said) == (not complete)
 
 
+def test_an_incomplete_run_s_report_reads_only_the_mutants_it_judged(tmp_path, monkeypatch):
+    """A mutant mutmut never reached (`not checked`) is no survivor, a carried row
+    is no part of what this run judged, and a survivor either table lists is
+    counted, not named."""
+    _tables(tmp_path, survivors=[{**_row("src/crapkit/score.py", "crap", KEYS[1]),
+                                  "reason": "r", "added": "d"}])
+    mutation.write_table(tmp_path / "equivalent.tsv", mutation.EQUIVALENT_COLUMNS, [
+        {**_row("src/crapkit/score.py", "crap", KEYS[2]), "evidence": "e", "strategy": "s",
+         "checked": "d"}])
+    monkeypatch.setattr(mutation, "TABLES", tmp_path)
+    carried = _result("src/crapkit/digest.py", "totals", KEYS[0], "survived")
+    rows = [carried, _crap(KEYS[0], "killed"), _crap(KEYS[1], "survived"), _crap(KEYS[2], "no tests"),
+            _crap(KEYS[3], "survived"), mutation.Result("m.x_crap__mutmut_9", *CRAP, "not checked"),
+            mutation.Result("m.x_crap__mutmut_8", *CRAP, "timeout", "t")]
+    outcome = mutation.Outcome(rows, False, {}, [CRAP], [], "env", True)
+
+    section = mutation.incomplete_section(outcome, ["tests/unit/t.py::a"])
+
+    assert section == {"mutants": 6, "judged": 5, "stats_failures": 1, "listed_survivors": 2,
+                       "new_survivors": [["src/crapkit/score.py", "crap", KEYS[3]]]}
+    assert mutation.incomplete_lines(section) == [
+        "it judged 5 of 6 mutant(s); 1 stats failure(s)",
+        f"new survivor src/crapkit/score.py crap {KEYS[3]}: kill it with a test, or add a "
+        "survivors.tsv row with its reason",
+        "1 new survivor(s) and 2 listed one(s) among the mutants it judged"]
+    unmapped = mutation.incomplete_section(mutation.Outcome(rows, False, {}, [CRAP], [], "env", False),
+                                           [])
+    assert unmapped["stats_failures"] is None
+    assert mutation.incomplete_lines(unmapped)[0] == (
+        "it judged 5 of 6 mutant(s); its stats pass did not finish, so no count of its stats "
+        "failures exists")
+
+
 def test_a_calc_run_with_nothing_to_judge_starts_no_mutmut(tmp_path, monkeypatch):
     recorder = _calc_on(tmp_path, monkeypatch, [], sources={})
 

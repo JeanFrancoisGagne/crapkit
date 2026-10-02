@@ -72,7 +72,10 @@ verdicts only while every one of those still holds, any .py file outside the
 mutated modules and the test modules is unchanged, and the verdicts are under
 28 days old; a surviving or unfinished mutant's verdict holds only at the tree
 it was judged at. A run with --cold carries nothing and compares what it
-judges with what would have carried; a difference voids every older receipt.
+judges with what would have carried; a difference voids every older receipt. A
+diff run its cap stops prints, and keeps in its receipt under `incomplete`, how
+many mutants it judged, how many tests its stats run left out, and the survivor
+set over what it judged.
 
 The gate is a survivor set, not a rate. A survivor is keyed by (module,
 function, sha256 of its mutant diff with line numbers and mutmut's numbering
@@ -2252,6 +2255,7 @@ class Outcome:
     judged: list
     mismatched: list
     env: str
+    stats_done: bool  # the stage holds this tree's stats map and reach record
 
 
 def _now() -> datetime.datetime:
@@ -2283,19 +2287,26 @@ def _say_plan(found: Plan, todo: list) -> None:
 
 
 def _fresh_stats(stage: Path, head: Head) -> None:
-    """Drop a stats map and reach file made at another tree or in another
-    environment: mutmut maps again only the tests it has not seen, so a test that
-    changed would keep its old map and its old reads."""
+    """Drop a stats map, reach file and list of failed tests made at another tree
+    or in another environment: mutmut maps again only the tests it has not seen, so
+    a test that changed would keep its old map and its old reads, and a run its cap
+    stopped inside the stats pass would print the old list as its own."""
     stamp = json.dumps({"tree": head.tree.ident, "env": head.env})
     held = stage / STATS_STAMP
     if held.is_file() and _read(held) == stamp:
         return
-    for name in (STATS_MAP, REACH_FILE, STATS_STAMP):
+    for name in (STATS_MAP, REACH_FILE, STATS_STAMP, STATS_FAILURES):
         (stage / name).unlink(missing_ok=True)
 
 
+def _stats_done(stage: Path) -> bool:
+    """Whether the stage holds a stats map and a reach record, which mutmut and the
+    launcher write when the stats pass ends."""
+    return (stage / STATS_MAP).is_file() and (stage / REACH_FILE).is_file()
+
+
 def _stamp_stats(stage: Path, head: Head) -> None:
-    if (stage / STATS_MAP).is_file() and (stage / REACH_FILE).is_file():
+    if _stats_done(stage):
         _write(stage / STATS_STAMP, json.dumps({"tree": head.tree.ident, "env": head.env}))
 
 
@@ -2326,7 +2337,7 @@ def calc_run(modules: list[str], children: int, budget: float | None = None, col
     todo = _todo(functions, found, cold)
     _say_plan(found, todo)
     rows, complete, new = _judge_todo(stage, head, todo, sorted(targets), children, budget)
-    return _run_outcome(found, todo, rows, complete, new, head)
+    return _run_outcome(found, todo, rows, complete, new, head, _stats_done(stage))
 
 
 def _with_canary(functions: list, canary: bool) -> list:
@@ -2334,12 +2345,12 @@ def _with_canary(functions: list, canary: bool) -> list:
 
 
 def _run_outcome(found: Plan, todo: list, rows: list[Result], complete: bool, new: tuple | None,
-             head: Head) -> Outcome:
+             head: Head, stats_done: bool) -> Outcome:
     """The run's rows, carried and judged, and the store its receipt keeps."""
     carried = {function: stored for function, stored in found.carried.items() if function not in todo}
     kept = [row for stored in carried.values() for row in stored.rows]
     return Outcome(kept + rows, complete, carry_section(carried, new, head), todo,
-                   mismatches(found.carried, rows), head.env)
+                   mismatches(found.carried, rows), head.env, stats_done)
 
 
 def _say_mismatched(names: list[str]) -> int:
@@ -2422,12 +2433,50 @@ def _weekly(args) -> int:
     return _judge(rows, update=False) | _say_mismatched(outcome.mismatched)
 
 
+def _rows_judging(outcome: Outcome) -> list[Result]:
+    """The rows of the functions the run set out to judge, none of them carried."""
+    judging = set(map(tuple, outcome.judged))
+    return [row for row in outcome.rows if (row.module, row.function) in judging]
+
+
+def incomplete_section(outcome: Outcome, failures: list[str]) -> dict:
+    """What a run the cap stopped shows of the mutants it judged: how many of the
+    mutants it set out to judge it judged, how many tests its stats run left out
+    (None when the cap stopped it inside its stats pass, since no list was
+    written), and the survivor set over them: each survivor on neither table, and
+    how many the tables list."""
+    survivors, equivalents, _ = _tables()
+    mine = _rows_judging(outcome)
+    judged = [row for row in mine if row.status in JUDGED]
+    alive, listed = _survived(judged), _idents(survivors) | _idents(equivalents)
+    return {"mutants": len(mine), "judged": len(judged),
+            "stats_failures": len(failures) if outcome.stats_done else None,
+            "new_survivors": [list(ident) for ident in sorted(alive - listed)],
+            "listed_survivors": len(alive & listed)}
+
+
+def incomplete_lines(section: dict) -> list[str]:
+    failures = section["stats_failures"]
+    said = (f"{failures} stats failure(s)" if failures is not None
+            else "its stats pass did not finish, so no count of its stats failures exists")
+    new = section["new_survivors"]
+    return [f"it judged {section['judged']} of {section['mutants']} mutant(s); {said}",
+            *verdict_lines(Verdict(new=tuple(map(tuple, new)))),
+            f"{len(new)} new survivor(s) and {section['listed_survivors']} listed one(s) among "
+            "the mutants it judged"]
+
+
 def _diff_run(args) -> int:
     outcome = calc_run(weekly_modules(), os.cpu_count() or 2, args.cap_minutes * 60, args.cold)
-    receipt = _receipt("diff", complete=outcome.complete, **_calc_fields(outcome))
+    fields = _calc_fields(outcome)
+    if not outcome.complete:
+        fields["incomplete"] = incomplete_section(outcome, fields["stats_failures"])
+    receipt = _receipt("diff", complete=outcome.complete, **fields)
     _write_receipt(receipt, f"diff-{receipt['head'][:12]}.json")
     if not outcome.complete:
         print(f"mutation: incomplete: the {args.cap_minutes:g}-minute cap stopped the run")
+        for line in incomplete_lines(fields["incomplete"]):
+            print(f"mutation: incomplete: {line}")
         return 1
     return _judge(outcome.rows, update=False, canary=False) | _say_mismatched(outcome.mismatched)
 

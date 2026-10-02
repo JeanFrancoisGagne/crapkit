@@ -257,7 +257,11 @@ until its read returns, so no timeout ends it.
 
 A survivor on neither `suite_strength/mutation/survivors.tsv` nor
 `equivalent.tsv` fails the run, and a capped `diff` run reports `incomplete`,
-never `pass`.
+never `pass`, and exits 1. It still prints, and keeps in its receipt under
+`incomplete`, what the mutants it judged show: how many of the mutants it set
+out to judge it judged, how many tests its stats run left out (no count when the
+cap stopped it inside its stats pass), each survivor among them that neither
+table lists, and how many the tables list.
 
 Neither command judges a function whose stored verdicts still hold. Each weekly
 and diff receipt keeps, beside its results, what each function's verdicts rest
