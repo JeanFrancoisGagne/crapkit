@@ -549,7 +549,10 @@ jobs:
           python -c "from pathlib import Path; from crapkit.junitparse import failed_test_ids;
           failed = sorted(failed_test_ids(Path('.crapkit/cov/junit.xml').read_text(encoding='utf-8')));
           print('\n'.join(failed)); raise SystemExit(bool(failed))"
+      # The gate reads the checkout and the event base, not the suite's
+      # evidence, so a red suite step above does not skip it.
       - name: gate changed functions against the event base
+        if: ${{ !cancelled() }}
         shell: bash
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
