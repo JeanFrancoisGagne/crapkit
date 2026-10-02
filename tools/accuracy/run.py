@@ -597,12 +597,13 @@ def _notes(receipts: list[dict]) -> dict:
 def _seeded_checks(receipts: list[dict]) -> tuple:
     """(the merged receipt's seed, the shards' checks). Each nightly run draws its
     own seed and each shard is a run, so where the shards' seeds differ each check
-    keeps the seed it ran under and the merged receipt names none."""
+    keeps the seed it ran under and the merged receipt names none. A check that
+    already names its seed, from a receipt that is itself a merge, keeps it."""
     seeds = [item.get("hypothesis_seed") for item in receipts]
     columns = _column(receipts, "checks", ())
     if len(set(map(json.dumps, seeds))) == 1:
         return seeds[0], list(chain.from_iterable(columns))
-    return None, [{**check, "hypothesis_seed": seed}
+    return None, [{"hypothesis_seed": seed, **check}
                   for seed, checks in zip(seeds, columns) for check in checks]
 
 

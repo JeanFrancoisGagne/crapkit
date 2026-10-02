@@ -526,6 +526,20 @@ def test_a_lone_shard_merges_under_its_own_seed():
                                       "events": {}, "skipped_files": {}, "infra": []}
 
 
+# A merged receipt's checks already name the seeds they ran under, and its own seed
+# is null: merged again with one more shard, the seeds differ, and the outer merge
+# must not write that null over each check's own seed.
+def test_a_merged_receipt_merged_again_keeps_the_seed_each_check_ran_under():
+    merged = run_tool.merge([_seeded_shard("one", 11, "a", "pass"),
+                             _seeded_shard("two", 22, "b", "pass")])
+
+    again = run_tool.merge([merged, _seeded_shard("three", 33, "c", "pass")])
+
+    assert again["hypothesis_seed"] is None
+    assert [(check["key"], check["hypothesis_seed"]) for check in again["checks"]] == [
+        ("a", 11), ("b", 22), ("c", 33)]
+
+
 # What a merged receipt states once for all its shards, each with a value one
 # shard could hold where the others do not: a merge across it would state it
 # falsely for some shard.
