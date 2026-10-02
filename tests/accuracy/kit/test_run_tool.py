@@ -492,6 +492,63 @@ def test_merge_refuses_two_values_for_one_note(field, clash, what):
         run_tool.merge([one, {**one, field: clash}])
 
 
+def _seeded_shard(shard: str, seed: int, key: str, outcome: str) -> dict:
+    check = {"key": key, "name": "x", "shard": shard, "declared": 1, "seconds": 0.5,
+             "outcome": outcome, "tests": 1}
+    return _shard(shard=shard, hypothesis_seed=seed, attempts=1, outcome=outcome, checks=[check])
+
+
+# Each nightly run.py draws its own seed, and each shard of accuracy.yml's Linux
+# 3.12 cell is its own run: nightly run 36940595657's summary job refused to merge
+# its four shards, "the receipts disagree on hypothesis_seed".
+def test_shards_run_under_their_own_seeds_merge_and_each_check_names_its_seed(tmp_path):
+    shards = [_seeded_shard("one", 11, "b", "fail"), _seeded_shard("two", 22, "a", "pass")]
+    paths = [tmp_path / "one.json", tmp_path / "two.json"]
+    for path, saved in zip(paths, shards):
+        path.write_text(json.dumps(saved), encoding="utf-8")
+    quiet = {key: value for key, value in os.environ.items() if key != "GITHUB_STEP_SUMMARY"}
+
+    done = in_process(["merge", *map(str, paths), "--out", str(tmp_path / "merged.json")], quiet)
+
+    assert done.returncode == 0, done.stderr
+    merged = json.loads((tmp_path / "merged.json").read_text(encoding="utf-8"))
+    assert (merged["tier"], merged["head"], merged["shard"], merged["outcome"]) == (
+        "nightly", "h", None, "fail")
+    assert merged["hypothesis_seed"] is None
+    assert merged["checks"] == [{**shards[1]["checks"][0], "hypothesis_seed": 22},
+                                {**shards[0]["checks"][0], "hypothesis_seed": 11}]
+
+
+def test_a_lone_shard_merges_under_its_own_seed():
+    lone = _seeded_shard("one", 11, "a", "pass")
+
+    assert run_tool.merge([lone]) == {**lone, "shard": None, "exports": {}, "oracles": {},
+                                      "events": {}, "skipped_files": {}, "infra": []}
+
+
+# What a merged receipt states once for all its shards, each with a value one
+# shard could hold where the others do not: a merge across it would state it
+# falsely for some shard.
+AGREED = {"schema": 2, "tier": "push", "local": True, "os_sensitive": True, "os": "windows",
+          "python": "3.13", "head": "g", "image": {"tag": "other"}, "digests": {"a": "2"}}
+# What a merge joins: summed, concatenated, the most of, or worked out again.
+JOINED = {"checks", "events", "exports", "oracles", "skipped_files", "infra", "attempts",
+          "outcome", "shard"}
+
+
+@pytest.mark.parametrize("field", sorted(AGREED))
+def test_merge_refuses_shards_that_disagree_on_what_they_ran(field):
+    one = _shard(schema=1, local=False, os_sensitive=False, checks=[])
+
+    with pytest.raises(run_tool.CheckError, match=f"^the receipts disagree on {field}: "):
+        run_tool.merge([one, {**one, field: AGREED[field]}])
+
+
+def test_every_receipt_field_is_agreed_joined_or_kept_per_check_by_a_merge():
+    assert sorted(run_tool.SAME) == sorted(AGREED)
+    assert sorted({*AGREED, *JOINED, "hypothesis_seed"}) == RECEIPT_KEYS
+
+
 # --- running a tier's pieces ------------------------------------------------------------------
 
 def test_a_nightly_seed_is_a_random_32_bit_value_and_the_rest_are_derandomized():

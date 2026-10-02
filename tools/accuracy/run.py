@@ -75,6 +75,10 @@ cell; the xplat job's `wheel_diff.py xplat` allows 2 ulp across cells),
 `events` fails when a required strategy shape occurred fewer than N times, and
 `oracle-versions` fails naming each installed oracle that is missing or is not
 its pin (the weekly no-cache image rebuild runs it).
+
+`merge` refuses shards that disagree on what they ran (SAME). Each nightly
+shard draws its own Hypothesis seed, so where the shards' seeds differ each
+merged check keeps its own and the merged receipt's seed is null.
 """
 from __future__ import annotations
 
@@ -549,7 +553,10 @@ def default_receipt(tier: str, shard: str | None) -> Path:
     return REPO / ".crapkit" / "accuracy" / ("-".join(filter(None, parts)) + ".json")
 
 
-SAME = ("tier", "local", "os_sensitive", "os", "python", "head", "hypothesis_seed", "image", "digests")
+# What a merged receipt states once for all its shards, so each shard must state
+# it alike: they ran one selection of one tier, under one receipt schema, on one
+# commit, image and set of pinned files.
+SAME = ("schema", "tier", "local", "os_sensitive", "os", "python", "head", "image", "digests")
 
 
 def _agree(receipts: list[dict]) -> None:
@@ -587,13 +594,26 @@ def _notes(receipts: list[dict]) -> dict:
             "infra": sorted(chain.from_iterable(_column(receipts, "infra", ())))}
 
 
+def _seeded_checks(receipts: list[dict]) -> tuple:
+    """(the merged receipt's seed, the shards' checks). Each nightly run draws its
+    own seed and each shard is a run, so where the shards' seeds differ each check
+    keeps the seed it ran under and the merged receipt names none."""
+    seeds = [item.get("hypothesis_seed") for item in receipts]
+    columns = _column(receipts, "checks", ())
+    if len(set(map(json.dumps, seeds))) == 1:
+        return seeds[0], list(chain.from_iterable(columns))
+    return None, [{**check, "hypothesis_seed": seed}
+                  for seed, checks in zip(seeds, columns) for check in checks]
+
+
 def merge(receipts: list[dict]) -> dict:
     """One receipt for the shards of one tier on one OS and Python."""
     _agree(receipts)
-    checks = sorted(chain.from_iterable(_column(receipts, "checks", ())), key=_check_key)
+    seed, checks = _seeded_checks(receipts)
     attempts = max(_column(receipts, "attempts", 1))
-    return {**receipts[0], **_notes(receipts), "shard": None, "checks": checks,
-            "attempts": attempts, "outcome": overall(checks)}
+    return {**receipts[0], **_notes(receipts), "shard": None, "hypothesis_seed": seed,
+            "checks": sorted(checks, key=_check_key), "attempts": attempts,
+            "outcome": overall(checks)}
 
 
 def table(saved: dict) -> str:
