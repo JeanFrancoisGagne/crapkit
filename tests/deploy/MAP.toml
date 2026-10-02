@@ -25,6 +25,20 @@
 # as { <os> = "<gap>" }, the one OS of a cell no runner can take. The scope
 # job never schedules a blocked job, and a blocked cell (or OS) is exempt from
 # the reach check until the gap closes.
+#
+# [every_harness] holds the every-harness rows: a set of cells that runs under
+# each harness tools/deploy/pins.toml pins, in that harness's image, fresh and
+# upgrade. An entry is keyed by the ticket whose cells make up the row, or
+# "<ticket>/<part>" where one ticket's row splits, and has one key: nightly =
+# "all" runs the row on all 17 harnesses nightly, nightly = "core" on the 3
+# core-image harnesses only. A test of a row names its entry with
+# @cell(..., row="<key>"), and its [cell] entry carries the same `row`. A key
+# no [cell] entry names yet is pending: its ticket has not added its cells,
+# and test_deploy_map.py's row check skips it, naming it. A nightly run
+# (run.py passes --deploy-cadence) drops a `core` row's items on the full
+# image and the images built on it (gui, full-latest), where the 14 non-core
+# harnesses run. Every other cadence, the release candidate's release run
+# included, keeps every row on every harness.
 
 # --- packets ------------------------------------------------------------------
 # The packet that writes each cell, and the files that show it has landed in
@@ -91,6 +105,79 @@ modules = []
 # The plan lists these cells, and no packet's module writes them yet.
 [packets.unowned]
 modules = []
+
+# The 0.9.0 tickets that create a deploy module: each packet holds the cell
+# ids its ticket names, and the landed-packet check skips them by name until
+# the module is in the tree.
+
+[packets.metric-stamp-04]
+modules = ["tests/deploy/test_mixed_versions.py"]
+
+[packets.metric-stamp-06]
+modules = ["tests/deploy/test_seed_converts.py"]
+
+[packets.metric-stamp-07]
+modules = ["tests/deploy/test_cc_only_to_measured.py"]
+
+[packets.criterion-13]
+modules = ["tests/deploy/test_criterion.py"]
+
+[packets.mission-2-14]
+modules = ["tests/deploy/test_language_map_cells.py"]
+
+[packets.mission-3]
+modules = ["tests/deploy/test_mission3_marked_rise.py"]
+
+[packets.mission-4-09]
+modules = ["tests/deploy/test_mission4_signature_carry.py"]
+
+[packets.m6-step-coverage-06]
+modules = ["tests/deploy/test_step_coverage_cells.py"]
+
+[packets.protocol-2-step-03a]
+modules = ["tests/deploy/test_step_neutral_cells.py"]
+
+[packets.protocol-2-step-06]
+modules = ["tests/deploy/test_claude_p2_cells.py"]
+
+[packets.protocol-2-step-07]
+modules = ["tests/deploy/test_claude_bash_cells.py"]
+
+[packets.protocol-2-step-11]
+modules = ["tests/deploy/test_codex_adapter_cells.py"]
+
+[packets.protocol-2-step-12]
+modules = ["tests/deploy/test_cursor_adapter_cells.py"]
+
+# --- every-harness rows -----------------------------------------------------------
+# What a nightly run takes of each row: "all" its cells on all 17 harnesses,
+# "core" on the 3 core-image ones. The header says how a row's tests name it.
+
+[every_harness]
+lanes-visible-06 = { nightly = "all" }
+m1-readers-09 = { nightly = "all" }
+"mission-4-09/harness" = { nightly = "all" }
+mission-9-06 = { nightly = "all" }
+protocol-2-step-08 = { nightly = "all" }
+schema-2-15 = { nightly = "all" }
+gate-group-06 = { nightly = "core" }
+lanes-visible-04 = { nightly = "core" }
+lanes-visible-05 = { nightly = "core" }
+lanes-visible-08 = { nightly = "core" }
+lanes-visible-09 = { nightly = "core" }
+lanes-visible-10 = { nightly = "core" }
+m1-readers-03 = { nightly = "core" }
+m1-readers-04 = { nightly = "core" }
+m1-readers-05 = { nightly = "core" }
+m1-readers-06 = { nightly = "core" }
+m1-readers-07 = { nightly = "core" }
+m5-comment-fixture-03 = { nightly = "core" }
+m5-comment-fixture-04 = { nightly = "core" }
+m5-comment-fixture-05 = { nightly = "core" }
+m5-comment-fixture-07 = { nightly = "core" }
+m5-comment-fixture-13 = { nightly = "core" }
+mission-2-14 = { nightly = "core" }
+"mission-4-09/cli" = { nightly = "core" }
 
 # --- cells --------------------------------------------------------------------
 # cadence: push, nightly, weekly, published ("weekly+published" gives both).
@@ -330,6 +417,57 @@ published-precommit = { packet = "unowned", cadence = "published", os = "linux",
 published-registry = { packet = "unowned", cadence = "published", os = "linux", image = "core", online = true }
 published-action-tag = { packet = "deploy-action", cadence = "published", job = "deploy.yml:published-action-tag" }
 
+# 0.9.0: the cell ids the tickets name, grouped by the ticket that adds each
+# test, with the cadence, os and image that ticket gives (nightly where it
+# gives none). The ticket edits its entries in place when it adds the @cell.
+# metric-stamp-04, -06 and -07
+"lin-mixed-0.8.0-reads-0.9.0-marks" = { packet = "metric-stamp-04", cadence = "nightly", os = "linux", image = "core" }
+"lin-up-pip-0.8.1-seed-converts" = { packet = "metric-stamp-06", cadence = "nightly", os = "linux", image = "core" }
+lin-cc-only-to-measured = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+# criterion-13
+lin-criterion-fresh = { packet = "criterion-13", cadence = "push", os = "linux", image = "core" }
+lin-criterion-upgrade = { packet = "criterion-13", cadence = "push", os = "linux", image = "core" }
+win-criterion-fresh = { packet = "criterion-13", cadence = "push", os = "windows" }
+win-criterion-upgrade = { packet = "criterion-13", cadence = "push", os = "windows" }
+# mission-2-14
+"lin-up-languages-0.8.1" = { packet = "mission-2-14", cadence = "nightly", os = "linux", image = "core" }
+"win-up-languages-0.8.1" = { packet = "mission-2-14", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+# mission-3-09
+lin-marked-rise-route1 = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
+lin-marked-rise-precommit = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
+lin-marked-warn = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
+lin-marked-override = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
+lin-up-marked-rise-n1 = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
+lin-marked-advisory = { packet = "mission-3", cadence = "nightly", os = "linux", image = "core" }
+lin-up-marked-advisory-n1 = { packet = "mission-3", cadence = "nightly", os = "linux", image = "core" }
+win-marked-rise-ps51 = { packet = "mission-3", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-marked-advisory = { packet = "mission-3", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-up-marked-rise-n1 = { packet = "mission-3", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+# mission-4-09: the harness-less and Windows cells; its per-harness cells carry their row
+lin-signature-carry = { packet = "mission-4-09", cadence = "push", os = "linux", image = "cells" }
+lin-up-signature-carry-n1 = { packet = "mission-4-09", cadence = "push", os = "linux", image = "cells" }
+win-m4-carry = { packet = "mission-4-09", cadence = "push", os = "windows" }
+win-up-m4-carry = { packet = "mission-4-09", cadence = "push", os = "windows" }
+# mission-9-04 moves it into deploy-channels, whose test_fresh_start.py the tree holds
+lin-ts-provider-mismatch = { packet = "unowned", cadence = "push", os = "linux", image = "core" }
+# m6-step-coverage-06; -08 moves the JS cells into m6-step-coverage-06 once that module exists
+lin-step-coverage-py-fresh = { packet = "m6-step-coverage-06", cadence = "nightly", os = "linux", image = "core" }
+lin-step-coverage-py-upgrade = { packet = "m6-step-coverage-06", cadence = "nightly", os = "linux", image = "core" }
+win-step-coverage-py-fresh = { packet = "m6-step-coverage-06", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-step-coverage-py-upgrade = { packet = "m6-step-coverage-06", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+lin-step-coverage-jest-fresh = { packet = "unowned", cadence = "nightly", os = "linux", image = "core" }
+lin-step-coverage-vitest-fresh = { packet = "unowned", cadence = "nightly", os = "linux", image = "core" }
+win-step-coverage-jest-fresh = { packet = "unowned", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-step-coverage-vitest-fresh = { packet = "unowned", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+# protocol-2-step-03a, -06, -07, -11 and -12
+lin-step-neutral-fresh = { packet = "protocol-2-step-03a", cadence = "push", os = "linux", image = "core" }
+lin-step-neutral-upgrade = { packet = "protocol-2-step-03a", cadence = "push", os = "linux", image = "core" }
+win-step-neutral-fresh = { packet = "protocol-2-step-03a", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-claude-p2-fresh = { packet = "protocol-2-step-06", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-claude-bash-fresh = { packet = "protocol-2-step-07", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-codex-adapter-fresh = { packet = "protocol-2-step-11", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-cursor-adapter-fresh = { packet = "protocol-2-step-12", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+
 # --- what blocks a cell or a job -------------------------------------------------
 # Each is work outside this packet (the kit, a cell no packet writes yet) or a
 # runner that cannot take the cell. Delete the entry, and the `blocked` keys
@@ -337,6 +475,7 @@ published-action-tag = { packet = "deploy-action", cadence = "published", job = 
 
 [gaps]
 host-cells-unwritten = "no packet writes lin-host-up-docker-0.7.6, lin-devcontainer, lin-codex-cloud-sim or lin-podman yet; weekly-host names only the last two, and a run whose cells do not exist collects nothing, so pytest exits 5"
+windows-nightly-packet-unscheduled = "nightly-windows-a and -b run one --packet each and name no 0.9.0 packet yet, since a run naming a packet whose module the tree lacks collects nothing and pytest exits 5; the ticket that adds one of these Windows cells' @cell adds its packet's run to nightly-windows-a or -b and drops the cell's `blocked` in the same change, and the last one deletes this gap"
 windows-linux-containers = "the windows-2025 runner's Docker runs Windows containers only, so no CI job can build the Linux product image docs-docker-user serves; its Windows half runs on a Windows machine with Docker Desktop"
 
 # --- deploy.yml's work ------------------------------------------------------------

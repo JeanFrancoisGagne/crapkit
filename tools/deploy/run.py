@@ -122,8 +122,11 @@ JUNIT = ["-o", "junit_family=xunit1"]
 
 
 def pytest_args(args) -> list[str]:
+    """The -m expression, and beside it the cadence: tests/deploy/conftest.py
+    reads --deploy-cadence to drop, in a nightly run, a `core` every-harness
+    row's items on the full image and the images built on it."""
     selected = JUNIT + ["-m", marker_expression(args.cadence, args.os, None if args.native else args.image,
-                                                args.online)]
+                                                args.online), f"--deploy-cadence={args.cadence}"]
     return selected + narrowing(args) + (["-n", str(args.n)] if args.n else [])
 
 
@@ -570,7 +573,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cadence", default="push", choices=sorted(CADENCES),
                         help="the cadence whose cells run (default push); release is push, nightly, weekly and "
-                             "online together")
+                             "online together; a nightly run drops the items of a `core` every-harness row "
+                             "(tests/deploy/MAP.toml [every_harness]) on the full image and the images built on it; "
+                             "every other cadence, release included, keeps every row on every harness")
     parser.add_argument("--cell", action="append", default=[], metavar="ID",
                         help="run this cell; repeat for more")
     parser.add_argument("--packet", metavar="KEY", help="run one packet's cells, e.g. deploy-kit")
