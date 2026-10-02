@@ -322,12 +322,14 @@ def test_run_bounded_hands_back_the_exit_code_of_a_streamed_command(tmp_path):
     assert log.read_text(encoding="utf-8").strip() == "7"
 
 
-@pytest.mark.skipif(procs.os.name == "nt", reason="Windows waits with Popen.wait; the POSIX wait is under test")
 def test_a_lane_command_is_waited_on_where_python_has_no_os_waitid(monkeypatch):
     """python.org's macOS Pythons before 3.13 have no os.waitid, and every lane run
     there died with AttributeError in _wait_command: the 0.8.1 release's macOS
-    accuracy cell, `crapkit coverage` exited 1. Popen.wait still bounds the wait."""
-    monkeypatch.delattr(procs.os, "waitid")
+    accuracy cell, `crapkit coverage` exited 1. Popen.wait still bounds the wait.
+    Windows and macOS 3.11 have no os.waitid to delete, so the delete must not
+    demand one: a delete that raised there failed on the one leg this test is for,
+    and a Windows skip hid that from every push."""
+    monkeypatch.delattr(procs.os, "waitid", raising=False)
     quits = subprocess.Popen([sys.executable, "-c", "raise SystemExit(3)"], start_new_session=True)
     reads = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"],
                              stdin=subprocess.PIPE, start_new_session=True)
