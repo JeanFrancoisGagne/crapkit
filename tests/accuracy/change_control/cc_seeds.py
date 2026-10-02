@@ -132,15 +132,16 @@ RULING_ROWS = (
 )
 
 # The seeded packet's tests. The pre-push hook runs them at the push tier with the
-# checkout's tests/ first on PYTHONPATH, and test_crap checks both.
+# checkout's src/ and tests/ first on PYTHONPATH, and test_crap checks both.
 SEED_SOURCE = '''import os
 from pathlib import Path
 
 
 def test_crap():
     assert os.environ["CRAPKIT_ACCURACY_TIER"] == "push"
-    first = os.environ["PYTHONPATH"].split(os.pathsep)[0]
-    assert Path(first).resolve() == Path(__file__).resolve().parents[2]
+    first = os.environ["PYTHONPATH"].split(os.pathsep)[:2]
+    tests = Path(__file__).resolve().parents[2]
+    assert [Path(path).resolve() for path in first] == [tests.parent / "src", tests]
     assert 7 * 7 * 0.125 + 7 == 13.125
 
 

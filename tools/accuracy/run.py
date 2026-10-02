@@ -310,8 +310,10 @@ def selected(checks: list[Check], tier: str, shard: str | None, platform: str,
 # --- running them -------------------------------------------------------------------
 
 def _child_env(tier: str, log: Path) -> dict:
+    """The checkout's src/ and tests/ lead PYTHONPATH, so the checks judge this
+    tree's crapkit, never the one this python has installed."""
     env = {key: value for key, value in os.environ.items() if key not in PARENT_ONLY}
-    paths = [str(REPO / "tests"), env.get("PYTHONPATH", "")]
+    paths = [str(REPO / "src"), str(REPO / "tests"), env.get("PYTHONPATH", "")]
     env.update({tiers.TIER_ENV: tier, runlog.LOG_ENV: str(log),
                 "PYTHONPATH": os.pathsep.join(filter(None, paths))})
     return env

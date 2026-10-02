@@ -2360,7 +2360,9 @@ def _declare_main(argv: list[str]) -> int:
 # --- lock --initial and counts -------------------------------------------------------------
 
 def _tests_env(root: Path, extra: dict) -> dict:
-    paths = (str(root / "tests"), os.environ.get("PYTHONPATH"))
+    """The checkout's src/ and tests/ first on PYTHONPATH: the checks judge this
+    tree's crapkit, never the one this python has installed."""
+    paths = (str(root / "src"), str(root / "tests"), os.environ.get("PYTHONPATH"))
     return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
             "PYTHONPATH": os.pathsep.join(filter(None, paths)), **extra}
 

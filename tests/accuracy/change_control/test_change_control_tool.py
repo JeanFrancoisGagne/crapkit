@@ -359,14 +359,42 @@ def test_count_problems_name_each_packet_that_differs():
         f"packet verdict_model collects 2 tests, {cc.COUNTS} says 0"]
 
 
-def test_a_test_run_gets_the_checkout_s_tests_first_on_the_path_and_no_bytecode(
+def test_a_test_run_gets_the_checkout_s_src_and_tests_first_on_the_path_and_no_bytecode(
         tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", "elsewhere")
 
     env = cc._tests_env(tmp_path, {"EXTRA": "1"})
 
     assert (env["PYTHONPATH"], env["PYTHONDONTWRITEBYTECODE"], env["EXTRA"]) == (
-        os.pathsep.join((str(tmp_path / "tests"), "elsewhere")), "1", "1")
+        os.pathsep.join((str(tmp_path / "src"), str(tmp_path / "tests"), "elsewhere")), "1", "1")
+
+
+# The checkout's own crapkit, which no python has installed.
+OWN_CRAPKIT_TEST = """from pathlib import Path
+
+import crapkit
+
+
+def test_own():
+    assert Path(crapkit.__file__).resolve() == Path(__file__).resolve().parents[1] / "src/crapkit/__init__.py"
+"""
+
+
+@pytest.mark.process
+def test_the_pushed_tree_s_checks_import_that_tree_s_crapkit(tmp_path, capfd):
+    """The pre-push hook's pytest run judges the pushed tree's code, not the
+    crapkit this python has installed: a wheel, or an editable install of
+    another checkout."""
+    (tmp_path / "src/crapkit").mkdir(parents=True)
+    (tmp_path / "src/crapkit/__init__.py").write_text("")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_own.py").write_text(OWN_CRAPKIT_TEST)
+
+    code = cc.run_tests(tmp_path, ["tests/test_own.py"])
+
+    out = capfd.readouterr().out
+    assert code == 0, out
+    assert "1 passed" in out
 
 
 # --- the pre-push hook ------------------------------------------------------------------------
@@ -385,14 +413,15 @@ def _push_line(top: Path) -> str:
 
 IN_TREE_SOURCE = "def test_in_tree():\n    assert True\n"
 # A regenerator that checks how declare starts it: from the checkout's top, with its
-# tests/ first on PYTHONPATH, asked for the goldens.
+# src/ and tests/ first on PYTHONPATH, asked for the goldens.
 CHECKED_REGENERATOR = """import os
 import sys
 from pathlib import Path
 assert sys.argv[1:] == ["goldens"], sys.argv
 assert Path.cwd().resolve() == Path(__file__).resolve().parents[2]
-first = os.environ["PYTHONPATH"].split(os.pathsep)[0]
-assert Path(first).resolve() == Path.cwd().resolve() / "tests"
+first = os.environ["PYTHONPATH"].split(os.pathsep)[:2]
+assert [Path(path).resolve() for path in first] == [Path.cwd().resolve() / name
+                                                    for name in ("src", "tests")]
 """
 TIERED_CONFTEST = """import os
 

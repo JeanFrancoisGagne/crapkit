@@ -18,13 +18,17 @@ the test environment: fixture lanes launch their own pytest processes with
 coverage and worker flags. Run the shared test schedule below after setup.
 
 `core.hooksPath` arms the complexity gate on your own commits and change control on
-your pushes. Without it your commits pass locally and get rejected in review. The
-`accuracy-push` extra is what the pre-push hook runs on: the pinned oracles of the
-calculation-accuracy suite ([docs/accuracy.md](docs/accuracy.md)). Without it the hook
-stops the push and prints the install line. The Node tools `npm ci` puts under
-`tools/accuracy/node/push` are what the pre-push checks of a JavaScript or TypeScript
-calculation and `change_control.py declare` run; without them both stop and print the
-`npm ci` line.
+your pushes. Without it your commits pass locally and get rejected in review. Both
+hooks run the checkout's own code: pre-commit puts the checkout's `src/` first on
+PYTHONPATH for the gate, and pre-push runs the checkout's
+`tools/accuracy/change_control.py`, whose test runs get the same `src/` first. A commit
+in a linked worktree is judged by that worktree's crapkit, not by the one your python
+has installed. The `accuracy-push` extra is what the pre-push hook runs on: the pinned
+oracles of the calculation-accuracy suite ([docs/accuracy.md](docs/accuracy.md)).
+Without it the hook stops the push and prints the install line. The Node tools `npm ci`
+puts under `tools/accuracy/node/push` are what the pre-push checks of a JavaScript or
+TypeScript calculation and `change_control.py declare` run; without them both stop and
+print the `npm ci` line.
 
 ## Tests
 

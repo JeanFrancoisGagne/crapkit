@@ -583,10 +583,11 @@ def test_the_child_env_leaves_out_the_parent_test_s_identity(monkeypatch, tmp_pa
     monkeypatch.delenv("PYTHONPATH")
 
     assert [name for name in run_tool.PARENT_ONLY if name in env] == [] and env["CRAPKIT_KEPT"] == "1"
-    assert env["PYTHONPATH"] == os.pathsep.join([str(REPO / "tests"), "elsewhere"])
+    assert env["PYTHONPATH"] == os.pathsep.join([str(REPO / "src"), str(REPO / "tests"), "elsewhere"])
     assert (env[run_tool.tiers.TIER_ENV], env[run_tool.runlog.LOG_ENV]) == (
         "nightly", str(tmp_path / "log.jsonl"))
-    assert run_tool._child_env("push", tmp_path)["PYTHONPATH"] == str(REPO / "tests")
+    assert run_tool._child_env("push", tmp_path)["PYTHONPATH"] == os.pathsep.join(
+        [str(REPO / "src"), str(REPO / "tests")])
 
 
 def test_the_session_argv(tmp_path):
