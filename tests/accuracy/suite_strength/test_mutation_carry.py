@@ -526,7 +526,8 @@ def test_an_incomplete_run_its_cap_stopped_inside_the_stats_pass_knows_no_failur
             "no count of its stats failures exists\n") in said
     assert "failed with no mutant active" not in said
     receipt = world.receipt(f"diff-{'f' * 12}.json")
-    # The receipt's own list agrees: [] would read as zero failures, the number Q103 checks.
+    # The receipt's own list agrees: [] would read as zero failures, and a capped run is read
+    # for exactly that count.
     assert (receipt["stats_failures"], receipt["incomplete"]["stats_failures"]) == (None, None)
 
 
