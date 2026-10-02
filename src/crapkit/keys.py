@@ -31,13 +31,25 @@ The naming rules live here too, beside the keys they reach: the bare name, the
 handles, and `select`, the one resolver every command that takes a NAME runs.
 `brief` resolved in the queue and `explain` in the store, and a bare twin name
 picked the worst twin in one and the first in the other.
+
+The mark index lives here as well. `MarkIndex` is built once from a marks
+file's entries and answers which mark a key carries; `rows_by_key` answers which
+scored row stands for a key. Every mark lookup in verify and ratchet goes
+through them, `ratchet.mark_for` included, so a key a marks file lists twice has
+one winner there, the first: the gate, the ratchet check, the update's counts
+and the tighten guard all read it. The update itself rewrites every line, so
+both lines stay and the first still answers.
 """
 from __future__ import annotations
 
 from collections import Counter
 import re
+from typing import TYPE_CHECKING
 
 from .errors import CrapkitError, ToolError
+
+if TYPE_CHECKING:  # score imports this module
+    from .score import ScoredRow
 
 ORDINAL = "#"
 # What lizard calls a function it could not name. Every anonymous function in a
@@ -165,6 +177,76 @@ def key_names(rows, *, run_id: int | None = None) -> dict[tuple[str, str, int, i
 def key_of(keys: dict[tuple[str, str, int, int], str], row) -> tuple[str, str]:
     """One row's whole key, out of the map `key_names` built."""
     return row.path, keys[lookup(row)]
+
+
+def rows_by_key(fresh: list[ScoredRow]) -> dict[tuple[str, str], ScoredRow]:
+    """Scored rows by their ratchet key: `key_names` gives each twin its own.
+
+    Twins used to share (path, long_name) and the worst of them represented the
+    key, which let a repaid twin's high mark pardon a sibling's growth. The
+    ordinal ends that. The worst-wins rule stays for the one collision left —
+    two scopes claiming one path score the same span twice — so a regression
+    still cannot hide behind a clean sibling.
+    """
+    names = key_names(fresh)
+    worst: dict[tuple[str, str], ScoredRow] = {}
+    for r in fresh:
+        key = key_of(names, r)
+        if key not in worst or r.crap > worst[key].crap:
+            worst[key] = r
+    return worst
+
+
+def mark_key(entry) -> tuple[str, str]:
+    """The key a mark was recorded under: its path and its key name."""
+    return entry.path, entry.long_name
+
+
+class MarkIndex:
+    """A marks file's entries by key, built once: which mark judges a function.
+
+    A file can list one key twice, by a hand edit or a botched merge. The first
+    mark wins, as `ratchet.mark_for` answers, and every lookup in verify and
+    ratchet reads the same one. Before the index, verify's gate, seed, merge and
+    the update's counts each built their own dict and kept the last, while the
+    ratchet check and the tighten guard walked every entry.
+    """
+
+    __slots__ = ("_by_key",)
+
+    def __init__(self, entries) -> None:
+        by_key: dict = {}
+        for entry in entries:
+            by_key.setdefault(mark_key(entry), entry)
+        self._by_key = by_key
+
+    def mark(self, key: tuple[str, str]) -> float | None:
+        """The mark under `key`, or None when nothing marks it."""
+        entry = self._by_key.get(key)
+        return None if entry is None else entry.crap
+
+    # A dict's spelling of `mark`, so a reader written against a dict of marks
+    # by key reads the index unchanged.
+    get = mark
+
+    def entry(self, key: tuple[str, str]):
+        """The entry under `key`, or None when nothing marks it."""
+        return self._by_key.get(key)
+
+    def keys(self):
+        """Every marked key, once each."""
+        return self._by_key.keys()
+
+    def entries(self):
+        """The entry that answers each key, once each, in the order the file lists them."""
+        return self._by_key.values()
+
+    def working_copy(self) -> dict:
+        """The entries by key as a new dict, for a caller that adds or replaces marks."""
+        return dict(self._by_key)
+
+    def __contains__(self, key) -> bool:
+        return key in self._by_key
 
 
 def stated_key(item) -> tuple[str, str]:
