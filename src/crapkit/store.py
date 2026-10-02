@@ -689,16 +689,23 @@ class SnapshotStore:
 
         All of it is one transaction, so it commits once, and an interrupt
         anywhere leaves the store as the previous code wrote it. Outside a
-        transaction every CREATE commits on its own, and each commit syncs the
-        disk four times on Linux (the journal twice, the database, its
-        directory). A new store cost 19 commits, 76 syncs: on a CI runner whose
-        disk the other test workers were flooding, `crapkit coverage` on a new
-        repo sat past the suite's 120 s hang bound in here, and with every sync
-        held 1.5 s it always did. The script opens the transaction itself,
-        because executescript commits any open one before it starts.
+        transaction every CREATE commits on its own, and every commit waits on
+        the disk: four syncs on Linux (the journal twice, the database, its
+        directory). A new store cost 19 commits. On a windows-latest CI runner
+        whose disk the other test workers were flooding, three `crapkit
+        coverage` calls on new repos were stopped in here at the suite's 120 s
+        hang bound, and in a Linux container with every sync held 1.5 s, every
+        call was.
+
+        The script opens the transaction itself, because executescript commits
+        any open one before it starts, and IMMEDIATE takes the write lock before
+        the first read. Every CREATE here is IF NOT EXISTS, so a deferred BEGIN
+        on an existing store reads first, and SQLite fails a reader that then
+        asks to write with "database is locked" at once. A write lock asked for
+        first waits out another crapkit's write under the busy timeout.
         """
         with self._conn:
-            self._conn.executescript(f"BEGIN;{_SCHEMA}")
+            self._conn.executescript(f"BEGIN IMMEDIATE;{_SCHEMA}")
             self._seed_codes()
             self._migrate()
             # after the migration, never before it: on a store still in the old
