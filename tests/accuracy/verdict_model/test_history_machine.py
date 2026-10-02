@@ -32,9 +32,12 @@ it lists the run history.
 test_every_step_in_one_scripted_history walks one fixed history through every
 command, so each is exercised on every push whatever the machine draws.
 
-Each run the machine appends, and each verify that refuses, counts as its
-kit.strategies run_kinds shape (COUNTED), so the nightly events floor on those
-shapes is carried by runs crapkit wrote.
+Each run the machine appends counts as its kit.strategies run_kinds shape
+(COUNTED). Two kinds count calls instead: a verify that refuses (exit 1, 3 or
+5) stores no run and counts as a refused run, and each call that reads marks an
+older analysis version recorded (the verify that refuses them, seed, prune, the
+hook's grant) counts as a version upgrade. So crapkit calls whose results the
+machine checks carry the nightly events floor on these shapes.
 """
 from __future__ import annotations
 
@@ -81,13 +84,16 @@ RECORD = ".crapkit/record.tsv"
 # The two answers differ here by design: the record names no run (README.md:794,
 # --baseline-tsv), and each store numbers its own runs.
 RUN_IDS = frozenset({"baseline_run", "run_id"})
-# Weighted: a verify is the step most worth repeating. one_lane, inventory and
-# grant run twice as often, so each run kind the machine counts (COUNTED) clears
-# twice the nightly events floor of 50: at one weight each, a nightly run wrote 90
-# inventories (seed 4109362107) and 107 hook runs (seed 2026).
-COMMANDS = ("verify", "verify", "verify", "coverage", "coverage", "one_lane", "one_lane",
-            "failed_lane", "inventory", "inventory", "override", "hook", "hook_grant", "grant",
-            "grant", "seed", "prune", "runs_prune", "upgrade", "tsv")
+# Weighted: a verify is the step most worth repeating, and 5 entries in 23 keep its
+# share near the 3 in 15 it had before the other weights rose. one_lane, inventory,
+# grant and upgrade run twice as often, so each run kind the machine counts
+# (COUNTED) clears twice the nightly events floor of 50: at one weight each, a
+# nightly run wrote 90 inventories (seed 4109362107) and 107 hook runs (seed 2026),
+# and 79 calls read upgraded marks (seed 77).
+COMMANDS = ("verify", "verify", "verify", "verify", "verify", "coverage", "coverage",
+            "one_lane", "one_lane", "failed_lane", "inventory", "inventory", "override", "hook",
+            "hook_grant", "grant", "grant", "seed", "prune", "runs_prune", "upgrade", "upgrade",
+            "tsv")
 # How often each command ran this session, and how each state's record check ended,
 # printed so a reader sees what was explored.
 STEPS: Counter = Counter()
@@ -97,8 +103,11 @@ STORED = {"coverage": model.COVERAGE, "partial": model.PARTIAL, "lane-subset": m
           "inventory": model.INVENTORY, "verify-ok": model.VERIFY, "verify-fail": model.VERIFY,
           "hook-override": model.HOOK}
 # Every run kind the machine counts: each run it appends, a verify that refused and
-# stored none, and a run that met marks an older analysis version recorded.
+# stored none, and a call that read marks an older analysis version recorded.
 COUNTED = (*STORED, "refused", "version-upgrade")
+# What a verify that stores no run counts, by its exit: a refused run, and at exit 3
+# a read of marks an older analysis version recorded.
+REFUSED = {1: ["refused"], 3: ["refused", "version-upgrade"], 5: ["refused"]}
 
 
 @dataclass
@@ -258,13 +267,17 @@ class History(RuleBasedStateMachine):
         measured = Measured(run, world, failed_tests(world) if world else frozenset(), lanes)
         self.history.append(measured)
         self.next_id += 1
-        self._count(kind)
+        strategies.count_runs([kind])
         return measured
 
-    def _count(self, kind: str) -> None:
-        """Count a run as its kind, and as a version upgrade when the marks it met
-        were recorded under an older analysis version (`upgrade`)."""
-        strategies.count_runs([kind, "version-upgrade"] if self._stamp_refused() else [kind])
+    def _read_upgraded_marks(self) -> None:
+        """Count a crapkit call that read marks an older analysis version
+        recorded (`upgrade`) as a version upgrade: seed restamps them from the
+        run it read, and prune and the hook's grant keep their stamp. A verify
+        refuses them (exit 3, REFUSED). coverage and inventory never read the
+        marks file."""
+        if self._stamp_refused():
+            strategies.count_runs(["version-upgrade"])
 
     def _learn_metric(self) -> None:
         """The running metric is an input, read off the first scored run."""
@@ -359,7 +372,7 @@ class History(RuleBasedStateMachine):
                     else 5 if self.sc.world.failing_lanes else None)
         if expected is not None:
             assert result.code == expected, result.stdout + result.stderr
-            self._count("refused")
+            strategies.count_runs(REFUSED[expected])
         return expected is not None
 
     def verify(self):
@@ -462,6 +475,7 @@ class History(RuleBasedStateMachine):
         """The hook synthesizes the worst case, ccn^2 + ccn, keeps the recorded
         stamp and records a hook run."""
         worst = {key: model.mark_value(ccn[key] * ccn[key] + ccn[key]) for key in violations}
+        self._read_upgraded_marks()
         self.stamp = model.stamp_after("hook-override", self._recorded(), self.running)
         self.marks = {**self._marks(), **worst}
         self.overrides.add(self._append("hook-override").id)
@@ -473,6 +487,7 @@ class History(RuleBasedStateMachine):
         result = self.sc.run("ratchet", "seed")
         assert result.code == (1 if base is None else 0), result.stdout + result.stderr
         if base is not None:
+            self._read_upgraded_marks()
             self.marks, _, _ = model.seed(self._marks(), scores(base.world), vw.TARGET)
             self.stamp = base.run.metric
 
@@ -481,6 +496,7 @@ class History(RuleBasedStateMachine):
         result = self.sc.run("ratchet", "prune")
         assert result.code == (1 if base is None else 0), result.stdout + result.stderr
         if base is not None:
+            self._read_upgraded_marks()
             self.stamp = model.stamp_after("prune", self._recorded(), self.running)
             self.marks = model.prune(self._marks(), set(scores(base.world)))
 
@@ -743,8 +759,11 @@ SCRIPT = (
     (("commit",), "verify"),
     (("toggle", "lib"), "coverage"),              # b3 leaves the run
     (("none",), "prune"),                         # its mark, if any, goes
-    (("none",), "upgrade"),                       # marks under an older analysis: refused
-    (("none",), "verify"),
+    (("none",), "upgrade"),                       # marks under an older analysis version
+    (("none",), "verify"),                        # refused, exit 3
+    (("none",), "inventory"),                     # reads no mark: no version upgrade
+    (("none",), "prune"),                         # keeps the older stamp
+    (("none",), "grant"),                         # the hook's grant keeps it too
     (("none",), "seed"),                          # seed restamps from a run this crapkit measured
     (("edit", "app", 1, 7, 0), "override"),       # a2 past the ceiling, granted
     (("none",), "tsv"),
@@ -758,17 +777,24 @@ SCRIPT = (
 def test_every_step_in_one_scripted_history(repo_templates, tmp_path):
     """The script also writes every run kind the machine counts: three failed
     verifies (a gate, a new failure, a regression), two partial runs, a lane
-    subset, an inventory, two hook runs, and a verify the upgraded marks refuse."""
+    subset, two inventories, three hook runs and a verify the upgraded marks
+    refuse. Four calls read the upgraded marks and count as a version upgrade:
+    that verify, a prune and the hook's grant that keep their stamp, and the seed
+    that restamps them. The inventory between them reads no mark."""
     machine = History(tmp_path, repo_templates)
     before = Counter(strategies.EVENTS)
     machine.measured()
     machine.agrees_with_the_model()
+    upgraded = []
     for change, command in SCRIPT:
+        upgrades = strategies.EVENTS["R56"]
         machine.step(change, command)
         machine.agrees_with_the_model()
+        upgraded += [command] * (strategies.EVENTS["R56"] - upgrades)
     counted = Counter(strategies.EVENTS) - before
-    assert counted == {"R06": 3, "R83": 2, "R74": 1, "shape:inventory-run": 1, "R107": 2,
-                       "R56": 1, "shape:refused-run": 1}
+    assert upgraded == ["verify", "prune", "grant", "seed"]
+    assert counted == {"R06": 3, "R83": 2, "R74": 1, "shape:inventory-run": 2, "R107": 3,
+                       "R56": 4, "shape:refused-run": 1}
 
 
 @pytest.mark.nightly
