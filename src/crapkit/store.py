@@ -160,19 +160,22 @@ CREATE TABLE IF NOT EXISTS lane_refusals (
 {_TWIN_DDL}
 """
 
-# Indexes run after the migration, never with it: on a store still in the old
-# shape none of these columns exists yet.
+# Indexes run after the migration, never before it: on a store still in the
+# old shape none of these columns exists yet.
 #
 # Two per-row indexes on functions, not three. A run-keyed seek and an
 # identity-keyed seek are the only two shapes any read asks for; a third index
 # keyed (run_id, identity_id) answered neither of them better and cost 10.8 MB
 # and a fifth of the insert time on the flagship consumer's store.
-_INDEXES = """
-CREATE INDEX IF NOT EXISTS idx_functions_run ON functions(run_id);
-CREATE INDEX IF NOT EXISTS idx_functions_identity ON functions(identity_id, run_id);
-CREATE INDEX IF NOT EXISTS idx_attempts_open ON attempts(closed_at);
-CREATE INDEX IF NOT EXISTS idx_attempts_identity ON attempts(path, key_name);
-"""
+#
+# Statements, not a script: they run inside the setup's transaction, and
+# executescript would commit it first.
+_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_functions_run ON functions(run_id)",
+    "CREATE INDEX IF NOT EXISTS idx_functions_identity ON functions(identity_id, run_id)",
+    "CREATE INDEX IF NOT EXISTS idx_attempts_open ON attempts(closed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_attempts_identity ON attempts(path, key_name)",
+)
 
 # Indexes an earlier shape carried that nothing reads now. idx_identities_path
 # is what the reordered UNIQUE replaced; both are dropped on open.
@@ -682,14 +685,26 @@ class SnapshotStore:
             "SELECT 1 FROM runs WHERE typeof(lanes) = 'text' LIMIT 1").fetchone() is not None
 
     def _prepare(self) -> None:
-        """Create or upgrade a store only when its measured shape requires it."""
-        self._conn.executescript(_SCHEMA)
-        self._seed_codes()
-        self._migrate()
-        # after the migration, never with it: on a store still in the old shape
-        # these index columns do not exist yet
-        self._conn.executescript(_INDEXES)
-        self._conn.commit()
+        """Create or upgrade a store only when its measured shape requires it.
+
+        All of it is one transaction, so it commits once, and an interrupt
+        anywhere leaves the store as the previous code wrote it. Outside a
+        transaction every CREATE commits on its own, and each commit syncs the
+        disk four times on Linux (the journal twice, the database, its
+        directory). A new store cost 19 commits, 76 syncs: on a CI runner whose
+        disk the other test workers were flooding, `crapkit coverage` on a new
+        repo sat past the suite's 120 s hang bound in here, and with every sync
+        held 1.5 s it always did. The script opens the transaction itself,
+        because executescript commits any open one before it starts.
+        """
+        with self._conn:
+            self._conn.executescript(f"BEGIN;{_SCHEMA}")
+            self._seed_codes()
+            self._migrate()
+            # after the migration, never before it: on a store still in the old
+            # shape these index columns do not exist yet
+            for statement in _INDEXES:
+                self._conn.execute(statement)
 
     def _seed_codes(self) -> None:
         """The known verdict names, at their fixed codes. Before any migration:
@@ -711,7 +726,6 @@ class SnapshotStore:
         self._add_inline_body_column()
         self._add_run_provenance_columns()
         self._add_claim_handle_column()
-        self._conn.commit()
         self._normalize_identities()
         self._restack()
 
@@ -786,20 +800,15 @@ class SnapshotStore:
         """Move scope, path and long_name out of every functions row.
 
         The old shape is the one that still has a scope column. The rewrite runs
-        as one transaction and swaps the table in last, so an interrupt leaves
-        the old table whole, rows and all, and the next open retries from there.
-        Old databases migrate silently; `runs prune` reclaims the freed pages.
+        inside _prepare's transaction and swaps the table in last, so an
+        interrupt leaves the old table whole, rows and all, and the next open
+        retries from there. Old databases migrate silently; `runs prune`
+        reclaims the freed pages.
         """
         if "scope" not in self._existing_columns("functions"):
             return
-        self._conn.execute("BEGIN")  # DDL does not open one, and this must be atomic
-        try:
-            for statement in _IDENTITY_MIGRATION:
-                self._conn.execute(statement)
-            self._conn.commit()
-        except Exception:
-            self._conn.rollback()
-            raise
+        for statement in _IDENTITY_MIGRATION:
+            self._conn.execute(statement)
 
     def _identity_key(self) -> tuple:
         """The columns of the identity UNIQUE, in key order."""
@@ -834,19 +843,14 @@ class SnapshotStore:
         """Re-key the identities, code the verdicts, deflate the lane records.
 
         Together these took the flagship consumer's store from 131.4 to 92.3 MB
-        with every timed read faster. One transaction, tables built under temp
-        names and swapped in last, so a process killed anywhere in here leaves a
-        database the previous code still reads and the next open retries.
+        with every timed read faster. They run inside _prepare's transaction,
+        tables built under temp names and swapped in last, so a process killed
+        anywhere in here leaves a database the previous code still reads and the
+        next open retries.
         """
-        self._conn.execute("BEGIN")  # DDL does not open one, and this must be atomic
-        try:
-            for statement in self._restack_steps():
-                self._conn.execute(statement)
-            self._deflate_lanes()
-            self._conn.commit()
-        except Exception:
-            self._conn.rollback()
-            raise
+        for statement in self._restack_steps():
+            self._conn.execute(statement)
+        self._deflate_lanes()
 
     def _cache_identities(self) -> None:
         """Every identity in the store, keyed by triple.
