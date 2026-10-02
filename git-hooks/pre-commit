@@ -1,7 +1,17 @@
 #!/bin/sh
 # crapkit gates its own development: hard cc <= 6 on any staged function.
 # CRAPKIT_OVERRIDE_REASON grants only through the full three-record audit.
-if python -c "import crapkit" 2>/dev/null; then
+#
+# The committing tree's own src/crapkit judges the commit, never the crapkit the
+# python on PATH has installed (a release wheel, or an editable install of
+# another checkout): a linked worktree runs its own gate, and a change to the
+# gate gates its own commit. The probe puts that src first on sys.path, checks
+# that crapkit's dependency lizard imports, and prints the separator this python
+# reads PYTHONPATH with (";" on Windows, ":" elsewhere).
+src="$(git rev-parse --show-toplevel)/src" || exit 1
+if sep=$(python -c "import os, sys; sys.path.insert(0, sys.argv[1]); import crapkit, lizard; print(os.pathsep)" "$src" 2>/dev/null); then
+    PYTHONPATH="$src${PYTHONPATH:+$sep$PYTHONPATH}"
+    export PYTHONPATH
     if ! python -m crapkit hook-precommit; then
         echo "crapkit: commit blocked by the complexity gate."
         exit 1
