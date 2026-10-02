@@ -486,7 +486,27 @@ def test_an_incomplete_run_its_cap_stopped_inside_the_stats_pass_knows_no_failur
     said = capsys.readouterr().out
     assert ("mutation: incomplete: it judged 0 of 5 mutant(s); its stats pass did not finish, so "
             "no count of its stats failures exists\n") in said
-    assert world.receipt(f"diff-{'f' * 12}.json")["incomplete"]["stats_failures"] is None
+    assert "failed with no mutant active" not in said
+    receipt = world.receipt(f"diff-{'f' * 12}.json")
+    # The receipt's own list agrees: [] would read as zero failures, the number Q103 checks.
+    assert (receipt["stats_failures"], receipt["incomplete"]["stats_failures"]) == (None, None)
+
+
+def test_a_capped_diff_run_keeps_its_receipt_when_a_table_will_not_read(world, capsys):
+    """The report reads the survivor tables. A malformed one refuses the report, as it
+    refuses a complete run's gate, and the verdicts the run judged stay in the receipt
+    the Actions cache keeps."""
+    world.mutmut.complete = False
+    (world.tables / "survivors.tsv").write_bytes(b"module\tfunction\n")
+
+    assert world.run("diff", "--cap-minutes", "78") == 1
+
+    receipt = world.receipt(f"diff-{'f' * 12}.json")
+    assert (receipt["complete"], "incomplete" in receipt) == (False, False)
+    assert len(receipt["results"]) == 5
+    said = capsys.readouterr()
+    assert said.out.endswith("mutation: incomplete: the 78-minute cap stopped the run\n")
+    assert "survivors.tsv: the header must be" in said.err
 
 
 def test_a_cold_run_that_judges_a_carried_verdict_otherwise_voids_every_older_receipt(

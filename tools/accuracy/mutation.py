@@ -37,7 +37,8 @@ learn which tests reach which function, stops at the first test that fails, and
 then judges no mutant at all. The stage's launcher runs it to the end instead:
 a test that fails there fails whatever the mutant, so it is left out of every
 mutant's tests and named in the stage's stats-failures.txt, which the run prints
-and its receipt keeps under `stats_failures`.
+and its receipt keeps under `stats_failures`. A diff run its cap stopped inside
+the stats pass has no list and keeps null there.
 
 A run mutmut ends with anything but 0 (a failed stats run, a crash, a signal,
 SIGHUP included) judged nothing, the serial rerun of the unfinished mutants
@@ -2418,9 +2419,18 @@ def _calc_fields(outcome: Outcome) -> dict:
     functions whose verdicts it stores, its rows and its store."""
     return {"schema": 2, "env": outcome.env, "judged": [list(pair) for pair in outcome.judged],
             "functions": _held(outcome.carry), "deselected": stage_deselected(),
-            "stats_failures": _left_out(CALC_STAGE) if outcome.judged else [],
+            "stats_failures": _run_stats_failures(outcome),
             "cold_mismatch": outcome.mismatched, "results": [asdict(row) for row in outcome.rows],
             "carry": outcome.carry}
+
+
+def _run_stats_failures(outcome: Outcome) -> list[str] | None:
+    """The tests the run's stats pass left out: none when it judged nothing, and no
+    list (None) when the cap stopped it inside that pass, where [] would read as no
+    test failing."""
+    if not outcome.judged:
+        return []
+    return _left_out(CALC_STAGE) if outcome.complete or outcome.stats_done else None
 
 
 def _weekly(args) -> int:
@@ -2439,18 +2449,18 @@ def _rows_judging(outcome: Outcome) -> list[Result]:
     return [row for row in outcome.rows if (row.module, row.function) in judging]
 
 
-def incomplete_section(outcome: Outcome, failures: list[str]) -> dict:
+def incomplete_section(outcome: Outcome, failures: list[str] | None) -> dict:
     """What a run the cap stopped shows of the mutants it judged: how many of the
     mutants it set out to judge it judged, how many tests its stats run left out
-    (None when the cap stopped it inside its stats pass, since no list was
-    written), and the survivor set over them: each survivor on neither table, and
-    how many the tables list."""
+    (None for no list, when the cap stopped it inside its stats pass), and the
+    survivor set over them: each survivor on neither table, and how many the
+    tables list."""
     survivors, equivalents, _ = _tables()
     mine = _rows_judging(outcome)
     judged = [row for row in mine if row.status in JUDGED]
     alive, listed = _survived(judged), _idents(survivors) | _idents(equivalents)
     return {"mutants": len(mine), "judged": len(judged),
-            "stats_failures": len(failures) if outcome.stats_done else None,
+            "stats_failures": None if failures is None else len(failures),
             "new_survivors": [list(ident) for ident in sorted(alive - listed)],
             "listed_survivors": len(alive & listed)}
 
@@ -2468,17 +2478,19 @@ def incomplete_lines(section: dict) -> list[str]:
 
 def _diff_run(args) -> int:
     outcome = calc_run(weekly_modules(), os.cpu_count() or 2, args.cap_minutes * 60, args.cold)
-    fields = _calc_fields(outcome)
-    if not outcome.complete:
-        fields["incomplete"] = incomplete_section(outcome, fields["stats_failures"])
-    receipt = _receipt("diff", complete=outcome.complete, **fields)
-    _write_receipt(receipt, f"diff-{receipt['head'][:12]}.json")
-    if not outcome.complete:
-        print(f"mutation: incomplete: the {args.cap_minutes:g}-minute cap stopped the run")
-        for line in incomplete_lines(fields["incomplete"]):
-            print(f"mutation: incomplete: {line}")
-        return 1
-    return _judge(outcome.rows, update=False, canary=False) | _say_mismatched(outcome.mismatched)
+    receipt = _receipt("diff", complete=outcome.complete, **_calc_fields(outcome))
+    name = f"diff-{receipt['head'][:12]}.json"
+    _write_receipt(receipt, name)
+    if outcome.complete:
+        return _judge(outcome.rows, update=False, canary=False) | _say_mismatched(outcome.mismatched)
+    print(f"mutation: incomplete: the {args.cap_minutes:g}-minute cap stopped the run")
+    # The report reads the tables after the receipt is written, as the complete run's
+    # gate does: a malformed table refuses the report and keeps the judged verdicts.
+    receipt["incomplete"] = incomplete_section(outcome, receipt["stats_failures"])
+    _write_receipt(receipt, name)
+    for line in incomplete_lines(receipt["incomplete"]):
+        print(f"mutation: incomplete: {line}")
+    return 1
 
 
 def _gate(args) -> int:

@@ -261,7 +261,9 @@ never `pass`, and exits 1. It still prints, and keeps in its receipt under
 `incomplete`, what the mutants it judged show: how many of the mutants it set
 out to judge it judged, how many tests its stats run left out (no count when the
 cap stopped it inside its stats pass), each survivor among them that neither
-table lists, and how many the tables list.
+table lists, and how many the tables list. It writes the receipt before it
+reads the tables, so a malformed table refuses that report and the receipt
+still keeps the verdicts the run judged.
 
 Neither command judges a function whose stored verdicts still hold. Each weekly
 and diff receipt keeps, beside its results, what each function's verdicts rest
@@ -311,7 +313,9 @@ run `tests/unit` and the accuracy tests at the push tier against mutmut's copy
 of the code in its `mutants/` folder. mutmut first runs that suite once to learn
 which tests reach which function. A test that fails there fails whatever the
 mutant, so the stage's launcher leaves it out of every mutant's tests and the run
-prints it and keeps it in its receipt under `stats_failures`. The copy's `src/` is
+prints it and keeps it in its receipt under `stats_failures`. A `diff` run its
+cap stopped inside that pass keeps `null` there, since it has no list and an
+empty one would read as no failing test. The copy's `src/` is
 rewritten with trampolines, so the checks that read crapkit's own source as
 data read the stage's `src/crapkit` instead, which the tool names in
 `CRAPKIT_ACCURACY_SOURCE`. A test that cannot pass inside the copy whatever

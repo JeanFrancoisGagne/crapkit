@@ -1826,8 +1826,7 @@ def test_an_incomplete_run_s_report_reads_only_the_mutants_it_judged(tmp_path, m
         f"new survivor src/crapkit/score.py crap {KEYS[3]}: kill it with a test, or add a "
         "survivors.tsv row with its reason",
         "1 new survivor(s) and 2 listed one(s) among the mutants it judged"]
-    unmapped = mutation.incomplete_section(mutation.Outcome(rows, False, {}, [CRAP], [], "env", False),
-                                           [])
+    unmapped = mutation.incomplete_section(outcome, None)  # the run handed it no list
     assert unmapped["stats_failures"] is None
     assert mutation.incomplete_lines(unmapped)[0] == (
         "it judged 5 of 6 mutant(s); its stats pass did not finish, so no count of its stats "
