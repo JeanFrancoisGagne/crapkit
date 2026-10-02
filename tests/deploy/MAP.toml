@@ -711,6 +711,7 @@ devcontainers-cli = ["lin-devcontainer"]
 
 [excluded.upgrade_source]
 "0.4.5" = { reason = "in the wheelhouse for lin-up-chain's era steps; 0.4.4 and 0.4.15 start on either side of its stamp", revisit = 2026-12-24 }
+"0.8.0" = { reason = "in the wheelhouse as the release docs/upgrading.md's downgrade rows install (test_a_downgrade_does_what_the_upgrade_guide_says); it was N-1, the source of every N-1 cell, until 0.8.1 shipped", revisit = 2026-12-24 }
 
 # --- state an upgrade must carry ---------------------------------------------------
 
