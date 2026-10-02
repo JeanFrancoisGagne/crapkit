@@ -222,6 +222,71 @@ def test_the_windows_cells_get_twice_what_the_nightly_cell_measured():
     assert 2 * retro_minutes <= replays["timeout-minutes"]
 
 
+# Each oracle leg in minutes, job start to end. A leg both nightly runs finished
+# takes the larger of run 36891129973 (62118e3e) and run 36940595657 (26628afe).
+# The verdict-score shard at 5ba27dd3, and the three legs this split makes of
+# it, were measured on one machine in crapkit-accuracy:a45958df8206, run.py at
+# -n 4, and are scaled to a runner by that shard at 62118e3e: 49.2 min in run
+# 36891129973, 20.95 on the machine. As one leg it took 29.0 there, and run
+# 36940595657 cancelled it at 60 min with pytest at 97%. No leg runs it now; its
+# row keeps a matrix that joins the three again red. The history machine's 200
+# examples took 21.4 of the verdict leg's 24.05 min.
+ORACLE_RUNNER_PER_LOCAL = 49.2 / 20.95
+ORACLE_LOCAL_MINUTES = {"verdict-score": 29.0, "verdict": 24.05, "score": 6.51, "suite-strength": 5.98}
+ORACLE_LEG_MINUTES = {
+    ("analysis", "3.11"): 8.7, ("analysis", "3.12"): 8.5, ("analysis", "3.13"): 7.7,
+    ("analysis", "3.14"): 7.7, ("corpus", "3.11"): 12.2, ("corpus", "3.12"): 12.6,
+    ("corpus", "3.13"): 12.0, ("corpus", "3.14"): 13.7, ("coverage", "3.12"): 10.9,
+    ("history", "3.12"): 7.7,
+    **{(shard, "3.12"): minutes * ORACLE_RUNNER_PER_LOCAL for shard, minutes in ORACLE_LOCAL_MINUTES.items()},
+}
+
+
+def _oracle_legs() -> list[tuple[str, str]]:
+    rows = _jobs("accuracy.yml")["oracles"]["strategy"]["matrix"]["include"]
+    return [(row["shard"], row["python"]) for row in rows]
+
+
+def _oracle_leg_minutes() -> dict[str, float]:
+    """The minutes each leg of the oracles matrix measured, by `shard python`."""
+    legs = _oracle_legs()
+    assert set(legs) <= set(ORACLE_LEG_MINUTES), "measure each leg and name its minutes in ORACLE_LEG_MINUTES"
+    return {f"{shard} {python}": ORACLE_LEG_MINUTES[shard, python] for shard, python in legs}
+
+
+def test_every_oracle_leg_gets_twice_what_it_measured():
+    """Every leg shares the oracles job's bound. At 60 minutes it cut the
+    verdict-score leg in run 36940595657, when the history machine first ran
+    its 200 examples to the end. Each leg's bound is at least twice what it
+    measured, as the Windows cells' is, and at most 5 minutes past twice the
+    slowest leg."""
+    bound = _jobs("accuracy.yml")["oracles"]["timeout-minutes"]
+    minutes = _oracle_leg_minutes()
+    over = {leg: round(measured, 1) for leg, measured in minutes.items() if 2 * measured > bound}
+
+    assert over == {}, f"each leg's minutes, more than half the {bound}-minute bound"
+    assert bound <= 2 * max(minutes.values()) + 5
+
+
+def test_every_shard_the_checks_name_runs_in_an_oracle_leg():
+    """A shard no leg names runs in no CI cell, and a leg whose shard no checks
+    module names runs nothing."""
+    shards = {check.shard for check in RUN_TOOL["load_checks"]()}
+
+    assert shards == {shard for shard, _ in _oracle_legs()}
+
+
+# lizard-edge ran both corpus tiers and the comparison in 21.7 min in run
+# 36940595657, its first run in the accuracy image.
+LIZARD_EDGE_MINUTES = 21.7
+
+
+def test_lizard_edge_gets_twice_what_it_measured():
+    bound = _jobs("accuracy.yml")["lizard-edge"]["timeout-minutes"]
+
+    assert 2 * LIZARD_EDGE_MINUTES <= bound <= 2 * LIZARD_EDGE_MINUTES + 5
+
+
 COLD_SECONDS_A_ROW = 51.5  # a Linux row replayed with no worktree, venv or verdict kept, measured 2026-10-01
 BOUND = re.compile(r"\$\{\{\s*fromJSON\('(\{.*?\})'\)\[inputs\.retro_seconds \|\| '(\d+)'\]\s*\}\}")
 
@@ -348,7 +413,7 @@ def test_a_check_that_names_a_cell_run_py_cannot_match_is_refused(field, problem
     row = {"name": "replays", "seconds": 0, "tiers": ["release"], "argv": ["python", "x.py"], **field}
 
     with pytest.raises(RUN_TOOL["CheckError"], match=re.escape(problem)):
-        RUN_TOOL["_check"]("suite_strength", "verdict-score", row)
+        RUN_TOOL["_check"]("suite_strength", "suite-strength", row)
 
 
 def test_a_check_with_cells_runs_only_in_them_and_a_local_one_only_on_the_releasing_machine():

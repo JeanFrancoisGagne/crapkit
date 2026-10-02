@@ -13,7 +13,7 @@ Parametrized checks keep a few cases on push and run the rest nightly
 (verdict_model/cadence.py), and the random run-history machine runs nightly
 with `process` settings.
 """
-SHARD = "verdict-score"
+SHARD = "verdict"
 _VM = "tests/accuracy/verdict_model/"
 CHECKS = [
     {"name": "verify exit, JSON and stored run over 16 finding subsets", "seconds": 5,

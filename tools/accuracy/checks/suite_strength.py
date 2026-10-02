@@ -9,7 +9,7 @@ latest run measured 9.3 s); the mutate fixtures spawn crapkit and git, which
 is where the time goes. A check whose tests run only nightly or at release
 declares 0.
 """
-SHARD = "verdict-score"
+SHARD = "suite-strength"
 _SS = "tests/accuracy/suite_strength/"
 CHECKS = [
     {"name": "retro ledger and triage", "seconds": 1,

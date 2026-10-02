@@ -4,7 +4,7 @@ Seconds are serial ubuntu estimates from measured Windows runs. The corpus
 join's seconds are the session's one measured corpus run, which it shares
 with every packet that reads the same corpus.
 """
-SHARD = "verdict-score"
+SHARD = "score"
 _SM = "tests/accuracy/score_model/"
 CHECKS = [
     {"name": "CRAP score: grid, PHPUnit, published tables", "seconds": 8,

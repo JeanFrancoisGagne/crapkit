@@ -161,7 +161,7 @@ def test_a_receipt_that_proves_no_passing_release_tier_refuses(tree, github, cha
 
 
 @pytest.mark.parametrize("changes", [{"local": False}, {"local": None}, {"local": "true"},
-                                     {"shard": "verdict-score"}, {"os_sensitive": True},
+                                     {"shard": "suite-strength"}, {"os_sensitive": True},
                                      {"os_sensitive": None}])
 def test_a_receipt_of_a_narrower_selection_than_the_stage_s_refuses(tree, github, changes):
     """A release receipt made without --local on the releasing Windows 3.12

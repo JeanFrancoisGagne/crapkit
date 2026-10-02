@@ -193,10 +193,10 @@ npm ci --prefix tools/accuracy/node/push
 python tools/accuracy/run.py --tier push -n 4
 ```
 
-`--shard analysis|coverage|history|verdict-score|corpus` runs one shard, and
-`--os-sensitive` runs only the checks whose answer can change with the OS, which
-is what CI's Windows job runs. A bare `python -m pytest tests/accuracy/<packet>`
-selects the push tier too.
+`--shard analysis|coverage|history|verdict|score|suite-strength|corpus` runs one
+shard, and `--os-sensitive` runs only the checks whose answer can change with the
+OS, which is what CI's Windows job runs. A bare
+`python -m pytest tests/accuracy/<packet>` selects the push tier too.
 
 On Windows the push tier pastes crapkit's printed commands into cmd.exe,
 Windows PowerShell 5.1, PowerShell 7 and Git Bash, and reads the PowerShell
@@ -504,7 +504,7 @@ clone that never made it) or holds another commit is rebuilt with its venvs.
 
 The release tier runs `retro.py release`, which judges every stale row by the
 same verdict cache, keyed at the release tier. In a release run of accuracy.yml
-one cell per OS runs it, the Linux `verdict-score` shard on 3.12 and the Windows
+one cell per OS runs it, the Linux `suite-strength` shard on 3.12 and the Windows
 3.13 cell (its row names `linux-3.12` and `win32-3.13`), and those cells
 restore and save that cache under `retro-verdicts-release-<os>-<python>-`.
 Each release dispatches on its own branch, `accuracy-release/<version>`, and a

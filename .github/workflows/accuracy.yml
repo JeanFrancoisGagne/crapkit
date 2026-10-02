@@ -171,7 +171,12 @@ jobs:
     needs: [plan, image]
     if: needs.plan.outputs.mode != 'weekly'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Twice the slowest leg: the verdict leg, 56.5 min scaled to a runner, nearly
+    # all of it the history machine's 200 nightly examples. verdict-score ran as
+    # one leg until run 36940595657 cut it at 60 min with pytest at 97%; its
+    # three packets now run as the verdict, score and suite-strength legs
+    # (tests/unit/test_ci_accuracy_jobs.py holds the numbers).
+    timeout-minutes: 115
     strategy:
       fail-fast: false
       matrix:
@@ -179,7 +184,9 @@ jobs:
           - {shard: analysis, python: "3.12"}
           - {shard: coverage, python: "3.12"}
           - {shard: history, python: "3.12"}
-          - {shard: verdict-score, python: "3.12"}
+          - {shard: verdict, python: "3.12"}
+          - {shard: score, python: "3.12"}
+          - {shard: suite-strength, python: "3.12"}
           - {shard: corpus, python: "3.12"}
           - {shard: analysis, python: "3.11"}
           - {shard: corpus, python: "3.11"}
@@ -212,7 +219,7 @@ jobs:
       # stale row by the verdict kept for it at the release tier, so a re-run of
       # the cell replays only the rows no earlier run kept.
       - uses: actions/cache/restore@v4
-        if: needs.plan.outputs.mode == 'release' && matrix.shard == 'verdict-score'
+        if: needs.plan.outputs.mode == 'release' && matrix.shard == 'suite-strength'
         with:
           path: .crapkit/accuracy/retro-verdicts
           key: retro-verdicts-release-linux-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -232,7 +239,7 @@ jobs:
             "$REF" python tools/accuracy/run.py --tier "$TIER" --shard ${{ matrix.shard }} -n 4 \
             --receipt .crapkit/accuracy/receipts/linux-${{ matrix.python }}-${{ matrix.shard }}.json
       - uses: actions/cache/save@v4
-        if: always() && needs.plan.outputs.mode == 'release' && matrix.shard == 'verdict-score'
+        if: always() && needs.plan.outputs.mode == 'release' && matrix.shard == 'suite-strength'
         with:
           path: .crapkit/accuracy/retro-verdicts
           key: retro-verdicts-release-linux-${{ matrix.python }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -253,7 +260,8 @@ jobs:
     needs: [plan, image]
     if: needs.plan.outputs.mode == 'nightly'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Twice the 21.7 min run 36940595657 measured for both corpus tiers and the compare.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
