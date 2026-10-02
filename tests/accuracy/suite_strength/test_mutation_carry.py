@@ -453,10 +453,12 @@ def test_an_incomplete_diff_run_says_what_the_mutants_it_judged_show(world, caps
         "mutation: incomplete: new survivor src/crapkit/score.py grade "
         "crapkit.score.x_grade__mutmut_1: kill it with a test, or add a survivors.tsv row with its "
         "reason\n"
-        "mutation: incomplete: 1 new survivor(s) and 1 listed one(s) among the mutants it judged\n")
+        "mutation: incomplete: 1 new survivor(s) and 1 listed one(s) among the mutants it judged\n"
+        "mutation: incomplete: 0 new survivor(s) among the verdicts it carried\n")
     assert world.receipt(f"diff-{'f' * 12}.json")["incomplete"] == {
         "mutants": 5, "judged": 4, "stats_failures": 2, "listed_survivors": 1,
-        "new_survivors": [["src/crapkit/score.py", "grade", "crapkit.score.x_grade__mutmut_1"]]}
+        "new_survivors": [["src/crapkit/score.py", "grade", "crapkit.score.x_grade__mutmut_1"]],
+        "carried_new_survivors": []}
 
 
 def test_an_incomplete_diff_run_with_no_new_survivor_names_none(world, capsys):
@@ -471,6 +473,42 @@ def test_an_incomplete_diff_run_with_no_new_survivor_names_none(world, capsys):
             "judged\n") in said
     incomplete = world.receipt(f"diff-{'f' * 12}.json")["incomplete"]
     assert (incomplete["stats_failures"], incomplete["new_survivors"]) == (0, [])
+    assert incomplete["carried_new_survivors"] == []
+    assert said.endswith("mutation: incomplete: 0 new survivor(s) among the verdicts it carried\n")
+
+
+def test_an_incomplete_diff_run_names_a_new_survivor_it_carried(world, capsys):
+    """A surviving verdict carries at the tree it was judged at. On a second capped
+    night at an unchanged main the survivor is a carried row, not a judged one, and
+    the run would fail on it with no cap, so the report names it."""
+    world.mutmut.complete = False
+    world.mutmut.codes[GRADE]["crapkit.score.x_grade__mutmut_1"] = 0
+    world.mutmut.codes[TOTALS] = dict.fromkeys(CODES[TOTALS])  # the cap came before totals
+    assert world.run("diff", "--cap-minutes", "78") == 1
+    world.judged()
+    capsys.readouterr()
+    world.mutmut.codes[TOTALS] = copy.deepcopy(CODES[TOTALS])
+
+    assert world.run("diff", "--cap-minutes", "78") == 1
+
+    said = capsys.readouterr().out
+    assert "mutation: 1 function(s) carry their stored verdicts" in said
+    assert said.endswith(
+        "mutation: incomplete: the 78-minute cap stopped the run\n"
+        "mutation: incomplete: it judged 4 of 4 mutant(s); 0 stats failure(s)\n"
+        "mutation: incomplete: 0 new survivor(s) and 0 listed one(s) among the mutants it judged\n"
+        "mutation: incomplete: carried new survivor src/crapkit/score.py grade "
+        "crapkit.score.x_grade__mutmut_1: kill it with a test, or add a survivors.tsv row with its "
+        "reason\n"
+        "mutation: incomplete: 1 new survivor(s) among the verdicts it carried\n")
+    receipt = world.receipt(f"diff-{'f' * 12}.json")
+    incomplete = receipt["incomplete"]
+    assert incomplete["carried_new_survivors"] == [
+        ["src/crapkit/score.py", "grade", "crapkit.score.x_grade__mutmut_1"]]
+    # The two lists together are the new set a run with no cap would fail on.
+    rows = [mutation.Result(**row) for row in receipt["results"]]
+    named = incomplete["new_survivors"] + incomplete["carried_new_survivors"]
+    assert sorted(map(tuple, named)) == list(mutation.gate(rows, [], [], canary=False).new)
 
 
 def test_an_incomplete_run_its_cap_stopped_inside_the_stats_pass_knows_no_failure_count(

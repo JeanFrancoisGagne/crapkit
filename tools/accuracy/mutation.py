@@ -75,8 +75,9 @@ mutated modules and the test modules is unchanged, and the verdicts are under
 it was judged at. A run with --cold carries nothing and compares what it
 judges with what would have carried; a difference voids every older receipt. A
 diff run its cap stops prints, and keeps in its receipt under `incomplete`, how
-many mutants it judged, how many tests its stats run left out, and the survivor
-set over what it judged.
+many mutants it judged, how many tests its stats run left out, the survivor set
+over what it judged, and each survivor on neither table among the verdicts it
+carried.
 
 The gate is a survivor set, not a rate. A survivor is keyed by (module,
 function, sha256 of its mutant diff with line numbers and mutmut's numbering
@@ -2443,10 +2444,15 @@ def _weekly(args) -> int:
     return _judge(rows, update=False) | _say_mismatched(outcome.mismatched)
 
 
-def _rows_judging(outcome: Outcome) -> list[Result]:
-    """The rows of the functions the run set out to judge, none of them carried."""
+def _split_rows(outcome: Outcome) -> tuple[list[Result], list[Result]]:
+    """The rows of the functions the run set out to judge, and the rows it carried."""
     judging = set(map(tuple, outcome.judged))
-    return [row for row in outcome.rows if (row.module, row.function) in judging]
+    mine = [row for row in outcome.rows if (row.module, row.function) in judging]
+    return mine, [row for row in outcome.rows if (row.module, row.function) not in judging]
+
+
+def _unlisted(alive: set[tuple], listed: set[tuple]) -> list[list[str]]:
+    return [list(ident) for ident in sorted(alive - listed)]
 
 
 def incomplete_section(outcome: Outcome, failures: list[str] | None) -> dict:
@@ -2454,26 +2460,30 @@ def incomplete_section(outcome: Outcome, failures: list[str] | None) -> dict:
     mutants it set out to judge it judged, how many tests its stats run left out
     (None for no list, when the cap stopped it inside its stats pass), and the
     survivor set over them: each survivor on neither table, and how many the
-    tables list."""
+    tables list. A surviving verdict carries at the tree it was judged at, so it
+    also names each survivor on neither table among the rows it carried: with
+    the judged ones, the new set a run with no cap would fail on."""
     survivors, equivalents, _ = _tables()
-    mine = _rows_judging(outcome)
+    mine, carried = _split_rows(outcome)
     judged = [row for row in mine if row.status in JUDGED]
     alive, listed = _survived(judged), _idents(survivors) | _idents(equivalents)
     return {"mutants": len(mine), "judged": len(judged),
             "stats_failures": None if failures is None else len(failures),
-            "new_survivors": [list(ident) for ident in sorted(alive - listed)],
-            "listed_survivors": len(alive & listed)}
+            "new_survivors": _unlisted(alive, listed), "listed_survivors": len(alive & listed),
+            "carried_new_survivors": _unlisted(_survived(carried), listed)}
 
 
 def incomplete_lines(section: dict) -> list[str]:
     failures = section["stats_failures"]
     said = (f"{failures} stats failure(s)" if failures is not None
             else "its stats pass did not finish, so no count of its stats failures exists")
-    new = section["new_survivors"]
+    new, carried = section["new_survivors"], section["carried_new_survivors"]
     return [f"it judged {section['judged']} of {section['mutants']} mutant(s); {said}",
             *verdict_lines(Verdict(new=tuple(map(tuple, new)))),
             f"{len(new)} new survivor(s) and {section['listed_survivors']} listed one(s) among "
-            "the mutants it judged"]
+            "the mutants it judged",
+            *(f"carried {line}" for line in verdict_lines(Verdict(new=tuple(map(tuple, carried))))),
+            f"{len(carried)} new survivor(s) among the verdicts it carried"]
 
 
 def _diff_run(args) -> int:

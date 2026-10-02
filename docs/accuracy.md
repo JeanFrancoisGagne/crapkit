@@ -261,9 +261,13 @@ never `pass`, and exits 1. It still prints, and keeps in its receipt under
 `incomplete`, what the mutants it judged show: how many of the mutants it set
 out to judge it judged, how many tests its stats run left out (no count when the
 cap stopped it inside its stats pass), each survivor among them that neither
-table lists, and how many the tables list. It writes the receipt before it
-reads the tables, so a malformed table refuses that report and the receipt
-still keeps the verdicts the run judged.
+table lists, and how many the tables list. A surviving verdict carries at the
+tree it was judged at, so a second capped run at an unchanged tree can carry a
+survivor it never judged; the report names each survivor on neither table
+among the carried verdicts too, under `carried_new_survivors`, and the two
+lists together are the new survivors a run with no cap would fail on. It
+writes the receipt before it reads the tables, so a malformed table refuses
+that report and the receipt still keeps the verdicts the run judged.
 
 Neither command judges a function whose stored verdicts still hold. Each weekly
 and diff receipt keeps, beside its results, what each function's verdicts rest
