@@ -8,8 +8,9 @@ docs name without a past bug. A drawn value emits hypothesis.event() for every
 shape it has, so the nightly summary can require each one to have occurred,
 and the same counts reach run.py through kit.runlog. Hypothesis runs each
 choice sequence once, so a shape drawn only as a sampled literal reaches a test
-once a run whatever its example count; a shape the summary counts draws from a
-family of values. Each shape's literal value is also returned by examples(), so
+once a run whatever its example count, which is why coverage_pair draws its broken
+shapes from families of values; marks still draws its non-finite shape (R32) from
+three literals. Each shape's literal value is also returned by examples(), so
 a test runs it every time:
 
     @examples("coverage_pair")
