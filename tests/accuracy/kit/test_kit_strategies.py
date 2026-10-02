@@ -1,5 +1,6 @@
 """Every strategy reaches every shape it names, and each shape's literal carries it."""
 from collections import Counter
+from contextlib import contextmanager
 from fractions import Fraction
 import math
 
@@ -19,6 +20,17 @@ STRATEGIES = {"ccn": strategies.ccn, "coverage_pair": strategies.coverage_pair,
               "stamps": strategies.stamps, "marks": strategies.marks,
               "path_text": strategies.path_text}
 SHAPES = [(name, shape) for name, shapes in strategies.REQUIRED.items() for shape in shapes]
+
+
+@contextmanager
+def _unlogged():
+    """Draws inside reach no crapkit, so the run log's events stay as they were."""
+    logged = Counter(strategies.EVENTS)
+    try:
+        yield
+    finally:
+        strategies.EVENTS.clear()
+        strategies.EVENTS.update(logged)
 
 
 @pytest.mark.parametrize("name, shape", SHAPES, ids=[f"{n}-{s}" for n, s in SHAPES])
@@ -62,7 +74,8 @@ FLOOR = 50
 
 
 def _drawn(name: str) -> Counter:
-    """How many of one @pure run's values carry each shape of a strategy."""
+    """How many of one @pure run's values carry each shape of a strategy. No
+    draw of it reaches crapkit, so the run log's events stay as they were."""
     drawn: Counter = Counter()
 
     @given(STRATEGIES[name]())
@@ -70,7 +83,8 @@ def _drawn(name: str) -> Counter:
     def draw(value):
         drawn.update(strategies.CLASSIFIERS[name](value))
 
-    draw()
+    with _unlogged():
+        draw()
     return drawn
 
 
@@ -82,6 +96,16 @@ def test_one_nightly_run_draws_each_broken_coverage_pair_twice_the_floor():
     short = {shape: drawn[shape] for shape in strategies.REQUIRED["coverage_pair"]
              if drawn[shape] < 2 * FLOOR}
     assert short == {}
+
+
+def test_a_measured_run_adds_nothing_to_the_run_log():
+    """The events floor reads the counts the run log hands run.py. _drawn
+    only measures a strategy, so its 20,000 nightly draws stay out of them."""
+    logged = Counter(strategies.EVENTS)
+
+    _drawn("ccn")
+
+    assert strategies.EVENTS == logged
 
 
 @pytest.mark.parametrize("shape", sorted(strategies._PAIR_FAMILIES))
