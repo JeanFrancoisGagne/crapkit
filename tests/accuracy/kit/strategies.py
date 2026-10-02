@@ -9,9 +9,8 @@ shape it has, so the nightly summary can require each one to have occurred,
 and the same counts reach run.py through kit.runlog. Hypothesis runs each
 choice sequence once, so a shape drawn only as a sampled literal reaches a test
 once a run whatever its example count, which is why coverage_pair draws its broken
-shapes from families of values; marks still draws its non-finite shape (R32) from
-three literals. Each shape's literal value is also returned by examples(), so
-a test runs it every time:
+shapes, and nonfinite_marks the text of R32, from families of values. Each shape's
+literal value is also returned by examples(), so a test runs it every time:
 
     @examples("coverage_pair")
     @given(strategies.coverage_pair())
@@ -23,7 +22,9 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from fractions import Fraction
+import itertools
 import math
+import random
 import sys
 import unicodedata
 
@@ -277,8 +278,9 @@ _MARK_CHECKS = {
 }
 
 
-def _mark_shapes(value: float) -> list[str]:
-    return _checked(_MARK_CHECKS, value)
+def _mark_shapes(value: float | str) -> list[str]:
+    """The shapes of a mark, a float or text read as the number float() reads."""
+    return _checked(_MARK_CHECKS, float(value))
 
 
 def _tie_value(units: int) -> float:
@@ -289,13 +291,57 @@ def _tie_value(units: int) -> float:
     return (2 * units + 1) / 32
 
 
+# Whitespace float() strips from either end of a number, none of it a row's end
+# (LF) or a field's (tab): spaces, the no-break and ideographic spaces a paste
+# brings, a form feed and a line separator, which a raw row keeps as data.
+_PADS = ("", " ", "\u00a0", "\u3000", "\x0c", "\u2028")
+# Decimals of at least 1e309, which float() reads as inf (the largest double is
+# about 1.8e308), with zeros padding the mantissa and the exponent.
+_OVERFLOWS = [f"{mantissa}{letter}{sign}{power}"
+              for mantissa in ("1", "001", "1.", "1.000", "9.75") for letter in "eE"
+              for sign in ("", "+") for power in ("309", "0400", "999", "99999")]
+
+
+def _cases(word: str) -> list[str]:
+    """`word` in every mix of upper and lower case."""
+    return ["".join(letters) for letters in itertools.product(*((c, c.upper()) for c in word))]
+
+
+def _spellings(bodies: list[str]) -> list[str]:
+    """Each body signed or not and padded or not, as float() still reads it."""
+    return [left + sign + body + right for body in bodies
+            for sign in ("", "+", "-") for left in _PADS for right in _PADS]
+
+
+# The kinds of text float() reads as nan, inf or -inf: nan, inf and infinity in
+# any case, and a decimal past the largest double.
+_KINDS = {"nan": _spellings(_cases("nan")), "inf": _spellings(_cases("inf")),
+          "infinity": _spellings(_cases("infinity")), "overflow": _spellings(_OVERFLOWS)}
+_WIDEST = max(map(len, _KINDS.values()))
+# The list nonfinite_marks() samples, one draw a spelling. Each kind repeats to
+# about the size of the widest (infinity's 256 case mixes), so each takes about a
+# quarter of the draws; listed once each, infinity took 73% and nan 2%. A fixed
+# shuffle mixes the kinds, since sampled_from favors the head of its list, and
+# "nan" goes first, the spelling a failing draw shrinks to.
+_NONFINITE = [text for kind in _KINDS.values() for text in kind * round(_WIDEST / len(kind))]
+random.Random(0).shuffle(_NONFINITE)
+_NONFINITE.insert(0, _NONFINITE.pop(_NONFINITE.index("nan")))
+
+
+def nonfinite_marks():
+    """Mark text that is no finite number, each draw counted as R32. Only a test
+    that hands the text to crapkit adds its draws to the run log, so the events
+    floor counts R32 only where crapkit read the text."""
+    return _tagged(st.sampled_from(_NONFINITE), _mark_shapes)
+
+
 def marks():
-    """A mark as a float: 4 dp values, longer ones, exact 4 dp ties, nonfinite ones."""
+    """A mark as a float: 4 dp values, longer ones, exact 4 dp ties. Text that
+    is no finite number comes from nonfinite_marks()."""
     four = st.integers(1, 10_000_000).map(lambda n: n / 10_000)
     longer = st.floats(0.0001, 1e6, allow_nan=False, allow_infinity=False)
     ties = st.integers(0, 10_000_000).map(_tie_value)
-    odd = st.sampled_from([math.nan, math.inf, -math.inf])
-    return _tagged(st.one_of(four, longer, ties, odd), _mark_shapes)
+    return _tagged(st.one_of(four, longer, ties), _mark_shapes)
 
 
 # --- paths ---------------------------------------------------------------------------
@@ -360,13 +406,14 @@ REQUIRED = {
                "shape:tz-offset": (Stamp(AUG_31, AUG_31, 330),),
                "shape:child-before-parent": (Stamp(AUG_31, AUG_31, 0),
                                              Stamp(AUG_31 - 60, AUG_31 - 60, 0))},
-    "marks": {"R32": math.nan, "shape:more-than-4dp": 1.23456, "shape:4dp-tie": 0.03125},
+    "marks": {"shape:more-than-4dp": 1.23456, "shape:4dp-tie": 0.03125},
+    "nonfinite_marks": {"R32": "nan"},
     "path_text": {"R76": "src/a\tb.py", "R66": "src\\win\\a.py", "R93": "**/generated/*.py",
                   "shape:nfd": "src/cafe\u0301.py", "shape:dotdot": "../outside.py"},
 }
 CLASSIFIERS = {"ccn": _ccn_shapes, "coverage_pair": _pair_shapes, "spans": _span_shapes,
                "run_kinds": _run_shapes, "stamps": _stamp_shapes, "marks": _mark_shapes,
-               "path_text": _path_shapes}
+               "nonfinite_marks": _mark_shapes, "path_text": _path_shapes}
 
 
 def examples(name: str):

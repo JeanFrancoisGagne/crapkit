@@ -15,12 +15,12 @@ from pathlib import Path
 import subprocess
 import sys
 
-from hypothesis import given, strategies as st
+from hypothesis import example, given, strategies as st
 import pytest
 
 import hang_guard
 
-from accuracy.kit import drive, rulings
+from accuracy.kit import drive, rulings, strategies
 from accuracy.kit.settings import process
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
@@ -146,6 +146,35 @@ def test_nonfinite_mark_refuses(bare_repo, value):
     result = move(bare_repo, "src/b.py", "src/c.py")
 
     assert result.code == 3, result.stdout + result.stderr
+    assert "src/a.py\tf( x )" in result.stderr.replace("\\t", "\t")
+    assert path.read_bytes() == before
+    rulings.pin_ruling("V2", crapkit="refused", oracle="undocumented")
+
+
+@pytest.mark.process
+@process
+@example(spelling="nan")
+@example(spelling="NaN")
+@example(spelling="Infinity")
+@example(spelling="-inf")
+@example(spelling="1e999")
+@example(spelling="-1E400")
+@given(spelling=strategies.nonfinite_marks())
+def test_every_spelling_of_no_finite_number_refuses(tmp_path_factory, spelling):
+    """Each text Python's float() reads as nan, inf or -inf (nan, inf and
+    infinity in any case, a decimal past the largest double, signed, padded with
+    whitespace) is refused as nan is: an unreadable mark, exit 3, the file left
+    alone (ruling V2). The six @example spellings run on every push."""
+    root = tmp_path_factory.mktemp("nonfinite")
+    (root / "crapkit.toml").write_bytes(BARE_CONFIG.encode("utf-8"))
+    path = write_marks(root, [f"# {STAMP}", "path\tlong_name\tcrap",
+                              f"src/a.py\tf( x )\t{spelling}", "src/b.py\tg( )\t9.0000"])
+    before = path.read_bytes()
+
+    result = move(root, "src/b.py", "src/c.py")
+
+    assert result.code == 3, result.stdout + result.stderr
+    assert "unreadable mark" in result.stderr
     assert "src/a.py\tf( x )" in result.stderr.replace("\\t", "\t")
     assert path.read_bytes() == before
     rulings.pin_ruling("V2", crapkit="refused", oracle="undocumented")
