@@ -44,6 +44,34 @@ def test_xplat_names_the_first_export_that_differs_and_one_a_cell_lacks(tmp_path
     assert "b.tsv differs: linux-3.12 22, windows-3.12 99, macos-3.13 <missing>" in out
 
 
+# The corpus tests note each export as {"sha256", "text"} (test_xplat_digest,
+# test_full_corpus), and lizard-edge compares two such receipts with run.py xplat:
+# nightly run 36940595657 died there on "unhashable type: 'dict'".
+NOTED = {"small/scored.tsv": {"sha256": "ab", "text": "a\t1\n"}, "worklist rows": ["a", 1]}
+
+
+def test_xplat_compares_dict_and_list_exports_and_finds_them_equal(tmp_path, capsys):
+    reordered = {"small/scored.tsv": {"text": "a\t1\n", "sha256": "ab"}, "worklist rows": ["a", 1]}
+    paths = [_receipt(tmp_path, "floor", exports=NOTED),
+             _receipt(tmp_path, "newest", exports=reordered)]
+
+    assert run_tool.main(["xplat", *map(str, paths)]) == 0
+    assert capsys.readouterr().out == "xplat: 2 exports agree across 2 receipts\n"
+
+
+def test_xplat_names_each_dict_or_list_export_that_differs_by_its_json_digest(tmp_path, capsys):
+    moved = {"small/scored.tsv": {"sha256": "cd", "text": "a\t2\n"}, "worklist rows": ["a", 2]}
+    paths = [_receipt(tmp_path, "floor", exports=NOTED),
+             _receipt(tmp_path, "newest", shard="edge", exports=moved)]
+
+    assert run_tool.main(["xplat", *map(str, paths)]) == 1
+    assert capsys.readouterr().out == (
+        "xplat: small/scored.tsv differs: linux-3.12 json-sha256:8401b88995f3,"
+        " linux-3.12-edge json-sha256:9ec54f257d4e\n"
+        "xplat: worklist rows differs: linux-3.12 json-sha256:2657442bb4a4,"
+        " linux-3.12-edge json-sha256:0383dfec682c\n")
+
+
 def test_events_passes_when_every_required_shape_occurred_often_enough(tmp_path):
     names = sorted({name for table in strategies.REQUIRED.values() for name in table})
     half = {name: 30 for name in names}

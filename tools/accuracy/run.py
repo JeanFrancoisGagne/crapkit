@@ -69,7 +69,9 @@ appended to the job summary as well.
 The other commands serve CI and packet authors: `merge` joins shard receipts,
 `image-tag` names the accuracy image, `kit-goldens` redeclares the kit's seed
 goldens, `doc-range` prints the header line a model cites a doc range with,
-`xplat` fails when two cells' receipts carry different export digests,
+`xplat` fails when two cells' receipts carry different exports, each compared
+exactly by its canonical JSON (lizard-edge's floor and newest-lizard runs on one
+cell; the xplat job's `wheel_diff.py xplat` allows 2 ulp across cells),
 `events` fails when a required strategy shape occurred fewer than N times, and
 `oracle-versions` fails naming each installed oracle that is missing or is not
 its pin (the weekly no-cache image rebuild runs it).
@@ -700,16 +702,29 @@ def _export_names(receipts: list[dict]) -> list[str]:
     return sorted({name for saved in receipts for name in saved.get("exports", {})})
 
 
+def _canonical(value) -> str:
+    return json.dumps(value, sort_keys=True)
+
+
+def _shown(value) -> str:
+    """A digest string as noted; a dict or list (the corpus tests note
+    {"sha256", "text"}) by the first 12 hex of its canonical JSON's sha256."""
+    if isinstance(value, str):
+        return value
+    return "json-sha256:" + hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()[:12]
+
+
 def _export_line(name: str, receipts: list[dict]) -> str | None:
     values = [saved.get("exports", {}).get(name, "<missing>") for saved in receipts]
-    if len(set(values)) == 1:
+    if len(set(map(_canonical, values))) == 1:
         return None
-    cells = ", ".join(f"{_cell(saved)} {value}" for saved, value in zip(receipts, values))
+    cells = ", ".join(f"{_cell(saved)} {_shown(value)}" for saved, value in zip(receipts, values))
     return f"{name} differs: {cells}"
 
 
 def export_differences(receipts: list[dict]) -> list[str]:
-    """One line per export whose digest is not the same in every receipt."""
+    """One line per export whose value, compared as canonical JSON, is not the
+    same in every receipt."""
     found = (_export_line(name, receipts) for name in _export_names(receipts))
     return [line for line in found if line]
 
