@@ -1979,6 +1979,7 @@ with no debt.
 ```
 pip install -e ".[dev,accuracy-push]"
 git config core.hooksPath git-hooks
+git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
 python tools/testing/run.py
 ```
 
@@ -1986,8 +1987,10 @@ The dev extra includes pytest, pytest-cov, pytest-xdist and coverage.py; the
 accuracy-push extra holds the pinned oracles of the
 [calculation-accuracy suite](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md).
 The shared runner owns the unit and E2E schedule; use `--unit-workers 1` for serial unit
-reproduction or `--coverage` for combined branch coverage and JUnit. The `git config`
-line arms the complexity gate on commits and change control on pushes. See
+reproduction or `--coverage` for combined branch coverage and JUnit. The
+`core.hooksPath` line arms the complexity gate on commits and change control on pushes,
+and the `merge.crapkit-ratchet.driver` line merges `crapkit-ratchet.tsv` through
+`crapkit ratchet merge` instead of as text. See
 [CONTRIBUTING.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/CONTRIBUTING.md)
 for development, [docs/accuracy.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/accuracy.md)
 for how crapkit checks its own numbers, and

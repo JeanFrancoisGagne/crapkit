@@ -713,6 +713,11 @@ run. The store fills missing per-run rollups when `trend` or `report` asks for t
     pip install -e ".[dev,accuracy-push]"
     npm ci --prefix tools/accuracy/node/push
     git config core.hooksPath git-hooks
+    git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+
+The driver line makes git merge `crapkit-ratchet.tsv` through `crapkit ratchet merge`,
+so a land or a worktree merge combines the marks instead of leaving a conflict for a
+hand to resolve.
 
 The Node tools under `tools/accuracy/node/push` are what the pre-push checks of a
 JavaScript or TypeScript calculation and `change_control.py declare` run.

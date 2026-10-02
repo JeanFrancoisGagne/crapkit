@@ -32,9 +32,12 @@ TypeScript calculation and `change_control.py declare` run; without them both st
 print the `npm ci` line.
 
 The `merge.crapkit-ratchet.driver` line defines the merge driver `.gitattributes` names
-for `crapkit-ratchet.tsv`, and git takes a driver command only from a clone's own
-config. Without it git merges the marks file as text, and a hand-resolved conflict is
-where a mark gets raised ([docs/ratchet.md](docs/ratchet.md#the-git-merge-driver)).
+for `crapkit-ratchet.tsv`. git never takes a driver command from a committed file, so
+each clone runs the line once. Without it git merges the marks file as text, and a
+hand-resolved conflict is where a mark gets raised
+([docs/ratchet.md](docs/ratchet.md#the-git-merge-driver)). The line starts crapkit with
+`python -m`, through the same `python` both hooks run, where docs/ratchet.md gives a
+repo that installs crapkit as a tool the `crapkit` console script.
 
 ## Tests
 

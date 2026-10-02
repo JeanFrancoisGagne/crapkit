@@ -4,8 +4,9 @@ The repository tracks a marks file, and git merged it as text: no attribute name
 a driver, so a merge between two worktrees, or one that lands a branch, left a
 conflict for a hand to resolve. docs/ratchet.md forbids exactly that, since a
 hand-resolved conflict is where a mark gets raised. .gitattributes names the
-driver, and CONTRIBUTING's setup gives the one git config line that defines it,
-which git takes only from a clone's own config.
+driver. git never takes a driver command from a committed file, so each of the
+three setup lists (CONTRIBUTING's Setup, AGENTS.md's Setup and README's
+Development block) gives the one git config line that defines it.
 """
 from pathlib import Path
 import re
@@ -29,3 +30,15 @@ def test_contributing_setup_defines_the_driver_the_attribute_names():
 
     assert DRIVER in setup.splitlines()
     assert "docs/ratchet.md#the-git-merge-driver" in text
+
+
+def test_agents_and_readme_setup_give_the_same_driver_line():
+    """A clone set up from AGENTS.md or from README's Development block also
+    merges the marks file through the driver."""
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    setup = re.search(r"^## Setup\n(.*?)^## ", agents, re.M | re.S).group(1)
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    development = re.search(r"^## Development\n.*?^```\n(.*?)^```", readme, re.M | re.S).group(1)
+
+    assert f"    {DRIVER}" in setup.splitlines()
+    assert DRIVER in development.splitlines()
