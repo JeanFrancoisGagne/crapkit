@@ -18,7 +18,7 @@ from ..named import first_few
 from ..repopath import typed_path
 from ..store import SnapshotStore
 from ..universe import in_test_dir, owning_scope, path_matchers
-from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
+from ._shared import (_analysis_tools, _command_root, _emit_findings,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
                       _ratchet_key_version, _refuse_unwritable_outputs, _repo_out_path,
                       _repo_relative, _say_left_out, _stand, _unreadable_json, _write_tsv,
@@ -30,15 +30,13 @@ if TYPE_CHECKING:
 
 
 def _emit_verify_findings(root: Path, args, verdict, uncovered: list) -> None:
+    """`uncovered` is every changed line no lane ran: each one is a warning
+    whether or not the lines breach diff_uncovered_max."""
     if not (args.sarif or args.github):
         return
-    from ..sarif import diff_uncovered_results, gate_results, regression_results, unread_results
+    from ..verify import sarif_results
 
-    _emit_findings(root, args.sarif, args.github,
-                   gate_results(verdict.gate_violations)
-                   + unread_results(verdict.unread_files)
-                   + regression_results(verdict.ratchet_regressions)
-                   + diff_uncovered_results(uncovered))
+    _emit_findings(root, args.sarif, args.github, sarif_results(verdict, uncovered))
 
 
 def _no_baseline(root: Path, runs: list[dict] = ()) -> str:
@@ -362,70 +360,6 @@ def _named_seed(named: dict) -> str:
             f"then re-baseline from the run it writes with `{_self()} ratchet seed --baseline ID`")
 
 
-def _override_applies(verdict, reason: str | None) -> bool:
-    """--override grants pure gate violations: a reason, a failed verdict, gate
-    violations, and none of the findings that never qualify."""
-    return (bool(reason) and not verdict.ok and bool(verdict.gate_violations)
-            and not _refusal_parts(verdict))
-
-
-def _refused_cause(count: int, noun: str, first: str) -> str:
-    """`1 ratchet regression (app/m.py pick( a ) 10.75 -> 20.0)`: the count, and
-    the first one named so the line stands on its own in a CI log."""
-    return f"{count} {noun}{'' if count == 1 else 's'} ({first})"
-
-
-def _regression_cause(regressions) -> str:
-    r = regressions[0]
-    return _refused_cause(len(regressions), "ratchet regression",
-                          f"{r.path} {r.long_name} {r.recorded} -> {r.fresh_crap}")
-
-
-def _failure_cause(failures) -> str:
-    return _refused_cause(len(failures), "new test failure", failures[0])
-
-
-def _unread_cause(unread) -> str:
-    return _refused_cause(len(unread), "unread file", f"{unread[0].path}: {unread[0].reason}")
-
-
-def _never_granted() -> tuple:
-    """Each finding kind an override never grants, how to name it, and its escape.
-
-    The escape for a regression is the only one there is; verify never raises a
-    mark, and the override path cannot reach a marked function without also
-    seeing its regression (docs/ratchet.md, Overrides and the audit trail). An
-    unread file holds no function to record as debt, and granting the functions
-    beside it would sign debt while the gate still refuses the file.
-    """
-    from ..merge import UNREAD_ADVICE
-
-    return (("ratchet_regressions", _regression_cause, "raise the mark by hand and commit it"),
-            ("new_failures", _failure_cause, "fix the failing test first"),
-            ("unread_files", _unread_cause, UNREAD_ADVICE))
-
-
-def _refusal_parts(verdict) -> list[tuple[int, str, str]]:
-    """(count, cause, escape) for each finding kind present that no override grants."""
-    return [(len(getattr(verdict, kind)), cause(getattr(verdict, kind)), escape)
-            for kind, cause, escape in _never_granted() if getattr(verdict, kind)]
-
-
-def _override_refusal(verdict) -> str | None:
-    """Why a refused --override did not apply, or None when nothing disqualified it.
-
-    Every cause on one line, each with its own escape: a run holding a
-    regression and a new failure is refused once, not twice.
-    """
-    parts = _refusal_parts(verdict)
-    if not parts:
-        return None
-    counts, causes, escapes = zip(*parts)
-    verb = "qualifies" if sum(counts) == 1 else "qualify"
-    return (f"override refused: {' and '.join(causes)} never {verb} for an override; "
-            f"{'; '.join(escapes)}")
-
-
 def _require_override_reason(reason: str | None) -> None:
     """Refuse an empty or blank --override before any lane runs.
 
@@ -458,7 +392,9 @@ def _refuse_override(verdict, reason: str | None) -> None:
     the override did not take. A passing run (an override that applied
     included), or a run with no reason, prints nothing: nothing was refused.
     """
-    refusal = _override_refusal(verdict) if reason and not verdict.ok else None
+    from ..verify import override_refusal
+
+    refusal = override_refusal(verdict) if reason and not verdict.ok else None
     if refusal:
         print(refusal, file=sys.stderr)
 
@@ -466,20 +402,21 @@ def _refuse_override(verdict, reason: str | None) -> None:
 def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, verdict, reason,
                             *, key_version: int | None = None, identity_rows=None,
                             ratchet_input=None):
-    """Grant --override for pure gate violations; regressions and new failures
-    never qualify (`_refuse_override` says so once the verdict is printed)."""
+    """Grant --override for what the finding kinds let it grant; a kind that
+    refuses one grants nothing (`_refuse_override` says so once the verdict is
+    printed)."""
     from ..override import record_override
     from ..ratchet import metric_version
-    from ..verify import settle_verdict
+    from ..verify import grant, override_grants
 
-    if not _override_applies(verdict, reason):
+    granted = override_grants(verdict) if reason else ()
+    if not granted:
         return verdict
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
-                    alert_command=cfg.alert_command, violations=verdict.gate_violations,
+                    alert_command=cfg.alert_command, violations=list(granted),
                     reason=reason, key_version=key_version, identity_rows=identity_rows,
                     ratchet_input=ratchet_input, metric=metric_version())
-    overridden = verdict.gate_violations
-    return settle_verdict(verdict._replace(gate_violations=[], overridden=tuple(overridden)))
+    return grant(verdict)
 
 
 def _prior_crap(store: SnapshotStore, commit: str, run_id: int) -> dict[tuple[str, str], float]:
@@ -596,24 +533,11 @@ def _release_claims(store: SnapshotStore, git, cfg, scored) -> None:
                                        scope_targets=cfg.scope_targets, stale_commits=stale))
 
 
-def _print_gate_findings(verdict) -> None:
-    from ._shared import _unread_line
-
-    for v in verdict.gate_violations:
-        print(_gate_line(v))
-    for u in verdict.unread_files:
-        print(_unread_line(u.path, u.reason, u.dirty))
-
-
 def _print_verify_findings(verdict) -> None:
-    dirty_ids = set(verdict.dirty_failures)
-    _print_gate_findings(verdict)
-    for r in verdict.ratchet_regressions:
-        print(f"  RATCHET  {r.path}  {r.long_name}: {r.recorded} -> {r.fresh_crap}{_dirty_tag(r.dirty)}")
-    for f in verdict.new_failures:
-        print(f"  NEW FAILURE  {f}{_dirty_tag(f in dirty_ids)}")
-    for v in verdict.overridden:
-        print(f"  OVERRIDDEN  {v.path}:{v.start}  {v.long_name}")
+    from ..verify import text_lines
+
+    for line in text_lines(verdict):
+        print(line)
 
 
 def _print_finding_split(verdict) -> None:
@@ -632,13 +556,10 @@ def _print_finding_split(verdict) -> None:
               "(uncommitted edits and untracked files)")
 
 
-# One exit code per finding kind, in the order the first one present decides.
-_EXIT_ORDER = (("gate_violations", 6), ("unread_files", 6), ("ratchet_regressions", 7),
-               ("new_failures", 8), ("uncovered_violations", 9))
-
-
 def _verify_exit_code(verdict) -> int:
-    return next((code for kind, code in _EXIT_ORDER if getattr(verdict, kind)), 0)
+    from ..verify import exit_code
+
+    return exit_code(verdict)
 
 
 def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
@@ -798,14 +719,6 @@ def _verify_attribution(verdict) -> dict:
             "dirty_failures": list(verdict.dirty_failures)}
 
 
-_RECORD_FINDINGS = ("gate_violations", "unread_files", "ratchet_regressions", "overridden")
-
-
-def _finding_lists(verdict) -> dict:
-    """The finding kinds whose entries are records, each as a list of objects."""
-    return {kind: [f._asdict() for f in getattr(verdict, kind)] for kind in _RECORD_FINDINGS}
-
-
 def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
                    uncovered: list, diff_uncovered_max: int | None,
                    unmarked_over_target: int) -> dict:
@@ -814,6 +727,8 @@ def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
     `unmarked_over_target` is the standing debt no mark covers (see
     `_warn_standing_debt`); it fires no exit code and is the one number that
     says how much of the tree the ratchet is not holding."""
+    from ..verify import json_lists
+
     return {
         "ok": verdict.ok,
         "run_id": run_id,
@@ -822,12 +737,10 @@ def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
         "commit": commit,
         "changed_files": len(ranges),
         "changed_paths": sorted(ranges),
-        **_finding_lists(verdict),
-        "new_failures": verdict.new_failures,
+        **json_lists(verdict, uncovered),
         "forgiven_failures": list(verdict.forgiven_failures),
         "retried_passes": list(verdict.retried_passes),
         "diff_uncovered_count": len(uncovered),
-        "diff_uncovered": [{"path": p, "line": ln} for p, ln in uncovered[:50]],
         "diff_uncovered_max": diff_uncovered_max,
         "unmarked_over_target": unmarked_over_target,
         **_verify_attribution(verdict),
@@ -880,11 +793,13 @@ def _warn_untracked_in_scope(untracked: list[str]) -> None:
 
 
 def _warn_diff_uncovered(uncovered: list) -> None:
+    from ..verify import lines_of
+
     if not uncovered:
         return
     print(f"warning: {len(uncovered)} changed line(s) have no coverage", file=sys.stderr)
-    for path, line in uncovered[:20]:
-        print(f"  uncovered {path}:{line}", file=sys.stderr)
+    for line in lines_of("diff_uncovered", uncovered[:20]):
+        print(line, file=sys.stderr)
 
 
 def _receipt(tool_versions: dict, saved, judged: _JudgedMarks,
@@ -1533,9 +1448,9 @@ def _env_override_reason() -> str:
 def _hook_override_refusal(unread: dict) -> str | None:
     """The line verify --override prints for the same unread files, or None
     when every staged file was read."""
-    from ..verify import Verdict, with_unread
+    from ..verify import Verdict, override_refusal, with_unread
 
-    return _override_refusal(with_unread(Verdict(False, [], [], [], []), unread, set(unread), set()))
+    return override_refusal(with_unread(Verdict.passing(), unread, set(unread), set()))
 
 
 def _judge_staged(root: Path, cfg, gate, shown: str = "") -> int:
