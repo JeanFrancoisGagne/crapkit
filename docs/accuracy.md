@@ -617,7 +617,12 @@ it, as long as the bug keeps a `bugs.tsv` row.
    dated repos from `make_repo`, and the measured small corpus from the
    `small_corpus` fixture. A test that starts git, node, pwsh or the crapkit CLI
    (`make_repo`, the drive helpers) carries `@pytest.mark.process`, or it fails
-   naming the marker.
+   naming the marker. A `process` search that holds one xdist worker for more
+   than about 300 s runs as `@pytest.mark.parametrize("part", split(process))`:
+   four parts whose examples sum to the tier's, each on a seed of its own.
+   Under xdist `run.py` loads `accuracy.kit.parts_first`, whose scheduler deals
+   the parts one to each worker before any other test and leaves the rest to
+   work stealing (the history machine and the retention prune search do this).
 5. Run `python tools/accuracy/change_control.py counts --write` and commit
    `tests/accuracy/change_control/test-counts.tsv`. Rule T6 fails while a packet's
    test count differs.

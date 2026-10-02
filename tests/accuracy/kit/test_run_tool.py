@@ -596,8 +596,8 @@ def test_the_session_argv(tmp_path):
         sys.executable, "-m", "pytest", "a.py", "--rootdir", str(REPO), "-q", "-p",
         "no:cacheprovider", "-p", "no:randomly", "-o", "junit_family=xunit1", "--junitxml",
         str(junit)]
-    assert run_tool._pytest_argv(["a.py"], REPO, 3, junit, 12)[-3:] == [
-        "-n", "3", "--hypothesis-seed=12"]
+    assert run_tool._pytest_argv(["a.py"], REPO, 3, junit, 12)[-7:] == [
+        "-n", "3", "--dist", "worksteal", "-p", "accuracy.kit.parts_first", "--hypothesis-seed=12"]
 
 
 def test_only_the_push_tier_loads_the_push_lock_guard(tmp_path):
@@ -761,7 +761,8 @@ def test_a_session_runs_in_the_repo_with_the_workers_and_seed_it_was_handed(tmp_
                              env, tmp_path, 2, 12)
 
     [(argv, cwd)] = started
-    assert (argv[-3:], cwd) == (["-n", "2", "--hypothesis-seed=12"], REPO)
+    assert (argv[-7:], cwd) == (["-n", "2", "--dist", "worksteal", "-p", "accuracy.kit.parts_first",
+                                 "--hypothesis-seed=12"], REPO)
 
 
 def test_an_argv_check_s_python_is_this_interpreter(monkeypatch):

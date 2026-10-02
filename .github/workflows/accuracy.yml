@@ -170,30 +170,34 @@ jobs:
   oracles:
     needs: [plan, image]
     if: needs.plan.outputs.mode != 'weekly'
+    name: oracles (${{ matrix.shard }}, ${{ matrix.python }})
     runs-on: ubuntu-latest
-    # Twice the slowest leg: the verdict leg, 56.5 min scaled to a runner, nearly
-    # all of it the history machine's 200 nightly examples. verdict-score ran as
-    # one leg until run 36940595657 cut it at 60 min with pytest at 97%; its
-    # three packets now run as the verdict, score and suite-strength legs
-    # (tests/unit/test_ci_accuracy_jobs.py holds the numbers).
-    timeout-minutes: 115
+    # Each leg's row carries its bound: twice the minutes that leg took on a
+    # runner in runs 36940595657 and 36960774745, or for the verdict, score and
+    # suite-strength legs twice their minutes on one machine scaled to a runner
+    # (tests/unit/test_ci_accuracy_jobs.py holds the numbers). verdict-score ran
+    # as one leg until both runs cut it at 60 min; the verdict leg now runs the
+    # history machine as four parts, one per worker. No release run has finished an
+    # oracle leg, and at release the suite-strength leg replays every stale
+    # past-bug row, so a release keeps the 115 minutes every leg shared before.
+    timeout-minutes: ${{ needs.plan.outputs.mode == 'release' && 115 || matrix.minutes }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {shard: analysis, python: "3.12"}
-          - {shard: coverage, python: "3.12"}
-          - {shard: history, python: "3.12"}
-          - {shard: verdict, python: "3.12"}
-          - {shard: score, python: "3.12"}
-          - {shard: suite-strength, python: "3.12"}
-          - {shard: corpus, python: "3.12"}
-          - {shard: analysis, python: "3.11"}
-          - {shard: corpus, python: "3.11"}
-          - {shard: analysis, python: "3.13"}
-          - {shard: corpus, python: "3.13"}
-          - {shard: analysis, python: "3.14"}
-          - {shard: corpus, python: "3.14"}
+          - {shard: analysis, python: "3.12", minutes: 17}
+          - {shard: coverage, python: "3.12", minutes: 22}
+          - {shard: history, python: "3.12", minutes: 16}
+          - {shard: verdict, python: "3.12", minutes: 66}
+          - {shard: score, python: "3.12", minutes: 37}
+          - {shard: suite-strength, python: "3.12", minutes: 40}
+          - {shard: corpus, python: "3.12", minutes: 26}
+          - {shard: analysis, python: "3.11", minutes: 18}
+          - {shard: corpus, python: "3.11", minutes: 23}
+          - {shard: analysis, python: "3.13", minutes: 16}
+          - {shard: corpus, python: "3.13", minutes: 24}
+          - {shard: analysis, python: "3.14", minutes: 16}
+          - {shard: corpus, python: "3.14", minutes: 27}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -260,8 +264,9 @@ jobs:
     needs: [plan, image]
     if: needs.plan.outputs.mode == 'nightly'
     runs-on: ubuntu-latest
-    # Twice the 21.7 min run 36940595657 measured for both corpus tiers and the compare.
-    timeout-minutes: 45
+    # Twice the 23.4 min run 36960774745 took for both corpus tiers and the compare
+    # (21.7 in run 36940595657).
+    timeout-minutes: 47
     steps:
       - uses: actions/checkout@v4
         with:
@@ -302,11 +307,11 @@ jobs:
     needs: plan
     if: needs.plan.outputs.mode != 'weekly'
     runs-on: windows-latest
-    # Twice the 3.13 cell measured on 2026-10-01: 2.4 min of setup, the nightly
-    # tier at 71 min and 24 cold past-bug replays at 10.4 min, each scaled from
-    # one machine by the push tier's 101 s on windows-latest against 70 s there
-    # (tests/unit/test_ci_accuracy_jobs.py holds the numbers).
-    timeout-minutes: 170
+    # Twice the slowest cell on windows-latest: 3.13 took 122.3 min in run
+    # 36940595657, the nightly tier 109.7 of them and the past-bug replays 10.0;
+    # 3.11 took 111.1 in run 36960774745 (tests/unit/test_ci_accuracy_jobs.py
+    # holds the numbers).
+    timeout-minutes: 245
     strategy:
       fail-fast: false
       matrix:

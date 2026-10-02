@@ -342,12 +342,17 @@ def _directory(path: Path) -> Path:
 def _pytest_argv(targets: list[str], root: Path, workers: int, junit: Path, seed,
                  tier: str | None = None) -> list[str]:
     """The push tier loads kit.push_only, so it sees the push lock's packages alone
-    wherever it runs, as CI's accuracy-push job does."""
+    wherever it runs, as CI's accuracy-push job does.
+
+    Under xdist, kit.parts_first deals the parts of a split search one to each
+    worker before the rest, which work stealing balances, so the parts start on
+    separate workers. The default `load` hands a worker runs of consecutive
+    tests, and one worker took all four parts of the history machine."""
     argv = [sys.executable, "-m", "pytest", *targets, "--rootdir", str(root), "-q",
             "-p", "no:cacheprovider", "-p", "no:randomly", "-o", "junit_family=xunit1",
             "--junitxml", str(junit)]
     if workers:
-        argv += ["-n", str(workers)]
+        argv += ["-n", str(workers), "--dist", "worksteal", "-p", "accuracy.kit.parts_first"]
     if isinstance(seed, int):
         argv.append(f"--hypothesis-seed={seed}")
     if tier == "push":

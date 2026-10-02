@@ -28,7 +28,7 @@ from hypothesis import given, strategies as st
 import pytest
 
 from accuracy.kit import drive, repos, rulings
-from accuracy.kit.settings import process
+from accuracy.kit.settings import process, split
 from accuracy.verdict_model import cadence
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import verdict_world as vw
@@ -365,19 +365,24 @@ def test_the_allowed_moves_are_the_documented_ones():
 
 @pytest.mark.nightly
 @pytest.mark.process
-@process
-@given(steps=st.lists(st.sampled_from(sorted(set(STEPS) - {"coverage"})), min_size=1, max_size=4))
-def test_a_prune_keeps_the_model_s_set_and_changes_no_answer(repo_templates, tmp_path_factory, steps):
+@pytest.mark.parametrize("part", split(process))
+def test_a_prune_keeps_the_model_s_set_and_changes_no_answer(repo_templates, tmp_path_factory, part,
+                                                              request):
     """A history starting with coverage, then any steps: the prune keeps the
     model's set, so every reader's run choice survives, and every read
-    command answers what read_commands allows."""
-    top = tmp_path_factory.mktemp("prune") / "repo"
-    sc = vw.Scenario(repo_templates.copy(vw.spec(WORLD), top), WORLD)
-    for name in ("coverage", *steps):
-        STEPS[name](sc)
-    want, before = expected_keep(sc), _reads(sc)
-    assert _pruned(sc) == want
-    _check_reads(sc, before, want)
+    command answers what read_commands allows. The nightly search took 334 s
+    on one xdist worker; its parts run on four."""
+    @given(steps=st.lists(st.sampled_from(sorted(set(STEPS) - {"coverage"})), min_size=1, max_size=4))
+    def prune(steps):
+        top = tmp_path_factory.mktemp("prune") / "repo"
+        sc = vw.Scenario(repo_templates.copy(vw.spec(WORLD), top), WORLD)
+        for name in ("coverage", *steps):
+            STEPS[name](sc)
+        want, before = expected_keep(sc), _reads(sc)
+        assert _pruned(sc) == want
+        _check_reads(sc, before, want)
+
+    part.seeded(part.chosen(prune), request.config)()
 
 
 # --- a store holding a run written before same-line order was recorded -------------------------

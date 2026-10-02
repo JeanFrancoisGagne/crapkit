@@ -196,55 +196,68 @@ def test_every_windows_cell_that_runs_uv_has_it_before_its_tier():
     assert windows["steps"].index(setup) < first
 
 
-# The Windows nightly cell, measured 2026-10-01 at 2263b2c5 natively on one
-# machine: the nightly tier at -n 4 in seven parts took 2961 s summed, and the
-# 24 Windows past-bug rows replayed cold in 434 s. The push tier's
-# --os-sensitive run took 101 s on windows-latest and 70 s on that machine at
-# 34302d84, which scales the two to a runner. The steps before the tier took
-# 2.4 min in run 36891129973's 3.13 cell.
-WINDOWS_RUNNER_PER_LOCAL = 101 / 70
-WINDOWS_TIER_SECONDS = 2961
-WINDOWS_RETRO_SECONDS = 434
-WINDOWS_SETUP_MINUTES = 2.4
+# Each Windows cell in minutes, job start to end, on windows-latest: the larger
+# of run 36940595657 (26628afe; 3.11 99.9, 3.13 122.3) and run 36960774745
+# (5ba27dd3; 3.11 111.1, 3.13 87.1). In run 36940595657 the 3.13 cell's nightly
+# tier took 109.7 of its 122.3 min and its past-bug replays 10.0, which judged
+# every row by a kept verdict in 0.1 min in run 36960774745; the 3.11 cell
+# replays none.
+WINDOWS_CELL_MINUTES = {"3.11": 111.1, "3.13": 122.3}
+WINDOWS_REPLAY_MINUTES = 10.0
 
 
 def test_the_windows_cells_get_twice_what_the_nightly_cell_measured():
     """Both cells were cancelled at a 75-minute bound nobody had measured, with the
-    tier at 97% and 99%. The bound is twice the measured 3.13 cell (tier and
-    replays), as ci.yml bounds its legs, and the replay step's own bound covers
-    twice its measured cold replay."""
+    tier at 97% and 99%. The 170 minutes that followed came from one machine's
+    seconds scaled by one push-tier pair, and the 3.13 cell then took 122.3 of
+    them on a runner. The bound is twice the slower cell, as ci.yml bounds its
+    legs, and the replay step's own bound covers twice its replays."""
     windows = _jobs("accuracy.yml")["windows"]
     replays = step(windows, "run", "python tools/accuracy/retro.py")
-    retro_minutes = WINDOWS_RETRO_SECONDS * WINDOWS_RUNNER_PER_LOCAL / 60
-    cell_minutes = WINDOWS_SETUP_MINUTES + WINDOWS_TIER_SECONDS * WINDOWS_RUNNER_PER_LOCAL / 60 + retro_minutes
+    slowest = max(WINDOWS_CELL_MINUTES.values())
 
-    assert 2 * cell_minutes <= windows["timeout-minutes"] <= 2 * cell_minutes + 5
-    assert 2 * retro_minutes <= replays["timeout-minutes"]
+    assert sorted(WINDOWS_CELL_MINUTES) == windows["strategy"]["matrix"]["python"]
+    assert 2 * slowest <= windows["timeout-minutes"] <= min(2 * slowest + 5, 360)
+    assert 2 * WINDOWS_REPLAY_MINUTES <= replays["timeout-minutes"]
 
 
-# Each oracle leg in minutes, job start to end. A leg both nightly runs finished
-# takes the larger of run 36891129973 (62118e3e) and run 36940595657 (26628afe).
-# The verdict-score shard at 5ba27dd3, and the three legs this split makes of
-# it, were measured on one machine in crapkit-accuracy:a45958df8206, run.py at
-# -n 4, and are scaled to a runner by that shard at 62118e3e: 49.2 min in run
-# 36891129973, 20.95 on the machine. As one leg it took 29.0 there, and run
-# 36940595657 cancelled it at 60 min with pytest at 97%. No leg runs it now; its
-# row keeps a matrix that joins the three again red. The history machine's 200
-# examples took 21.4 of the verdict leg's 24.05 min.
-ORACLE_RUNNER_PER_LOCAL = 49.2 / 20.95
-ORACLE_LOCAL_MINUTES = {"verdict-score": 29.0, "verdict": 24.05, "score": 6.51, "suite-strength": 5.98}
+# Each oracle leg in minutes, job start to end: the larger of run 36940595657
+# (26628afe) and run 36960774745 (5ba27dd3). Both cut the verdict-score leg at
+# the 60-minute bound. The verdict, score and suite-strength legs that run in
+# its place have run on no runner. They were timed on one machine in
+# crapkit-accuracy:a45958df8206 (run.py --tier nightly -n 4, the larger of two
+# runs at this tree), as verdict-score was at 5ba27dd3, and are scaled to a
+# runner by the legs timed both ways. The pytest session took this many times its minutes on
+# that machine: history 1.94 to 2.75 (4.46 to 6.32 min against 2.30), coverage
+# 2.29 to 2.48 (8.87 to 9.58 against 3.87), verdict-score at 62118e3e 2.27
+# (47.62 against 20.95). A leg takes the largest, plus the 1.9 min a job spends
+# outside the session: up to 1.61 pulling the image and starting pytest, 0.28 in
+# its other steps. No leg runs verdict-score now; its row keeps a matrix that
+# joins the three again red.
+ORACLE_SESSION_PER_LOCAL = 6.32 / 2.30
+ORACLE_OUTSIDE_SESSION_MINUTES = 1.9
+ORACLE_LOCAL_MINUTES = {"verdict-score": 29.0, "verdict": 11.20, "score": 5.92, "suite-strength": 6.43}
 ORACLE_LEG_MINUTES = {
-    ("analysis", "3.11"): 8.7, ("analysis", "3.12"): 8.5, ("analysis", "3.13"): 7.7,
-    ("analysis", "3.14"): 7.7, ("corpus", "3.11"): 12.2, ("corpus", "3.12"): 12.6,
-    ("corpus", "3.13"): 12.0, ("corpus", "3.14"): 13.7, ("coverage", "3.12"): 10.9,
-    ("history", "3.12"): 7.7,
-    **{(shard, "3.12"): minutes * ORACLE_RUNNER_PER_LOCAL for shard, minutes in ORACLE_LOCAL_MINUTES.items()},
+    ("analysis", "3.11"): 8.72, ("analysis", "3.12"): 8.32, ("analysis", "3.13"): 7.72,
+    ("analysis", "3.14"): 7.77, ("corpus", "3.11"): 11.20, ("corpus", "3.12"): 12.62,
+    ("corpus", "3.13"): 11.65, ("corpus", "3.14"): 13.47, ("coverage", "3.12"): 10.95,
+    ("history", "3.12"): 7.65,
+    **{(shard, "3.12"): ORACLE_OUTSIDE_SESSION_MINUTES + minutes * ORACLE_SESSION_PER_LOCAL
+       for shard, minutes in ORACLE_LOCAL_MINUTES.items()},
 }
+# A release run has finished no oracle leg (run 36847745298 stopped at the image),
+# and at release the suite-strength leg replays every stale past-bug row:
+# release keeps the bound every leg shared before the legs had their own.
+RELEASE_ORACLE_MINUTES = 115
+ORACLE_BOUND = re.compile(r"\$\{\{ needs\.plan\.outputs\.mode == 'release' && (\d+) \|\| matrix\.minutes \}\}")
+
+
+def _oracle_rows() -> list[dict]:
+    return _jobs("accuracy.yml")["oracles"]["strategy"]["matrix"]["include"]
 
 
 def _oracle_legs() -> list[tuple[str, str]]:
-    rows = _jobs("accuracy.yml")["oracles"]["strategy"]["matrix"]["include"]
-    return [(row["shard"], row["python"]) for row in rows]
+    return [(row["shard"], row["python"]) for row in _oracle_rows()]
 
 
 def _oracle_leg_minutes() -> dict[str, float]:
@@ -254,18 +267,27 @@ def _oracle_leg_minutes() -> dict[str, float]:
     return {f"{shard} {python}": ORACLE_LEG_MINUTES[shard, python] for shard, python in legs}
 
 
-def test_every_oracle_leg_gets_twice_what_it_measured():
-    """Every leg shares the oracles job's bound. At 60 minutes it cut the
-    verdict-score leg in run 36940595657, when the history machine first ran
-    its 200 examples to the end. Each leg's bound is at least twice what it
-    measured, as the Windows cells' is, and at most 5 minutes past twice the
-    slowest leg."""
-    bound = _jobs("accuracy.yml")["oracles"]["timeout-minutes"]
-    minutes = _oracle_leg_minutes()
-    over = {leg: round(measured, 1) for leg, measured in minutes.items() if 2 * measured > bound}
+def _oracle_bounds() -> dict[str, int]:
+    """The bound each oracle leg runs under outside a release, by `shard python`:
+    the minutes its own matrix row carries."""
+    job = _jobs("accuracy.yml")["oracles"]
+    found = ORACLE_BOUND.fullmatch(str(job["timeout-minutes"]))
 
-    assert over == {}, f"each leg's minutes, more than half the {bound}-minute bound"
-    assert bound <= 2 * max(minutes.values()) + 5
+    assert found and int(found.group(1)) == RELEASE_ORACLE_MINUTES, job["timeout-minutes"]
+    assert job["name"] == "oracles (${{ matrix.shard }}, ${{ matrix.python }})"
+    return {f"{row['shard']} {row['python']}": row.get("minutes") for row in _oracle_rows()}
+
+
+def test_every_oracle_leg_gets_twice_what_it_measured():
+    """The legs shared one bound: at 60 minutes it cut the verdict-score leg in
+    runs 36940595657 and 36960774745, and at 115 it gave an analysis leg fourteen
+    times what it took. Each row carries its own bound, between twice what that
+    leg measured and 5 minutes past it, as the Windows cells' is."""
+    minutes = _oracle_leg_minutes()
+    off = {leg: (round(minutes[leg], 2), bound) for leg, bound in _oracle_bounds().items()
+           if bound is None or not 2 * minutes[leg] <= bound <= 2 * minutes[leg] + 5}
+
+    assert off == {}, "each leg's minutes and the bound its row carries"
 
 
 def test_every_shard_the_checks_name_runs_in_an_oracle_leg():
@@ -277,8 +299,8 @@ def test_every_shard_the_checks_name_runs_in_an_oracle_leg():
 
 
 # lizard-edge ran both corpus tiers and the comparison in 21.7 min in run
-# 36940595657, its first run in the accuracy image.
-LIZARD_EDGE_MINUTES = 21.7
+# 36940595657, its first run in the accuracy image, and in 23.4 in run 36960774745.
+LIZARD_EDGE_MINUTES = 23.4
 
 
 def test_lizard_edge_gets_twice_what_it_measured():

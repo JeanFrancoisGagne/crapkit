@@ -39,6 +39,9 @@ from dataclasses import dataclass, replace
 import itertools
 import json
 import os
+from pathlib import Path
+import re
+import runpy
 import shutil
 import stat
 import sys
@@ -47,9 +50,11 @@ from hypothesis import strategies as st
 from hypothesis.stateful import (RuleBasedStateMachine, initialize, invariant, rule,
                                  run_state_machine_as_test)
 import pytest
+import yaml
 
+import hang_guard
 from accuracy.kit import repos
-from accuracy.kit.settings import process
+from accuracy.kit.settings import process, split
 from accuracy.verdict_model import model_verdict as model
 from accuracy.verdict_model import test_retention as retention
 from accuracy.verdict_model import verdict_world as vw
@@ -580,11 +585,81 @@ def _machine(tmp_path, templates):
                                                                               templates)})
 
 
+# The nightly search took 1025 to 1283 s on one xdist worker and held the verdict
+# leg open alone for its last 11.5 min; its parts start at once, one per worker.
+HISTORY_PARTS = split(process)
+
+
 @pytest.mark.nightly
 @pytest.mark.process
-def test_the_run_history_follows_the_model(repo_templates, tmp_path):
-    run_state_machine_as_test(_machine(tmp_path, repo_templates), settings=process)
+@pytest.mark.parametrize("part", HISTORY_PARTS)
+def test_the_run_history_follows_the_model(repo_templates, tmp_path, part, request):
+    machine = part.seeded(_machine(tmp_path, repo_templates), request.config)
+    run_state_machine_as_test(machine, settings=part.chosen)
     print("history machine commands:", dict(STEPS), "record checks:", dict(RECORDS))
+
+
+def test_the_parts_of_the_history_machine_hold_the_tier_s_examples():
+    assert [param.values[0].index for param in HISTORY_PARTS] == list(range(len(HISTORY_PARTS)))
+    assert sum(param.values[0].chosen.max_examples for param in HISTORY_PARTS) == process.max_examples
+
+
+ROOT = Path(__file__).resolve().parents[3]
+# A plugin for the session below: each xdist worker writes down the tests it is
+# handed, in order, and runs none of them.
+RECORDER = '''import os
+from pathlib import Path
+
+import pytest
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_protocol(item, nextitem):
+    handed = Path(os.environ["RECORD_DIR"]) / os.environ["PYTEST_XDIST_WORKER"]
+    with handed.open("a", encoding="utf-8") as out:
+        out.write(item.nodeid + "\\n")
+    return True
+'''
+
+
+def _leg_workers() -> int:
+    """The -n each oracle leg passes run.py (accuracy.yml)."""
+    jobs = yaml.safe_load((ROOT / ".github/workflows/accuracy.yml").read_text(encoding="utf-8"))["jobs"]
+    (command,) = [step["run"] for step in jobs["oracles"]["steps"] if "run.py --tier" in step.get("run", "")]
+    return int(re.search(r" -n (\d+) ", command).group(1))
+
+
+def _verdict_leg_by_worker(tmp_path) -> dict[str, list[str]]:
+    """The tests each worker of the verdict leg's nightly session takes, in order:
+    the session run.py starts, every test recorded and none run."""
+    run = runpy.run_path(str(ROOT / "tools/accuracy/run.py"))
+    checks = run["selected"](run["load_checks"](), "nightly", "verdict", sys.platform)
+    argv = run["_pytest_argv"](run["_present"](checks, set()), ROOT, _leg_workers(),
+                               tmp_path / "junit.xml", 1, "nightly")
+    (tmp_path / "record_workers.py").write_text(RECORDER, encoding="utf-8")
+    (tmp_path / "handed").mkdir()
+    env = run["_child_env"]("nightly", tmp_path / "notes.jsonl")
+    env.update(RECORD_DIR=str(tmp_path / "handed"),
+               PYTHONPATH=os.pathsep.join([str(tmp_path), env["PYTHONPATH"]]))
+    done = hang_guard.run([*argv, "-p", "record_workers"], cwd=ROOT, env=env, text=True,
+                          encoding="utf-8", errors="replace")
+    handed = {path.name: path.read_text(encoding="utf-8").splitlines()
+              for path in (tmp_path / "handed").iterdir()}
+    assert handed, done.stdout + done.stderr
+    return handed
+
+
+@pytest.mark.nightly
+@pytest.mark.process
+def test_each_worker_of_the_verdict_leg_starts_on_its_own_part_of_the_history_machine(tmp_path):
+    """Under xdist's default `load` a worker took runs of consecutive tests, and
+    one worker took every part, which ran them one after another."""
+    handed = _verdict_leg_by_worker(tmp_path)
+    parts = sorted(test for tests in handed.values() for test in tests
+                   if "::test_the_run_history_follows_the_model[" in test)
+
+    assert len(parts) == len(HISTORY_PARTS) == _leg_workers() == len(handed)
+    assert sorted(tests[0] for tests in handed.values()) == parts, handed
 
 
 SCRIPT = (

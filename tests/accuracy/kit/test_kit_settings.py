@@ -1,5 +1,5 @@
-"""The two Hypothesis kinds, sized per tier."""
-from hypothesis import HealthCheck
+"""The two Hypothesis kinds, sized per tier, and a search split across workers."""
+from hypothesis import HealthCheck, given, strategies as st
 import pytest
 
 from accuracy.kit import settings, tiers
@@ -66,3 +66,64 @@ def test_the_module_settings_follow_the_running_tier():
 
     assert settings.pure.max_examples == settings.profile("pure", tier).max_examples
     assert settings.process.max_examples == settings.profile("process", tier).max_examples
+
+
+def _kept(chosen) -> tuple:
+    return (chosen.derandomize, chosen.deadline, tuple(chosen.suppress_health_check),
+            chosen.stateful_step_count, chosen.database)
+
+
+def _parts(chosen) -> list:
+    return [param.values[0] for param in settings.split(chosen)]
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+@pytest.mark.parametrize("tier", tiers.TIERS)
+@pytest.mark.parametrize("kind", ["pure", "process"])
+def test_the_parts_of_a_split_search_hold_its_examples(kind, tier, platform):
+    """A split search runs as many examples as the whole one did, in every tier
+    and on every OS, and each part keeps the profile's other settings."""
+    chosen = settings.profile(kind, tier, platform)
+    parts = _parts(chosen)
+    shares = sorted(part.chosen.max_examples for part in parts)
+
+    assert [part.index for part in parts] == list(range(settings.PARTS))
+    assert (sum(shares), shares[-1] - shares[0]) in {(chosen.max_examples, 0), (chosen.max_examples, 1)}
+    assert [_kept(part.chosen) for part in parts] == [_kept(chosen)] * settings.PARTS
+
+
+class _Session:
+    """A pytest config as Part.seeded reads it: the --hypothesis-seed it was given."""
+    def __init__(self, forced: str | None):
+        self.forced = forced
+
+    def getoption(self, name: str):
+        assert name == "hypothesis_seed"
+        return self.forced
+
+
+def _drawn(part, forced: str | None) -> list[int]:
+    seen = []
+
+    @given(st.integers())
+    def draw(number):
+        seen.append(number)
+
+    part.seeded(part.chosen(draw), _Session(forced))()
+    return seen
+
+
+def test_each_part_draws_from_a_seed_of_its_own():
+    """run.py hands the nightly tier one --hypothesis-seed, and a forced seed gives
+    every test the same random: without seeds of their own the parts drew the
+    same examples. Each part's seed derives from the forced one, so the seed a
+    receipt records reproduces every part; a derandomized profile seeds a part
+    by its index, and a random one leaves the part to Hypothesis's own draw."""
+    first, second = _parts(settings.profile("pure", "push"))[:2]
+    random = _parts(settings.profile("pure", "nightly"))[0]
+    test = object()
+
+    assert _drawn(first, "7") == _drawn(first, "7") != _drawn(second, "7")
+    assert _drawn(first, "7") != _drawn(first, "8")
+    assert _drawn(first, None) == _drawn(first, None) != _drawn(second, None)
+    assert random.seeded(test, _Session(None)) is test

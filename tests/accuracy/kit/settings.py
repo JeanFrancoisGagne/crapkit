@@ -16,15 +16,25 @@ Two kinds, chosen by what a test does, sized by the running tier:
 
 A test decorates with `@pure` or `@process`. test_kit_contract refuses any
 other `settings(` call under tests/accuracy.
+
+A search too long for one xdist worker runs as `split(process)`: PARTS
+parametrized parts whose examples sum to the profile's, each drawing from a
+seed of its own. run.py passes the nightly tier one --hypothesis-seed, which
+gives every Hypothesis test in the session the same random, so parts without
+seeds of their own would all draw the same examples. kit/parts_first.py, which
+run.py loads under xdist, deals the parts one to each worker before any other
+test.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import timedelta
 import os
 import sys
 
-from hypothesis import HealthCheck, settings
+from hypothesis import HealthCheck, seed, settings
 from hypothesis.database import DirectoryBasedExampleDatabase
+import pytest
 
 from . import tiers
 
@@ -88,3 +98,34 @@ def profile(kind: str, tier: str, platform: str = sys.platform) -> settings:
 
 pure = profile("pure", tiers.current_tier())
 process = profile("process", tiers.current_tier())
+
+# One part per xdist worker: every oracle leg runs run.py with -n 4 (accuracy.yml).
+PARTS = 4
+
+
+@dataclass(frozen=True)
+class Part:
+    """One part of a split search: `chosen` holds its share of the examples."""
+    index: int
+    chosen: settings
+
+    def seeded(self, test, config):
+        """`test` (a @given test or a state machine) drawing from this part's seed.
+
+        The seed derives from the session's --hypothesis-seed, so the receipt's
+        seed reproduces every part. With none, a derandomized profile seeds the
+        part by its index, and a random one leaves Hypothesis to draw a fresh
+        seed for each part and keep its example database, which @seed turns off."""
+        forced = config.getoption("hypothesis_seed")
+        if forced is not None:
+            return seed(f"{forced}/part{self.index}")(test)
+        return seed(self.index)(test) if self.chosen.derandomize else test
+
+
+def split(chosen: settings, count: int = PARTS) -> list:
+    """`count` pytest params, the parts of chosen's search; their max_examples
+    differ by at most one and sum to chosen.max_examples."""
+    share, extra = divmod(chosen.max_examples, count)
+    return [pytest.param(Part(index, settings(chosen, max_examples=share + (index < extra))),
+                         id=f"part{index}")
+            for index in range(count)]
