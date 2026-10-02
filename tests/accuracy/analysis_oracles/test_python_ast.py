@@ -92,10 +92,11 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # the gate named the ceiling it judged, an override with no alert command was
 # refused first, and a deleted marks file read as the marks its history held,
 # 3,673 once the report read which marks a revision held off its own blob,
-# and 3,672 once lane_stamps dropped unreadable_stamps, which nothing called.
+# 3,672 once lane_stamps dropped unreadable_stamps, which nothing called, and
+# 3,679 once keys.py took the mark index (gate-group-01, 0.9.0).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3672
+SRC_DEFS = 3679
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
