@@ -49,6 +49,56 @@ release's version string until the next release, and pip keeps an installed crap
 whose version matches, so the install line alone leaves the old code in place;
 `--force-reinstall` replaces it and `--no-deps` leaves lizard as it is.
 
+## Upgrading to 0.9.0
+
+<!-- 0.9.0:gate-group -->
+<!-- /0.9.0:gate-group -->
+
+<!-- 0.9.0:m1-foundations -->
+<!-- /0.9.0:m1-foundations -->
+
+<!-- 0.9.0:mission-3 -->
+<!-- /0.9.0:mission-3 -->
+
+<!-- 0.9.0:metric-stamp -->
+<!-- /0.9.0:metric-stamp -->
+
+<!-- 0.9.0:mission-4 -->
+<!-- /0.9.0:mission-4 -->
+
+<!-- 0.9.0:m1-readers -->
+<!-- /0.9.0:m1-readers -->
+
+<!-- 0.9.0:m5-comment-fixture -->
+<!-- /0.9.0:m5-comment-fixture -->
+
+<!-- 0.9.0:mission-9 -->
+<!-- /0.9.0:mission-9 -->
+
+<!-- 0.9.0:mission-2 -->
+<!-- /0.9.0:mission-2 -->
+
+<!-- 0.9.0:lanes-visible -->
+<!-- /0.9.0:lanes-visible -->
+
+<!-- 0.9.0:schema-2 -->
+<!-- /0.9.0:schema-2 -->
+
+<!-- 0.9.0:criterion -->
+<!-- /0.9.0:criterion -->
+
+<!-- 0.9.0:m6-step-coverage -->
+<!-- /0.9.0:m6-step-coverage -->
+
+<!-- 0.9.0:release-bytes -->
+<!-- /0.9.0:release-bytes -->
+
+<!-- 0.9.0:protocol-2-step -->
+<!-- /0.9.0:protocol-2-step -->
+
+<!-- 0.9.0:hash-cost -->
+<!-- /0.9.0:hash-cost -->
+
 ## 0.8.0 to 0.8.1, in order
 
 Each step links the section that explains it.
