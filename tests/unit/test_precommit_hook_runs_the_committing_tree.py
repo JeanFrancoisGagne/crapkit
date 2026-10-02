@@ -10,6 +10,9 @@ Each tree here holds a stand-in crapkit whose gate prints which tree it belongs
 to and decides the commit: the main checkout's accepts, the linked worktree's
 refuses. The installed crapkit would judge the one staged line and accept both.
 git runs the real hook file through core.hooksPath, the way CONTRIBUTING sets it.
+Each commit's PYTHONPATH already names an `elsewhere` directory, so on every
+machine the hook joins src to it with the separator its python reads (";" on
+Windows), and the gate still sees `elsewhere`.
 """
 import os
 from pathlib import Path
@@ -21,8 +24,9 @@ import hang_guard
 
 ROOT = Path(__file__).resolve().parents[2]
 IDENTITY = ("-c", "user.name=Hook Test", "-c", "user.email=hook@example.test")
-STAND_IN = """import sys
-print({tree!r}, *sys.argv[1:])
+STAND_IN = """import os, sys
+kept = any(os.path.basename(entry) == "elsewhere" for entry in sys.path)
+print({tree!r}, *sys.argv[1:], "keeps elsewhere" if kept else "lost elsewhere")
 sys.exit({code})
 """
 
@@ -41,10 +45,15 @@ def _stand_in(tree: Path, name: str, code: int) -> None:
     (package / "__main__.py").write_text(STAND_IN.format(tree=name, code=code), encoding="utf-8")
 
 
-def _env(python: str = sys.executable) -> dict:
+def _env(tmp_path: Path, python: str = sys.executable) -> dict:
     """This interpreter first on PATH, so the hook's bare `python` is the one
-    whose crapkit the suite imports."""
-    return {**os.environ, "PATH": os.pathsep.join((str(Path(python).parent), os.environ["PATH"]))}
+    whose crapkit the suite imports, and an `elsewhere` directory first on the
+    parent's PYTHONPATH, so the hook has a list to join src to."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir(exist_ok=True)
+    pythonpath = os.pathsep.join(filter(None, (str(elsewhere), os.environ.get("PYTHONPATH"))))
+    return {**os.environ, "PATH": os.pathsep.join((str(Path(python).parent), os.environ["PATH"])),
+            "PYTHONPATH": pythonpath}
 
 
 def _hooked_commit(tree: Path, env: dict) -> subprocess.CompletedProcess:
@@ -74,15 +83,15 @@ def _repo(tmp_path: Path) -> tuple[Path, Path]:
 def test_each_tree_s_commit_is_judged_by_that_tree_s_own_crapkit(tmp_path):
     main, linked = _repo(tmp_path)
 
-    accepted = _hooked_commit(main, _env())
-    refused = _hooked_commit(linked, _env())
+    accepted = _hooked_commit(main, _env(tmp_path))
+    refused = _hooked_commit(linked, _env(tmp_path))
 
     said = accepted.stdout + accepted.stderr
     assert accepted.returncode == 0, said
-    assert "the main checkout's gate hook-precommit" in said
+    assert "the main checkout's gate hook-precommit keeps elsewhere" in said
     said = refused.stdout + refused.stderr
     assert refused.returncode != 0, said
-    assert "the linked worktree's gate hook-precommit" in said
+    assert "the linked worktree's gate hook-precommit keeps elsewhere" in said
     assert "crapkit: commit blocked by the complexity gate." in said
     assert "main checkout" not in said
 
@@ -94,7 +103,7 @@ def test_a_python_without_crapkit_s_dependencies_is_named_not_a_traceback(tmp_pa
     bare = tmp_path / "bare"
     venv.EnvBuilder(with_pip=False).create(bare)
     python = bare / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    env = {name: value for name, value in _env(str(python)).items() if name != "PYTHONPATH"}
+    env = {name: value for name, value in _env(tmp_path, str(python)).items() if name != "PYTHONPATH"}
 
     refused = _hooked_commit(main, env)
 
@@ -102,3 +111,19 @@ def test_a_python_without_crapkit_s_dependencies_is_named_not_a_traceback(tmp_pa
     assert refused.returncode != 0, said
     assert "crapkit: NOT INSTALLED - the complexity gate cannot run" in said
     assert "the main checkout's gate" not in said and "Traceback" not in said
+
+
+def test_a_tree_whose_own_crapkit_does_not_import_shows_why(tmp_path):
+    """A SyntaxError in the tree's src/crapkit/__init__.py is not a missing
+    install: pip install fixes nothing, so the hook shows the traceback and
+    names the tree's crapkit, not the NOT INSTALLED line."""
+    _, linked = _repo(tmp_path)
+    (linked / "src/crapkit/__init__.py").write_text('broken = "\n', encoding="utf-8")
+
+    refused = _hooked_commit(linked, _env(tmp_path))
+
+    said = refused.stdout + refused.stderr
+    assert refused.returncode != 0, said
+    assert "SyntaxError" in said
+    assert "src/crapkit does not import, so the complexity gate cannot run" in said
+    assert "NOT INSTALLED" not in said and "gate hook-precommit" not in said
