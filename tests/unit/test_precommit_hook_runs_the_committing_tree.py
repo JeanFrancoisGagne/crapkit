@@ -20,6 +20,8 @@ import subprocess
 import sys
 import venv
 
+import pytest
+
 import hang_guard
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -127,3 +129,23 @@ def test_a_tree_whose_own_crapkit_does_not_import_shows_why(tmp_path):
     assert "SyntaxError" in said
     assert "src/crapkit does not import, so the complexity gate cannot run" in said
     assert "NOT INSTALLED" not in said and "gate hook-precommit" not in said
+
+
+@pytest.mark.parametrize("gate, code", [
+    ("raise RuntimeError('the gate broke')\n", 1),
+    ("import sys\nprint('crapkit: required analysis tool unavailable', file=sys.stderr)\nsys.exit(5)\n", 5),
+], ids=["traceback", "missing-tool"])
+def test_a_gate_that_stops_without_a_verdict_is_not_reported_as_a_refusal(tmp_path, gate, code):
+    """The gate refuses a commit with exit 6. A traceback from a module the
+    import probe never loaded (exit 1), or a missing analysis tool (exit 5),
+    stops it before it judged anything: the commit is still refused, but the
+    hook names the stop, not the complexity gate's verdict."""
+    main, _ = _repo(tmp_path)
+    (main / "src/crapkit/__main__.py").write_text(gate, encoding="utf-8")
+
+    refused = _hooked_commit(main, _env(tmp_path))
+
+    said = refused.stdout + refused.stderr
+    assert refused.returncode != 0, said
+    assert f"crapkit: the complexity gate stopped with exit {code} before it judged the commit" in said
+    assert "commit blocked by the complexity gate" not in said

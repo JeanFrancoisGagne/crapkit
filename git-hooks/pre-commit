@@ -13,6 +13,11 @@
 # prints the separator this python reads PYTHONPATH with (";" on Windows, ":"
 # elsewhere). Its traceback stays on screen: pip install cannot fix a tree whose
 # own crapkit does not import.
+#
+# The gate refuses a commit with exit 6. Any other failure (a traceback from a
+# module the probe never imported, a missing analysis tool, a bad config) stops
+# it before a verdict: the commit is refused all the same, and the hook says the
+# gate stopped, not that it blocked the commit.
 src="$(git rev-parse --show-toplevel)/src" || exit 1
 if ! python -c "import lizard" 2>/dev/null; then
     echo "crapkit: NOT INSTALLED - the complexity gate cannot run; install with 'pip install -e .'" >&2
@@ -24,7 +29,13 @@ if ! sep=$(python -c "import os, sys; sys.path.insert(0, sys.argv[1]); import cr
 fi
 PYTHONPATH="$src${PYTHONPATH:+$sep$PYTHONPATH}"
 export PYTHONPATH
-if ! python -m crapkit hook-precommit; then
+python -m crapkit hook-precommit
+code=$?
+if [ "$code" -eq 6 ]; then
     echo "crapkit: commit blocked by the complexity gate."
+    exit 1
+fi
+if [ "$code" -ne 0 ]; then
+    echo "crapkit: the complexity gate stopped with exit $code before it judged the commit, so the commit is refused; the lines above say why" >&2
     exit 1
 fi
