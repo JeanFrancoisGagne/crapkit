@@ -32,7 +32,7 @@ import pytest
 
 from conftest import cli_runner
 from hang_guard import HANG_SECONDS
-from name_bytes import NOT_UTF8_NAMES
+from name_bytes import NOT_UTF8_NAMES, STORES_ANY_BYTE
 
 run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
@@ -241,9 +241,10 @@ def _stored_runs(repo: Path) -> int:
 
 
 def _stop_object(name: bytes) -> str:
-    """The --json error object, byte for byte. Git for Windows cannot check
-    such a name out, so git reads the committed file deleted: dirty."""
-    item = {**UNREAD_FILE, "path": _shown(name), "dirty": sys.platform == "win32"}
+    """The --json error object, byte for byte. NTFS and APFS refuse such a
+    name, so the commit leaves no file on disk and git reads it deleted:
+    dirty. ext4 holds the file, and git reads it clean."""
+    item = {**UNREAD_FILE, "path": _shown(name), "dirty": not STORES_ANY_BYTE}
     error = {"exit": 3, "kind": "config", "message": VERIFY_STOP.format(shown=_shown(name)), "unread_files": [item]}
     return json.dumps({"error": error, "schema": 1}, sort_keys=True) + "\n"
 
