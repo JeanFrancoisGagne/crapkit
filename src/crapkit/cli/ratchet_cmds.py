@@ -479,32 +479,21 @@ def _working_marks(root: Path, ratchet_file: str) -> dict:
 
 
 def _report_basis(root: Path, ratchet_file: str) -> tuple[list, dict | None]:
-    """The history the report replays and the marks it reads as open.
+    """The revisions the report replays and the marks it reads as open.
 
     A marks file that is missing or holds only blank lines is not a repo that
     repaid every mark: the report reads the marks the newest commit that held
     any held as open (working None, the committed state), and the commit that
     deleted or emptied the file repays none (held_history). verify reads the
-    same marks only while its baseline run comes from before that commit."""
+    same marks only while its baseline run comes from before that commit.
+    Otherwise HEAD's revision is the committed state, so the report counts as
+    uncommitted only the marks the working tree and HEAD disagree on."""
     from ..marks_history import held_history, marks_history
     from ..ratchetfile import RatchetFile
 
     if RatchetFile.read(root / ratchet_file).blank:
         return held_history(root, ratchet_file), None
-    history = _with_head_revision(root, ratchet_file, marks_history(root, ratchet_file))
-    return history, _working_marks(root, ratchet_file)
-
-
-def _with_head_revision(root: Path, ratchet_file: str, history: list) -> list:
-    """The newest entry also carries the text HEAD's revision of the file holds,
-    read as a "held" event, so the report counts as uncommitted only the marks
-    the working tree and HEAD disagree on. The replay of the patches cannot
-    stand in for HEAD: `git log -p` prints no patch for a merge, and a mark a
-    conflicted merge repaid replays as open."""
-    from ..marks_history import head_revision
-
-    text = head_revision(root, ratchet_file) if history else None
-    return history if text is None else history[:-1] + [history[-1] + (text,)]
+    return marks_history(root, ratchet_file), _working_marks(root, ratchet_file)
 
 
 def _warn_marks_stand_in(root: Path, ratchet_file: str, report: dict, working) -> None:
@@ -572,12 +561,12 @@ def _warn_history(shallow: bool) -> None:
 
 def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
     from ..gitio import shallow_checkout
-    from ..ratchet_report import mark_events, report_from_events
+    from ..ratchet_report import held_event, mark_events, report_from_events
 
     shallow = shallow_checkout(root)
     _refuse_a_cut_history(cfg, enforce, shallow)
-    patches, working = _report_basis(root, cfg.ratchet_file)
-    report = report_from_events(mark_events(patches), working=working)
+    revisions, working = _report_basis(root, cfg.ratchet_file)
+    report = report_from_events(mark_events(revisions) + held_event(revisions), working=working)
     violations = _policy_findings(cfg, report, enforce)
     _warn_history(shallow)
     _warn_marks_stand_in(root, cfg.ratchet_file, report, working)
