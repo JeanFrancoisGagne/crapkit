@@ -96,7 +96,7 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # 3,679 once keys.py took the mark index (gate-group-01, 0.9.0).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3679
+SRC_DEFS = 3680
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

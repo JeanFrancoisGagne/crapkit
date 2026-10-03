@@ -93,8 +93,8 @@ def test_marks_survive_functions_missing_from_the_scored_rows():
 
 
 def test_mark_lookup_answers_with_the_recorded_value_or_none():
-    from crapkit.ratchet import mark_for
+    from crapkit.keys import MarkIndex
     entries = [RatchetEntry("src/a.ts", "f( )", 30.0), RatchetEntry("src/b.ts", "f( )", 12.5)]
-    assert mark_for(entries, "src/b.ts", "f( )") == 12.5
-    assert mark_for(entries, "src/a.ts", "g( )") is None, "the name has to match too"
-    assert mark_for([], "src/a.ts", "f( )") is None
+    assert MarkIndex(entries).mark(("src/b.ts", "f( )")) == 12.5
+    assert MarkIndex(entries).mark(("src/a.ts", "g( )")) is None, "the name has to match too"
+    assert MarkIndex([]).mark(("src/a.ts", "f( )")) is None

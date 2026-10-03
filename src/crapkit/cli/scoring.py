@@ -907,12 +907,12 @@ def _unmarked_breaches(breaches: list, entries: list) -> list:
     it the function is exactly the debt the repo signed up for; past it, verify's
     ratchet check would fail too, so the gate says so early.
     """
-    from ..keys import stated_key
-    from ..ratchet import mark_for
+    from ..keys import MarkIndex, stated_key
 
+    index = MarkIndex(entries)
     kept = []
     for v in breaches:
-        mark = mark_for(entries, *stated_key(v))
+        mark = index.mark(stated_key(v))
         if mark is None or round(v.crap, 4) > mark:
             kept.append(v)
     return kept

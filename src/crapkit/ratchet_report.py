@@ -6,20 +6,28 @@ NEWEST commit in the history, never the wall clock.
 """
 from __future__ import annotations
 
+from .keys import MarkIndex, mark_key
 from .records import record_lines
 
 DAY = 86400
 
 
+def crap_by_key(entries) -> dict:
+    """A marks file's entries as key -> crap, the first mark under a key
+    answering, as `keys.MarkIndex` does for every other reader."""
+    index = MarkIndex(entries)
+    return {key: index.mark(key) for key in index.keys()}
+
+
 def _mark_line(line: str) -> tuple | None:
-    """((path, long_name), crap) when a +/- patch line is a mark row; else None."""
+    """(key, crap) when a +/- patch line is a mark row; else None."""
     body = line[1:]
     if body.startswith(("++ ", "-- ")):
         return None
     from .ratchet import read_ratchet
 
     entries, _ = read_ratchet(body)
-    return ((entries[0].path, entries[0].long_name), entries[0].crap) if entries else None
+    return (mark_key(entries[0]), entries[0].crap) if entries else None
 
 
 def _commit_delta(patch: str) -> tuple[dict, dict]:
@@ -50,12 +58,11 @@ def mark_events(patches: list[tuple]) -> list[tuple]:
 
 
 def _held_events(ts: int, revision: list[str]) -> list[tuple]:
-    """A "held" event per revision text, its marks keyed (path, long_name) ->
+    """A "held" event per revision text, its marks keyed (path, key name) ->
     crap. Each row reads as a patch line does, so the keys match the replay's."""
     from .ratchet import read_ratchet
 
-    return [(ts, None, "held", {(e.path, e.long_name): e.crap for e in read_ratchet(text)[0]})
-            for text in revision]
+    return [(ts, None, "held", crap_by_key(read_ratchet(text)[0])) for text in revision]
 
 
 def _commit_events(ts: int, added: dict, removed: dict) -> list[tuple]:
