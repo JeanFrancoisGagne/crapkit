@@ -609,9 +609,7 @@ def _no_twin_message(path: str, name: str, wanted: str, held: int) -> str:
 
 def _brief_mark(entries: list | None, key: tuple[str, str]) -> float | None:
     """The committed mark on this function, or None when the repo carries none."""
-    from ..ratchet import mark_for
-
-    return None if entries is None else mark_for(entries, *key)
+    return None if entries is None else keys.MarkIndex(entries).mark(key)
 
 
 def _brief_churn(churn: dict, path: str) -> dict | None:
@@ -1231,14 +1229,12 @@ def _worklist_handles(wl: Worklist, handles: _Handles) -> Worklist:
 
 def _worklist_ratchet(root: Path, cfg, store, run_id: int) -> RatchetMarks:
     """The committed marks keyed for the run's rows, or nothing when the repo
-    carries no marks file. The first mark under a key wins, as `mark_for`."""
+    carries no marks file. The first mark under a key wins, as `keys.MarkIndex`
+    answers every reader."""
     entries = _ratchet_entries(root, cfg, lambda: store.read_rows(run_id), store)
     if not entries:
         return NO_RATCHET
-    marks: dict = {}
-    for e in entries:
-        marks.setdefault((e.path, e.long_name), e.crap)
-    return RatchetMarks(marks, store.twin_key_names(run_id))
+    return RatchetMarks(keys.MarkIndex(entries), store.twin_key_names(run_id))
 
 
 def _worklist_marks(store, cfg, run_id: int, scopes: list) -> Marks:

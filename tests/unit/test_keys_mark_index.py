@@ -48,7 +48,6 @@ def test_the_hand_table(case, entries, key, want):
 
     assert index.mark(key) == index.get(key) == want
     assert (key in index) is (want is not None)
-    assert index.mark(key) == ratchet.mark_for(entries, *key), "mark_for and the index pick one winner"
 
 
 def test_entry_answers_the_first_mark_under_its_key():

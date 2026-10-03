@@ -447,11 +447,11 @@ def _mark_fields(ratchet: list | None, path: str, long_name: str) -> dict:
     `long_name` arrives as the KEY name, so `explain path f#2` reads the second
     twin's mark and a bare `f` reads the worst twin's, as `brief` does.
     """
-    from ..ratchet import mark_for
+    from ..keys import MarkIndex
 
     if ratchet is None:
         return {"ratchet_mark": None, "ratchet_mark_note": "no ratchet file"}
-    return {"ratchet_mark": mark_for(ratchet, path, long_name)}
+    return {"ratchet_mark": MarkIndex(ratchet).mark((path, long_name))}
 
 
 def _dark_fields(uncovered: MissingLines, path: str, span) -> dict:

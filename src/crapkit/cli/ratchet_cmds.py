@@ -473,8 +473,9 @@ def _working_marks(root: Path, ratchet_file: str) -> dict:
     """The marks on disk, keyed (path, key name) -> crap. Ages come from the
     file's git history, but which marks are OPEN is a question about now, and a
     seed prints "added 1" long before anybody commits the TSV."""
-    entries = _load_ratchet_or_die(root / ratchet_file, ratchet_file)
-    return {(e.path, e.long_name): e.crap for e in entries}
+    from ..ratchet_report import crap_by_key
+
+    return crap_by_key(_load_ratchet_or_die(root / ratchet_file, ratchet_file))
 
 
 def _report_basis(root: Path, ratchet_file: str) -> tuple[list, dict | None]:
@@ -761,10 +762,11 @@ def _refuse_unkeyable_twins(name: str, work: _WorkRun, prior: list, entries: lis
 
 
 def _prune_first(name: str, work: _WorkRun, prior: list, fresh: list, twins: set) -> str:
+    from ..keys import mark_key
     from ..ratchet import unseen_marks
 
     run_id = work.run["id"]
-    unseen = [(entry.path, entry.long_name) for entry in unseen_marks(prior, fresh)]
+    unseen = [mark_key(entry) for entry in unseen_marks(prior, fresh)]
     flag = f" --baseline {run_id}" if work.named else ""
     return (f"{name}: {len(unseen)} mark(s) name functions run {run_id} does not hold, "
             f"first {_first_key(unseen)}, so the file keeps the start-only key format, which "
