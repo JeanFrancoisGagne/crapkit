@@ -22,8 +22,10 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -216,6 +218,67 @@ def test_a_scoped_name_staged_is_refused_and_the_gate_never_passes_it(tmp_path, 
     _stage(repo, {name: TANGLED.encode()})
 
     _refused(run_cli(repo, command), name)
+
+
+# verify judges a claimed name through the gate module, which refuses it before
+# it judges anything: verify stops before any lane runs and prints what the
+# 0.8.1 tree printed (probed at bug-utf8-author a0f9c6f6), whatever it was
+# asked to print. gate-group-10 turns the stop into a verdict.
+VERIFY_STOP = ("{shown} is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every "
+               "path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename "
+               "it (git mv) to a UTF-8 name")
+VERIFY_FLAGS = {"plain": (), "json": ("--json",), "override": ("--override", "reason"),
+                "sarif": ("--sarif", "out.sarif"), "github": ("--github",)}
+# An override with no alert_command is refused before any other check, so the
+# repo names one; verify stops before it would run.
+ALERTING_LANE_CONFIG = LANE_CONFIG.replace(
+    "[crapkit]\n", "[crapkit]\nalert_command = 'python -c \"import sys; sys.stdin.read()\"'\n", 1)
+
+
+def _stored_runs(repo: Path) -> int:
+    with closing(sqlite3.connect(repo / ".crapkit" / "crap.sqlite")) as db:
+        return db.execute("SELECT count(*) FROM runs").fetchone()[0]
+
+
+def _stop_object(name: bytes) -> str:
+    """The --json error object, byte for byte. Git for Windows cannot check
+    such a name out, so git reads the committed file deleted: dirty."""
+    item = {**UNREAD_FILE, "path": _shown(name), "dirty": sys.platform == "win32"}
+    error = {"exit": 3, "kind": "config", "message": VERIFY_STOP.format(shown=_shown(name)), "unread_files": [item]}
+    return json.dumps({"error": error, "schema": 1}, sort_keys=True) + "\n"
+
+
+@pytest.mark.parametrize("flags", VERIFY_FLAGS.values(), ids=VERIFY_FLAGS.keys())
+@pytest.mark.parametrize("name", [row[1] for row in CLAIMED], ids=[row[0] for row in CLAIMED])
+def test_verify_stops_on_a_claimed_name_before_any_lane_runs(tmp_path, name, flags):
+    """Exit 3 and the one stderr line, the --json error object and nothing else
+    on stdout; the lane's log, the store's runs and the SARIF path untouched."""
+    repo = _repo(tmp_path, ALERTING_LANE_CONFIG)
+    assert run_cli(repo, "coverage").returncode == 0
+    runs, stored = _runs(repo), _stored_runs(repo)
+    _commit(repo, {name: SOURCE}, "add a Latin-1 name")
+
+    result = run_cli(repo, "verify", *flags)
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert result.stderr == f"crapkit: {VERIFY_STOP.format(shown=_shown(name))}\n", result.stderr
+    assert result.stdout == (_stop_object(name) if "--json" in flags else ""), result.stdout
+    assert (_runs(repo), _stored_runs(repo)) == (runs, stored)
+    assert not (repo / "out.sarif").exists()
+
+
+def test_verify_names_the_first_of_two_claimed_names_and_counts_the_other(tmp_path):
+    repo = _repo(tmp_path, LANE_CONFIG)
+    assert run_cli(repo, "coverage").returncode == 0
+    runs = _runs(repo)
+    _commit(repo, {b"src/o\x92brien.py": SOURCE, b"src/caf\xe9.py": SOURCE}, "add two Latin-1 names")
+
+    result = run_cli(repo, "verify")
+
+    first = _shown(b"src/caf\xe9.py") + " (and 1 more)"
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert result.stderr == f"crapkit: {VERIFY_STOP.format(shown=first)}\n", result.stderr
+    assert (result.stdout, _runs(repo)) == ("", runs)
 
 
 def test_a_second_coverage_with_a_lane_stamp_refuses_a_scoped_name(tmp_path):
