@@ -6,8 +6,9 @@ nested node_modules (measured hang).
 
 A name git gives in bytes that are not UTF-8 has no spelling a row can be keyed
 on. It arrives in the list in its surrogateescape spelling (gitpaths), and the
-scope assignment below judges it by claim. When a scope takes it, the
-assignment refuses with exit 3 and names the rename: left out, a scoped file
+scope assignment below judges it by claim. `claimed_unreadable` lists each one
+a scope takes, with its scope, for a gate adapter to hand to the gate; the
+scan refuses them with exit 3 and names the rename: left out, a scoped file
 nothing read would pass every gate. Any other such name is left out, and the
 verdict lists it (`Universe.unreadable`) for the command to name once.
 """
@@ -301,24 +302,30 @@ def claiming_scope(path: str, cfg: Config) -> str | None:
     return found[0][1] if found else None
 
 
-def _refuse_claimed(names: list[str], cfg: Config, matchers: tuple[ScopeMatch, ...]) -> None:
-    """Exit 3 when the scope assignment takes a name crapkit cannot read. The
-    sentence names the first and counts the rest; --json lists each."""
-    claimed = sorted((path, owner) for path, owner in _candidates(names, cfg, matchers)
-                     if owner is not None)
-    if claimed:
-        raise UnreadableNameError(claimed_text(claimed), [path for path, _ in claimed])
+def claimed_unreadable(files: list[str], cfg: Config) -> list[tuple[str, str]]:
+    """Each (path, scope) the scan's rule takes among the names git gives in
+    bytes that are not UTF-8, sorted and each once, the path in its
+    surrogateescape spelling. A gate adapter hands each one to the gate; the
+    scan refuses them."""
+    _, unreadable = _split_readable(files)
+    if not unreadable:
+        return []
+    candidates = _candidates(list(unreadable), cfg, scope_matchers(cfg.scopes))
+    return sorted((path, owner) for path, owner in candidates if owner is not None)
 
 
 def scan_files(files: list[str], cfg: Config, *,
                size_of: Callable[[str], int] | None = None) -> Universe:
     """The whole verdict. `size_of` is injected so this stays pure; the shell
     layer passes a working-tree stat, and callers with no tree pass nothing.
-    A name that is not UTF-8 is refused when a scope takes it and listed in
+    A name that is not UTF-8 is refused with exit 3 when a scope takes it, the
+    sentence naming the first and counting the rest, and listed in
     `unreadable` otherwise; it is never keyed, and never listed as unclaimed."""
     matchers = scope_matchers(cfg.scopes)
     keyed, unreadable = _split_readable(files)
-    _refuse_claimed(list(unreadable), cfg, matchers)
+    claimed = claimed_unreadable(list(unreadable), cfg)
+    if claimed:
+        raise UnreadableNameError(claimed_text(claimed), [path for path, _ in claimed])
     assigned, unclaimed, oversized = _partition(
         _candidates(keyed, cfg, matchers), cfg.scopes, cfg.max_file_bytes, size_of)
     return Universe({name: sorted(paths) for name, paths in assigned.items()},

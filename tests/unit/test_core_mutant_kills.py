@@ -27,7 +27,8 @@ from crapkit.keys import respelled_nested
 from crapkit.ratchet import upgrade_remedy
 from crapkit.score import ScoredRow, overlay_stale_coverage
 from crapkit.snapshot import InventoryRow
-from crapkit.verify import UnreadFile, Verdict, baseline_tsv_lines, dirty_failure_ids, with_unread
+from crapkit.gate import Unread
+from crapkit.verify import Verdict, baseline_tsv_lines, dirty_failure_ids, evaluate
 from crapkit.worklist import closable_claims
 
 
@@ -245,8 +246,9 @@ def test_a_junit_id_a_runner_wrote_with_a_leading_dot_slash_names_the_git_path()
 def test_a_read_that_finds_no_changed_unread_file_hands_the_verdict_back_as_it_was():
     """The verdict already fails on an unread file; a later read that finds none
     in the change neither drops it nor passes the gate."""
-    unread = (UnreadFile("a.py", "not UTF-8", False),)
+    unread = (Unread("a.py", "not UTF-8", False),)
     verdict = Verdict(ok=False, gate_violations=[], ratchet_regressions=[], new_failures=[],
                       dirty_failures=[], unread_files=unread)
 
-    assert with_unread(verdict, {"b.py": "not UTF-8"}, {"a.py"}, set()) == verdict
+    assert evaluate(fresh=[], changed_ranges={"a.py": []}, ratchet=[], baseline_failures=set(), fresh_failures=set(),
+                    target=6, unread={"a.py": "not UTF-8", "b.py": "not UTF-8"}) == verdict

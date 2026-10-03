@@ -12,7 +12,8 @@ import pytest
 
 from crapkit.sarif import github_annotation, over_target_results, sarif_document
 from crapkit.score import ScoredRow
-from crapkit.verify import GateViolation, UnreadFile, Verdict, sarif_results
+from crapkit.gate import Unread
+from crapkit.verify import GateViolation, Verdict, sarif_results
 
 
 def holding(**fields) -> Verdict:
@@ -71,7 +72,7 @@ def test_gate_violations_are_errors():
 
 
 def test_a_changed_file_no_reader_could_read_is_an_error_on_its_first_line():
-    unread = UnreadFile("src/a.ts", "src/a.ts:12: arrow refused")
+    unread = Unread("src/a.ts", "src/a.ts:12: arrow refused")
     (res,) = sarif_results(holding(unread_files=(unread,)))
     assert res["ruleId"] == "crapkit/unread"
     assert res["level"] == "error"
