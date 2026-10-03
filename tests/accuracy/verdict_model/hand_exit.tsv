@@ -1,17 +1,65 @@
-gate	ratchet	failures	diff_uncovered	exit	source
-0	0	0	0	0	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-0	0	0	1	9	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-0	0	1	0	8	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-0	0	1	1	8	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-0	1	0	0	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-0	1	0	1	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-0	1	1	0	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-0	1	1	1	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-1	0	0	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-1	0	0	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-1	0	1	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-1	0	1	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-1	1	0	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-1	1	0	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-1	1	1	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
-1	1	1	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+unreadable_name	unread	gate	ratchet	failures	diff_uncovered	exit	source
+1	1	0	0	0	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	0	0	0	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	0	0	1	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	0	0	1	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	0	1	0	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	0	1	0	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	0	1	1	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	0	1	1	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	1	0	0	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	1	0	0	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	1	0	1	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	1	0	1	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	1	1	0	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	1	1	0	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	1	1	1	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	1	1	1	1	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	0	0	0	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	0	0	0	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	0	0	1	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	0	0	1	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	0	1	0	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	0	1	0	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	0	1	1	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	0	1	1	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	1	0	0	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	1	0	0	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	1	0	1	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	1	0	1	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	1	1	0	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	1	1	0	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	1	1	1	0	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+1	0	1	1	1	1	3	README.md#exit-codes: 3 is a config error, a scoped file whose name is not UTF-8 among them, refused before any verdict
+0	1	0	0	0	0	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	0	0	0	1	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	0	0	1	0	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	0	0	1	1	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	0	1	0	0	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	0	1	0	1	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	0	1	1	0	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	0	1	1	1	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	1	0	0	0	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	1	0	0	1	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	1	0	1	0	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	1	0	1	1	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	1	1	0	0	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	1	1	0	1	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	1	1	1	0	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	1	1	1	1	1	6	README.md#exit-codes: 6 also refuses a changed file no reader could read; verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	0	0	0	0	0	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	0	0	0	1	9	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	0	0	1	0	8	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	0	0	1	1	8	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	0	1	0	0	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	0	1	0	1	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	0	1	1	0	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	0	1	1	1	7	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	1	0	0	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	1	0	0	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	1	0	1	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	1	0	1	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	1	1	0	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	1	1	0	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	1	1	1	0	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order
+0	0	1	1	1	1	6	README.md#exit-codes: verify reports the first of 6, 7, 8, 9 that fires, in that order

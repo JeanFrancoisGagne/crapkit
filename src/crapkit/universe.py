@@ -285,7 +285,7 @@ def left_out_lines(names: tuple[str, ...]) -> list[str]:
     return lines
 
 
-def _claimed_text(claimed: list[tuple[str, str]]) -> str:
+def claimed_text(claimed: list[tuple[str, str]]) -> str:
     path, scope = claimed[0]
     more = f" (and {len(claimed) - 1} more)" if len(claimed) > 1 else ""
     return (f"{shown(path)}{more} is in scope {scope!r}, but git names it in bytes that are not "
@@ -307,7 +307,7 @@ def _refuse_claimed(names: list[str], cfg: Config, matchers: tuple[ScopeMatch, .
     claimed = sorted((path, owner) for path, owner in _candidates(names, cfg, matchers)
                      if owner is not None)
     if claimed:
-        raise UnreadableNameError(_claimed_text(claimed), [path for path, _ in claimed])
+        raise UnreadableNameError(claimed_text(claimed), [path for path, _ in claimed])
 
 
 def scan_files(files: list[str], cfg: Config, *,

@@ -10,10 +10,13 @@ from urllib.parse import unquote
 
 import pytest
 
-from crapkit.sarif import (diff_uncovered_results, gate_results, github_annotation,
-                           over_target_results, sarif_document, unread_results)
+from crapkit.sarif import github_annotation, over_target_results, sarif_document
 from crapkit.score import ScoredRow
-from crapkit.verify import GateViolation, UnreadFile
+from crapkit.verify import GateViolation, UnreadFile, Verdict, sarif_results
+
+
+def holding(**fields) -> Verdict:
+    return Verdict.passing()._replace(**fields)
 
 
 def scored(path="src/a.ts", name="f( )", ccn=8, cov=0.0, scope="src"):
@@ -61,14 +64,15 @@ def test_under_target_rows_emit_nothing():
 
 def test_gate_violations_are_errors():
     v = GateViolation("src/a.ts", "f( )", 3, 9, 0.0, 81.0, "decompose")
-    (res,) = gate_results([v])
+    (res,) = sarif_results(holding(gate_violations=[v]))
     assert res["ruleId"] == "crapkit/gate"
     assert res["level"] == "error"
     assert res["locations"][0]["physicalLocation"]["region"]["startLine"] == 3
 
 
 def test_a_changed_file_no_reader_could_read_is_an_error_on_its_first_line():
-    (res,) = unread_results([UnreadFile("src/a.ts", "src/a.ts:12: arrow refused")])
+    unread = UnreadFile("src/a.ts", "src/a.ts:12: arrow refused")
+    (res,) = sarif_results(holding(unread_files=(unread,)))
     assert res["ruleId"] == "crapkit/unread"
     assert res["level"] == "error"
     loc = res["locations"][0]["physicalLocation"]
@@ -81,7 +85,7 @@ def test_a_changed_file_no_reader_could_read_is_an_error_on_its_first_line():
 # code-scanning UI reads dropped them on the floor.
 
 def test_every_uncovered_changed_line_gets_its_own_located_finding():
-    first, second = diff_uncovered_results([("src/a.py", 12), ("src/b.py", 4)])
+    first, second = sarif_results(Verdict.passing(), [("src/a.py", 12), ("src/b.py", 4)])
     assert first["ruleId"] == "crapkit/diff-uncovered"
     assert first["level"] == "warning"
     loc = first["locations"][0]["physicalLocation"]
@@ -92,17 +96,16 @@ def test_every_uncovered_changed_line_gets_its_own_located_finding():
 
 
 def test_a_fully_covered_diff_emits_nothing():
-    assert diff_uncovered_results([]) == []
+    assert sarif_results(Verdict.passing(), []) == []
 
 
-# --- verify's own emission wires all three finding kinds -------------------
+# --- verify's own emission reads every finding kind's row ------------------
 
 def _verify_sarif(tmp_path, uncovered: list) -> list[dict]:
     from crapkit.cli.verifying import _emit_verify_findings
 
     args = SimpleNamespace(sarif="out.sarif", github=False)
-    verdict = SimpleNamespace(gate_violations=(), ratchet_regressions=(), unread_files=())
-    _emit_verify_findings(tmp_path, args, verdict, uncovered)
+    _emit_verify_findings(tmp_path, args, Verdict.passing(), uncovered)
     doc = json.loads((tmp_path / "out.sarif").read_text(encoding="utf-8"))
     return doc["runs"][0]["results"]
 
@@ -128,7 +131,8 @@ def test_verify_writes_no_diff_uncovered_finding_when_the_diff_is_covered(tmp_pa
                                   "pkg/100%25.py", "pkg/a:b.py"],
                          ids=["ascii", "non-ascii", "comma-and-space", "a-percent-sign", "a-colon"])
 def test_a_finding_s_path_reads_back_as_the_file_from_the_uri_and_the_annotation(path):
-    (result,) = gate_results([GateViolation(path, "f( )", 3, 9, 0.0, 81.0, "decompose")])
+    (result,) = sarif_results(holding(
+        gate_violations=[GateViolation(path, "f( )", 3, 9, 0.0, 81.0, "decompose")]))
 
     uri = result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
     prop = github_annotation(result).split("file=", 1)[1].split(",line=", 1)[0]
