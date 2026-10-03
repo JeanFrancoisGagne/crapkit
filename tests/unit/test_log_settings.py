@@ -138,8 +138,8 @@ def test_a_signed_commit_s_ratchet_patch_holds_its_patch_alone(signed):
     seen = under(signed, "log.showSignature", "true", lambda repo: marks_history(repo, RATCHET))
 
     assert seen == marks_history(signed, RATCHET)
-    assert [patch.splitlines()[-1] for _, patch in seen] == ["+src/e.py\tf( )\t31.0000",
-                                                            "+src/e.py\tg( )\t31.0000"]
+    assert [set(r.marks) - set(r.before or {}) for r in seen] == [{("src/e.py", "f( )")},
+                                                                 {("src/e.py", "g( )")}]
 
 
 def test_the_ratchet_history_starts_at_its_rename_under_log_follow(tmp_path):
