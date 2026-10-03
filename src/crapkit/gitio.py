@@ -1,4 +1,9 @@
-"""Git shell layer: the tracked-file universe and the current commit."""
+"""Git shell layer: the tracked-file universe and the current commit.
+
+The bytes a path held at a revision come from one read, `blobs_at`: one
+`git cat-file --batch` for any number of paths, None where the revision
+holds no blob there. `blob_at` answers one path through it.
+"""
 from __future__ import annotations
 
 import os
@@ -779,12 +784,96 @@ def shallow_checkout(root: Path) -> bool:
 def blob_at(root: Path, commit: str, rel_path: str) -> bytes | None:
     """The bytes `rel_path` (relative to `root`) held at `commit`, or None when
     that commit holds no such file. A commit this clone does not hold, or any
-    other git failure, raises GitError: it is not a commit without the file."""
-    listed = _git_paths(root, "--literal-pathspecs", "ls-tree", "-z", commit, "--", rel_path)
-    if not listed:
-        return None
-    blob = ("cat-file", "blob", listed[0].split(None, 3)[2])
-    return _run(root, blob, blob, binary=True)
+    other git failure, raises GitError: it is not a commit without the file.
+    One path's answer from `blobs_at`."""
+    return blobs_at(root, commit, [rel_path])[rel_path]
+
+
+def blobs_at(root: Path, revision: str, paths) -> dict[str, bytes | None]:
+    """path -> the bytes each root-relative path held at `revision`, or None
+    where the revision holds no blob there: the path is absent, a tree or a
+    submodule. `HEAD` on an unborn branch answers None for every path.
+
+    One `git cat-file --batch` process asks for the revision's own commit
+    first and then each `<revision>:./<path>`, so "missing" for a path never
+    stands for a missing revision: a revision the clone does not hold (an
+    unknown name, a commit a shallow clone cut off) raises GitError, and so
+    does a failed spawn. The `./` spelling reads each name from the cwd, which
+    a nested crapkit root needs. A name holding a line break cannot ride the
+    line-framed stdin and costs one `cat-file blob` of its own. No paths start
+    no process."""
+    paths = list(paths)
+    if not paths:
+        return {}
+    blobs = _framed_at(root, revision, paths)
+    return {path: blobs[path] if path in blobs else _blob_alone(root, revision, path)
+            for path in paths}
+
+
+# One `cat-file --batch` answer header: `<oid> <type> <size>`. Anything else on
+# the line (`<request> missing`, `<request> ambiguous`) is a request git found
+# no object for, and no body follows it.
+_BATCH_HEADER = re.compile(rb"(?:[0-9a-f]{40}|[0-9a-f]{64}) ([a-z]+) ([0-9]+)")
+
+
+def _framed_at(root: Path, revision: str, paths: list[str]) -> dict[str, bytes | None]:
+    """The answers for every name that rides the batch's stdin, after the
+    revision's own presence; every path's None at an unborn HEAD."""
+    framed = [path for path in paths if not _line_paths([path])]
+    stream = _batch_stream(root, _revision_requests(revision, framed))
+    kind, _, pos = _batch_record(stream, 0)
+    if kind is None:
+        return _without_revision(root, revision, paths)
+    return _blob_records(stream, pos, framed)
+
+
+def _revision_requests(revision: str, paths: list[str]) -> bytes:
+    """The revision's commit, then `<revision>:./<path>` per path, one per
+    line. A name that is not UTF-8 goes out as its own bytes."""
+    lines = [f"{revision}^{{commit}}", *(f"{revision}:./{path}" for path in paths)]
+    return "".join(f"{line}\n" for line in lines).encode("utf-8", "surrogateescape")
+
+
+def _batch_record(stream: bytes, pos: int) -> tuple[bytes | None, bytes, int]:
+    """(object type, body, next position) for the record at `pos`, sliced by
+    its declared size; (None, b"", next) for a request git found nothing for."""
+    end = stream.index(b"\n", pos)
+    found = _BATCH_HEADER.fullmatch(stream, pos, end)
+    if found is None:
+        return None, b"", end + 1
+    body_at, size = end + 1, int(found[2])
+    return found[1], stream[body_at:body_at + size], body_at + size + 1
+
+
+def _blob_records(stream: bytes, pos: int, paths: list[str]) -> dict[str, bytes | None]:
+    """One answer per path from `pos` on: the bytes of a blob, else None."""
+    blobs: dict[str, bytes | None] = {}
+    for path in paths:
+        kind, body, pos = _batch_record(stream, pos)
+        blobs[path] = body if kind == b"blob" else None
+    return blobs
+
+
+def _without_revision(root: Path, revision: str, paths: list[str]) -> dict[str, None]:
+    """A revision the batch found no commit for: None for every path at an
+    unborn HEAD, else GitError."""
+    if revision == "HEAD" and _unborn(root):
+        return dict.fromkeys(paths)
+    raise GitError(f"git cat-file --batch: {revision} names no commit this clone holds in {root}")
+
+
+def _unborn(root: Path) -> bool:
+    """Whether HEAD names a branch with no commit yet: `rev-parse --verify
+    --quiet` exits 1 for a HEAD that resolves to nothing, 128 when git fails."""
+    probe = _spawn(root, ("rev-parse", "--verify", "--quiet", "HEAD"), binary=True)
+    return probe.returncode == 1
+
+
+def _blob_alone(root: Path, revision: str, path: str) -> bytes | None:
+    """One line-bearing name's bytes, or None. The batch already proved the
+    revision held, so a failed read is a path that holds no blob there."""
+    read = _spawn(root, ("cat-file", "blob", f"{revision}:./{path}"), binary=True)
+    return read.stdout if read.returncode == 0 else None
 
 
 def _batch_stream(root: Path, requests: bytes) -> bytes:
@@ -1034,7 +1123,10 @@ class _StartedReads:
 
     def __init__(self, root: Path, base: str | None = None) -> None:
         self._root = root
-        basis = (merge_base(root, base),) if base is not None else ()
+        # The revision the staged diff is taken against, which the gate reads
+        # each function's base ccn at (blobs_at).
+        self.basis = merge_base(root, base) if base is not None else "HEAD"
+        basis = (self.basis,) if base is not None else ()
         self._diff = SourcePatch(root, "--cached", *basis)
         self._batch = _Started(root, ("cat-file", "--batch"), stdin=True)
 
@@ -1160,7 +1252,7 @@ def _present(oid: str) -> str | None:
 
 def _object_blobs(root: Path, ids: list[str]) -> dict[str, bytes]:
     """Each object id's bytes, all from one `git cat-file --batch`; {} for
-    none. gitio's one way to read blobs at revisions."""
+    none. Blobs named by object id; blobs_at reads them by path."""
     if not ids:
         return {}
     return _framed_blobs(_batch_stream(root, "".join(f"{oid}\n" for oid in ids).encode()), ids)
