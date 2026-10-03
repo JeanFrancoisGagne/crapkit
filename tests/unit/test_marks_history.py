@@ -21,14 +21,16 @@ from pathlib import Path
 
 import pytest
 
+import marks_history_repo as rekey
 import test_ratchet_report_counts_a_deleted_marks_file as deleted_file
 import test_ratchet_report_reads_a_merged_history as merged_history
 from cli_inproc_repo import add_knotty, commit_all, repo, seed_artifacts, template_repo  # noqa: F401
-from crapkit import gitio
+from crapkit import gitio, keys
 from crapkit.cli import main
 from crapkit.errors import GitError
 from crapkit.gitio import blob_at, file_revisions
-from crapkit.marks_history import MarksRevision, held_history, marks_history, newest_committed_marks
+from crapkit.marks_history import (Move, MarksRevision, held_history, marks_at, marks_history,
+                                   moves, newest_committed_marks)
 from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version, read_ratchet
 from crapkit.ratchet_report import crap_by_key, held_event, mark_events, report_from_events
 from crapkit.ratchetfile import RatchetFile
@@ -873,3 +875,199 @@ def test_the_0_8_1_events_on_a_fresh_seed(repo, capsys):  # noqa: F811
     commit_all(repo, "seed the ratchet")
 
     assert [kind for _, _, kind, _ in _same_events_both_ways(repo)] == ["added"]
+
+
+# --- the marks a commit held, and the moves between revisions -------------------
+# marks_at answers what one commit held, through the one read verify's stand-in
+# uses; moves pairs the keys each revision dropped and added (keys.pair_moves).
+# Check 1: oracles/marks_history_walk.py reads each commit's file whole with no
+# crapkit. Check 2: test_keys_resolve.py's independent pairing model, applied to
+# each consecutive pair of the oracle's revisions.
+
+def shas(root: Path) -> list[str]:
+    return git(root, "rev-list", "--reverse", "HEAD").split()
+
+
+def test_marks_at_each_commit_is_that_revision_and_nothing_refuses(saved_every_way):
+    """The first three commits hold the file under its old name, the git mv
+    and every later one under MARKS."""
+    read = marks_history(saved_every_way, MARKS)
+    paths = [OLD] * 3 + [MARKS] * 4
+
+    held = [marks_at(saved_every_way, sha, path) for sha, path in zip(shas(saved_every_way), paths)]
+
+    assert held == [revision.marks for revision in read]
+    assert held[1][CAFE] == 5.0, "the cp1252 byte reads as U+FFFD in that one name"
+    assert held[2][key("d( n )")] == 12.0, "the UTF-16 LE revision with its BOM parses"
+    assert marks_at(saved_every_way, shas(saved_every_way)[3], OLD) is None, "git mv deleted it"
+
+
+def test_marks_at_is_none_before_the_file_existed_and_where_it_was_deleted(history):
+    root = Path(history["root"])
+
+    assert marks_at(root, history["base"], MARKS) is None
+    assert marks_at(root, history["newer"], MARKS) == {("src/a.py", "hot( n )"): 10.0}
+    assert marks_at(root, history["gone"], MARKS) is None
+
+
+def test_marks_at_a_commit_a_depth_one_clone_lacks_names_the_fetch(history, tmp_path):
+    shallow = tmp_path / "shallow"
+    git(tmp_path, "clone", "-q", "--depth", "1", Path(history["root"]).as_uri(), str(shallow))
+
+    with pytest.raises(GitError) as refused:
+        marks_at(shallow, history["first"], MARKS)
+
+    assert gitio.shallow_fix(shallow).endswith("git fetch --unshallow")
+    assert str(refused.value).endswith(gitio.shallow_fix(shallow))
+
+
+def _oracle_marks_at_every_commit(root: Path) -> int:
+    """Check 1: the oracle's whole-file read equals marks_at at every commit
+    (the oracle reads a missing or blank file as no marks). Answers the
+    commits checked."""
+    from accuracy.history_oracles.oracles import marks_history_walk
+
+    every = shas(root)
+    for sha in every:
+        oracle = marks_history_walk._marks_at(root, sha, MARKS)
+        assert (marks_at(root, sha, MARKS) or {}) == {k: float(crap) for k, crap in oracle.items()}, sha
+    return len(every)
+
+
+def test_the_history_walk_oracle_equals_marks_at_at_every_commit(tmp_path):
+    steps = [rows(*BASE), rows(("a( n )", 10.0), ("b( n )", 20.0), ("c( n )", 20.0)),
+             rows(("a( n )", 10.0), ("c( n )", 20.0)), b"", rows(("a( n )", 10.0))]
+    _commit_bytes(tmp_path, steps)
+    git(tmp_path, "rm", "-q", MARKS)
+    git(tmp_path, "commit", "-q", "-m", "delete")
+
+    assert _oracle_marks_at_every_commit(tmp_path) == len(steps) + 1
+
+
+@pytest.mark.parametrize("name, commits", [("BURN", 6), ("BURN_TIGHTEN", 3)])
+def test_the_history_walk_oracle_equals_marks_at_on_every_history_spec(tmp_path, name, commits):
+    from accuracy.history_oracles.repos import history_specs
+    from accuracy.kit import repos
+
+    built = repos.build(getattr(history_specs, name), tmp_path / name)
+
+    assert _oracle_marks_at_every_commit(built.root) == commits
+
+
+def _rekeyed_with_an_unrelated_commit(root: Path) -> list[str]:
+    """seed, a commit that leaves the marks file alone, the re-key, the twin."""
+    repository(root)
+    marks_file = MARKS.encode()
+    return [raw_commit(root, files={marks_file: rekey.marks_bytes(rekey.SEEDED)}, age_days=400),
+            raw_commit(root, files={b"README": b"r\n"}, age_days=300),
+            raw_commit(root, files={marks_file: rekey.marks_bytes(rekey.REKEYED)}, age_days=30),
+            raw_commit(root, files={marks_file: rekey.marks_bytes(rekey.SECOND)}, age_days=0)]
+
+
+def test_moves_over_the_whole_history_report_the_rekey_once(tmp_path):
+    """The commit that adds a second classify drops nothing, so pair_moves
+    leaves the twin unpaired and no move is reported for it."""
+    made = rekey.rekey_history(tmp_path)
+    rekeyed = marks_history(tmp_path, MARKS)[1]
+
+    assert moves(tmp_path, None, MARKS) == [
+        Move(made.rekeyed, rekeyed.time, rekey.PATH, (rekey.PATH, rekey.OLD),
+             (rekey.PATH, rekey.NEW))]
+    assert rekeyed.marks == {(rekey.PATH, rekey.NEW): 7.0}
+
+
+def test_moves_over_a_range_that_starts_after_the_rekey_are_none(tmp_path):
+    made = rekey.rekey_history(tmp_path)
+
+    assert moves(tmp_path, f"{made.rekeyed}..HEAD", MARKS) == []
+
+
+def test_moves_from_a_base_that_left_the_marks_file_alone_pair_the_bases_marks(tmp_path):
+    seeded, unrelated, rekeyed, _ = _rekeyed_with_an_unrelated_commit(tmp_path)
+    base = marks_at(tmp_path, unrelated, MARKS)
+    first = marks_history(tmp_path, MARKS)[1].marks
+    expected = keys.pair_moves(rekey.PATH, base.keys() - first.keys(), first.keys() - base.keys())
+
+    found = moves(tmp_path, f"{unrelated}..HEAD", MARKS)
+
+    assert base == marks_at(tmp_path, seeded, MARKS)
+    assert [(m.commit, m.old_key, m.new_key) for m in found] == [(rekeyed, *expected.pairs[0])]
+
+
+def _renamed_and_rekeyed_after_the_base(root: Path) -> list[str]:
+    """seed under OLD, a commit that leaves it alone, then one commit that
+    git mv's it to MARKS and re-keys classify. Eight filler marks keep the
+    re-keyed file similar enough for git to pair the rename."""
+    filler = b"".join(b"calc/other.py\tf%d( x )\t%d.0000\n" % (i, i) for i in range(1, 9))
+    repository(root)
+    return [raw_commit(root, files={OLD.encode(): rekey.marks_bytes(rekey.SEEDED) + filler},
+                       age_days=400),
+            raw_commit(root, files={b"README": b"r\n"}, age_days=300),
+            raw_commit(root, files={MARKS.encode(): rekey.marks_bytes(rekey.REKEYED) + filler},
+                       deletes=(OLD.encode(),), age_days=30)]
+
+
+@pytest.mark.parametrize("base", [0, 1], ids=["seed-base", "unrelated-base"])
+def test_moves_from_a_base_before_a_git_mv_that_rekeys_pair_the_old_names_marks(tmp_path, base):
+    """The range's first revision renamed the file and re-keyed a mark: it
+    pairs against the old name's marks at the base, as the whole history does."""
+    made = _renamed_and_rekeyed_after_the_base(tmp_path)
+    assert gitio.commit_renames(tmp_path, made[2]) == {OLD: MARKS}, "git pairs the rename"
+    whole = moves(tmp_path, None, MARKS)
+
+    found = moves(tmp_path, f"{made[base]}..HEAD", MARKS)
+
+    assert [(m.commit, m.old_key, m.new_key) for m in whole] == [
+        (made[2], (rekey.PATH, rekey.OLD), (rekey.PATH, rekey.NEW))]
+    assert found == whole
+
+
+def test_a_range_whose_base_is_not_an_ancestor_names_both_ends(tmp_path):
+    made = rekey.rekey_history(tmp_path)
+
+    with pytest.raises(GitError) as refused:
+        moves(tmp_path, f"{made.second}..{made.seeded}", MARKS)
+
+    assert made.second in str(refused.value) and made.seeded in str(refused.value)
+
+
+def _model_moves(root: Path) -> set:
+    """Check 2: test_keys_resolve.py's pairing model over each consecutive
+    pair of the oracle's revisions, as (time, old key, new key)."""
+    from accuracy.history_oracles.oracles import marks_history_walk
+    from test_keys_resolve import model_pairs
+
+    found, before = set(), {}
+    for version in marks_history_walk.versions(root, MARKS):
+        dropped, added = before.keys() - version.marks.keys(), version.marks.keys() - before.keys()
+        for path in {k[0] for k in dropped | added}:
+            found |= {(version.at, *pair) for pair in model_pairs(path, dropped, added)[0]}
+        before = version.marks
+    return found
+
+
+def _moved_a_lot(root: Path) -> None:
+    """Moves in two files in one commit, a name two marks left (no pair), a
+    twin that never carries, a value change beside a move, and a move back."""
+    def write(age: int, *marked: tuple[str, str, str]) -> None:
+        body = rekey.STAMP + "\n# crapkit-keys=1\npath\tlong_name\tcrap\n"
+        body += "".join(f"{path}\t{name}\t{crap}\n" for path, name, crap in marked)
+        raw_commit(root, files={MARKS.encode(): body.encode("utf-8")}, age_days=age)
+
+    repository(root)
+    write(50, ("a.py", "f( x )", "9.0"), ("b.py", "g( x )", "8.0"), ("a.py", "h( x )", "7.0"),
+          ("a.py", "h( y )", "6.0"))
+    write(40, ("a.py", "f( x , y )", "9.0"), ("b.py", "g( )", "5.0"), ("a.py", "h( z )", "7.0"))
+    write(30, ("a.py", "f( x , y )", "9.0"), ("b.py", "g( )", "5.0"), ("a.py", "h( z )", "7.0"),
+          ("a.py", "h( z )#2", "3.0"))
+    write(20, ("a.py", "f( x )", "9.0"), ("b.py", "g( )", "5.0"), ("a.py", "h( z )", "7.0"))
+
+
+@pytest.mark.parametrize("build", [rekey.rekey_history, _moved_a_lot])
+def test_the_independent_pairing_model_equals_moves(tmp_path, build):
+    build(tmp_path)
+
+    found = {(m.time, m.old_key, m.new_key) for m in moves(tmp_path, None, MARKS)}
+
+    assert found == _model_moves(tmp_path)
+    assert found, "each history moves at least one mark"
