@@ -549,7 +549,7 @@ def _crapkit_imports(path: Path) -> set[str]:
 def test_the_checks_import_nothing_that_calculates_what_they_guard():
     """A bound computed by the code it guards agrees with that code's bugs."""
     imported = _crapkit_imports(SRC / "invariants.py")
-    assert imported == {"errors"}
+    assert imported == {"errors", "keys"}
     assert not imported & {"score", "worklist", "digest", "verify", "churn"}
 
 

@@ -307,16 +307,6 @@ def load_ratchet(text: str) -> list[RatchetEntry]:
     return entries
 
 
-def mark_for(entries: list[RatchetEntry], path: str, long_name: str) -> float | None:
-    """One function's recorded high-water mark, or None when it carries no mark.
-
-    `long_name` is the KEY name: bare for a name only one function in the file
-    holds, `name#2` for the second function holding it. `keys.key_names` builds
-    it from the rows; passing a raw long_name for a twin asks about twin #1.
-    """
-    return MarkIndex(entries).mark((path, long_name))
-
-
 def dump_ratchet(entries: list[RatchetEntry], *, stamp: str, key_version: int = 0) -> str:
     """`stamp` is written verbatim, and "" writes none. No default: a writer that
     stamped by omission relabeled marks another metric recorded, so the choice

@@ -2,7 +2,7 @@
 
 A module that builds its own dict or set of marks keyed on (path, long_name) is
 free to pick its own winner when a marks file lists one key twice: verify and
-ratchet each did, the dicts keeping the last mark and ratchet.mark_for the
+ratchet each did, the dicts keeping the last mark and the one-key lookup the
 first. This guard reads the scanned modules with `ast` and names each private
 mark index and each import of `rows_by_key` from verify.
 
@@ -11,23 +11,32 @@ x.long_name)` or `mark_key(x)` over a collection of marks, whether a comprehensi
 dict(), set() or frozenset() is handed a generator or a list, or a for loop
 fills it with `b[key] = ...`, `b.setdefault(key, ...)` or `b.add(key)`. A collection counts as marks unless
 it is scored rows: a parameter annotated with ScoredRow, or one of the names
-crapkit's modules give scored rows. An unknown collection counts as marks, so a
+crapkit's modules give a collection that holds no marks. An unknown collection counts as marks, so a
 new lookup fails here before anyone decides it is not one.
 
-ALLOWED names the (file, function) sites a later ticket deletes. It is empty for
-verify.py and ratchet.py.
+The guard scans every module under src/crapkit but keys.py, the one module
+that owns the lookup. ALLOWED names the three pardon copies left outside keys,
+each with the ticket that deletes it. An entry whose function is gone from its
+file is inert: the guard neither fails on it nor asks for its removal, so the
+tickets that delete those functions leave this file alone.
 """
 from __future__ import annotations
 
 import ast
 from pathlib import Path
-
-import pytest
+import shutil
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "crapkit"
-SCANNED = ("verify.py", "ratchet.py")
-ALLOWED: dict[str, frozenset[str]] = {"verify.py": frozenset(), "ratchet.py": frozenset()}
-SCORED_NAMES = frozenset({"rows", "fresh", "scored"})
+OWNER = "keys.py"
+# (module under src/crapkit, top-level function) -> the ticket that deletes it.
+ALLOWED: dict[tuple[str, str], str] = {
+    ("cli/verifying.py", "_split_marked"): "gate-group-08",
+    ("cli/scoring.py", "_unmarked_breaches"): "gate-group-07",
+    ("cli/claude_hook.py", "_known_marks"): "gate-group-09",
+}
+# Collections that hold no RatchetEntry rows: scored rows, and the
+# TightenRefusal rows `ratchet.unstable_marks` returns.
+SCORED_NAMES = frozenset({"rows", "fresh", "scored", "baseline_scored", "refusals"})
 BUILDERS = frozenset({"dict", "set", "frozenset"})
 LOOP_WRITES = frozenset({"setdefault", "add"})
 
@@ -117,12 +126,25 @@ def _stored_key(node: ast.AST) -> ast.AST | None:
     return None
 
 
+def _key_names(body: list[ast.AST], owner: str) -> set[str]:
+    """The local names a loop body binds to its entry's key: `key = (e.path, e.long_name)`."""
+    return {target.id for inner in body if isinstance(inner, ast.Assign) and _mark_key_of(inner.value) == owner
+            for target in inner.targets if isinstance(target, ast.Name)}
+
+
+def _writes_key(stored: ast.AST | None, owner: str, names: set[str]) -> bool:
+    """Is `stored` the entry's key, spelled out or through a local name bound to it?"""
+    return _mark_key_of(stored) == owner or (isinstance(stored, ast.Name) and stored.id in names)
+
+
 def _loop_indexes(node: ast.AST, scored: set[str]) -> list[int]:
     """The lines where a for loop over marks writes its entries into a dict or set by (path, long_name)."""
     if not (isinstance(node, ast.For) and isinstance(node.target, ast.Name)) or not _walks_marks(node.iter, scored):
         return []
+    owner = node.target.id
     body = [inner for stmt in node.body for inner in ast.walk(stmt)]
-    return [inner.lineno for inner in body if _mark_key_of(_stored_key(inner)) == node.target.id]
+    names = _key_names(body, owner)
+    return [inner.lineno for inner in body if _writes_key(_stored_key(inner), owner, names)]
 
 
 def _private_indexes(fn: ast.AST) -> list[int]:
@@ -154,15 +176,60 @@ def violations(source: str, allowed: frozenset[str] = frozenset()) -> list[str]:
     return [f"{name}:{line}: {what}" for name, line, what in _sites(tree) if name not in allowed]
 
 
-@pytest.mark.parametrize("module", SCANNED)
-def test_every_mark_lookup_goes_through_keys(module):
-    found = violations((SRC / module).read_text(encoding="utf-8"), ALLOWED[module])
-
-    assert found == [], f"{module} looks marks up past keys.MarkIndex: {found}"
+def _allowed_in(module: str) -> frozenset[str]:
+    return frozenset(name for (path, name) in ALLOWED if path == module)
 
 
-def test_the_allowlist_is_empty_for_verify_and_ratchet():
-    assert ALLOWED["verify.py"] == ALLOWED["ratchet.py"] == frozenset()
+def scan(src: Path) -> list[str]:
+    """Every lookup past keys in the package at `src`, as `module:function:line: what`."""
+    found = []
+    for path in sorted(src.rglob("*.py")):
+        module = path.relative_to(src).as_posix()
+        if module != OWNER:
+            found += [f"{module}:{v}" for v in violations(path.read_text(encoding="utf-8"),
+                                                          _allowed_in(module))]
+    return found
+
+
+def test_every_mark_lookup_goes_through_keys():
+    found = scan(SRC)
+
+    assert found == [], f"modules look marks up past keys.MarkIndex: {found}"
+
+
+def test_the_allowlist_holds_the_three_pardon_copies_and_who_deletes_them():
+    assert ALLOWED == {
+        ("cli/verifying.py", "_split_marked"): "gate-group-08",
+        ("cli/scoring.py", "_unmarked_breaches"): "gate-group-07",
+        ("cli/claude_hook.py", "_known_marks"): "gate-group-09",
+    }
+    assert all((SRC / module).is_file() for module, _ in ALLOWED)
+
+
+def _without(source: str, function: str) -> str:
+    """`source` with the top-level `function` cut out."""
+    node = next(n for n in ast.parse(source).body if getattr(n, "name", None) == function)
+    lines = source.splitlines(keepends=True)
+    return "".join(lines[:node.lineno - 1] + lines[node.end_lineno:])
+
+
+def test_an_allowlist_entry_whose_function_is_gone_is_inert(tmp_path):
+    copy = tmp_path / "crapkit"
+    shutil.copytree(SRC, copy, ignore=shutil.ignore_patterns("__pycache__"))
+    listed = copy / "cli" / "verifying.py"
+    text = listed.read_text(encoding="utf-8")
+    listed.write_text(_without(text, "_split_marked"), encoding="utf-8")
+
+    assert "def _split_marked" not in listed.read_text(encoding="utf-8")
+    assert scan(copy) == [], "a deleted pardon copy leaves the guard green"
+
+
+def test_the_allowlist_excuses_only_its_own_file():
+    seeded = "def _split_marked(entries):\n    return {(e.path, e.long_name) for e in entries}\n"
+
+    assert violations(seeded, _allowed_in("cli/verifying.py")) == []
+    assert violations(seeded, _allowed_in("cli/queue.py")) == [
+        "_split_marked:2: builds its own (path, long_name) mark index"]
 
 
 SEEDED = '''
@@ -224,6 +291,13 @@ def through_mark_key(prior):
     for e in prior:
         b.setdefault(mark_key(e), e)
     return {keys.mark_key(e): e.crap for e in prior}
+
+def via_local_key(prior):
+    marks = {}
+    for e in prior:
+        key = (e.path, e.long_name)
+        marks[key] = max(e.crap, marks.get(key, e.crap))
+    return marks
 '''
 
 
@@ -241,10 +315,44 @@ def test_the_guard_names_each_seeded_lookup_and_passes_scored_rows():
         "loop_add:46: builds its own (path, long_name) mark index",
         "through_mark_key:58: builds its own (path, long_name) mark index",
         "through_mark_key:59: builds its own (path, long_name) mark index",
+        "via_local_key:65: builds its own (path, long_name) mark index",
     ]
 
 
 def test_the_allowlist_excuses_a_named_function():
     assert violations(SEEDED, frozenset({"<module>", "merge", "present", "via_call", "local", "loop_store",
                                          "loop_setdefault", "set_of_list", "dict_of_list", "loop_add",
-                                         "through_mark_key"})) == []
+                                         "through_mark_key", "via_local_key"})) == []
+
+
+def test_no_module_names_the_deleted_one_key_lookup():
+    named = [path.relative_to(SRC).as_posix() for path in sorted(SRC.rglob("*.py"))
+             if "mark_for" in path.read_text(encoding="utf-8")]
+
+    assert named == [], "ratchet.mark_for is deleted; read a mark through keys.MarkIndex"
+
+
+def test_highest_marks_keeps_the_higher_mark_when_a_file_lists_a_key_twice():
+    from crapkit.keys import highest_marks
+    from crapkit.ratchet import RatchetEntry
+
+    entries = [RatchetEntry("a.py", "run", 12.0), RatchetEntry("a.py", "run#2", 30.0),
+               RatchetEntry("a.py", "run", 40.0), RatchetEntry("b.py", "run", 7.5),
+               RatchetEntry("b.py", "run", 3.0)]
+
+    assert highest_marks(entries) == {("a.py", "run"): 40.0, ("a.py", "run#2"): 30.0, ("b.py", "run"): 7.5}
+    assert highest_marks([]) == {}
+
+
+def test_the_no_mark_rises_check_reads_the_higher_of_two_lines():
+    import pytest
+
+    from crapkit.errors import InternalCheckError
+    from crapkit.invariants import check_marks_kept
+    from crapkit.ratchet import RatchetEntry
+
+    prior = [RatchetEntry("a.py", "run", 12.0), RatchetEntry("a.py", "run", 40.0)]
+
+    check_marks_kept(prior, [RatchetEntry("a.py", "run", 40.0)], adds=False)
+    with pytest.raises(InternalCheckError, match="a mark never rises"):
+        check_marks_kept(prior, [RatchetEntry("a.py", "run", 40.5)], adds=False)

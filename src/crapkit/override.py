@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 
 from .errors import ConfigError, ToolError
-from .keys import stated_key
+from .keys import MarkIndex, stated_key
 from .plaintext import printed_text
 from .ratchet import RatchetEntry
 from .ratchetfile import RatchetFile
@@ -172,7 +172,7 @@ def _message(stderr: bytes, stdout: bytes) -> str:
 def _granted_marks(prior: list[RatchetEntry], violations: list[GateViolation], *,
                    raise_marks: bool) -> list[RatchetEntry]:
     """The marks after the grant: each violation's debt entered or kept."""
-    by_key = {(e.path, e.long_name): e for e in prior}
+    by_key = MarkIndex(prior).working_copy()
     for v in violations:
         key = stated_key(v)
         mark = _override_mark(by_key.get(key), v.crap, raise_marks=raise_marks)

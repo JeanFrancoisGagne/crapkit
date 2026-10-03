@@ -35,7 +35,7 @@ picked the worst twin in one and the first in the other.
 The mark index lives here as well. `MarkIndex` is built once from a marks
 file's entries and answers which mark a key carries; `rows_by_key` answers which
 scored row stands for a key. Every mark lookup in verify and ratchet goes
-through them, `ratchet.mark_for` included, so a key a marks file lists twice has
+through them, so a key a marks file lists twice has
 one winner there, the first: the gate, the ratchet check, the update's counts
 and the tighten guard all read it. The update itself rewrites every line, so
 both lines stay and the first still answers.
@@ -206,7 +206,7 @@ class MarkIndex:
     """A marks file's entries by key, built once: which mark judges a function.
 
     A file can list one key twice, by a hand edit or a botched merge. The first
-    mark wins, as `ratchet.mark_for` answers, and every lookup in verify and
+    mark wins, and every lookup in verify and
     ratchet reads the same one. Before the index, verify's gate, seed, merge and
     the update's counts each built their own dict and kept the last, while the
     ratchet check and the tighten guard walked every entry.
@@ -247,6 +247,19 @@ class MarkIndex:
 
     def __contains__(self, key) -> bool:
         return key in self._by_key
+
+
+def highest_marks(entries) -> dict[tuple[str, str], float]:
+    """Each key's mark, the HIGHER one when a file lists a key twice.
+
+    `MarkIndex` answers the first mark; the no-mark-rises check reads this
+    instead, so a duplicated key's baseline is the most the file allowed it.
+    """
+    marks: dict[tuple[str, str], float] = {}
+    for entry in entries:
+        key = mark_key(entry)
+        marks[key] = max(entry.crap, marks.get(key, entry.crap))
+    return marks
 
 
 def stated_key(item) -> tuple[str, str]:
