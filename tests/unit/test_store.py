@@ -50,6 +50,26 @@ def test_scored_rows_round_trip_with_lane_provenance(tmp_path):
     assert run["lanes"]["unit"]["artifact_sha256"] == "d0ff"
 
 
+def _commits(db) -> int:
+    """The write transactions the database has committed: SQLite's file change
+    counter, the big-endian integer at byte 24 of its header, which every one of
+    them increments."""
+    return int.from_bytes(db.read_bytes()[24:28], "big")
+
+
+def test_a_new_store_is_created_in_one_commit(tmp_path):
+    """Each commit syncs the disk four times on Linux (the journal twice, the
+    database, its directory), so the setup is one transaction. Outside one,
+    every CREATE commits on its own: a new store cost 19 commits, and on a CI
+    runner whose disk the other workers were flooding, `crapkit coverage` on a
+    new repo sat past the 120 s hang bound in here."""
+    db = tmp_path / "crap.sqlite"
+    SnapshotStore(db).close()
+    assert _commits(db) == 1
+    SnapshotStore(db).close()
+    assert _commits(db) == 1, "opening a current store writes nothing"
+
+
 def test_inventory_runs_still_round_trip_in_the_extended_schema(tmp_path):
     store = SnapshotStore(tmp_path / "crap.sqlite")
     run_id = store.write_run(commit="abc", tool_versions={}, rows=rows())
