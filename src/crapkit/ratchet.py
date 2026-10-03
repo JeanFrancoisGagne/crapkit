@@ -21,7 +21,7 @@ from typing import NamedTuple
 
 from .invariants import check_dump, check_marks_kept
 from .invocation import _self
-from .keys import split_ordinal
+from .keys import MarkIndex, mark_key, rows_by_key, split_ordinal
 from .score import ScoredRow, over_ceiling
 from .records import decode_record, encode_record, record_lines
 
@@ -307,19 +307,6 @@ def load_ratchet(text: str) -> list[RatchetEntry]:
     return entries
 
 
-def mark_for(entries: list[RatchetEntry], path: str, long_name: str) -> float | None:
-    """One function's recorded high-water mark, or None when it carries no mark.
-
-    `long_name` is the KEY name: bare for a name only one function in the file
-    holds, `name#2` for the second function holding it. `keys.key_names` builds
-    it from the rows; passing a raw long_name for a twin asks about twin #1.
-    """
-    for e in entries:
-        if e.path == path and e.long_name == long_name:
-            return e.crap
-    return None
-
-
 def dump_ratchet(entries: list[RatchetEntry], *, stamp: str, key_version: int = 0) -> str:
     """`stamp` is written verbatim, and "" writes none. No default: a writer that
     stamped by omission relabeled marks another metric recorded, so the choice
@@ -350,12 +337,10 @@ def _merge_key(b: float | None, o: float | None, t: float | None) -> float | Non
 
 def merge_ratchets(base: list[RatchetEntry], ours: list[RatchetEntry],
                    theirs: list[RatchetEntry]) -> list[RatchetEntry]:
-    b = {(e.path, e.long_name): e.crap for e in base}
-    o = {(e.path, e.long_name): e.crap for e in ours}
-    t = {(e.path, e.long_name): e.crap for e in theirs}
+    b, o, t = MarkIndex(base), MarkIndex(ours), MarkIndex(theirs)
     merged = []
-    for key in sorted(set(b) | set(o) | set(t)):
-        crap = _merge_key(b.get(key), o.get(key), t.get(key))
+    for key in sorted(b.keys() | o.keys() | t.keys()):
+        crap = _merge_key(b.mark(key), o.mark(key), t.mark(key))
         if crap is not None:
             merged.append(RatchetEntry(key[0], key[1], crap))
     return merged
@@ -365,10 +350,8 @@ def seed_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: i
                  scope_targets: dict[str, int] | None = None) -> tuple[list[RatchetEntry], int, int]:
     """First-class mark entry: record every over-ceiling function at its current
     CRAP. A mark never rises, seeding included — an existing lower mark stays."""
-    from .verify import rows_by_key
-
     ceilings = scope_targets or {}
-    marks = {(e.path, e.long_name): e for e in prior}
+    marks = MarkIndex(prior).working_copy()
     added = tightened = 0
     for key, row in rows_by_key(fresh).items():
         if not over_ceiling(row.crap, ceilings.get(row.scope, target)):
@@ -426,7 +409,7 @@ def _rename_target(entry: RatchetEntry, present: set, renames: dict[str, str]) -
     git calls that path renamed, and the SAME key name exists at the new one. A
     copy fails the first (the source survives), so its mark never travels.
     """
-    if (entry.path, entry.long_name) in present:
+    if mark_key(entry) in present:
         return None
     dest = renames.get(entry.path)
     if dest is None or (dest, entry.long_name) not in present:
@@ -438,8 +421,6 @@ def follow_renames(prior: list[RatchetEntry], fresh: list[ScoredRow],
                    renames: dict[str, str]) -> tuple[list[RatchetEntry], int]:
     """Marks for renamed files, re-pathed. Runs BEFORE prune so a rename reads as a
     move, not as code that left the repo and forfeits its high-water mark."""
-    from .verify import rows_by_key
-
     present = set(rows_by_key(fresh))
     return _repath(prior, lambda e: _rename_target(e, present, renames))
 
@@ -449,10 +430,8 @@ def prune_ratchet(prior: list[RatchetEntry],
     """Deliberate mark exit: drop entries whose function is absent from the run.
     The automatic update keeps them (an exclude glob or a lane outage also removes
     rows); prune is the human confirming the code is really gone."""
-    from .verify import rows_by_key
-
     present = set(rows_by_key(fresh))
-    kept = [e for e in prior if (e.path, e.long_name) in present]
+    kept = [e for e in prior if mark_key(e) in present]
     return kept, len(prior) - len(kept)
 
 
@@ -478,12 +457,10 @@ def unstable_marks(prior: list[RatchetEntry], fresh: list[ScoredRow],
     unchanged tree. Only marked functions can be tightened, so only they are
     walked; a key the earlier run never scored has nothing to disagree with.
     """
-    from .verify import rows_by_key
-
     worst = rows_by_key(fresh)
     refusals = []
-    for entry in prior:
-        key = (entry.path, entry.long_name)
+    for entry in MarkIndex(prior).entries():
+        key = mark_key(entry)
         row, was = worst.get(key), previous.get(key)
         if row is None or was is None or not _jumped(was, round(row.crap, 4), max_jump):
             continue
@@ -497,14 +474,17 @@ def update_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target:
     """`hold` names keys whose mark this run may not move — `unstable_marks`
     picks them. A held mark keeps its recorded value, drop included: leaving the
     file is the deepest tighten there is. No mark rises and none is added
-    (`invariants.check_marks_kept`)."""
-    from .verify import rows_by_key
+    (`invariants.check_marks_kept`).
 
+    The update rewrites lines, not keys: a key the file lists twice keeps both
+    lines in the order they came, each tightened or dropped against the same
+    fresh row. The first line stays the one `keys.MarkIndex` answers, and
+    `ratchet_delta` counts the key once."""
     fresh_by_key = rows_by_key(fresh)
     ceilings = scope_targets or {}
     updated = []
     for entry in prior:
-        key = (entry.path, entry.long_name)
+        key = mark_key(entry)
         kept = _updated_mark(entry, fresh_by_key.get(key), key in hold,
                              lambda scope: ceilings.get(scope, target))
         if kept is not None:
@@ -547,7 +527,8 @@ def _mark_move(entry: RatchetEntry, fresh: float | None) -> str:
 def ratchet_delta(prior: list[RatchetEntry], updated: list[RatchetEntry]) -> RatchetDelta:
     """The two counts a green verify reports. A mark never rises and an update
     adds none, so dropped plus tightened is the whole difference between the
-    two lists; a mark that kept its value counts as neither."""
-    after = {(e.path, e.long_name): e.crap for e in updated}
-    moves = [_mark_move(e, after.get((e.path, e.long_name))) for e in prior]
+    two lists; a mark that kept its value counts as neither. Each key counts
+    once, under the mark `keys.MarkIndex` answers for it."""
+    after = MarkIndex(updated)
+    moves = [_mark_move(e, after.mark(mark_key(e))) for e in MarkIndex(prior).entries()]
     return RatchetDelta(moves.count("dropped"), moves.count("tightened"))

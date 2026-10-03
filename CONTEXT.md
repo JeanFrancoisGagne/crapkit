@@ -77,7 +77,7 @@ A source file the analysis names on stderr and scores as zero functions, because
 _Avoid_: skipped file (nothing about it is silent)
 
 **Unreadable name**:
-A file name git gives in bytes that are not UTF-8, so no row, mark or cache can be keyed on it. git's listings hand it on as a value; the scope assignment judges it. When a scope takes the name, the command refuses with exit 3 and the `git mv` fix, and a `--json` error object lists it in `unread_files`, each item `{path, reason, dirty}` as in a gate verdict; `check_gate` returns that refusal as a verdict with `gate.ok` false. Any other tracked or staged one is left out, named once on stderr and listed in `unreadable_names`; a `rescore` argument no scope takes is left out with one stderr line, and `check_gate` judges it 0. `explain`, `brief` and `ratchet move` answer for the one file they are handed, so they refuse such a name whether a scope takes it or not. An untracked one is a change to the lanes that read it.
+A file name git gives in bytes that are not UTF-8, so no row, mark or cache can be keyed on it. git's listings hand it on as a value; the scope assignment judges it. When a scope takes the name, the command refuses with exit 3 and the `git mv` fix, and a `--json` error object lists it in `unread_files`, each item `{path, reason, dirty}` as in a gate verdict; `check_gate` returns that refusal as a verdict with `gate.ok` false. Any other tracked or staged one is left out, named once on stderr and listed in `unreadable_names`; a `rescore` argument no scope takes is left out with one stderr line, and `check_gate` judges it 0. `explain`, `brief` and `ratchet move` answer for the one file they are handed, so they refuse such a name whether a scope takes it or not. An untracked one is a change to the lanes that read it. At a gate, a scope-taken one is the unreadable_name finding kind: exit 3, ahead of every other finding, and never granted by an override.
 _Avoid_: unanalyzable file (lizard read that one)
 
 ### Runs
@@ -113,6 +113,17 @@ _Avoid_: forced baseline, override baseline
 **Verdict**:
 The outcome of `verify`: the gate result, ratchet regressions and new test failures against the baseline. A lane whose declared junit `verify --reuse-artifacts` reused and could not read leaves no verdict: verify exits 5 and stores nothing.
 
+**Finding kind**:
+One row of verify's table of findings (`verify.FINDING_KINDS`): unreadable name, gate violation, unread file, ratchet regression, new failure, diff uncovered and overridden, in that order. A row gives the kind's exit code, whether it fails the verdict, whether an override may grant it, and its text line, its `--json` list and its SARIF result. The first failing kind present sets verify's exit: 3, then 6, 7, 8 and 9; overridden is a report and fails nothing. Every printer, the dirty split and both override paths read the rows, so a new kind is one row and its detector.
+
+**Unread file**:
+The finding a gate makes for a changed Unanalyzable file: exit 6, after any gate violation, and never granted by an override, since no function in it was judged. The `UNREAD` line names it, and `--json` lists it in `unread_files`.
+_Avoid_: unreadable (that word is the name's)
+
+**Unparsed junit**:
+A junit a lane declares as its `results_artifact` that `verify --reuse-artifacts` reused and could not parse, so no test in it was checked. verify exits 5 and stores nothing; running it without `--reuse-artifacts` writes the junit again.
+_Avoid_: unread file (that is a source file no reader could read)
+
 **Forgiven failure**:
 A test failure the fresh run and the baseline both have. It is not new, so it fails no verdict; the OK line counts it. When the baseline recorded no failure list for a lane, the newest trusted run at or behind it that did stands in for that lane.
 _Avoid_: known failure, ignored failure
@@ -134,7 +145,7 @@ _Avoid_: gate, block (the edit is already on disk)
 ### Debt
 
 **Ratchet mark**:
-A committed record that one function is allowed to sit at a known CRAP; it may only tighten.
+A committed record that one function is allowed to sit at a known CRAP; it may only tighten. A carried mark is the mark `keys.resolve` gives an unmarked function when its old key left the file, exactly one mark that left shares its bare name, and no other unmarked function holds that name; twins and anonymous functions never carry, and no command acts on a carried mark yet.
 _Avoid_: exemption, baseline entry, whitelist
 
 **Metric stamp**:

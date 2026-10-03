@@ -3,8 +3,9 @@
 Three independent checks, all must hold:
 - Gate: every function a change touched sits at CRAP <= target (coverage cannot
   save cc > target; that is the target's design), unless a ratchet mark carries
-  it at or under the recorded value: that is the debt the repo signed for, and
-  `rescore --gate` and the pre-commit hook already read it so (#29).
+  it at or under the recorded value: that is the debt the repo signed for (#29).
+  verify is a gate adapter: the gate module judges the touched functions with
+  each one's exact CRAP, and the changed files no reader could read.
 - Ratchet: no function above target scores worse than its recorded high-water
   mark, touched or not (coverage rot regresses functions nobody edited).
 - Failures: the fresh failure set adds nothing over the baseline's (the suite
@@ -13,10 +14,13 @@ Three independent checks, all must hold:
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
-from collections.abc import Iterable, Iterator, Mapping
-from typing import NamedTuple
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from typing import Any, NamedTuple
 
-from .keys import key_names, key_of
+from .gate import (WHOLE, ChangedFile, CrapBound, Function, GateResult, Unread, UnreadableName, judge,
+                   touches)
+from .keys import MarkIndex, mark_key, rows_by_key
+from .merge import UNREAD_ADVICE
 from .ratchet import RatchetEntry
 from .repopath import file_separators
 from .score import CRAP_PLACES, ScoredRow, over_ceiling, parse_scored_tsv, scored_tsv_lines
@@ -147,14 +151,6 @@ class UncoveredViolation(NamedTuple):
     dirty: bool = False
 
 
-class UnreadFile(NamedTuple):
-    """A changed file no reader could read. The run scores it as zero
-    functions; the gate judged none of them, so it refuses the file."""
-    path: str
-    reason: str
-    dirty: bool = False
-
-
 class Verdict(NamedTuple):
     ok: bool
     gate_violations: list[GateViolation]
@@ -168,19 +164,26 @@ class Verdict(NamedTuple):
     forgiven_failures: tuple[str, ...] = ()
     retried_passes: tuple[str, ...] = ()
     overridden: tuple[GateViolation, ...] = ()
-    unread_files: tuple[UnreadFile, ...] = ()
+    # Changed files no reader could read: the run scores each as zero
+    # functions, and the gate judged none of them, so it refuses the file.
+    unread_files: tuple[Unread, ...] = ()
+    # Names a scope takes that are not UTF-8. Nothing fills it yet: the gate
+    # refuses such a name before it judges anything, and verify stops with
+    # exit 3 before any verdict exists. The payload's `unreadable_names` lists
+    # the other kind, names no scope takes.
+    claimed_names: tuple[UnreadableName, ...] = ()
 
-
-def _any_finding(verdict: Verdict) -> bool:
-    return bool(verdict.gate_violations or verdict.unread_files or verdict.ratchet_regressions
-                or verdict.new_failures or verdict.uncovered_violations)
+    @classmethod
+    def passing(cls) -> Verdict:
+        """A verdict holding no finding, each list its own."""
+        return cls(True, [], [], [], [])
 
 
 def settle_verdict(verdict: Verdict) -> Verdict:
     """Re-derive what the remaining findings decide after a grant or retry:
     the dirty subset of new_failures, and success."""
     remaining = set(verdict.new_failures)
-    return verdict._replace(ok=not _any_finding(verdict),
+    return verdict._replace(ok=exit_code(verdict) == 0,
                             dirty_failures=[f for f in verdict.dirty_failures if f in remaining])
 
 
@@ -200,16 +203,6 @@ def with_diff_coverage(verdict: Verdict, uncovered: list[tuple[str, int]],
         return verdict
     findings = tuple(UncoveredViolation(path, line, path in dirty_paths) for path, line in uncovered)
     return settle_verdict(verdict._replace(uncovered_violations=findings))
-
-
-def with_unread(verdict: Verdict, unread: dict[str, str], changed: set[str],
-                dirty_paths: set[str]) -> Verdict:
-    """Fail the gate on every changed file no reader could read: its zero
-    records are not zero functions over the ceiling. An unread file the
-    change never touched holds no changed function, so it is left alone."""
-    found = tuple(UnreadFile(path, why, path in dirty_paths)
-                  for path, why in sorted(unread.items()) if path in changed)
-    return settle_verdict(verdict._replace(unread_files=found)) if found else verdict
 
 
 def _id_forms(path: str) -> tuple[str, str]:
@@ -248,26 +241,328 @@ def dirty_failure_ids(new_failures: list[str], dirty_paths: set[str],
     return [f for f in new_failures if _id_file(f, test_files) in forms]
 
 
-# The finding kinds that carry their own `dirty` flag; new_failures carries ids.
-_FLAGGED_FINDINGS = ("gate_violations", "unread_files", "ratchet_regressions",
-                     "uncovered_violations")
+# --- the finding kinds -----------------------------------------------------------
+#
+# One row per kind of finding a verdict holds, in exit order. Every per-kind site
+# reads the rows: the exit code, `ok`, the dirty split, the override's grant and
+# refusal, the text lines, the JSON lists and the SARIF results. A new kind is
+# one row here and the detector that fills its field.
+
+
+class Refusal(NamedTuple):
+    """How a kind that refuses an override is named on the one refusal line.
+    `place` orders the causes as docs/ratchet.md names them: a ratchet
+    regression, a new test failure, an unread file."""
+    place: int
+    noun: str
+    first: Callable[[Any], str]
+    escape: str
+
+
+class Sarif(NamedTuple):
+    """A kind's SARIF form: its rule, its level, where a result anchors and what
+    it says."""
+    rule: str
+    level: str
+    place: Callable[[Any], tuple[str, int]]
+    message: Callable[[Any], str]
+
+
+class FindingKind(NamedTuple):
+    """One kind of finding and every form it takes.
+
+    `exit` is verify's exit code when the kind is present, None for a report
+    the verdict never fails on. `granted` says an --override grants it; a
+    `refusal` says an override is refused while one is present. `dirty` finds
+    the dirty flag of each entry, `text` gives the lines verify prints on
+    `stream`, `json` the kind's list under its 0.8.1 key `json_key` (None: the
+    payload has no list for it), and `sarif` its SARIF form (None: no result)."""
+    kind: str
+    field: str
+    exit: int | None
+    granted: bool
+    refusal: Refusal | None
+    dirty: Callable[[Verdict, Sequence], list[bool]]
+    text: Callable[[Sequence, Sequence[bool]], list[str]]
+    stream: str
+    json_key: str | None
+    json: Callable[[Sequence], list]
+    sarif: Sarif | None
+
+    @property
+    def fails(self) -> bool:
+        return self.exit is not None
+
+
+def each(line: Callable[[Any, bool], str]) -> Callable[[Sequence, Sequence[bool]], list[str]]:
+    """A kind's text as one line per entry, each with its dirty flag."""
+    def text(entries: Sequence, flags: Sequence[bool]) -> list[str]:
+        return [line(entry, dirty) for entry, dirty in zip(entries, flags)]
+    return text
+
+
+def _dirty_tag(dirty: bool) -> str:
+    return "  [dirty]" if dirty else ""
+
+
+def gate_line(v, dirty: bool, unmeasured: bool = False) -> str:
+    """One gate violation, however it was decided; verify and `rescore --gate`
+    report the same finding, so they must read the same. `unmeasured` prints
+    `cov -` for a cov no measurement stands behind: the GATE line said 0% where
+    the rescore table under it said `-` and `coverage not measured`."""
+    cov = "-" if unmeasured else f"{v.cov:.0%}"
+    return (f"  GATE  crap {v.crap:8.1f}  ccn {v.ccn:>3} cov {cov}  "
+            f"{v.path}:{v.start}  {v.long_name}  -> {v.remedy}{_dirty_tag(dirty)}")
+
+
+def _unread_file_line(u: Unread, dirty: bool) -> str:
+    """One changed file a gate refused because no reader could read it; every
+    gate prints it the same way."""
+    return f"  UNREAD  {u.path}: {u.reason}{_dirty_tag(dirty)}"
+
+
+def _ratchet_line(r: RatchetRegression, dirty: bool) -> str:
+    return f"  RATCHET  {r.path}  {r.long_name}: {r.recorded} -> {r.fresh_crap}{_dirty_tag(dirty)}"
+
+
+def _failure_line(test_id: str, dirty: bool) -> str:
+    return f"  NEW FAILURE  {test_id}{_dirty_tag(dirty)}"
+
+
+def _spot(line) -> tuple[str, int]:
+    """(path, line) of an uncovered changed line, an UncoveredViolation or the
+    (path, line) pair `diff_uncovered` lists."""
+    return line[0], line[1]
+
+
+def _uncovered_line(line, dirty: bool) -> str:
+    path, number = _spot(line)
+    return f"  uncovered {path}:{number}"
+
+
+def _overridden_line(v: GateViolation, dirty: bool) -> str:
+    return f"  OVERRIDDEN  {v.path}:{v.start}  {v.long_name}"
+
+
+def _claimed_lines(names: Sequence[UnreadableName], flags: Sequence[bool]) -> list[str]:
+    """The sentence the scan refuses claimed names with: the first one named,
+    the rest counted."""
+    from .universe import claimed_text
+
+    if not names:
+        return []
+    return [f"crapkit: {claimed_text([(n.path, n.scope) for n in names])}"]
+
+
+def _shown_path(name: UnreadableName) -> str:
+    from .gitpaths import shown
+
+    return shown(name.path)
+
+
+def _own_flags(verdict: Verdict, entries: Sequence) -> list[bool]:
+    """Each entry's own `dirty` flag."""
+    return [entry.dirty for entry in entries]
+
+
+def _failure_flags(verdict: Verdict, test_ids: Sequence[str]) -> list[bool]:
+    """A new failure is dirty when its test file has uncommitted edits."""
+    dirty = set(verdict.dirty_failures)
+    return [test_id in dirty for test_id in test_ids]
+
+
+def _records(entries: Sequence) -> list[dict]:
+    return [entry._asdict() for entry in entries]
+
+
+def _line_items(lines: Sequence) -> list[dict]:
+    """The first 50 uncovered changed lines; `diff_uncovered_count` counts them all."""
+    return [{"path": path, "line": number} for path, number in map(_spot, lines[:50])]
+
+
+def _file_start(entry) -> tuple[str, int]:
+    """Line 1 anchors a finding about a whole file: no function was read, or
+    the ratchet stores no line."""
+    return entry.path, 1
+
+
+def _gate_start(v: GateViolation) -> tuple[str, int]:
+    return v.path, v.start
+
+
+def _gate_message(v: GateViolation) -> str:
+    return f"{v.long_name}: CRAP {v.crap:.1f} (ccn {v.ccn}, cov {v.cov:.0%}) -> {v.remedy}"
+
+
+def _unread_message(u: Unread) -> str:
+    return f"no reader could read this file, so the gate judged none of its functions: {u.reason}"
+
+
+def _rise(r: RatchetRegression) -> str:
+    return f"{r.long_name}: recorded {r.recorded} -> fresh {r.fresh_crap}"
+
+
+def _uncovered_message(line) -> str:
+    return "changed line has no coverage: no lane ran it"
+
+
+def _unread_cause(u: Unread) -> str:
+    return f"{u.path}: {u.reason}"
+
+
+def _regression_cause(r: RatchetRegression) -> str:
+    return f"{r.path} {r.long_name} {r.recorded} -> {r.fresh_crap}"
+
+
+# The escape for a regression is the only one there is: verify never raises a
+# mark, and the override path cannot reach a marked function without also seeing
+# its regression (docs/ratchet.md, Overrides and the audit trail). An unread file
+# holds no function to record as debt, and granting the functions beside it would
+# sign debt while the gate still refuses the file. A new failure is not debt a
+# mark can carry. A breached diff-coverage ceiling is never granted and refuses
+# nothing: the gate violations beside it are granted, and the verdict fails on 9.
+FINDING_KINDS: tuple[FindingKind, ...] = (
+    FindingKind(kind="unreadable_name", field="claimed_names", exit=3, granted=False,
+                refusal=Refusal(3, "unreadable name", _shown_path,
+                                "rename it (git mv) to a UTF-8 name"),
+                dirty=_own_flags, text=_claimed_lines, stream="stderr", json_key=None,
+                json=_records, sarif=None),
+    FindingKind(kind="gate_violation", field="gate_violations", exit=6, granted=True,
+                refusal=None, dirty=_own_flags, text=each(gate_line), stream="stdout",
+                json_key="gate_violations", json=_records,
+                sarif=Sarif("crapkit/gate", "error", _gate_start, _gate_message)),
+    FindingKind(kind="unread_file", field="unread_files", exit=6, granted=False,
+                refusal=Refusal(2, "unread file", _unread_cause, UNREAD_ADVICE),
+                dirty=_own_flags, text=each(_unread_file_line), stream="stdout",
+                json_key="unread_files", json=_records,
+                sarif=Sarif("crapkit/unread", "error", _file_start, _unread_message)),
+    FindingKind(kind="ratchet_regression", field="ratchet_regressions", exit=7, granted=False,
+                refusal=Refusal(0, "ratchet regression", _regression_cause,
+                                "raise the mark by hand and commit it"),
+                dirty=_own_flags, text=each(_ratchet_line), stream="stdout",
+                json_key="ratchet_regressions", json=_records,
+                sarif=Sarif("crapkit/ratchet-regression", "error", _file_start, _rise)),
+    FindingKind(kind="new_failure", field="new_failures", exit=8, granted=False,
+                refusal=Refusal(1, "new test failure", str, "fix the failing test first"),
+                dirty=_failure_flags, text=each(_failure_line), stream="stdout",
+                json_key="new_failures", json=list, sarif=None),
+    # Present only past diff_uncovered_max; its JSON list and SARIF results come
+    # from every uncovered changed line (`uncovered` below), breach or not.
+    FindingKind(kind="diff_uncovered", field="uncovered_violations", exit=9, granted=False,
+                refusal=None, dirty=_own_flags, text=each(_uncovered_line), stream="stderr",
+                json_key="diff_uncovered", json=_line_items,
+                sarif=Sarif("crapkit/diff-uncovered", "warning", _spot, _uncovered_message)),
+    FindingKind(kind="overridden", field="overridden", exit=None, granted=False, refusal=None,
+                dirty=_own_flags, text=each(_overridden_line), stream="stdout",
+                json_key="overridden", json=_records, sarif=None),
+)
+
+
+def kind(name: str) -> FindingKind:
+    return next(row for row in FINDING_KINDS if row.kind == name)
+
+
+def _entries(verdict: Verdict, row: FindingKind) -> Sequence:
+    return getattr(verdict, row.field)
+
+
+def exit_code(verdict: Verdict) -> int:
+    """README's exit table: the first row present that fails decides; 0 when none does."""
+    return next((row.exit for row in FINDING_KINDS if row.fails and _entries(verdict, row)), 0)
 
 
 def dirty_counts(verdict: Verdict) -> tuple[int, int]:
-    """(committed, dirty) over every finding kind, so one line says how much of
-    a verdict belongs to the tree as committed and how much to somebody's edits."""
-    dirty_ids = set(verdict.dirty_failures)
-    flags = ([f.dirty for kind in _FLAGGED_FINDINGS for f in getattr(verdict, kind)]
-             + [f in dirty_ids for f in verdict.new_failures])
+    """(committed, dirty) over every finding that fails the verdict, so one line
+    says how much of a verdict belongs to the tree as committed and how much to
+    somebody's edits."""
+    flags = [flag for row in FINDING_KINDS if row.fails
+             for flag in row.dirty(verdict, _entries(verdict, row))]
     dirty = sum(flags)
     return len(flags) - dirty, dirty
 
 
-def _touched(row: ScoredRow, ranges: dict[str, list[tuple[int, int]]]) -> bool:
-    spans = ranges.get(row.path)
-    if not spans:
-        return False
-    return any(not (hi < row.start or lo > row.end) for lo, hi in spans)
+def text_lines(verdict: Verdict, stream: str = "stdout") -> list[str]:
+    """The lines verify prints for its findings on `stream`, kind by kind."""
+    return [line for row in FINDING_KINDS if row.stream == stream
+            for line in _lines(verdict, row)]
+
+
+def _lines(verdict: Verdict, row: FindingKind) -> list[str]:
+    entries = _entries(verdict, row)
+    return row.text(entries, row.dirty(verdict, entries))
+
+
+def lines_of(name: str, entries: Sequence) -> list[str]:
+    """One kind's lines for entries that carry no dirty flag."""
+    return kind(name).text(entries, [False] * len(entries))
+
+
+def _refusing(verdict: Verdict) -> list[tuple[Refusal, Sequence]]:
+    found = [(row.refusal, _entries(verdict, row)) for row in FINDING_KINDS if row.refusal]
+    return sorted(((refusal, entries) for refusal, entries in found if entries),
+                  key=lambda pair: pair[0].place)
+
+
+def _cause(refusal: Refusal, entries: Sequence) -> str:
+    """`1 ratchet regression (app/m.py pick( a ) 10.75 -> 20.0)`: the count, and
+    the first one named so the line stands on its own in a CI log."""
+    plural = "" if len(entries) == 1 else "s"
+    return f"{len(entries)} {refusal.noun}{plural} ({refusal.first(entries[0])})"
+
+
+def override_refusal(verdict: Verdict) -> str | None:
+    """Why an --override grants nothing on this verdict, or None when no kind
+    present refuses one. Every cause on one line, each with its own escape: a
+    run holding a regression and a new failure is refused once, not twice."""
+    refusing = _refusing(verdict)
+    if not refusing:
+        return None
+    verb = "qualifies" if sum(len(entries) for _, entries in refusing) == 1 else "qualify"
+    causes = " and ".join(_cause(refusal, entries) for refusal, entries in refusing)
+    escapes = "; ".join(refusal.escape for refusal, _ in refusing)
+    return f"override refused: {causes} never {verb} for an override; {escapes}"
+
+
+def override_grants(verdict: Verdict) -> tuple:
+    """What an --override grants on this verdict: every entry of the kinds it
+    may grant, or nothing while a kind that refuses an override is present."""
+    if _refusing(verdict):
+        return ()
+    return tuple(entry for row in FINDING_KINDS if row.granted for entry in _entries(verdict, row))
+
+
+def grant(verdict: Verdict) -> Verdict:
+    """The verdict once an override granted what `override_grants` names: those
+    entries move to `overridden`, and the rest decides the verdict."""
+    granted = override_grants(verdict)
+    if not granted:
+        return verdict
+    cleared = {row.field: [] for row in FINDING_KINDS if row.granted}
+    return settle_verdict(verdict._replace(**cleared, overridden=verdict.overridden + granted))
+
+
+def _reported(verdict: Verdict, uncovered: Sequence | None) -> Verdict:
+    """The verdict as its reports read it: diff_uncovered holds every changed
+    line no lane ran, breach or not, when `uncovered` lists them."""
+    if uncovered is None:
+        return verdict
+    return verdict._replace(uncovered_violations=tuple(uncovered))
+
+
+def json_lists(verdict: Verdict, uncovered: Sequence | None = None) -> dict[str, list]:
+    """Each kind's list in `verify --json`, under its 0.8.1 key."""
+    reported = _reported(verdict, uncovered)
+    return {row.json_key: row.json(_entries(reported, row))
+            for row in FINDING_KINDS if row.json_key}
+
+
+def sarif_results(verdict: Verdict, uncovered: Sequence | None = None) -> list[dict]:
+    """One SARIF result per entry of each kind that has a SARIF form, kind by kind."""
+    from .sarif import finding_result
+
+    reported = _reported(verdict, uncovered)
+    return [finding_result(row.sarif, entry) for row in FINDING_KINDS if row.sarif
+            for entry in _entries(reported, row)]
 
 
 def touched_rows(rows: list[ScoredRow],
@@ -277,60 +572,69 @@ def touched_rows(rows: list[ScoredRow],
     Every gate in crapkit judges touched functions only — untouched debt is the
     ratchet's business. `rescore --gate` reuses this so its verdict and the
     pre-commit hook's cannot disagree about which functions were even in scope.
+    The touch rule is the gate module's.
     """
-    return [r for r in rows if _touched(r, changed_ranges)]
-
-
-def rows_by_key(fresh: list[ScoredRow]) -> dict[tuple[str, str], ScoredRow]:
-    """Scored rows by their ratchet key: `keys.key_names` gives each twin its own.
-
-    Twins used to share (path, long_name) and the worst of them represented the
-    key, which let a repaid twin's high mark pardon a sibling's growth. The
-    ordinal ends that. The worst-wins rule stays for the one collision left —
-    two scopes claiming one path score the same span twice — so a regression
-    still cannot hide behind a clean sibling.
-    """
-    names = key_names(fresh)
-    worst: dict[tuple[str, str], ScoredRow] = {}
-    for r in fresh:
-        key = key_of(names, r)
-        if key not in worst or r.crap > worst[key].crap:
-            worst[key] = r
-    return worst
+    return [r for r in rows if touches(r, changed_ranges.get(r.path, ()))]
 
 
 def _ceiling(row: ScoredRow, target: int, scope_targets: dict[str, int] | None) -> int:
     return (scope_targets or {}).get(row.scope, target)
 
 
-def _marks_of(ratchet: list[RatchetEntry]) -> dict[tuple[str, str], float]:
-    return {(e.path, e.long_name): e.crap for e in ratchet}
+def _function(row: ScoredRow) -> Function:
+    """A scored row as the gate judges it: verify knows its exact CRAP."""
+    return Function(row.long_name, row.start, row.end, CrapBound(row.crap, row.crap), row.scope,
+                    row.occurrence, row)
 
 
-def _within_mark(row: ScoredRow, key: tuple[str, str],
-                 marks: dict[tuple[str, str], float]) -> bool:
-    """Signed debt as `rescore --gate` reads it: a mark the fresh score sits at or
-    under, compared at the 4dp the mark is stored at. Above the mark the gate
-    fires, as rescore's does, and the ratchet check reports the rise beside it,
-    so the three gates agree on what an edit inside marked debt may do (#29).
-    The key is the twin-aware one the ratchet check looks marks up by."""
-    mark = marks.get(key)
-    return mark is not None and round(row.crap, 4) <= mark
+def _changed_functions(fresh: list[ScoredRow],
+                       changed_ranges: dict[str, list[tuple[int, int]]]) -> list[ChangedFile]:
+    """Each changed file with every row the run scored in it, so the gate keys
+    each function over the whole file."""
+    functions: dict[str, list[Function]] = {}
+    for row in fresh:
+        if row.path in changed_ranges:
+            functions.setdefault(row.path, []).append(_function(row))
+    return [ChangedFile(path, changed_ranges[path], tuple(found)) for path, found in functions.items()]
 
 
-def _gate_violations(fresh, changed_ranges, target, scope_targets, dirty,
-                     ratchet) -> list[GateViolation]:
-    names = key_names(fresh)
-    marks = _marks_of(ratchet)
-    gate = [
-        GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
-                      r.path in dirty, key_of(names, r)[1])
-        for r in fresh
-        if over_ceiling(r.crap, _ceiling(r, target, scope_targets)) and _touched(r, changed_ranges)
-        and not _within_mark(r, key_of(names, r), marks)
-    ]
+def _unread_files(unread: Mapping[str, str], changed_ranges: dict[str, list[tuple[int, int]]],
+                  dirty: set[str]) -> list[ChangedFile]:
+    """Each file no reader could read: taken whole when the change or an
+    uncommitted edit touched it, which the gate refuses, else with no span."""
+    return [ChangedFile(path, WHOLE if path in changed_ranges or path in dirty else (),
+                        Unread(path, why, path in dirty)) for path, why in sorted(unread.items())]
+
+
+def _judged(fresh, changed_ranges, unread, dirty, ratchet, target, scope_targets) -> GateResult:
+    """The gate module's findings on the change: the marks are read only when a
+    touched function is over its ceiling."""
+    targets = scope_targets or {}
+    return judge(_changed_functions(fresh, changed_ranges) + _unread_files(unread, changed_ranges, dirty),
+                 lambda scope: targets.get(scope, target), lambda: MarkIndex(ratchet))
+
+
+def _gate_violations(judged: GateResult, fresh: list[ScoredRow], dirty: set[str]) -> list[GateViolation]:
+    """The gate's findings verify fails on, worst first: every touched function
+    over its ceiling that no mark pardons. Above its mark the gate fires, and
+    the ratchet check reports the rise beside it (#29). verify knows each exact
+    CRAP, so no finding is unproven.
+
+    The gate lists its findings kind by kind, so they go back into the order
+    the run listed their rows before the sort: two functions on one start line
+    with one CRAP list in row order, whichever is the marked rise."""
+    place = {id(row): n for n, row in enumerate(fresh)}
+    breaches = sorted((*judged.over_ceiling, *judged.marked_rise, *judged.unproven),
+                      key=lambda breach: place[id(breach.function.record)])
+    gate = [_violation(breach, dirty) for breach in breaches]
     gate.sort(key=_worst_first)
     return gate
+
+
+def _violation(breach, dirty: set[str]) -> GateViolation:
+    r = breach.function.record
+    return GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
+                         r.path in dirty, breach.key_name)
 
 
 def _worst_first(row: ScoredRow | GateViolation) -> tuple:
@@ -344,8 +648,8 @@ def _worst_first(row: ScoredRow | GateViolation) -> tuple:
 def _ratchet_regressions(fresh, ratchet, dirty) -> list[RatchetRegression]:
     worst_by_key = rows_by_key(fresh)
     regressions = []
-    for entry in ratchet:
-        row = worst_by_key.get((entry.path, entry.long_name))
+    for entry in MarkIndex(ratchet).entries():
+        row = worst_by_key.get(mark_key(entry))
         # Compare at the precision the mark is STORED at: marks live as 4dp
         # strings, and cov = covered/total makes longer decimals routine — an
         # unrounded compare wedges an unchanged tree against its own mark.
@@ -374,7 +678,7 @@ def unmarked_over_ceiling(fresh: list[ScoredRow], ratchet: list[RatchetEntry], t
     A marked function that rose is a regression already; this is the debt
     `ratchet seed` was never run on.
     """
-    marks = _marks_of(ratchet)
+    marks = MarkIndex(ratchet)
     rows = [row for key, row in rows_by_key(fresh).items()
             if over_ceiling(row.crap, _ceiling(row, target, scope_targets)) and key not in marks]
     rows.sort(key=_worst_first)
@@ -392,17 +696,21 @@ def evaluate(
     scope_targets: dict[str, int] | None = None,
     dirty_paths: set[str] | None = None,
     test_files: Mapping[str, str] | None = None,
+    unread: Mapping[str, str] | None = None,
 ) -> Verdict:
+    """`unread` is {path: why} for each file no reader could read; the gate
+    refuses the ones the change or an uncommitted edit touched."""
     dirty = dirty_paths or set()
-    gate = _gate_violations(fresh, changed_ranges, target, scope_targets, dirty, ratchet)
+    judged = _judged(fresh, changed_ranges, unread or {}, dirty, ratchet, target, scope_targets)
     regressions = _ratchet_regressions(fresh, ratchet, dirty)
     new_failures = sorted(fresh_failures - baseline_failures)
 
-    return Verdict(
-        ok=not gate and not regressions and not new_failures,
-        gate_violations=gate,
+    return settle_verdict(Verdict(
+        ok=True,
+        gate_violations=_gate_violations(judged, fresh, dirty),
         ratchet_regressions=regressions,
         new_failures=new_failures,
         dirty_failures=dirty_failure_ids(new_failures, dirty, test_files),
         forgiven_failures=tuple(sorted(fresh_failures & baseline_failures)),
-    )
+        unread_files=judged.unread,
+    ))

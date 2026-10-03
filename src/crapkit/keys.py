@@ -31,13 +31,34 @@ The naming rules live here too, beside the keys they reach: the bare name, the
 handles, and `select`, the one resolver every command that takes a NAME runs.
 `brief` resolved in the queue and `explain` in the store, and a bare twin name
 picked the worst twin in one and the first in the other.
+
+The mark index lives here as well. `MarkIndex` is built once from a marks
+file's entries and answers which mark a key carries; `rows_by_key` answers which
+scored row stands for a key. Every mark lookup in verify and ratchet goes
+through them, so a key a marks file lists twice has
+one winner there, the first: the gate, the ratchet check, the update's counts
+and the tighten guard all read it. The update itself rewrites every line, so
+both lines stay and the first still answers.
+
+Two answers sit beside the index. `resolve` says which mark belongs to a
+function: its exact key, a Twin's `name#N` key, the carry, or a refusal
+naming the ambiguity. The carry is the mark that left the function's file under
+its bare name when exactly one did and the function is the one unmarked key
+that took the name. `pair_moves` says, by the same rule, which key that left a
+file pairs with a key that arrived in it. `MarkIndex.mark` still answers the
+exact key only: no gate, merge or report acts on a carry until mission-4.
 """
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 import re
+from typing import TYPE_CHECKING, NamedTuple
 
 from .errors import CrapkitError, ToolError
+
+if TYPE_CHECKING:  # score imports this module
+    from .score import ScoredRow
 
 ORDINAL = "#"
 # What lizard calls a function it could not name. Every anonymous function in a
@@ -165,6 +186,89 @@ def key_names(rows, *, run_id: int | None = None) -> dict[tuple[str, str, int, i
 def key_of(keys: dict[tuple[str, str, int, int], str], row) -> tuple[str, str]:
     """One row's whole key, out of the map `key_names` built."""
     return row.path, keys[lookup(row)]
+
+
+def rows_by_key(fresh: list[ScoredRow]) -> dict[tuple[str, str], ScoredRow]:
+    """Scored rows by their ratchet key: `key_names` gives each twin its own.
+
+    Twins used to share (path, long_name) and the worst of them represented the
+    key, which let a repaid twin's high mark pardon a sibling's growth. The
+    ordinal ends that. The worst-wins rule stays for the one collision left —
+    two scopes claiming one path score the same span twice — so a regression
+    still cannot hide behind a clean sibling.
+    """
+    names = key_names(fresh)
+    worst: dict[tuple[str, str], ScoredRow] = {}
+    for r in fresh:
+        key = key_of(names, r)
+        if key not in worst or r.crap > worst[key].crap:
+            worst[key] = r
+    return worst
+
+
+def mark_key(entry) -> tuple[str, str]:
+    """The key a mark was recorded under: its path and its key name."""
+    return entry.path, entry.long_name
+
+
+class MarkIndex:
+    """A marks file's entries by key, built once: which mark judges a function.
+
+    A file can list one key twice, by a hand edit or a botched merge. The first
+    mark wins, and every lookup in verify and
+    ratchet reads the same one. Before the index, verify's gate, seed, merge and
+    the update's counts each built their own dict and kept the last, while the
+    ratchet check and the tighten guard walked every entry.
+    """
+
+    __slots__ = ("_by_key",)
+
+    def __init__(self, entries) -> None:
+        by_key: dict = {}
+        for entry in entries:
+            by_key.setdefault(mark_key(entry), entry)
+        self._by_key = by_key
+
+    def mark(self, key: tuple[str, str]) -> float | None:
+        """The mark under `key`, or None when nothing marks it."""
+        entry = self._by_key.get(key)
+        return None if entry is None else entry.crap
+
+    # A dict's spelling of `mark`, so a reader written against a dict of marks
+    # by key reads the index unchanged.
+    get = mark
+
+    def entry(self, key: tuple[str, str]):
+        """The entry under `key`, or None when nothing marks it."""
+        return self._by_key.get(key)
+
+    def keys(self):
+        """Every marked key, once each."""
+        return self._by_key.keys()
+
+    def entries(self):
+        """The entry that answers each key, once each, in the order the file lists them."""
+        return self._by_key.values()
+
+    def working_copy(self) -> dict:
+        """The entries by key as a new dict, for a caller that adds or replaces marks."""
+        return dict(self._by_key)
+
+    def __contains__(self, key) -> bool:
+        return key in self._by_key
+
+
+def highest_marks(entries) -> dict[tuple[str, str], float]:
+    """Each key's mark, the HIGHER one when a file lists a key twice.
+
+    `MarkIndex` answers the first mark; the no-mark-rises check reads this
+    instead, so a duplicated key's baseline is the most the file allowed it.
+    """
+    marks: dict[tuple[str, str], float] = {}
+    for entry in entries:
+        key = mark_key(entry)
+        marks[key] = max(entry.crap, marks.get(key, entry.crap))
+    return marks
 
 
 def stated_key(item) -> tuple[str, str]:
@@ -481,3 +585,146 @@ def _severity(row) -> tuple:
     this module), so equal ones tie: ccn 25 at 80% coverage and ccn 5 at none
     both score 30, which the floats read as 29.999999999999996 and 30.0."""
     return round(row.crap or 0.0, 4), -row.start, -position(row)[1]
+
+
+# --- mark identity: which mark judges a function, and which keys pair as a move --
+
+Key = tuple[str, str]
+
+
+@dataclass(frozen=True)
+class Exact:
+    """The function's own key judges it: a lone name, or the first twin."""
+    key: Key
+
+
+@dataclass(frozen=True)
+class Twin:
+    """The function is the Nth twin of its name, and its own `name#N` key judges it."""
+    key: Key
+    ordinal: int
+
+
+@dataclass(frozen=True)
+class Carry:
+    """The function's key holds no mark, and the one mark that left its file
+    under its bare name judges it."""
+    old_key: Key
+    new_key: Key
+
+
+@dataclass(frozen=True)
+class Refused:
+    """A mark left the file under the function's bare name, and the carry
+    cannot say which function it belongs to. TEXT is one ASCII line."""
+    text: str
+
+
+class Moves(NamedTuple):
+    """`pair_moves`'s answer: each (old, new) pair, every key that did not pair,
+    and one refusal per bare name whose keys could not pair, each sorted."""
+    pairs: list[tuple[Key, Key]]
+    unpaired: list[Key]
+    refused: list[Refused]
+
+
+def resolve(function: Key, file_functions, file_marks) -> Exact | Twin | Carry | Refused:
+    """Which mark belongs to FUNCTION, a (path, key name) key.
+
+    FILE_FUNCTIONS are the keys its file holds now and FILE_MARKS the marked
+    keys, a MarkIndex's `keys()` or any iterable of keys; keys in other files
+    are ignored. A marked key answers itself, Exact or Twin. An unmarked one
+    carries the mark that left the file under its bare name when that mark and
+    the function are the only two keys of the name that `pair_moves` would
+    pair; it is refused when they cannot pair, and answers itself when no mark
+    of its name left. No caller acts on a carry yet: mission-4 turns it on.
+    """
+    path = function[0]
+    marks = _in_file(path, file_marks)
+    if function in marks:
+        return _own(function)
+    held = _in_file(path, file_functions) | {function}
+    answer = _answers(path, marks - held, held - marks).get(_carry_name(function[1]))
+    return _own(function) if answer is None else answer
+
+
+def pair_moves(path: str, dropped_keys, added_keys) -> Moves:
+    """Which keys that left PATH pair with keys that arrived in it, by
+    `resolve`'s rule: one drop and one add share a bare name, and neither is a
+    twin or anonymous. Keys in other files never pair."""
+    dropped, added = set(dropped_keys), set(added_keys)
+    answers = _answers(path, _in_file(path, dropped), _in_file(path, added))
+    pairs = sorted((a.old_key, a.new_key) for a in answers.values() if isinstance(a, Carry))
+    paired = {key for pair in pairs for key in pair}
+    return Moves(pairs, sorted((dropped | added) - paired), _refusals(answers))
+
+
+def _in_file(path: str, keys) -> set[Key]:
+    return {key for key in keys if key[0] == path}
+
+
+def _refusals(answers: dict) -> list[Refused]:
+    return [answers[name] for name in sorted(answers) if isinstance(answers[name], Refused)]
+
+
+def _own(function: Key) -> Exact | Twin:
+    ordinal = split_ordinal(function[1])[1]
+    return Twin(function, ordinal) if ordinal > 1 else Exact(function)
+
+
+def _carry_name(name: str) -> str:
+    """The bare name a key carries under, its twin ordinal cut first; "" for
+    an anonymous function, which never carries."""
+    return bare_name(split_ordinal(name)[0])
+
+
+def _by_carry_name(keys) -> dict[str, list[Key]]:
+    groups: dict[str, list[Key]] = {}
+    for key in sorted(keys):
+        name = _carry_name(key[1])
+        if name:
+            groups.setdefault(name, []).append(key)
+    return groups
+
+
+def _answers(path: str, dropped, added) -> dict[str, Carry | Refused]:
+    """Per bare name that both a dropped and an added key hold, its Carry or
+    its Refused."""
+    gone, came = _by_carry_name(dropped), _by_carry_name(added)
+    return {name: _answer(path, name, gone[name], came[name]) for name in gone.keys() & came.keys()}
+
+
+def _answer(path: str, name: str, gone: list[Key], came: list[Key]) -> Carry | Refused:
+    why = _why_refused(gone, came)
+    return Carry(gone[0], came[0]) if why is None else Refused(_refusal(path, name, gone, came, why))
+
+
+def _why_refused(gone: list[Key], came: list[Key]) -> str | None:
+    if any(split_ordinal(key[1])[1] > 1 for key in gone + came):
+        return "twins never carry a mark"
+    if len(gone) > 1:
+        return f"{len(gone)} marks left the file under that name, and a mark carries only when one did"
+    if len(came) > 1:
+        return f"{len(came)} unmarked functions hold that name, and a mark carries only to one"
+    return None
+
+
+def _refusal(path: str, name: str, gone: list[Key], came: list[Key], why: str) -> str:
+    moves = " or ".join(f"crapkit ratchet move --function {_arg(path)} {_quoted(old)} {_quoted(new)}"
+                        for old in gone for new in came)
+    return (f"{path}: no mark carries to {_listed(came)} under the name {name}: {why}; "
+            f"the marks that left the file are {_listed(gone)}; "
+            f"ratchet move --function is the explicit form: {moves}")
+
+
+def _quoted(key: Key) -> str:
+    return f'"{key[1]}"'
+
+
+def _listed(keys: list[Key]) -> str:
+    return ", ".join(_quoted(key) for key in keys)
+
+
+def _arg(path: str) -> str:
+    """PATH as one shell word."""
+    return f'"{path}"' if any(c.isspace() for c in path) else path

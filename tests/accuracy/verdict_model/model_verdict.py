@@ -9,7 +9,7 @@ doc: README.md:1379-1471 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aac
 doc: README.md:1473-1500 sha256=2a0ca63518c599c9ed7c425b5b85bfc1bea28854e6aed403ccc5f0f04938601f
 doc: README.md:1285-1285 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
 doc: CONTEXT.md:30-37 sha256=f7baa578e3f82045a5588991a9c2a408ee7995faa7f12e682342b60295ef2987
-doc: CONTEXT.md:83-154 sha256=e4fbb26a3289f62d24e9a749dadceba60667205c477c3109c4585b56bd00149a
+doc: CONTEXT.md:83-165 sha256=4a7f8cbaaf5c52b8cb8d05b91f7255b8a6e83eb6a228fd357fb5191ac95e22e1
 doc: docs/ratchet.md:20-89 sha256=c632bda254159ea7a636a8959cac9f4eda6e27f71bb32729d05aefde1eda14c2
 doc: docs/ratchet.md:118-142 sha256=8bc7df912a11fc8893505b9bc766fcbd08a2c4d0cc14f911dafb66bbe139a5cb
 doc: docs/ratchet.md:189-252 sha256=e4ca95739a264be11a9e79d98b2d4b7f8792124bfc6fd2ec223f371b8ec08729
@@ -115,11 +115,16 @@ def named_baseline(runs: list[Run], wanted: int) -> tuple[Run | None, str | None
 
 # --- verdict exit (README.md:961-988) ----------------------------------------------------
 
-EXIT_ORDER = ((6, "gate"), (7, "ratchet"), (8, "failures"), (9, "diff_uncovered"))
+# README.md:1480 and 1483: a file a scope takes whose name is not UTF-8 is a config
+# error, exit 3, refused before any verdict; a changed file no reader could read is
+# refused at 6 beside the gate violation.
+EXIT_ORDER = ((3, "unreadable_name"), (6, "gate"), (6, "unread"), (7, "ratchet"),
+              (8, "failures"), (9, "diff_uncovered"))
 
 
 def exit_code(findings: frozenset) -> int:
-    """verify reports the first of 6, 7, 8, 9 that fires, in that order; 0 when none."""
+    """verify reports the first of 6, 7, 8, 9 that fires, in that order; 0 when none.
+    A claimed name that is not UTF-8 comes before all of them with 3."""
     return next((code for code, name in EXIT_ORDER if name in findings), 0)
 
 
