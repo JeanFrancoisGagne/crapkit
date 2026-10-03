@@ -10,7 +10,8 @@ goes on from the old name.
 The git reads under them answer a fact or raise GitError. `blob_at` answered
 None for any git failure, so a clone that did not hold the baseline read as a
 history that never held marks, and verify would judge against no marks at
-all. Every test here builds a real repo.
+all. Every test here but one builds a real repo: the --raw line reader's
+feeds it bytes in the shape `git log --raw` prints.
 """
 from __future__ import annotations
 
@@ -144,6 +145,49 @@ def test_a_history_a_depth_one_clone_does_not_hold_names_the_fetch(history, tmp_
 
     assert gitio.shallow_fix(shallow).endswith("git fetch --unshallow")
     assert str(refused.value).endswith(gitio.shallow_fix(shallow))
+
+
+# --- one commit's --raw line: (before id, after id, merge) ---------------------
+# Each body is what `git log --format=%x00%at %H --raw --cc --no-abbrev` prints
+# after a commit's header: a blank line, then one colon per parent, each
+# parent's mode and the commit's, each parent's id and the commit's, one status
+# letter per parent, a tab and the path. A commit with no line prints nothing
+# after its header.
+
+BASE_ID = "6bbe25095a44fce5f1d5acdcd256cbf8ca9c3521"
+SIDE_ID = "7f02142b6e07146323e384ec63b9626c32f4e128"
+THIRD_ID = "5401050afc4da8e3c43fa0eb06e49744df5fa2af"
+OWN_ID = "4bf54318bda7623ed71315a7182163c6f8d6671a"
+ZERO_ID = "0" * 40
+OWN_SHA256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+
+
+def raw_line(modes: str, ids: list[str], status: str) -> bytes:
+    return f"\n{':' * len(status)}{modes} {' '.join(ids)} {status}\t{MARKS}\n".encode()
+
+
+@pytest.mark.parametrize(("body", "sides"), [
+    pytest.param(b"", (None, gitio._UNSHOWN, True), id="no-raw-line"),
+    pytest.param(raw_line("100644 100644", [BASE_ID, OWN_ID], "M"),
+                 (BASE_ID, OWN_ID, False), id="an-edit"),
+    pytest.param(raw_line("000000 100644", [ZERO_ID, OWN_ID], "A"),
+                 (None, OWN_ID, False), id="a-create"),
+    pytest.param(raw_line("100644 000000", [BASE_ID, ZERO_ID], "D"),
+                 (BASE_ID, None, False), id="a-delete"),
+    pytest.param(raw_line("100644 100644 100644", [BASE_ID, SIDE_ID, OWN_ID], "MM"),
+                 (None, OWN_ID, True), id="a-merge"),
+    pytest.param(raw_line("100644 100644 100644 100644", [BASE_ID, SIDE_ID, THIRD_ID, OWN_ID],
+                          "MMM"),
+                 (None, OWN_ID, True), id="an-octopus-merge"),
+    pytest.param(raw_line("100644 100644 000000", [BASE_ID, SIDE_ID, ZERO_ID], "DD"),
+                 (None, None, True), id="a-merge-that-deletes"),
+    pytest.param(raw_line("000000 100644", ["0" * 64, OWN_SHA256], "A"),
+                 (None, OWN_SHA256, False), id="a-sha-256-create"),
+])
+def test_one_commits_raw_line_names_the_ids_on_each_side(body, sides):
+    """A merge names no one parent as its before side. A commit the log lists
+    with no line keeps the after side _with_bytes reads as unchanged bytes."""
+    assert gitio._raw_sides(body) == sides
 
 
 # --- verify's stand-in: the newest committed marks since the baseline ----------
