@@ -145,7 +145,7 @@ _Avoid_: gate, block (the edit is already on disk)
 ### Debt
 
 **Ratchet mark**:
-A committed record that one function is allowed to sit at a known CRAP; it may only tighten.
+A committed record that one function is allowed to sit at a known CRAP; it may only tighten. A carried mark is the mark `keys.resolve` gives an unmarked function when its old key left the file, exactly one mark that left shares its bare name, and no other unmarked function holds that name; twins and anonymous functions never carry, and no command acts on a carried mark yet.
 _Avoid_: exemption, baseline entry, whitelist
 
 **Metric stamp**:
