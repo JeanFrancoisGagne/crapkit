@@ -11,6 +11,7 @@ import pytest
 from crapkit.score import ScoredRow
 from crapkit.snapshot import InventoryRow
 from crapkit.store import SnapshotStore
+from test_store import _commits
 
 OLD_SHAPE = """
 CREATE TABLE runs (
@@ -248,15 +249,29 @@ def test_the_migration_runs_once(tmp_path):
     assert reopened.read_scored(1) == export_order(scored(40))
 
 
+def test_an_old_store_upgrades_in_one_commit(tmp_path):
+    """The upgrade is the setup's other path: new tables, new columns, both
+    rewrites and the indexes, all in the one transaction a new store gets."""
+    db = tmp_path / "crap.sqlite"
+    old_store(db, [scored(40)])
+    before = _commits(db)
+
+    SnapshotStore(db).close()
+
+    assert _commits(db) - before == 1
+
+
 def test_an_interrupted_migration_leaves_the_old_table_intact(tmp_path):
-    """The rewrite builds under a temp name and swaps last, inside one
-    transaction. A failure partway through must leave a database that still
-    reads through the old code and still migrates on the next open."""
+    """The rewrite builds under a temp name and swaps last, inside the one
+    transaction the whole upgrade runs in. A failure partway through must leave
+    the database as the old code wrote it, so it still reads through that code
+    and still migrates on the next open."""
     db = tmp_path / "crap.sqlite"
     old_store(db, [scored(40)], nullable=True)
     conn = sqlite3.connect(db)  # a row the identity table cannot hold
     conn.execute("UPDATE functions SET scope = NULL WHERE start = 1")
     conn.commit()
+    shape = conn.execute("SELECT type, name, sql FROM sqlite_master ORDER BY name").fetchall()
     conn.close()
 
     with pytest.raises(sqlite3.IntegrityError):
@@ -264,9 +279,9 @@ def test_an_interrupted_migration_leaves_the_old_table_intact(tmp_path):
 
     assert "scope" in columns(db, "functions"), "the old table survived the failure"
     assert count(db, "functions") == 40, "no row was lost"
-    assert count(db, "identities") == 0, "nothing half-built was left behind"
-
     conn = sqlite3.connect(db)
+    assert conn.execute("SELECT type, name, sql FROM sqlite_master ORDER BY name").fetchall() \
+        == shape, "nothing half-built was left behind"
     conn.execute("UPDATE functions SET scope = 'api' WHERE scope IS NULL")
     conn.commit()
     conn.close()
