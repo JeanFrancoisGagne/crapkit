@@ -1,6 +1,6 @@
 calc	independent_test	modules	functions
 CRAP score	tests/accuracy/score_model/test_crap.py::test_reduced_grid_matches_the_exact_value	src/crapkit/score.py	src/crapkit/score.py:crap,src/crapkit/score.py:_finish
-Function coverage ratio	tests/accuracy/score_model/test_counts_join.py::test_every_scored_row_matches_its_artifact_counts	src/crapkit/coverage_istanbul.py,src/crapkit/coverage_py.py	src/crapkit/coverage_istanbul.py:FnCoverage.coverage,src/crapkit/coverage_py.py:_fn_coverage
+Function coverage ratio	tests/accuracy/score_model/test_counts_join.py::test_every_scored_row_matches_its_artifact_counts	src/crapkit/coverage_istanbul.py,src/crapkit/coverage_py.py,src/crapkit/score.py	src/crapkit/score.py:FnCoverage.coverage,src/crapkit/coverage_py.py:_fn_coverage
 Remedy label	tests/accuracy/score_model/test_remedy_grade_budget.py::test_remedy_matches_the_readme_table	src/crapkit/score.py	src/crapkit/score.py:remedy
 Grade letter	tests/accuracy/score_model/test_remedy_grade_budget.py::test_grade_matches_the_band_table_for_every_count_to_400	src/crapkit/score.py	src/crapkit/score.py:grade
 Work budget estimates	tests/accuracy/score_model/test_remedy_grade_budget.py::test_uncovered_paths_match_away_from_exact_halves	src/crapkit/packet.py	src/crapkit/packet.py:budget

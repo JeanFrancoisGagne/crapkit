@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from .config import Lane
-    from .coverage_istanbul import FnCoverage
+    from .score import FnCoverage
 
 
 class CoverageFormat(Protocol):

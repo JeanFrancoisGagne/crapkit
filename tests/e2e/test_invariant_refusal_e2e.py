@@ -464,10 +464,10 @@ def test_nonfinite_crap_stops(repo: Path, monkeypatch):
     """R27 (c24e6a4): a NaN covered-branch count reached the score and the
     store. The readers refuse such a count now; past them, a coverage that is
     not a number from 0 to 1 still stops the run before its rows are stored."""
-    from crapkit import coverage_istanbul
+    from crapkit import score
 
     before = runs(repo), marks(repo)
-    monkeypatch.setattr(coverage_istanbul.FnCoverage, "coverage",
+    monkeypatch.setattr(score.FnCoverage, "coverage",
                         property(lambda fn: float("nan")))
     done = run_cli(repo, "coverage", "--json")
     stopped(done, "coverage must be a number from 0 to 1")

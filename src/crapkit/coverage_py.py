@@ -29,11 +29,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import covstream
-from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
 from .repopath import Reported, file_separators
 from .repotext import json_kind, utf8_spelling
 from .named import first_few
+from .score import FnCoverage, coverage_count
 
 if TYPE_CHECKING:
     from .config import Lane

@@ -15,12 +15,11 @@ JSON framing.
 """
 from __future__ import annotations
 
-import heapq
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING
 
-from . import covstream
+from . import covstream, score
 from .errors import ToolError
 from .istanbul_lines import on_reader_lines
 from .repopath import Reported
@@ -30,51 +29,18 @@ if TYPE_CHECKING:
     from .config import Lane
 
 
-class FnCoverage(NamedTuple):
-    name: str
-    start: int
-    end: int
-    invoked: bool
-    branches_total: int
-    branches_covered: int
-    statements_total: int = 0
-    statements_covered: int = 0
-    # The producer was told to leave the function out, so no test moves its number.
-    excluded: bool = False
-    # The reader lists every function the producer measured in this file, so a
-    # function missing from the list was left out on purpose.
-    full_listing: bool = False
-
-    @property
-    def coverage(self) -> float:
-        if self.branches_total > 0:
-            return self.branches_covered / self.branches_total
-        if self.statements_total > 0:
-            return self.statements_covered / self.statements_total
-        return 1.0 if self.invoked else 0.0
-
-
 def _rel_path(abs_path: str, repo_root: str) -> str:
     return Reported(repo_root)(abs_path)
 
 
 # --- span attribution ------------------------------------------------------
 # mutable span layout while attributing: [name, start, end, invoked, b_total, b_cov, s_total,
-# s_cov, signature, body, finish], the last three as (line, column) positions
+# s_cov, signature, body, finish], the last three as (line, column) positions; the
+# finish sits where score.span_owners reads it, at score.SPAN_FINISH
 _B_TOTAL, _B_COV, _S_TOTAL, _S_COV = 4, 5, 6, 7
-_SIGNATURE, _BODY, _FINISH = 8, 9, 10
+_SIGNATURE, _BODY = 8, 9
 _COUNTS = slice(0, 8)
 _LINE_END = sys.maxsize
-
-
-def coverage_count(value: object, field: str) -> int:
-    """Admit a producer's count before attribution or ratio arithmetic."""
-    if type(value) is float and value.is_integer():
-        value = int(value)
-    if type(value) is not int or value < 0:
-        raise ValueError(f"{field} must be a nonnegative integer count, got {value!r}; "
-                         f"{covstream.REGENERATE}")
-    return value
 
 
 def _field(node: object, key: str) -> object:
@@ -128,7 +94,7 @@ def _admit_branch(value: object, field: str) -> int:
         value = int(value)
     if type(value) is int and value < 0:
         return 0
-    return coverage_count(value, field)
+    return score.coverage_count(value, field)
 
 
 def _admit_hits(cov: dict) -> int:
@@ -140,7 +106,7 @@ def _admit_hits(cov: dict) -> int:
     """
     for group in ("f", "s"):
         for key, value in cov.get(group, {}).items():
-            coverage_count(value, f"{group}[{key!r}]")
+            score.coverage_count(value, f"{group}[{key!r}]")
     return sum(_admit_branch_hits(key, hits) for key, hits in cov.get("b", {}).items())
 
 
@@ -326,52 +292,12 @@ def _points(entries: dict, point_of) -> set[tuple[int, int]]:
     return points
 
 
-def _push_started(heap: list, ordered: list[list], nxt: int, point: tuple, opens: int) -> int:
-    while nxt < len(ordered) and ordered[nxt][opens] <= point:
-        span = ordered[nxt]
-        line, column = span[opens]
-        heapq.heappush(heap, (span[2] - line, -line, -column, nxt, span))
-        nxt += 1
-    return nxt
-
-
-def _drop_ended(heap: list, point: tuple) -> None:
-    """Discard spans that closed before this point. Safe to do lazily and only at
-    the top: query points only increase, so anything popped here can never
-    contain a later point either."""
-    while heap and heap[0][-1][_FINISH] < point:
-        heapq.heappop(heap)
-
-
-def _span_owners(fn_spans: list[list], points: set[tuple[int, int]],
-                 opens: int) -> dict[tuple[int, int], list | None]:
-    """position -> innermost containing span, each span opening at its `opens`
-    position. A hit inside a nested function belongs to that function, never
-    to its encloser — else the nested one reads through its encloser and the
-    encloser answers for lines it can't fix. A counter that starts on a
-    function's line but ahead of where that function opens is the encloser's.
-
-    Sweeping spans by start into a heap keyed (lines, -start, index) settles
-    that in O((F + Q) log F) instead of a scan per query. The index term is
-    load-bearing: it is the sorted position, so an exact tie on (lines, -start)
-    resolves to the span the old linear scan met first."""
-    ordered = sorted(fn_spans, key=lambda s: s[opens])
-    heap: list[tuple] = []
-    owners: dict[tuple[int, int], list | None] = {}
-    nxt = 0
-    for point in sorted(points):
-        nxt = _push_started(heap, ordered, nxt, point, opens)
-        _drop_ended(heap, point)
-        owners[point] = heap[0][-1] if heap else None
-    return owners
-
-
 def _attach_branches(fn_spans: list[list], cov: dict) -> None:
     """A function holds branches from its signature on: a default argument's
     arm sits between its name and its body. A ternary that opens ahead of a
     function on the same line (`flag ? (x) => x : y`) is the code around it."""
     branches = cov.get("branchMap", {})
-    owners = _span_owners(fn_spans, _points(branches, _branch_point), _SIGNATURE)
+    owners = score.span_owners(fn_spans, _points(branches, _branch_point), _SIGNATURE)
     hits_by_id = cov.get("b", {})
     for bid, branch in branches.items():
         best = owners.get(_branch_point(bid, branch))
@@ -387,7 +313,7 @@ def _attach_statements(fn_spans: list[list], cov: dict) -> None:
     when the declaration does, at import for a module-level arrow: the code
     around the arrow owns it, or an arrow no test calls reads half covered."""
     statements = cov.get("statementMap", {})
-    owners = _span_owners(fn_spans, _points(statements, _stmt_point), _BODY)
+    owners = score.span_owners(fn_spans, _points(statements, _stmt_point), _BODY)
     hits_by_id = cov.get("s", {})
     for sid, stmt in statements.items():
         best = owners.get(_stmt_point(sid, stmt))
@@ -404,13 +330,13 @@ def _instrumented(cov: dict) -> bool:
     return bool(cov.get("statementMap"))
 
 
-def _file_coverage(cov: dict) -> list[FnCoverage]:
+def _file_coverage(cov: dict) -> list[score.FnCoverage]:
     clamped = _admit_hits(cov)
     fn_spans = _fn_spans(cov)
     _attach_branches(fn_spans, cov)
     _attach_statements(fn_spans, cov)
     full = _instrumented(cov)
-    rows = [FnCoverage(*s[_COUNTS], full_listing=full) for s in fn_spans]
+    rows = [score.FnCoverage(*s[_COUNTS], full_listing=full) for s in fn_spans]
     return ClampedBranchCounts(rows, clamped) if clamped else rows
 
 
@@ -503,7 +429,7 @@ def _require_files(per_file: dict) -> None:
 
 
 def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = covstream.CHUNK
-                             ) -> tuple[dict[str, list[FnCoverage]], dict[str, set[int]], str]:
+                             ) -> tuple[dict[str, list[score.FnCoverage]], dict[str, set[int]], str]:
     """Function coverage AND dead lines from ONE walk, plus the sha256 of the
     artifact's own bytes.
 
@@ -547,7 +473,7 @@ UNMEASURED_READING = "or the suite measured a part of the tree these scopes do n
 
 
 def read(lane: Lane, root: Path, artifact: Path
-         ) -> tuple[dict[str, list[FnCoverage]], dict[str, set[int]], str]:
+         ) -> tuple[dict[str, list[score.FnCoverage]], dict[str, set[int]], str]:
     """The lane's function coverage, dead lines and artifact digest, one walk."""
     return parse_istanbul_both_file(artifact, repo_root=str(root))
 

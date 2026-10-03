@@ -1,8 +1,7 @@
 """Scoring seam: inventory rows + lane coverage in, scored rows with flags out. Pure."""
 import pytest
 
-from crapkit.coverage_istanbul import FnCoverage
-from crapkit.score import crap, flagged_crap, score_rows
+from crapkit.score import FnCoverage, crap, flagged_crap, score_rows
 from crapkit.snapshot import InventoryRow
 
 
