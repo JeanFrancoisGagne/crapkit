@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 from .. import config, lane_results
-from ..errors import ConfigError, CrapkitError, ToolError
+from ..errors import ConfigError, CrapkitError, ToolError, UnreadableNameError
 from ..invariants import STORED, UNSETTLED, check_rows, check_verdict
 from ..invocation import _self
 from ..named import first_few
@@ -909,12 +909,39 @@ def _refuse_lane_less_verify(cfg) -> None:
                           "declares coverage_optional = true instead")
 
 
+def _stop_on_claimed_names(root: Path, cfg, dirty: set[str]) -> None:
+    """Exit 3 before any lane runs when a scope takes a tracked file whose name
+    git gives in bytes that are not UTF-8: the gate refuses such a name before
+    it judges anything, so nothing is measured and no run is stored. The stop
+    prints the scan's own refusal, the sentence naming the first name and
+    counting the rest, and --json lists each name with its `dirty` flag."""
+    from ..gate import WHOLE, ChangedFile, UnreadableName, judge
+    from ..gitio import ls_files
+    from ..keys import MarkIndex
+    from ..universe import claimed_unreadable
+
+    claimed = claimed_unreadable(ls_files(root), cfg)
+    if not claimed:
+        return
+    names = judge([ChangedFile(path, WHOLE, UnreadableName(path, scope, path in dirty))
+                   for path, scope in claimed], cfg.ceiling_of, lambda: MarkIndex(())).unreadable_name
+    raise _claimed_refusal(names)
+
+
+def _claimed_refusal(names) -> UnreadableNameError:
+    """The gate's unreadable-name findings as the scan's refusal: its sentence
+    (universe.claimed_text), each name, and the dirty ones."""
+    from ..universe import claimed_text
+
+    return UnreadableNameError(claimed_text([(name.path, name.scope) for name in names]),
+                               [name.path for name in names], frozenset(n.path for n in names if n.dirty))
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     from ..diffparse import worktree_ranges
     from ..gitio import GitFacts, diff_since
     from ..uncovered import missing_by_path
-    from ..verify import (diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage,
-                          with_unread)
+    from ..verify import diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
@@ -937,6 +964,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     judged = _judged_marks(root, saved, baseline, cfg.ratchet_file)
     _guard_ratchet_stamp(judged.marks, cfg.ratchet_file, *_seed_hint(store, args, baseline, git))
     _emit_baseline(root, store, baseline, args.emit_baseline)
+    _stop_on_claimed_names(root, cfg, dirty)
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.
     run = _scored_run(root, cfg, list(cfg.lanes), reuse_artifacts=args.reuse_artifacts,
@@ -958,7 +986,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
                        baseline_failures=set(found.carried), fresh_failures=fresh_failures,
                        target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty,
-                       test_files=_test_files(root, fresh_failures))
+                       test_files=_test_files(root, fresh_failures), unread=run.corpus.unread)
     verdict = _maybe_flake_retry(root, cfg, provenance, verdict)
     unjudged = _warn_baseline_gaps(found, baseline, provenance, verdict.new_failures)
     _warn_suite_shrink(baseline, provenance, behind)
@@ -972,7 +1000,6 @@ def cmd_verify(args: argparse.Namespace) -> int:
     unmarked = unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets)
     _warn_standing_debt(unmarked)
     verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
-    verdict = with_unread(verdict, run.corpus.unread, set(ranges) | dirty, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
     # Every row and the verdict meet their documented bounds, or nothing is written.
     check_rows(scored, cfg.ceiling_of)
@@ -1448,9 +1475,11 @@ def _env_override_reason() -> str:
 def _hook_override_refusal(unread: dict) -> str | None:
     """The line verify --override prints for the same unread files, or None
     when every staged file was read."""
-    from ..verify import Verdict, override_refusal, with_unread
+    from ..gate import Unread
+    from ..verify import Verdict, override_refusal
 
-    return override_refusal(with_unread(Verdict.passing(), unread, set(unread), set()))
+    return override_refusal(Verdict.passing()._replace(
+        unread_files=tuple(Unread(path, why) for path, why in sorted(unread.items()))))
 
 
 def _judge_staged(root: Path, cfg, gate, shown: str = "") -> int:

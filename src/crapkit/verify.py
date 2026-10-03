@@ -3,8 +3,9 @@
 Three independent checks, all must hold:
 - Gate: every function a change touched sits at CRAP <= target (coverage cannot
   save cc > target; that is the target's design), unless a ratchet mark carries
-  it at or under the recorded value: that is the debt the repo signed for, and
-  `rescore --gate` and the pre-commit hook already read it so (#29).
+  it at or under the recorded value: that is the debt the repo signed for (#29).
+  verify is a gate adapter: the gate module judges the touched functions with
+  each one's exact CRAP, and the changed files no reader could read.
 - Ratchet: no function above target scores worse than its recorded high-water
   mark, touched or not (coverage rot regresses functions nobody edited).
 - Failures: the fresh failure set adds nothing over the baseline's (the suite
@@ -16,7 +17,9 @@ from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from typing import Any, NamedTuple
 
-from .keys import MarkIndex, key_names, key_of, mark_key, rows_by_key
+from .gate import (WHOLE, ChangedFile, CrapBound, Function, GateResult, Unread, UnreadableName, judge,
+                   touches)
+from .keys import MarkIndex, mark_key, rows_by_key
 from .merge import UNREAD_ADVICE
 from .ratchet import RatchetEntry
 from .repopath import file_separators
@@ -148,22 +151,6 @@ class UncoveredViolation(NamedTuple):
     dirty: bool = False
 
 
-class UnreadFile(NamedTuple):
-    """A changed file no reader could read. The run scores it as zero
-    functions; the gate judged none of them, so it refuses the file."""
-    path: str
-    reason: str
-    dirty: bool = False
-
-
-class UnreadableName(NamedTuple):
-    """A file a scope takes whose name git gives in bytes that are not UTF-8.
-    `path` holds those bytes as surrogates, the way git's listings hand it on."""
-    path: str
-    scope: str
-    dirty: bool = False
-
-
 class Verdict(NamedTuple):
     ok: bool
     gate_violations: list[GateViolation]
@@ -177,10 +164,13 @@ class Verdict(NamedTuple):
     forgiven_failures: tuple[str, ...] = ()
     retried_passes: tuple[str, ...] = ()
     overridden: tuple[GateViolation, ...] = ()
-    unread_files: tuple[UnreadFile, ...] = ()
-    # Names a scope takes that are not UTF-8. Nothing fills it yet: the scan
-    # refuses such a name with exit 3 before any verdict exists. The payload's
-    # `unreadable_names` lists the other kind, names no scope takes.
+    # Changed files no reader could read: the run scores each as zero
+    # functions, and the gate judged none of them, so it refuses the file.
+    unread_files: tuple[Unread, ...] = ()
+    # Names a scope takes that are not UTF-8. Nothing fills it yet: the gate
+    # refuses such a name before it judges anything, and verify stops with
+    # exit 3 before any verdict exists. The payload's `unreadable_names` lists
+    # the other kind, names no scope takes.
     claimed_names: tuple[UnreadableName, ...] = ()
 
     @classmethod
@@ -213,16 +203,6 @@ def with_diff_coverage(verdict: Verdict, uncovered: list[tuple[str, int]],
         return verdict
     findings = tuple(UncoveredViolation(path, line, path in dirty_paths) for path, line in uncovered)
     return settle_verdict(verdict._replace(uncovered_violations=findings))
-
-
-def with_unread(verdict: Verdict, unread: dict[str, str], changed: set[str],
-                dirty_paths: set[str]) -> Verdict:
-    """Fail the gate on every changed file no reader could read: its zero
-    records are not zero functions over the ceiling. An unread file the
-    change never touched holds no changed function, so it is left alone."""
-    found = tuple(UnreadFile(path, why, path in dirty_paths)
-                  for path, why in sorted(unread.items()) if path in changed)
-    return settle_verdict(verdict._replace(unread_files=found)) if found else verdict
 
 
 def _id_forms(path: str) -> tuple[str, str]:
@@ -335,7 +315,7 @@ def gate_line(v, dirty: bool, unmeasured: bool = False) -> str:
             f"{v.path}:{v.start}  {v.long_name}  -> {v.remedy}{_dirty_tag(dirty)}")
 
 
-def _unread_file_line(u: UnreadFile, dirty: bool) -> str:
+def _unread_file_line(u: Unread, dirty: bool) -> str:
     """One changed file a gate refused because no reader could read it; every
     gate prints it the same way."""
     return f"  UNREAD  {u.path}: {u.reason}{_dirty_tag(dirty)}"
@@ -414,7 +394,7 @@ def _gate_message(v: GateViolation) -> str:
     return f"{v.long_name}: CRAP {v.crap:.1f} (ccn {v.ccn}, cov {v.cov:.0%}) -> {v.remedy}"
 
 
-def _unread_message(u: UnreadFile) -> str:
+def _unread_message(u: Unread) -> str:
     return f"no reader could read this file, so the gate judged none of its functions: {u.reason}"
 
 
@@ -426,7 +406,7 @@ def _uncovered_message(line) -> str:
     return "changed line has no coverage: no lane ran it"
 
 
-def _unread_cause(u: UnreadFile) -> str:
+def _unread_cause(u: Unread) -> str:
     return f"{u.path}: {u.reason}"
 
 
@@ -585,13 +565,6 @@ def sarif_results(verdict: Verdict, uncovered: Sequence | None = None) -> list[d
             for entry in _entries(reported, row)]
 
 
-def _touched(row: ScoredRow, ranges: dict[str, list[tuple[int, int]]]) -> bool:
-    spans = ranges.get(row.path)
-    if not spans:
-        return False
-    return any(not (hi < row.start or lo > row.end) for lo, hi in spans)
-
-
 def touched_rows(rows: list[ScoredRow],
                  changed_ranges: dict[str, list[tuple[int, int]]]) -> list[ScoredRow]:
     """The gate's selection without its policy: rows whose span a change overlaps.
@@ -599,38 +572,69 @@ def touched_rows(rows: list[ScoredRow],
     Every gate in crapkit judges touched functions only — untouched debt is the
     ratchet's business. `rescore --gate` reuses this so its verdict and the
     pre-commit hook's cannot disagree about which functions were even in scope.
+    The touch rule is the gate module's.
     """
-    return [r for r in rows if _touched(r, changed_ranges)]
+    return [r for r in rows if touches(r, changed_ranges.get(r.path, ()))]
 
 
 def _ceiling(row: ScoredRow, target: int, scope_targets: dict[str, int] | None) -> int:
     return (scope_targets or {}).get(row.scope, target)
 
 
-def _within_mark(row: ScoredRow, key: tuple[str, str],
-                 marks: MarkIndex | Mapping[tuple[str, str], float]) -> bool:
-    """Signed debt as `rescore --gate` reads it: a mark the fresh score sits at or
-    under, compared at the 4dp the mark is stored at. Above the mark the gate
-    fires, as rescore's does, and the ratchet check reports the rise beside it,
-    so the three gates agree on what an edit inside marked debt may do (#29).
-    The key is the twin-aware one the ratchet check looks marks up by."""
-    mark = marks.get(key)
-    return mark is not None and round(row.crap, 4) <= mark
+def _function(row: ScoredRow) -> Function:
+    """A scored row as the gate judges it: verify knows its exact CRAP."""
+    return Function(row.long_name, row.start, row.end, CrapBound(row.crap, row.crap), row.scope,
+                    row.occurrence, row)
 
 
-def _gate_violations(fresh, changed_ranges, target, scope_targets, dirty,
-                     ratchet) -> list[GateViolation]:
-    names = key_names(fresh)
-    marks = MarkIndex(ratchet)
-    gate = [
-        GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
-                      r.path in dirty, key_of(names, r)[1])
-        for r in fresh
-        if over_ceiling(r.crap, _ceiling(r, target, scope_targets)) and _touched(r, changed_ranges)
-        and not _within_mark(r, key_of(names, r), marks)
-    ]
+def _changed_functions(fresh: list[ScoredRow],
+                       changed_ranges: dict[str, list[tuple[int, int]]]) -> list[ChangedFile]:
+    """Each changed file with every row the run scored in it, so the gate keys
+    each function over the whole file."""
+    functions: dict[str, list[Function]] = {}
+    for row in fresh:
+        if row.path in changed_ranges:
+            functions.setdefault(row.path, []).append(_function(row))
+    return [ChangedFile(path, changed_ranges[path], tuple(found)) for path, found in functions.items()]
+
+
+def _unread_files(unread: Mapping[str, str], changed_ranges: dict[str, list[tuple[int, int]]],
+                  dirty: set[str]) -> list[ChangedFile]:
+    """Each file no reader could read: taken whole when the change or an
+    uncommitted edit touched it, which the gate refuses, else with no span."""
+    return [ChangedFile(path, WHOLE if path in changed_ranges or path in dirty else (),
+                        Unread(path, why, path in dirty)) for path, why in sorted(unread.items())]
+
+
+def _judged(fresh, changed_ranges, unread, dirty, ratchet, target, scope_targets) -> GateResult:
+    """The gate module's findings on the change: the marks are read only when a
+    touched function is over its ceiling."""
+    targets = scope_targets or {}
+    return judge(_changed_functions(fresh, changed_ranges) + _unread_files(unread, changed_ranges, dirty),
+                 lambda scope: targets.get(scope, target), lambda: MarkIndex(ratchet))
+
+
+def _gate_violations(judged: GateResult, fresh: list[ScoredRow], dirty: set[str]) -> list[GateViolation]:
+    """The gate's findings verify fails on, worst first: every touched function
+    over its ceiling that no mark pardons. Above its mark the gate fires, and
+    the ratchet check reports the rise beside it (#29). verify knows each exact
+    CRAP, so no finding is unproven.
+
+    The gate lists its findings kind by kind, so they go back into the order
+    the run listed their rows before the sort: two functions on one start line
+    with one CRAP list in row order, whichever is the marked rise."""
+    place = {id(row): n for n, row in enumerate(fresh)}
+    breaches = sorted((*judged.over_ceiling, *judged.marked_rise, *judged.unproven),
+                      key=lambda breach: place[id(breach.function.record)])
+    gate = [_violation(breach, dirty) for breach in breaches]
     gate.sort(key=_worst_first)
     return gate
+
+
+def _violation(breach, dirty: set[str]) -> GateViolation:
+    r = breach.function.record
+    return GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
+                         r.path in dirty, breach.key_name)
 
 
 def _worst_first(row: ScoredRow | GateViolation) -> tuple:
@@ -692,17 +696,21 @@ def evaluate(
     scope_targets: dict[str, int] | None = None,
     dirty_paths: set[str] | None = None,
     test_files: Mapping[str, str] | None = None,
+    unread: Mapping[str, str] | None = None,
 ) -> Verdict:
+    """`unread` is {path: why} for each file no reader could read; the gate
+    refuses the ones the change or an uncommitted edit touched."""
     dirty = dirty_paths or set()
-    gate = _gate_violations(fresh, changed_ranges, target, scope_targets, dirty, ratchet)
+    judged = _judged(fresh, changed_ranges, unread or {}, dirty, ratchet, target, scope_targets)
     regressions = _ratchet_regressions(fresh, ratchet, dirty)
     new_failures = sorted(fresh_failures - baseline_failures)
 
     return settle_verdict(Verdict(
         ok=True,
-        gate_violations=gate,
+        gate_violations=_gate_violations(judged, fresh, dirty),
         ratchet_regressions=regressions,
         new_failures=new_failures,
         dirty_failures=dirty_failure_ids(new_failures, dirty, test_files),
         forgiven_failures=tuple(sorted(fresh_failures & baseline_failures)),
+        unread_files=judged.unread,
     ))

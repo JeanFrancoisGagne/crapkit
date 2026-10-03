@@ -24,13 +24,13 @@ from crapkit import sarif, universe, verify
 from crapkit.cli import _shared, verifying
 from crapkit.merge import UNREAD_ADVICE
 from crapkit.verify import (FINDING_KINDS, FindingKind, GateViolation, RatchetRegression,
-                            Refusal, Sarif, UncoveredViolation, UnreadableName, UnreadFile,
+                            Refusal, Sarif, UncoveredViolation, UnreadableName, Unread,
                             Verdict)
 
 ROOT = Path(__file__).resolve().parents[2]
 
 GATE = GateViolation("src/a.py", "f( x )", 3, 9, 0.5, 84.0, "decompose")
-UNREAD = UnreadFile("src/b.ts", "src/b.ts:12: arrow refused")
+UNREAD = Unread("src/b.ts", "src/b.ts:12: arrow refused")
 ROSE = RatchetRegression("lib/m.py", "g( y )", 4.0, 9.0)
 FAILURE = "tests/t.py::test_a"
 LINE = UncoveredViolation("src/a.py", 7)

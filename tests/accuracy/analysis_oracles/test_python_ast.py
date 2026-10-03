@@ -94,11 +94,12 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # 3,673 once the report read which marks a revision held off its own blob,
 # 3,672 once lane_stamps dropped unreadable_stamps, which nothing called, and
 # 3,679 once keys.py took the mark index (gate-group-01, 0.9.0); 3,703 once
-# verify.FINDING_KINDS took the per-kind sites (gate-group-05), and 3,704
-# once keys took the mark lookups (gate-group-02).
+# verify.FINDING_KINDS took the per-kind sites (gate-group-05), 3,704 once
+# keys took the mark lookups (gate-group-02), and 3,716 once gate.py took the
+# touch, ceiling and pardon rules verify judged by (gate-group-06).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3704
+SRC_DEFS = 3716
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

@@ -489,13 +489,14 @@ def _print_unread(unread: dict[str, str], what: str, file=None) -> None:
     """The changed files a gate refuses, `what` saying which ("staged",
     "changed"), and what to do; nothing when every file was read. Each file's
     line is verify's unread_file row."""
-    from ..verify import UnreadFile, lines_of
+    from ..gate import Unread
+    from ..verify import lines_of
 
     if not unread:
         return
     print(f"crapkit gate: {len(unread)} {what} file(s) could not be read, so no function in "
           "them was judged:", file=file)
-    files = [UnreadFile(path, reason) for path, reason in sorted(unread.items())]
+    files = [Unread(path, reason) for path, reason in sorted(unread.items())]
     for line in lines_of("unread_file", files):
         print(line, file=file)
     print(UNREAD_ADVICE, file=file)
