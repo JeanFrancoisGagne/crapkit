@@ -104,11 +104,12 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # scaffold read its runner facts off the toolchain table (m1-foundations-07),
 # 3,745 once repopath's placing rule said why it left a path unplaced
 # (m1-foundations-03), 3,785 once toolchain.infer read a lane's runner
-# and doctor printed it (m1-foundations-08), and 3,794 once score joined
-# coverage evidence to inventory spans (m1-foundations-05).
+# and doctor printed it (m1-foundations-08), 3,794 once score joined
+# coverage evidence to inventory spans (m1-foundations-05), and 3,804
+# once covstream took HashingReader and the line reader (m1-readers-10).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3797
+SRC_DEFS = 3804
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
