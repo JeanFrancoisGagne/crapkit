@@ -22,6 +22,7 @@ import time
 
 from .errors import ToolError
 from .locks import exclusive_lock
+from .programs import require
 
 _OWN_GROUP = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
               if os.name == "nt" else {"start_new_session": True})
@@ -48,7 +49,7 @@ if hasattr(os, "register_at_fork"):
 def kill_process_tree(pid: int) -> None:
     """Kill a process and its descendants: taskkill /T on Windows, the group on POSIX."""
     if os.name == "nt":
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], executable=_taskkill(),
                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)
     else:
@@ -56,6 +57,27 @@ def kill_process_tree(pid: int) -> None:
             os.killpg(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
+
+
+def _taskkill() -> str:
+    """The taskkill in the Windows system directory, which CreateProcess searched
+    for a bare `taskkill` whatever PATH held, else the one PATH's absolute
+    entries hold (programs.require). Never a copy in the working directory: a
+    system directory Windows does not report joins to a relative name, which
+    is refused."""
+    path = os.path.join(_system_directory(), "taskkill.exe")
+    if os.path.isabs(path) and os.path.isfile(path):
+        return path
+    return require("taskkill")
+
+
+def _system_directory() -> str:
+    """GetSystemDirectoryW's answer, or "" when it gives none."""
+    import ctypes
+
+    folder = ctypes.create_unicode_buffer(32768)
+    ctypes.windll.kernel32.GetSystemDirectoryW(folder, len(folder))
+    return folder.value
 
 
 def command_registration(popen_kwargs):

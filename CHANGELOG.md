@@ -3,6 +3,7 @@
 ## 0.9.0 — unreleased
 
 <!-- 0.9.0:gate-group -->
+- Security: crapkit starts git and the other programs it runs itself (the `claude` that doctor asks for its version, and `taskkill`, which it takes from the Windows system directory first) from PATH's absolute entries only, never from the working directory or an empty or relative PATH entry. doctor asks a launcher it found for its version from that launcher's own folder, with cmd.exe's search of the current directory off, so an interpreter the launcher starts by name, such as npm's `node`, never comes from the repo either. On Windows, a repo holding a planted `git.exe` at its root could make crapkit 0.8.1 and every earlier version run that file, whether a user, a pre-commit hook or the Claude Code hook started crapkit there.
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->
