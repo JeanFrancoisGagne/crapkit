@@ -23,7 +23,12 @@ Fresh: the candidate installed as the README's 60-second start installs it.
 Upgrade: crapkit N-1 measures the repo, the guide's pip row upgrades it to the
 candidate, and the candidate measures it once before the change.
 
-gate-group-07 and -09 add their claimed-name cells here.
+Row `gate-group-07` runs `crapkit rescore --gate --json` on the name: exit 3,
+the argument refusal's stderr line and its error object, and check_gate over
+MCP stdio: isError false, gate.ok false and the name in gate.unread_files, the
+answers 0.8.1 gave.
+
+gate-group-09 adds its claimed-name cells here.
 """
 from __future__ import annotations
 
@@ -37,6 +42,7 @@ import pytest
 
 from kit import profiles, state, wheels
 from kit.cells import cell
+from kit.mcp_client import McpClient
 
 PACKET = "gate-group-06"
 ROW = "gate-group-06"
@@ -226,3 +232,51 @@ def test_claimed_name_json_fresh(box, templates, key):
                                 "unreadable_name finding, exit 3", JSON_ROW))
 def test_claimed_name_json_upgrade(box, candidate, record_property, key):
     assert_verify_json_gives_a_verdict(box, _upgraded(box, candidate, record_property, key))
+
+
+# rescore --gate's cells: gate-group-07 judges both gate adapters through the
+# gate module, and each answers as 0.8.1 did.
+GATE_ROW = "gate-group-07"
+ARGUMENT_REFUSAL = (f"{SHOWN} is named in bytes that are not UTF-8, and crapkit reads every path as UTF-8: "
+                    "rename it (git mv) to a UTF-8 name")
+# The name as a POSIX shell hands it to crapkit: its own bytes, \xe9 in octal.
+SHELL_NAME = "\"$(printf 'src/caf\\351.py')\""
+
+
+def assert_the_gates_answer_as_081(box, repo: Path) -> None:
+    """rescore --gate --json from the shell refuses the argument: exit 3, the
+    one stderr line, and the error object listing the name (committed, so
+    clean). check_gate over MCP stdio answers the verdict, isError false, with
+    the name in gate.unread_files. Neither runs a lane or stores a run."""
+    runs, stored = _lane_runs(repo), _stored_runs(repo)
+
+    gate = box.script(f"crapkit rescore --gate --json {SHELL_NAME}", shell="sh", cwd=repo, expect=3)
+    with McpClient.in_box(box, ["crapkit", "mcp"], cwd=repo) as client:
+        client.initialize()
+        answer = client.call("check_gate", {"path": os.fsdecode(NAME)})
+
+    assert gate.stderr == f"crapkit: {ARGUMENT_REFUSAL}\n", box.transcript.text()
+    assert json.loads(gate.stdout) == {"error": {
+        "exit": 3, "kind": "config", "message": ARGUMENT_REFUSAL,
+        "unread_files": [{"path": SHOWN, "reason": UNREAD_NAME_REASON, "dirty": False}]}, "schema": 1}
+    assert answer["isError"] is False, answer
+    assert answer["structuredContent"]["gate"] == {
+        "ok": False, "judged": 0, "ceilings": {}, "breaches": [], "untracked": [],
+        "unread_files": [{"path": SHOWN, "reason": UNREAD_NAME_REASON, "dirty": True}]}, answer
+    assert (_lane_runs(repo), _stored_runs(repo)) == (runs, stored), box.transcript.text()
+
+
+@pytest.mark.parametrize("key", _harness_cells(
+    "lin-claimed-name-gate", "fresh: README pip start; on a committed src/caf\\xe9.py rescore --gate --json "
+                             "refuses the argument at exit 3 and check_gate answers gate.ok false, the "
+                             "name in gate.unread_files", GATE_ROW))
+def test_claimed_name_gate_fresh(box, templates, key):
+    assert_the_gates_answer_as_081(box, _fresh(box, templates, key))
+
+
+@pytest.mark.parametrize("key", _harness_cells(
+    "lin-up-claimed-name-gate", "upgrade from N-1 by the guide's pip row: one coverage, then on a committed "
+                                "src/caf\\xe9.py rescore --gate --json refuses the argument at exit 3 and "
+                                "check_gate answers gate.ok false", GATE_ROW))
+def test_claimed_name_gate_upgrade(box, candidate, record_property, key):
+    assert_the_gates_answer_as_081(box, _upgraded(box, candidate, record_property, key))

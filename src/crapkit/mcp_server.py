@@ -19,8 +19,9 @@ from urllib.parse import urlsplit
 from ._package import upgraded_to
 from .agent_fields import PAYLOADS
 from .cli._shared import SCHEMA_VERSION, _load_repo_config, _on_its_drive
-from .errors import UNREAD_NAME_REASON, CrapkitError
-from .gitpaths import readable, shown
+from .cli.scoring import GATE_VERDICT_EXITS
+from .errors import CrapkitError
+from .gitpaths import readable
 from .invocation import _self
 from .repotext import repo_text
 from .plaintext import strip_escapes
@@ -300,7 +301,7 @@ TOOLS: tuple[dict, ...] = (
         "json_flag": True,
         "positional": ("path",),
         "flags": {},
-        "verdict_exits": (6,),
+        "verdict_exits": GATE_VERDICT_EXITS,
         "unread_verdict": True,
         "description": ("Checks an edited file by rescore --gate's rule: each changed function's "
         "ccn against its scope's ceiling, pardoned only while its crap is at or under its "
@@ -476,8 +477,8 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     refusal reaches the caller as text, with its escape codes removed: the
     child shares the client's environment, and under FORCE_COLOR or
     PYTHON_COLORS=1 a 3.13+ traceback or a 3.14 argparse message arrives
-    coloured. An exit the tool declares in `verdict_exits` is an answer, not
-    a failure: `gate` exits 6 on a breach and its payload says so in `gate.ok`.
+    coloured. An exit the tool declares in `verdict_exits` that printed its
+    payload is an answer, not a failure (`_verdict_answer`).
     A call that came before the client named its workspace folders waits for
     them here, in the worker. The command a cut answer names is spelled before
     the spawn: an upgrade that lands while the command runs must not load the
@@ -492,8 +493,22 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
     proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
     text = proc.stdout if proc.stdout.strip() else strip_escapes(proc.stderr)
-    failed = proc.returncode != 0 and proc.returncode not in tool.get("verdict_exits", ())
+    failed = proc.returncode != 0 and not _verdict_answer(tool, proc)
     return _structured(_result(text, is_error=failed), lambda: full)
+
+
+def _verdict_answer(tool: dict, proc) -> bool:
+    """An exit the tool declares in `verdict_exits` that printed its payload:
+    `gate` exits 3 on a name no reader can key and 6 on a breach, and its
+    payload says so in `gate.ok`. The same exit 3 with the error object a
+    refusal prints stays a tool error."""
+    if proc.returncode not in tool.get("verdict_exits", ()):
+        return False
+    try:
+        payload = json.loads(proc.stdout)
+    except ValueError:
+        return False
+    return isinstance(payload, dict) and "error" not in payload
 
 
 def _full_command(tool: dict, arguments: dict, repo: str) -> str:
@@ -637,21 +652,24 @@ def _unread_name_result(root: Path, rel: str) -> dict:
 
 def _unread_name_verdict(root: Path, rel: str) -> dict:
     """`rescore --gate --json`'s payload for the one file: the baseline every
-    verdict names, no function, and the name in `gate.unread_files` when a
-    scope takes it, in the entry shape the CLI lists (`dirty` is true, since
-    the gate judges the working tree)."""
-    from .cli.scoring import RESCORE_NOTE, _rescore_baseline
+    verdict names, no function, and the gate module's finding on the name
+    through the rescore adapter's mapping. A name a scope takes is the gate's
+    unreadable-name finding, listed in `gate.unread_files` (`dirty` is true,
+    since the gate judges the working tree); a name no scope takes is no
+    change the gate reads, so it judges 0 and passes."""
+    from .cli.scoring import RESCORE_NOTE, _rescore_baseline, gate_block
+    from .gate import WHOLE, ChangedFile, UnreadableName, judge
+    from .keys import MarkIndex
     from .universe import claiming_scope
 
     cfg = _load_repo_config(root)
     store, latest = _rescore_baseline(root)
     store.close()
-    unread = [] if claiming_scope(rel, cfg) is None else [
-        {"path": shown(rel), "reason": UNREAD_NAME_REASON, "dirty": True}]
+    scope = claiming_scope(rel, cfg)
+    changes = [] if scope is None else [ChangedFile(rel, WHOLE, UnreadableName(rel, scope, True))]
+    result = judge(changes, cfg.ceiling_of, lambda: MarkIndex(()))
     return {"baseline_run": latest["id"], "baseline_commit": latest["commit"], "functions": [],
-            "note": RESCORE_NOTE, "schema": SCHEMA_VERSION, "gate": {
-                "ok": not unread, "judged": 0, "ceilings": {}, "breaches": [], "untracked": [],
-                "unread_files": unread}}
+            "note": RESCORE_NOTE, "schema": SCHEMA_VERSION, "gate": gate_block(result, {})}
 
 
 def _error_text(exc: CrapkitError) -> str:
