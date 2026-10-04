@@ -631,9 +631,30 @@ def test_the_lanes_page_prints_the_crashed_worker_refusal_the_parser_raises():
 _ROOT = Path("/repo")
 
 
+def _read(lane, paths, root: Path) -> tuple:
+    """(measured keys, the reader's record of unplaced keys) for a coverage.py
+    report keying these paths, read against `root`."""
+    import tempfile
+
+    from crapkit import coverage_py
+
+    region = {"start_line": 1, "executed_lines": [1], "missing_lines": [],
+              "summary": {"covered_lines": 1, "num_statements": 1,
+                          "num_branches": 0, "covered_branches": 0}}
+    report = {"meta": {"branch_coverage": True},
+              "files": {path: {"missing_lines": [], "functions": {"f": region}}
+                        for path in paths}}
+    unplaced: dict = {}
+    with tempfile.TemporaryDirectory() as scratch:
+        artifact = Path(scratch) / "py.json"
+        artifact.write_text(json.dumps(report), encoding="utf-8")
+        per_file, _, _ = coverage_py.read(lane, root, artifact, unplaced=unplaced)
+    return per_file, unplaced
+
+
 def _judged(paths, root: Path = _ROOT) -> tuple:
     """(refusal or None, stderr) for a lane whose scopes declare `src` and whose
-    artifact measured these paths, judged against `root`."""
+    artifact measured these paths, read and judged against `root`."""
     import io
     from contextlib import redirect_stderr
 
@@ -643,10 +664,11 @@ def _judged(paths, root: Path = _ROOT) -> tuple:
 
     lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
                 parser="coveragepy", scopes=("src",))
+    coverage, unplaced = _read(lane, paths, root)
     err = io.StringIO()
     try:
         with redirect_stderr(err):
-            _judge_artifact_scope(lane, dict.fromkeys(paths, []), {"src": ("src",)}, root)
+            _judge_artifact_scope(lane, coverage, {"src": ("src",)}, root, unplaced)
     except ToolError as raised:
         return raised, err.getvalue()
     return None, err.getvalue()
