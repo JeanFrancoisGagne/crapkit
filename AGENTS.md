@@ -855,6 +855,15 @@ run does gets a fresh build. A copy's lane artifacts still key files by the buil
 staging dir, which is gone, so a test that reads dark lines or reuses artifacts runs
 `coverage` in its copy first, or builds fresh.
 
+Every coverage reader in `coverage_format._FORMATS` passes one conformance suite,
+`tests/unit/test_coverage_reader_contract.py`, through its `read()`. A new reader adds
+its field rows to `FIELDS` and its minimal-artifact builder in
+`tests/unit/coverage_fields.py`: one row per field it reads, with the field's type,
+whether it is required and what the reader makes of it when it is absent. The suite
+drops and retypes each field in turn, and fails naming a format that has no rows.
+Rules that tie two fields together, such as covered at most total or a count without
+its partner, stay in the reader's own test file.
+
 ## Where code goes
 
 `src/crapkit/` is the pure core: analysis, scoring, the store, git, the ratchet, the
