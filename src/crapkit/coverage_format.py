@@ -3,10 +3,12 @@
 A lane names its format with `parser`, and each format is one adapter module:
 coverage_istanbul for istanbul JSON, coverage_py for a coverage.py JSON report.
 An adapter owns what its format decides when an artifact is read: function
-coverage, dead lines, per-line test contexts, the path key it builds with the
-inverse the wrong-tree check reads, and the advice a refusal gives. The lane
-run, the dark-line fold and `explain --tests` look the adapter up here once and
-ask it, so none of them compares parser strings of its own.
+coverage, dead lines, per-line test contexts, the path key it builds, the
+absolute keys it did not place with the placing step's reason (the record the
+wrong-tree check reads), whether it joins the lane's path_prefix onto a
+relative key, and the advice a refusal gives. The lane run, the dark-line fold
+and `explain --tests` look the adapter up here once and ask it, so none of them
+compares parser strings of its own.
 
 Runner and config knowledge stays with its owners: config validation, init,
 doctor, the container guard and the shard hint still read `parser`.
@@ -22,25 +24,32 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from .config import Lane
+    from .repopath import Unplaced
     from .score import FnCoverage
 
 
 class CoverageFormat(Protocol):
-    """What every adapter module exposes."""
+    """What every adapter module exposes.
+
+    `TAKES_PATH_PREFIX`: the reader joins the lane's path_prefix onto every
+    relative key, so the key the runner wrote is the measured key less that
+    prefix. `read` fills `unplaced`, when handed one, with each absolute key it
+    did not place, spelled as the report wrote it (`/` between directories),
+    mapped to the placing step's reason."""
 
     WRONG_TREE_FIX: str
     ABSOLUTE_FIX: str
     UNMEASURED_READING: str
+    TAKES_PATH_PREFIX: bool
 
-    def read(self, lane: Lane, root: Path, artifact: Path
+    def read(self, lane: Lane, root: Path, artifact: Path, *,
+             unplaced: dict[str, Unplaced] | None = None
              ) -> tuple[dict[str, list[FnCoverage]], dict[str, set[int]], str]: ...
 
     def missing(self, lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]: ...
 
     def contexts(self, lane: Lane, root: Path, artifact: Path,
                  source_path: str) -> dict[int, list[str]]: ...
-
-    def as_reported(self, lane: Lane, key: str) -> str: ...
 
 
 _FORMATS = {"istanbul": coverage_istanbul, "coveragepy": coverage_py}
