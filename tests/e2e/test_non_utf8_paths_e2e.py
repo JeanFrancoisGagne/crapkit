@@ -27,6 +27,7 @@ import subprocess
 import sys
 from contextlib import closing
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 
@@ -221,9 +222,11 @@ def test_a_scoped_name_staged_is_refused_and_the_gate_never_passes_it(tmp_path, 
 
 
 # verify judges a claimed name through the gate module, which refuses it before
-# it judges anything: verify stops before any lane runs and prints what the
-# 0.8.1 tree printed (probed at bug-utf8-author a0f9c6f6), whatever it was
-# asked to print. gate-group-10 turns the stop into a verdict.
+# it judges anything: verify stops before any lane runs, stores no run, and gives
+# the stop as a verdict. The exit stays 3 and stderr the line the 0.8.1 tree
+# printed (probed at bug-utf8-author a0f9c6f6); --json prints a verify payload
+# whose findings hold one unreadable_name item per name, --sarif writes a result
+# and --github an annotation for each, and an override grants nothing.
 VERIFY_STOP = ("{shown} is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every "
                "path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename "
                "it (git mv) to a UTF-8 name")
@@ -240,46 +243,90 @@ def _stored_runs(repo: Path) -> int:
         return db.execute("SELECT count(*) FROM runs").fetchone()[0]
 
 
-def _stop_object(name: bytes) -> str:
-    """The --json error object, byte for byte. NTFS and APFS refuse such a
-    name, so the commit leaves no file on disk and git reads it deleted:
-    dirty. ext4 holds the file, and git reads it clean."""
-    item = {**UNREAD_FILE, "path": _shown(name), "dirty": not STORES_ANY_BYTE}
-    error = {"exit": 3, "kind": "config", "message": VERIFY_STOP.format(shown=_shown(name)), "unread_files": [item]}
-    return json.dumps({"error": error, "schema": 1}, sort_keys=True) + "\n"
+def _stop_item(name: bytes) -> dict:
+    """The name's findings item. NTFS and APFS refuse such a name, so the
+    commit leaves no file on disk and git reads it deleted: dirty. ext4 holds
+    the file, and git reads it clean."""
+    return {"kind": "unreadable_name", "fails": True, "exit_code": 3, "overridable": False,
+            "dirty": not STORES_ANY_BYTE, "rule": "unreadable name", "path": _shown(name), "scope": "src",
+            "reason": VERIFY_STOP.format(shown=_shown(name))}
 
 
-@pytest.mark.parametrize("flags", VERIFY_FLAGS.values(), ids=VERIFY_FLAGS.keys())
+def _plain(repo: Path, result, name: bytes) -> None:
+    assert result.stdout == "", result.stdout
+
+
+def _as_json(repo: Path, result, name: bytes) -> None:
+    """A verify payload, not an error object; unread_files keeps the item the
+    0.8.1 error object listed the name in, {path, reason, dirty}, so a 0.8.1
+    reader of that key still finds it."""
+    printed = json.loads(result.stdout)
+    assert printed["findings"] == [_stop_item(name)], printed["findings"]
+    assert (printed["ok"], printed["run_id"], "error" in printed) == (False, None, False)
+    assert printed["unread_files"] == [{**UNREAD_FILE, "path": _shown(name), "dirty": not STORES_ANY_BYTE}]
+    assert printed["counts"]["diff_uncovered_count"] == 0
+
+
+def _overridden(repo: Path, result, name: bytes) -> None:
+    """Grants nothing: the refusal names the file and the rename."""
+    assert result.stdout == "", result.stdout
+    assert result.stderr.splitlines()[1:] == [
+        f"override refused: 1 unreadable name ({_shown(name)}) never qualifies for an override; {FIX}"]
+
+
+def _sarif(repo: Path, result, name: bytes) -> None:
+    """One result whose uri percent-encodes the name's own bytes."""
+    (found,) = json.loads((repo / "out.sarif").read_text(encoding="utf-8"))["runs"][0]["results"]
+    assert (found["ruleId"], found["level"]) == ("crapkit/unreadable-name", "error")
+    assert found["locations"][0]["physicalLocation"] == {
+        "artifactLocation": {"uri": quote(name, safe="/")}, "region": {"startLine": 1}}
+    assert found["message"]["text"] == VERIFY_STOP.format(shown=_shown(name))
+
+
+def _github(repo: Path, result, name: bytes) -> None:
+    (line,) = result.stdout.splitlines()
+    named = _shown(name).replace("%", "%25").replace(":", "%3A").replace(",", "%2C")
+    assert line.startswith(f"::error file={named},line=1,title=crapkit/unreadable-name::"), line
+
+
+VERIFY_CHECKS = {"plain": _plain, "json": _as_json, "override": _overridden, "sarif": _sarif, "github": _github}
+
+
+@pytest.mark.parametrize("flags", VERIFY_FLAGS, ids=VERIFY_FLAGS.keys())
 @pytest.mark.parametrize("name", [row[1] for row in CLAIMED], ids=[row[0] for row in CLAIMED])
 def test_verify_stops_on_a_claimed_name_before_any_lane_runs(tmp_path, name, flags):
-    """Exit 3 and the one stderr line, the --json error object and nothing else
-    on stdout; the lane's log, the store's runs and the SARIF path untouched."""
+    """Exit 3 and the 0.8.1 stderr line first, byte for byte, and nothing after
+    it but an override's refusal; the lane's log and the store's runs
+    untouched; each output names the file as its own finding."""
     repo = _repo(tmp_path, ALERTING_LANE_CONFIG)
     assert run_cli(repo, "coverage").returncode == 0
     runs, stored = _runs(repo), _stored_runs(repo)
     _commit(repo, {name: SOURCE}, "add a Latin-1 name")
 
-    result = run_cli(repo, "verify", *flags)
+    result = run_cli(repo, "verify", *VERIFY_FLAGS[flags])
 
+    stop = f"crapkit: {VERIFY_STOP.format(shown=_shown(name))}\n"
     assert result.returncode == 3, result.stdout + result.stderr
-    assert result.stderr == f"crapkit: {VERIFY_STOP.format(shown=_shown(name))}\n", result.stderr
-    assert result.stdout == (_stop_object(name) if "--json" in flags else ""), result.stdout
+    assert result.stderr.startswith(stop), result.stderr
+    assert len(result.stderr.splitlines()) == (2 if flags == "override" else 1), result.stderr
     assert (_runs(repo), _stored_runs(repo)) == (runs, stored)
-    assert not (repo / "out.sarif").exists()
+    VERIFY_CHECKS[flags](repo, result, name)
 
 
 def test_verify_names_the_first_of_two_claimed_names_and_counts_the_other(tmp_path):
+    """Two items, under one stderr line naming the first."""
     repo = _repo(tmp_path, LANE_CONFIG)
     assert run_cli(repo, "coverage").returncode == 0
     runs = _runs(repo)
     _commit(repo, {b"src/o\x92brien.py": SOURCE, b"src/caf\xe9.py": SOURCE}, "add two Latin-1 names")
 
-    result = run_cli(repo, "verify")
+    result = run_cli(repo, "verify", "--json")
 
     first = _shown(b"src/caf\xe9.py") + " (and 1 more)"
     assert result.returncode == 3, result.stdout + result.stderr
     assert result.stderr == f"crapkit: {VERIFY_STOP.format(shown=first)}\n", result.stderr
-    assert (result.stdout, _runs(repo)) == ("", runs)
+    assert json.loads(result.stdout)["findings"] == [_stop_item(b"src/caf\xe9.py"), _stop_item(b"src/o\x92brien.py")]
+    assert _runs(repo) == runs
 
 
 def test_a_second_coverage_with_a_lane_stamp_refuses_a_scoped_name(tmp_path):
@@ -424,7 +471,8 @@ def test_check_gate_judges_a_name_no_scope_takes_as_any_unscoped_file(tmp_path, 
 def test_a_refused_scoped_name_is_listed_in_the_error_objects_unread_files(tmp_path, command):
     """The scan's refusal names the first file on stderr and counts the rest;
     --json lists each one. Committed as they are on POSIX, both are clean; Git
-    for Windows cannot check either name out, so git reads both deleted."""
+    for Windows cannot check either name out, so git reads both deleted.
+    verify's stop prints its own payload and lists them in the same key."""
     repo = _repo(tmp_path)
     assert run_cli(repo, "coverage").returncode == 0
     _commit(repo, {b"src/caf\xe9.py": SOURCE, b"src/o\x92brien.py": SOURCE}, "add two Latin-1 names")
@@ -433,7 +481,8 @@ def test_a_refused_scoped_name_is_listed_in_the_error_objects_unread_files(tmp_p
 
     assert result.returncode == 3, result.stdout + result.stderr
     dirty = sys.platform == "win32"
-    assert json.loads(result.stdout)["error"]["unread_files"] == [
+    printed = json.loads(result.stdout)
+    assert (printed if command == "verify" else printed["error"])["unread_files"] == [
         {**UNREAD_FILE, "dirty": dirty}, {**UNREAD_FILE, "path": "src/o\\x92brien.py", "dirty": dirty}]
 
 

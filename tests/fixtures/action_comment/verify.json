@@ -7,6 +7,10 @@
  ],
  "commit": "cade9528c16de7af511b1883c84877db0c45876e",
  "committed_findings": 1,
+ "counts": {
+  "diff_uncovered_count": 11,
+  "diff_uncovered_max": 3
+ },
  "diff_uncovered": [
   {
    "line": 35,
@@ -57,6 +61,134 @@
  "diff_uncovered_max": 3,
  "dirty_failures": [],
  "dirty_findings": 0,
+ "findings": [
+  {
+   "ccn": 8,
+   "cov": 0.0,
+   "crap": 72.0,
+   "dirty": false,
+   "exit_code": 6,
+   "fails": true,
+   "key_name": "route( a , b , c , d )",
+   "kind": "gate_violation",
+   "long_name": "route( a , b , c , d )",
+   "overridable": true,
+   "path": "app/calc.py",
+   "remedy": "decompose",
+   "rule": "complexity gate",
+   "start": 34
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 35,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 36,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 37,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 38,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 39,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 40,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 41,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 42,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 43,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 44,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": false,
+   "exit_code": 9,
+   "fails": true,
+   "kind": "diff_uncovered",
+   "line": 45,
+   "overridable": false,
+   "path": "app/calc.py",
+   "rule": "diff-coverage ceiling"
+  }
+ ],
  "forgiven_failures": [],
  "gate_violations": [
   {

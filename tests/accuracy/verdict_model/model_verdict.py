@@ -20,7 +20,8 @@ doc: docs/ratchet.md:823-959 sha256=28a98789e1c287e6ae12af9136d2ccff9513a692533c
 doc: docs/ratchet.md:961-1039 sha256=7a31937dfa217b07387c20a6015e185465ff73512772c72686f85b7cefd33871
 doc: docs/ratchet.md:1083-1085 sha256=0b0353f91de49806c816e6fbb56a8ce38494cd5d093a357a4feb9420e0c9250e
 doc: docs/agent-json.md:306-330 sha256=46e36bc36e895f6379112955a0182505cc361f45c214960ea48d2ee35003f40e
-doc: docs/agent-json.md:923-943 sha256=6121159d5349fe87111b46ce443da89c2393bbf2a467f54d931be8132be01f94
+doc: docs/agent-json.md:1010-1030 sha256=4a1e66a7653f0a869438a7e5a44b8790f192c77e2d881aae3dd4a94859e1a178
+doc: docs/agent-json.md:949-1008 sha256=c0a493d50f60ea4374f0683df853d58a08f6cbdee9791909f6f8bf00787d79c8
 doc: docs/configuration.md:220-220 sha256=e6dc43339c7ab96208524957553d2995e11fc3bd1349d4f7d3b7aa6647f33d5f
 doc: docs/lanes.md:1540-1578 sha256=964831502d735a929aaae499fd2404f9f8d39a2827e02cc7ee3ddcca513ca08e
 doc: docs/lanes.md:1714-1727 sha256=c80c08b87c893b48a67c8dc8b92f1d37f947e41bee1efafb8670fe670064689c
@@ -115,9 +116,9 @@ def named_baseline(runs: list[Run], wanted: int) -> tuple[Run | None, str | None
 
 # --- verdict exit (README.md:961-988) ----------------------------------------------------
 
-# README.md:1480 and 1483: a file a scope takes whose name is not UTF-8 is a config
-# error, exit 3, refused before any verdict; a changed file no reader could read is
-# refused at 6 beside the gate violation.
+# README.md:1480 and 1483: a file a scope takes whose name is not UTF-8 exits 3,
+# before any lane runs and so before every other finding; a changed file no reader
+# could read is refused at 6 beside the gate violation.
 EXIT_ORDER = ((3, "unreadable_name"), (6, "gate"), (6, "unread"), (7, "ratchet"),
               (8, "failures"), (9, "diff_uncovered"))
 
@@ -126,6 +127,30 @@ def exit_code(findings: frozenset) -> int:
     """verify reports the first of 6, 7, 8, 9 that fires, in that order; 0 when none.
     A claimed name that is not UTF-8 comes before all of them with 3."""
     return next((code for code, name in EXIT_ORDER if name in findings), 0)
+
+
+# --- verify's findings list (docs/agent-json.md:949-1008) ---------------------------------
+
+# The kind each finding is listed under. The kinds come in their exit order, and an
+# override's grant, which fires no exit, comes last.
+FINDING_KIND = {"unreadable_name": "unreadable_name", "gate": "gate_violation",
+                "unread": "unread_file", "ratchet": "ratchet_regression",
+                "failures": "new_failure", "diff_uncovered": "diff_uncovered"}
+
+
+def findings(present: frozenset, *, uncovered_listed: bool = False,
+             overridden: bool = False) -> list[tuple[str, bool, int | None]]:
+    """(kind, fails, exit_code) of the item each finding in PRESENT lists, one
+    finding of each, in the order verify lists them. A failing item names the exit
+    its kind fires, so the first one names verify's exit. Uncovered lines under no
+    ceiling (`uncovered_listed`) are listed and fail nothing, and so is a gate
+    violation an override granted (`overridden`): neither names an exit."""
+    items = [(FINDING_KIND[name], True, code) for code, name in EXIT_ORDER if name in present]
+    if uncovered_listed and "diff_uncovered" not in present:
+        items.append(("diff_uncovered", False, None))
+    if overridden:
+        items.append(("overridden", False, None))
+    return items
 
 
 # --- keys, twins and handles (docs/ratchet.md:20-59, CONTEXT.md:26-33) --------------------
