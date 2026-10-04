@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import tomllib
 
 import pytest
 
@@ -27,7 +28,10 @@ PACKET = "deploy-upgrade"
 OLD = state.source_version("0.7.6")
 PIP = "pip in the active environment"
 PIP_EXTRA = "pip with the Python coverage extra"
-LEGACY_CHURN, CHURN = ".crapkit/churn-cache.json", ".crapkit/churn-cache-v2.json"
+LEGACY_CHURN = ".crapkit/churn-cache.json"
+# The current churn cache by any format version: the version is in the file name
+# and moves with the format (v2 to v3 with the HEAD-dated window), the adoption does not.
+CHURN = re.compile(r"\.crapkit/churn-cache-v\d+\.json")
 
 
 def install_old(box, source, python: str, requirement: str) -> None:
@@ -130,7 +134,9 @@ def same_analysis_upgrade(box, repo, candidate, source) -> None:
 # A monorepo lane whose path_prefix names the directory its scope declares, fed a
 # committed coverage.py report another checkout wrote. Before 0.8.1 the reader
 # glued the prefix onto the absolute key, the scope claimed it, and every
-# function scored untested with exit 0.
+# function scored untested with exit 0. The cell runs in a container, where
+# every release refuses a coverage.py lane without container_ok before it reads
+# the artifact (docs/lanes.md#containers); this lane only copies a file.
 FOREIGN_KEY = "/home/user/other-checkout/backend/pkg/mod.py"
 FOREIGN_TREE = {
     "backend/pkg/__init__.py": "",
@@ -147,7 +153,7 @@ FOREIGN_TREE = {
     ".gitignore": ".crapkit/\n",
     "crapkit.toml": ("[[scope]]\nname = 'backend'\npaths = ['backend']\nlanguages = ['python']\n\n"
                      "[exclude]\nglobs = ['copy_cov.py']\n\n"
-                     "[[lane]]\nname = 'py'\nparser = 'coveragepy'\nscopes = ['backend']\n"
+                     "[[lane]]\nname = 'py'\nparser = 'coveragepy'\ncontainer_ok = true\nscopes = ['backend']\n"
                      "path_prefix = 'backend'\nartifact = '.crapkit/cov/py.json'\n"
                      "full_suite = false\ncommand = 'python copy_cov.py'\n"),
 }
@@ -168,6 +174,14 @@ def refuses_the_foreign_tree(box, repo, release: str) -> None:
                    note=f"not a guide step: another checkout's report under {release}")
     assert "describes a different tree" in output(step), box.transcript.text()
     assert FOREIGN_KEY in output(step), box.transcript.text()
+
+
+@pytest.mark.kit
+def test_the_foreign_tree_lane_clears_the_container_guard():
+    """Without container_ok, every release's container guard answers the
+    foreign-tree step with its host-only refusal and never reads the report."""
+    lanes = tomllib.loads(FOREIGN_TREE["crapkit.toml"])["lane"]
+    assert [(lane["parser"], lane.get("container_ok")) for lane in lanes] == [("coveragepy", True)]
 
 
 @cell("lin-up-pip-n1", channel="pip venv", harness="none",
@@ -202,7 +216,7 @@ def churn_adopted(box, repo) -> None:
     assert LEGACY_CHURN in state_manifest.files(repo), "the guide's steps already swept the 0.4.x churn cache"
     box.run(["crapkit", "worklist"], cwd=repo, expect=0, note="not a guide step: the first worklist after upgrading")
     files = state_manifest.files(repo)
-    assert LEGACY_CHURN not in files and CHURN in files, sorted(files)
+    assert LEGACY_CHURN not in files and any(CHURN.fullmatch(name) for name in files), sorted(files)
 
 
 def guide_refusal(candidate) -> str:
