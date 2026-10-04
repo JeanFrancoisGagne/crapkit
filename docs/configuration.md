@@ -511,6 +511,9 @@ $ crapkit rescore scripts/deploy.py --json
 ## `[[lane]]`
 
 An array of tables. One lane per coverage command. Full recipes in [lanes.md](lanes.md).
+No key names the lane's runner: crapkit reads it from the command, the package.json
+script the command runs, or devDependencies, and `doctor` prints it per lane
+([How crapkit reads a lane's runner](lanes.md#how-crapkit-reads-a-lanes-runner)).
 
 | Key | Type | Required | Default | What it does |
 |---|---|---|---|---|
