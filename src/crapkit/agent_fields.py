@@ -132,6 +132,40 @@ _ADDED = (
                "for tree"),
     AgentField("verify --json", "ratchet_source_sha256", ("string", "null"),
                "digest of the marks verify judged against; null when there were no marks"),
+    AgentField("verify --json", "findings", ("array",),
+               "every finding once: the kinds in exit order (unreadable_name, gate_violation, "
+               "unread_file, ratchet_regression, new_failure, diff_uncovered, overridden), each "
+               "kind's items in the order its own list gives them; diff_uncovered lists at most "
+               "50, and counts.diff_uncovered_count counts them all"),
+    AgentField("verify --json", "findings[].kind", ("string",),
+               "unreadable_name, gate_violation, unread_file, ratchet_regression, new_failure, "
+               "diff_uncovered or overridden; the fields beside the common six are the kind's own"),
+    AgentField("verify --json", "findings[].fails", ("boolean",),
+               "true when this item fails the verdict: its kind fires an exit code and the "
+               "verdict holds it; a diff_uncovered item fails only past diff_uncovered_max, and "
+               "an overridden one never does"),
+    AgentField("verify --json", "findings[].exit_code", ("integer", "null"),
+               "the exit code the item fires when it fails: 3 unreadable_name, 6 gate_violation "
+               "and unread_file, 7 ratchet_regression, 8 new_failure, 9 diff_uncovered; null when "
+               "fails is false. The first failing item's exit_code is verify's exit"),
+    AgentField("verify --json", "findings[].overridable", ("boolean",),
+               "true for a gate_violation, the one kind an --override can grant; an override "
+               "still grants nothing while an item of a kind that refuses one is present "
+               "(unreadable_name, unread_file, ratchet_regression, new_failure)"),
+    AgentField("verify --json", "findings[].dirty", ("boolean",),
+               "true when the item's file has uncommitted edits or git does not track it; for a "
+               "new_failure, when its test id names such a file"),
+    AgentField("verify --json", "findings[].rule", ("string",),
+               "the label of the item's rule: complexity gate (gate_violation, unread_file), "
+               "ratchet regressions, new test failures, diff-coverage ceiling, unreadable name or "
+               "override"),
+    AgentField("verify --json", "counts", ("object",),
+               "the numbers beside findings, which its items do not carry"),
+    AgentField("verify --json", "counts.diff_uncovered_count", ("integer",),
+               "changed lines no test ran, every one, where findings lists the first 50"),
+    AgentField("verify --json", "counts.diff_uncovered_max", ("integer", "null"),
+               "the ceiling diff_uncovered_count is judged against (exit 9); null when the repo "
+               "set none"),
     AgentField("coverage --json", "empty_scopes", ("object",),
                _EMPTY_SCOPES),
     AgentField("inventory --json", "empty_scopes", ("object",),
@@ -1566,12 +1600,49 @@ _GATE_VIOLATION = {
                      "description": ("the ratchet key: long_name, or long_name#2 for the second "
                                      "function the file gives that name")}}}
 
+# Each kind's own fields on a findings item, beside the six every item carries.
+_FINDING_FIELDS = {
+    "path": {"type": "string",
+             "description": ("repo-relative path of the item's file, each byte that is not UTF-8 "
+                             "spelled \\xNN; every kind but new_failure")},
+    "scope": {"type": "string",
+              "description": "unreadable_name: the declared scope that takes the file"},
+    "reason": {"type": "string",
+               "description": ("unread_file: the reader's refusal, naming the line and what to "
+                               "change; unreadable_name: the sentence naming the file, its scope "
+                               "and the git mv rename to a UTF-8 name")},
+    **{key: _GATE_VIOLATION["properties"][key]
+       for key in ("long_name", "start", "ccn", "cov", "crap", "remedy", "key_name")},
+    "recorded": {"type": "number", "description": "ratchet_regression: the mark"},
+    "fresh_crap": {"type": "number",
+                   "description": "ratchet_regression: the score this run measured"},
+    "test": {"type": "string",
+             "description": "new_failure: the test id that fails now and passed in the baseline"},
+    "line": {"type": "integer", "description": "diff_uncovered: the changed line no test ran"}}
+_FINDING = {
+    "type": "object",
+    "description": ("one finding: kind, fails, exit_code, overridable, dirty and rule, then its "
+                    "kind's own fields (gate_violation and overridden: path, long_name, start, "
+                    "ccn, cov, crap, remedy, key_name; unread_file: path, reason; "
+                    "ratchet_regression: path, long_name, recorded, fresh_crap; new_failure: "
+                    "test; diff_uncovered: path, line; unreadable_name: path, scope, reason)"),
+    "properties": {
+        **{key: schema_of("verify --json", f"findings[].{key}")
+           for key in ("kind", "fails", "exit_code", "overridable", "dirty", "rule")},
+        **_FINDING_FIELDS}}
+
 _VERIFY = {
     "schema": _SCHEMA,
     "ok": {"type": "boolean",
            "description": ("the verdict after allowed overrides and flake retests; it agrees "
                            "with the stored run and the exit code")},
-    "run_id": {"type": "integer", "description": "the run this verify wrote"},
+    "run_id": {"type": ("integer", "null"),
+               "description": ("the run this verify wrote; null when it stopped before any lane "
+                               "ran, on a file a scope takes whose name is not UTF-8")},
+    "findings": {**schema_of("verify --json", "findings"), "items": _FINDING},
+    "counts": {**schema_of("verify --json", "counts"), "properties": {
+        key: schema_of("verify --json", f"counts.{key}")
+        for key in ("diff_uncovered_count", "diff_uncovered_max")}},
     "baseline_run": {"type": "integer", "description": "the run it was measured against"},
     "baseline_commit": {"type": "string", "description": "that run's commit, full sha"},
     "commit": {"type": "string", "description": "the commit the verified tree is at"},

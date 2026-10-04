@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 from .. import config, lane_results
-from ..errors import ConfigError, CrapkitError, ToolError, UnreadableNameError
+from ..errors import ConfigError, CrapkitError, ToolError
 from ..invariants import STORED, UNSETTLED, check_rows, check_verdict
 from ..invocation import _self
 from ..named import first_few
@@ -27,6 +27,7 @@ from .scoring import _scored_run
 
 if TYPE_CHECKING:
     from ..ratchet import RatchetDelta, RatchetEntry
+    from ..ratchetfile import RatchetFile
 
 
 def _emit_verify_findings(root: Path, args, verdict, uncovered: list) -> None:
@@ -719,15 +720,20 @@ def _verify_attribution(verdict) -> dict:
             "dirty_failures": list(verdict.dirty_failures)}
 
 
-def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
+def _verify_result(verdict, run_id: int | None, baseline: dict, commit: str, ranges,
                    uncovered: list, diff_uncovered_max: int | None,
-                   unmarked_over_target: int) -> dict:
+                   unmarked_over_target: int, dirty: frozenset[str] | set[str] = frozenset()) -> dict:
     """`diff_uncovered_max` travels with the count it judges: a reader of exit 9
     (the Action's comment) can say which ceiling the lines went over.
     `unmarked_over_target` is the standing debt no mark covers (see
     `_warn_standing_debt`); it fires no exit code and is the one number that
-    says how much of the tree the ratchet is not holding."""
-    from ..verify import json_lists
+    says how much of the tree the ratchet is not holding.
+
+    `findings` lists every finding once, each kind's row giving its common
+    fields, and `counts` the numbers beside them; the 0.8.1 per-kind keys
+    print beside them until every reader has moved. `dirty` flags the
+    uncovered lines in files with uncommitted edits."""
+    from ..verify import finding_items, json_lists
 
     return {
         "ok": verdict.ok,
@@ -738,6 +744,8 @@ def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
         "changed_files": len(ranges),
         "changed_paths": sorted(ranges),
         **json_lists(verdict, uncovered),
+        "findings": finding_items(verdict, uncovered, dirty),
+        "counts": {"diff_uncovered_count": len(uncovered), "diff_uncovered_max": diff_uncovered_max},
         "forgiven_failures": list(verdict.forgiven_failures),
         "retried_passes": list(verdict.retried_passes),
         "diff_uncovered_count": len(uncovered),
@@ -909,12 +917,11 @@ def _refuse_lane_less_verify(cfg) -> None:
                           "declares coverage_optional = true instead")
 
 
-def _stop_on_claimed_names(root: Path, cfg, dirty: set[str]) -> None:
-    """Exit 3 before any lane runs when a scope takes a tracked file whose name
-    git gives in bytes that are not UTF-8: the gate refuses such a name before
-    it judges anything, so nothing is measured and no run is stored. The stop
-    prints the scan's own refusal, the sentence naming the first name and
-    counting the rest, and --json lists each name with its `dirty` flag."""
+def _claimed_names(root: Path, cfg, dirty: set[str]) -> tuple:
+    """The gate's unreadable-name findings: each tracked file a scope takes
+    whose name git gives in bytes that are not UTF-8, handed to the gate whole
+    with its `dirty` flag. The gate refuses such a name before it judges
+    anything, so verify stops on them before any lane runs (`_stopped`)."""
     from ..gate import WHOLE, ChangedFile, UnreadableName, judge
     from ..gitio import ls_files
     from ..keys import MarkIndex
@@ -922,19 +929,71 @@ def _stop_on_claimed_names(root: Path, cfg, dirty: set[str]) -> None:
 
     claimed = claimed_unreadable(ls_files(root), cfg)
     if not claimed:
-        return
-    names = judge([ChangedFile(path, WHOLE, UnreadableName(path, scope, path in dirty))
-                   for path, scope in claimed], cfg.ceiling_of, lambda: MarkIndex(())).unreadable_name
-    raise _claimed_refusal(names)
+        return ()
+    return judge([ChangedFile(path, WHOLE, UnreadableName(path, scope, path in dirty))
+                  for path, scope in claimed], cfg.ceiling_of, lambda: MarkIndex(())).unreadable_name
 
 
-def _claimed_refusal(names) -> UnreadableNameError:
-    """The gate's unreadable-name findings as the scan's refusal: its sentence
-    (universe.claimed_text), each name, and the dirty ones."""
-    from ..universe import claimed_text
+class _Stop(NamedTuple):
+    """What verify knows when it stops on a claimed name: the baseline, HEAD,
+    the marks it read and the untracked files a scope would take."""
+    baseline: dict
+    commit: str
+    saved: RatchetFile
+    judged: _JudgedMarks
+    untracked: list[str]
 
-    return UnreadableNameError(claimed_text([(name.path, name.scope) for name in names]),
-                               [name.path for name in names], frozenset(n.path for n in names if n.dirty))
+
+def _stopped(args, root: Path, cfg, names: tuple, stop: _Stop) -> int:
+    """The verdict on a tree holding a claimed name, exit 3, with no lane run
+    and no run stored. stderr gets the scan's own sentence, naming the first
+    name and counting the rest, as 0.8.1's refusal printed it; --json prints a
+    verify payload whose findings hold one unreadable_name item per name,
+    --sarif and --github one result each, and an --override says why it
+    grants nothing."""
+    from ..verify import Verdict, settle_verdict, text_lines
+
+    verdict = settle_verdict(Verdict.passing()._replace(claimed_names=tuple(names)))
+    for line in text_lines(verdict, "stderr"):
+        print(line, file=sys.stderr)
+    _emit_verify_findings(root, args, verdict, [])
+    if args.json:
+        _print_json(_stop_payload(verdict, cfg, stop))
+    _refuse_override(verdict, args.override)
+    return _verify_exit_code(verdict)
+
+
+def _stop_payload(verdict, cfg, stop: _Stop) -> dict:
+    """Every key a verify payload prints, each the value verify knew at the
+    stop: no diff was read and nothing was measured, so run_id is null and the
+    lists and counts a run fills are empty. `unread_files` lists each name in
+    the item 0.8.1's error object listed it in, {path, reason, dirty}."""
+    return {**_verify_result(verdict, None, stop.baseline, stop.commit, {}, [], cfg.diff_uncovered_max, 0),
+            **_receipt(_tool_versions(), stop.saved, stop.judged, None),
+            "lanes_without_results": [], "lanes_without_baseline_results": [],
+            "unreadable_names": [], "untracked_in_scope": stop.untracked,
+            "unread_files": _claimed_unread(verdict.claimed_names)}
+
+
+def _tool_versions() -> dict:
+    """The versions a run of this crapkit records, read without measuring."""
+    from .. import __version__
+    from ..analyze import ANALYSIS_VERSION
+
+    lizard, *_ = _analysis_tools()
+    return {"crapkit": __version__, "lizard": lizard.version, "analysis_version": str(ANALYSIS_VERSION)}
+
+
+def _claimed_unread(names) -> list[dict]:
+    from ..errors import UNREAD_NAME_REASON
+    from ..gitpaths import shown
+
+    return [{"path": shown(name.path), "reason": UNREAD_NAME_REASON, "dirty": name.dirty} for name in names]
+
+
+def _refuse_failed_lanes(run) -> None:
+    if run.lane_errors:
+        raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
@@ -964,15 +1023,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
     judged = _judged_marks(root, saved, baseline, cfg.ratchet_file)
     _guard_ratchet_stamp(judged.marks, cfg.ratchet_file, *_seed_hint(store, args, baseline, git))
     _emit_baseline(root, store, baseline, args.emit_baseline)
-    _stop_on_claimed_names(root, cfg, dirty)
+    claimed = _claimed_names(root, cfg, dirty)
+    if claimed:
+        return _stopped(args, root, cfg, claimed, _Stop(baseline, git.head_commit(), saved, judged, untracked))
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.
     run = _scored_run(root, cfg, list(cfg.lanes), reuse_artifacts=args.reuse_artifacts,
                       reuse_unchanged=args.reuse_unchanged, git=git)
     commit, scored, provenance = run.commit, run.scored, run.provenance
     tool_versions, fresh_failures = run.tool_versions, run.test_failures
-    if run.lane_errors:
-        raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
+    _refuse_failed_lanes(run)
     _refuse_unreadable_junits(cfg.lanes, provenance)
 
     ranges = worktree_ranges(diff_since(root, basis), root)
@@ -1017,7 +1077,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     _report_verify(args.json,
                    {**_verify_result(verdict, run_id, baseline, commit, ranges,
-                                     uncovered, cfg.diff_uncovered_max, len(unmarked)),
+                                     uncovered, cfg.diff_uncovered_max, len(unmarked), dirty),
                     **_receipt(tool_versions, saved, judged, changes),
                     "lanes_without_results": lane_results.without_results(provenance),
                     "lanes_without_baseline_results": unjudged,

@@ -3,6 +3,7 @@
 ## 0.9.0 — unreleased
 
 <!-- 0.9.0:gate-group -->
+- `verify --json` gains `findings`, one item per finding with `kind`, `fails`, `exit_code`, `overridable`, `dirty` and `rule`, and `counts` (`diff_uncovered_count`, `diff_uncovered_max`), beside the 0.8.1 per-kind keys. A file a scope takes whose name is not UTF-8 is now a `findings` item of kind `unreadable_name` with `exit_code` 3, where 0.8.1 printed an error object, and `--sarif` reports it under `crapkit/unreadable-name` (accuracy change C39). [The findings list](docs/agent-json.md#the-findings-list)
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->
