@@ -62,6 +62,8 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 
+from ..programs import require
+
 PROTOCOL = "1"
 
 # The one event judged, as Claude Code, Copilot CLI and VS Code spell it, then
@@ -295,7 +297,8 @@ def _repo_top(cwd: Path) -> Path | None:
 
     if not cwd.is_dir():
         return None
-    res = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd, capture_output=True)
+    res = subprocess.run(["git", "rev-parse", "--show-toplevel"], executable=require("git"), cwd=cwd,
+                         capture_output=True)
     top = escaped(res.stdout).strip()
     return Path(top) if res.returncode == 0 and top else None
 
@@ -332,7 +335,7 @@ def _porcelain(top: Path) -> str:
     from ..repotext import escaped
 
     res = subprocess.run(["git", "--no-optional-locks", "status", "--porcelain", "-z", "-uall"],
-                         cwd=top, capture_output=True)
+                         executable=require("git"), cwd=top, capture_output=True)
     return escaped(res.stdout) if res.returncode == 0 else ""
 
 
@@ -587,8 +590,8 @@ def _git_said(exc, root: Path) -> str:
 def _head_resolves(root: Path) -> bool:
     """Whether `git rev-parse --verify --quiet HEAD` names a commit. Asked only
     after the diff failed, so it costs nothing on the ordinary path."""
-    return subprocess.run(["git", "rev-parse", "--verify", "--quiet", "HEAD"], cwd=root,
-                          capture_output=True).returncode == 0
+    return subprocess.run(["git", "rev-parse", "--verify", "--quiet", "HEAD"], executable=require("git"),
+                          cwd=root, capture_output=True).returncode == 0
 
 
 def _listed(root: Path, rel: str) -> list | None | _Unknown:
@@ -598,8 +601,8 @@ def _listed(root: Path, rel: str) -> list | None | _Unknown:
     untracked from unchanged. Literal, so `[id].py` never matches `i.py`."""
     from ..repotext import lenient
 
-    listed = subprocess.run(["git", "--literal-pathspecs", "ls-files", "--", rel], cwd=root,
-                            capture_output=True)
+    listed = subprocess.run(["git", "--literal-pathspecs", "ls-files", "--", rel], executable=require("git"),
+                            cwd=root, capture_output=True)
     if listed.returncode != 0:
         return _Unknown(f"git ls-files -- {rel}: {lenient(listed.stderr).strip()}")
     return [] if listed.stdout.strip() else None

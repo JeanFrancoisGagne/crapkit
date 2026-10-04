@@ -803,10 +803,10 @@ def test_the_interpreter_written_is_a_name_and_never_a_path(tmp_path, monkeypatc
     `shutil.which("python") or "python3"` — which returns THIS machine's
     absolute path, the thing the docstring forbids — would keep the suite
     green while init committed that path into a shared crapkit.toml."""
-    monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(admin, "find", lambda name: None)
     assert admin._interpreter(tmp_path) == "python3"
 
-    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(admin, "find", lambda name: "/usr/bin/" + name)
     assert admin._interpreter(tmp_path) == "{python}"
 
 

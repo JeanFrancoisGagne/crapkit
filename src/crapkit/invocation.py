@@ -57,10 +57,11 @@ from __future__ import annotations
 import os
 import re
 import shlex
-import shutil
 import sys
 import sysconfig
 from pathlib import Path
+
+from .programs import find
 
 _CONSOLE_SCRIPT = "crapkit"
 _CACHE_TAG = "CACHEDIR.TAG"
@@ -76,7 +77,7 @@ def _self() -> str:
     running in, read from any shell."""
     if runs_from_cache():
         return console_script() if os.environ.get("UV") else _module_form()
-    if _runs_here(shutil.which(_CONSOLE_SCRIPT)):
+    if _runs_here(find(_CONSOLE_SCRIPT)):
         return _CONSOLE_SCRIPT
     return _module_form()
 
