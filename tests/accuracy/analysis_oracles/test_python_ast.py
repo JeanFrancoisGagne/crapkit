@@ -102,11 +102,13 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # move (gate-group-03), 3,737 once marks_history answered the marks a
 # commit held and the moves between revisions (gate-group-04), 3,750 once
 # verify --json listed every finding as one item and verify's claimed-name
-# stop became a verdict (gate-group-10), and 3,755 once rescore --gate and
-# check_gate judged through the gate module (gate-group-07).
+# stop became a verdict (gate-group-10), 3,755 once rescore --gate and
+# check_gate judged through the gate module (gate-group-07), and 3,764
+# once hook-precommit judged its staged functions through the gate module
+# (gate-group-08).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3755
+SRC_DEFS = 3764
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

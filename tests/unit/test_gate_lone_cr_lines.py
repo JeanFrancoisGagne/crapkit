@@ -63,8 +63,9 @@ def committed(tmp_path: Path, files: dict[str, bytes]) -> Path:
 
 
 def gated(repo: Path) -> list[str]:
-    verdict = gate_staged(repo, load_config_text(CONFIG))
-    return sorted(violation.long_name for violation in verdict.violations)
+    cfg = load_config_text(CONFIG)
+    found = judge(gate_staged(repo, cfg).changes, cfg.ceiling_of, lambda: MarkIndex(())).over_ceiling
+    return sorted(breach.function.long_name for breach in found)
 
 
 def test_a_new_cr_only_file_gates_every_function(tmp_path):

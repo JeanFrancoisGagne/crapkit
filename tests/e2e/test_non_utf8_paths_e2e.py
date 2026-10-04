@@ -218,7 +218,72 @@ def test_a_scoped_name_staged_is_refused_and_the_gate_never_passes_it(tmp_path, 
     repo = _repo(tmp_path)
     _stage(repo, {name: TANGLED.encode()})
 
-    _refused(run_cli(repo, command), name)
+    result = run_cli(repo, command)
+
+    _refused(result, name)
+    assert (result.stdout, len(result.stderr.splitlines())) == ("", 1), result.stdout + result.stderr
+
+
+# hook-precommit judges a staged claimed name through the gate module, which
+# refuses it before it judges anything: the hook exits 3 on the 0.8.1 line
+# (probed at bug-utf8-author a0f9c6f6) before any other line and any override
+# side effect.
+MARKS = "crapkit-ratchet.tsv"
+CLAIMED_STOP = ("is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path "
+                "as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it "
+                "(git mv) to a UTF-8 name")
+# A TypeScript arrow body the reader refuses, so the staged file is unread.
+REFUSED_ARROW = b"export const old = {\n  pick: ({ x }) => new Set<string>([x]).has(x),\n};\n"
+TS_CONFIG = CONFIG.replace('languages = ["python"]', 'languages = ["python", "typescript"]')
+
+
+def _index(repo: Path) -> bytes:
+    return _git(repo, "ls-files", "-s", "-z")
+
+
+@pytest.mark.parametrize("name", [row[1] for row in STAGED_CLAIMED], ids=[row[0] for row in STAGED_CLAIMED])
+def test_an_override_reason_grants_nothing_on_a_staged_claimed_name(tmp_path, name):
+    """CRAPKIT_OVERRIDE_REASON changes nothing: exit 3 on the same line, no
+    marks file written or staged, and the index as it was."""
+    repo = _repo(tmp_path)
+    _stage(repo, {name: TANGLED.encode()})
+    index = _index(repo)
+
+    result = run_cli(repo, "hook-precommit", env_extra={"CRAPKIT_OVERRIDE_REASON": "hotfix, ticket 7"})
+
+    _refused(result, name)
+    assert (result.stdout, len(result.stderr.splitlines())) == ("", 1), result.stdout + result.stderr
+    assert not (repo / MARKS).exists()
+    assert _index(repo) == index
+    assert MARKS not in _git(repo, "diff", "--cached", "--name-only").decode()
+
+
+@pytest.mark.parametrize("claimed", [True, False], ids=["claimed", "control"])
+def test_a_claimed_name_beside_an_unread_file_and_a_breach_prints_only_its_line(tmp_path, claimed):
+    """The control, with no claimed name, shows the unread file and the
+    breach each refuse the commit; beside a claimed name only its line shows."""
+    repo = _repo(tmp_path, TS_CONFIG)
+    files = {b"src/old.ts": REFUSED_ARROW, b"src/tangled.py": TANGLED.encode()}
+    _stage(repo, {**files, **({b"src/caf\xe9.py": SOURCE} if claimed else {})})
+
+    result = run_cli(repo, "hook-precommit")
+
+    if claimed:
+        _refused(result, b"src/caf\xe9.py")
+        assert (result.stdout, len(result.stderr.splitlines())) == ("", 1), result.stdout + result.stderr
+    else:
+        assert result.returncode == 6, result.stdout + result.stderr
+        assert "src/old.ts" in result.stdout and "tangled( a , b , c , d )" in result.stdout, result.stdout
+
+
+def test_two_staged_claimed_names_print_one_line_naming_the_first(tmp_path):
+    repo = _repo(tmp_path)
+    _stage(repo, {b"src/o\x92brien.py": SOURCE, b"src/caf\xe9.py": TANGLED.encode()})
+
+    result = run_cli(repo, "hook-precommit")
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert (result.stdout, result.stderr) == ("", f"crapkit: src/caf\\xe9.py (and 1 more) {CLAIMED_STOP}\n")
 
 
 # verify judges a claimed name through the gate module, which refuses it before
