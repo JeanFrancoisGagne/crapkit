@@ -100,10 +100,11 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # once the marks history read whole revisions (gate-group-04a), and 3,728
 # once keys answered which mark judges a function and which keys pair as a
 # move (gate-group-03), and 3,737 once marks_history answered the marks a
-# commit held and the moves between revisions (gate-group-04).
+# commit held and the moves between revisions (gate-group-04), and 3,744
+# once covstream took HashingReader and the line reader (m1-readers-10).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3737
+SRC_DEFS = 3744
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
