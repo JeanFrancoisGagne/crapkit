@@ -46,15 +46,11 @@ SHALLOW_LINE = ("warning: churn counts read only the commits this clone holds; t
                 "clone does not hold every commit: set fetch-depth: 0 on the checkout or run "
                 "git fetch --unshallow")
 
-# The rule each verify exit code stands for. verify reports the first that
-# fires, so the phrase names the rule that refused the tree and the bullets
-# below it list every finding the payload carries.
-_RULES = {6: "complexity gate", 7: "ratchet regressions", 8: "new test failures",
-          9: "diff-coverage ceiling"}
-
-# The verify lists whose entries name a function. The comment's table lists
-# those rows first, so the function the gate stopped is not below the fold.
-_FINDING_LISTS = ("gate_violations", "ratchet_regressions", "overridden")
+# The verdict reads verify's `findings`, one item per finding, each naming its
+# `kind` and the `rule` label it fails under, and `counts`, the numbers beside
+# them. Each bullet list is the items of one kind, so a kind verify adds needs a
+# bullet here: tests/unit/test_comment_renders_every_finding_kind.py renders one
+# item of every row of crapkit.verify.FINDING_KINDS.
 _SHOWN_PER_KIND = 50
 
 # GitHub refuses a comment body over 65,536 characters with a 422, and the pull
@@ -265,20 +261,43 @@ def _why_empty(files: int) -> str:
     return f"no reader could read its {_plural(files, 'file')}"
 
 
+def _items(verify: dict | None) -> list[dict]:
+    """verify's findings items; none for a payload that lists none (a pass
+    printed by hand, or a verify older than 0.9.0)."""
+    return (verify or {}).get("findings") or []
+
+
+def _of(verify: dict, kind: str) -> list[dict]:
+    """The items of one kind, in the order verify lists them."""
+    return [item for item in _items(verify) if item.get("kind") == kind]
+
+
+def _counts(verify: dict) -> dict:
+    """The numbers beside the findings, which its items do not carry."""
+    return verify.get("counts") or {}
+
+
 def _gate_count(verify: dict) -> str:
     """Functions over the ceiling plus changed files no reader could read:
     both fail the gate, exit 6, so an unread file alone never reads as
     `0 gate violations` under a failed gate."""
-    unread = len(verify.get("unread_files") or [])
-    count = _plural(len(verify.get("gate_violations", [])) + unread, "gate violation")
+    unread = len(_of(verify, "unread_file"))
+    count = _plural(len(_of(verify, "gate_violation")) + unread, "gate violation")
     return f"{count} ({_plural(unread, 'unread file')})" if unread else count
 
 
+def _names_count(verify: dict) -> list[str]:
+    """`1 unreadable name`, only when verify stopped on one: every other
+    counts line keeps the bytes it read before the kind existed."""
+    names = len(_of(verify, "unreadable_name"))
+    return [_plural(names, "unreadable name")] if names else []
+
+
 def _findings(verify: dict) -> str:
-    parts = [_gate_count(verify),
-             _plural(len(verify.get("ratchet_regressions", [])), "ratchet regression"),
-             _plural(len(verify.get("new_failures", [])), "new test failure"),
-             _plural(verify.get("diff_uncovered_count", 0), "uncovered changed line")]
+    parts = [*_names_count(verify), _gate_count(verify),
+             _plural(len(_of(verify, "ratchet_regression")), "ratchet regression"),
+             _plural(len(_of(verify, "new_failure")), "new test failure"),
+             _plural(_counts(verify).get("diff_uncovered_count", 0), "uncovered changed line")]
     return ", ".join(parts)
 
 
@@ -300,6 +319,11 @@ def changed_line(paths: list[str]) -> str:
 
 
 def _against(verify: dict) -> str:
+    """`Run 3 against baseline 1, 2 changed files`. A null run_id is a verify
+    that stopped before any lane ran (a name a scope takes that is not
+    UTF-8), so there is no run and no diff to name."""
+    if verify.get("run_id") is None:
+        return f"Nothing was measured against {_baseline_name(verify)}"
     return (f"Run {verify.get('run_id')} against {_baseline_name(verify)}, "
             f"{_plural(verify.get('changed_files', 0), 'changed file')}"
             f"{_named(verify.get('changed_paths') or [])}")
@@ -328,15 +352,26 @@ def _code_list(names: list[str]) -> str:
     return ", ".join(f"`{_cell_text(name)}`" for name in names)
 
 
+def _rule(verify: dict, exit_code: int) -> str | None:
+    """The `rule` label of the first item that fails with verify's exit: an
+    item carries an exit_code only when it fails. verify exits on the first
+    kind that fires, so that label names the rule that refused the tree."""
+    return next((item.get("rule") for item in _items(verify) if item.get("exit_code") == exit_code), None)
+
+
+def _ceiling(verify: dict, exit_code: int) -> str:
+    """` 3` after the exit-9 label: the number the uncovered lines went over,
+    which was only in the job log."""
+    ceiling = _counts(verify).get("diff_uncovered_max")
+    return f" {ceiling}" if exit_code == 9 and ceiling is not None else ""
+
+
 def _exit_phrase(verify: dict, exit_code: int) -> str:
-    """`exit 6: complexity gate`. The ceiling joins exit 9, since it is the
-    number the uncovered lines went over and it was only in the job log."""
-    rule = _RULES.get(exit_code)
+    """`exit 6: complexity gate`, or `exit N` when no item fails with N."""
+    rule = _rule(verify, exit_code)
     if rule is None:
         return f"exit {exit_code}"
-    if exit_code == 9 and verify.get("diff_uncovered_max") is not None:
-        rule = f"{rule} {verify['diff_uncovered_max']}"
-    return f"exit {exit_code}: {rule}"
+    return f"exit {exit_code}: {rule}{_ceiling(verify, exit_code)}"
 
 
 def _percent(cov) -> str:
@@ -347,11 +382,30 @@ def _crap(value) -> str:
     return "-" if value is None else str(round(value, 1))
 
 
+def _function(item: dict) -> str:
+    """A function as the gate judged it: where, which, its numbers, the remedy."""
+    return (f"`{item.get('path')}:{item.get('start')}` `{item.get('long_name')}` "
+            f"ccn {item.get('ccn')}, cov {_percent(item.get('cov'))}, crap {_crap(item.get('crap'))} "
+            f"-> {item.get('remedy')}")
+
+
 def _gate_bullets(verify: dict) -> list[str]:
-    return [f"- gate: `{v.get('path')}:{v.get('start')}` `{v.get('long_name')}` "
-            f"ccn {v.get('ccn')}, cov {_percent(v.get('cov'))}, crap {_crap(v.get('crap'))} "
-            f"-> {v.get('remedy')}"
-            for v in verify.get("gate_violations", [])]
+    return [f"- gate: {_function(v)}" for v in _of(verify, "gate_violation")]
+
+
+def _overridden_bullets(verify: dict) -> list[str]:
+    """A function an --override passed over the ceiling. It fails nothing, so
+    without its bullet a reviewer could not see from the comment that an
+    override let it through."""
+    return _capped([f"- overridden: {_function(v)}" for v in _of(verify, "overridden")],
+                   "overridden function")
+
+
+def _unreadable_bullets(verify: dict) -> list[str]:
+    """A file a scope takes whose name is not UTF-8: verify stops on it before
+    any lane runs. The reason names the scope and the rename that fixes it."""
+    return [f"- unreadable name: `{_cell_text(n.get('path'))}`: {_cell_text(n.get('reason'))}"
+            for n in _of(verify, "unreadable_name")]
 
 
 def _unread_bullets(verify: dict) -> list[str]:
@@ -359,13 +413,13 @@ def _unread_bullets(verify: dict) -> list[str]:
     name; the reason says what to change."""
     return [f"- unread: `{u.get('path')}`, so the gate judged none of its functions: "
             f"{_cell_text(u.get('reason'))}"
-            for u in verify.get("unread_files") or []]
+            for u in _of(verify, "unread_file")]
 
 
 def _ratchet_bullets(verify: dict) -> list[str]:
     return [f"- ratchet: `{r.get('path')}` `{r.get('long_name')}` "
             f"{r.get('recorded')} -> {r.get('fresh_crap')} (recorded -> fresh)"
-            for r in verify.get("ratchet_regressions", [])]
+            for r in _of(verify, "ratchet_regression")]
 
 
 def _failure_bullets(verify: dict) -> list[str]:
@@ -375,16 +429,16 @@ def _failure_bullets(verify: dict) -> list[str]:
     unjudged = [f"- lane `{_cell_text(name)}`: the baseline recorded no failure list, so its "
                 "new failures may predate this change"
                 for name in verify.get("lanes_without_baseline_results") or []]
-    return [f"- new test failure: `{test}`" for test in verify.get("new_failures", [])] + unjudged
+    return [f"- new test failure: `{f.get('test')}`" for f in _of(verify, "new_failure")] + unjudged
 
 
 def _uncovered_bullets(verify: dict) -> list[str]:
     """The first twenty uncovered changed lines, one bullet per file, then how
-    many the cut hid. The payload itself carries at most fifty."""
-    shown = verify.get("diff_uncovered", [])[:20]
+    many the cut hid. The findings list at most fifty; counts holds them all."""
+    shown = _of(verify, "diff_uncovered")[:20]
     bullets = [f"- uncovered lines in `{path}`: " + ", ".join(str(e.get("line")) for e in group)
                for path, group in itertools.groupby(shown, key=lambda e: e.get("path"))]
-    hidden = verify.get("diff_uncovered_count", 0) - len(shown)
+    hidden = _counts(verify).get("diff_uncovered_count", 0) - len(shown)
     if hidden > 0:
         bullets.append(f"- and {_plural(hidden, 'more uncovered changed line')}")
     return bullets
@@ -406,11 +460,13 @@ def _failed(verify: dict, exit_code: int) -> str:
     counts line last, as it always read."""
     head = f"**verify failed, {_exit_phrase(verify, exit_code)}.**"
     counts = f"{_against(verify)}: {_findings(verify)}.{_unchecked(verify)}"
-    bullets = (_capped(_gate_bullets(verify), "gate violation")
+    bullets = (_unreadable_bullets(verify)
+               + _capped(_gate_bullets(verify), "gate violation")
                + _unread_bullets(verify)
                + _capped(_ratchet_bullets(verify), "ratchet regression")
                + _capped(_failure_bullets(verify), "new test failure")
-               + _uncovered_bullets(verify))
+               + _uncovered_bullets(verify)
+               + _overridden_bullets(verify))
     if not bullets:
         return f"{head} {counts}"
     return "\n".join([head, "", *bullets, "", counts])
@@ -436,7 +492,8 @@ def verdict_line(verify: dict | None, exit_code: int, base_reason: str | None = 
     if base_reason is not None:
         return (f"**verify judged no changed function:** the base run was not made "
                 f"({base_reason}). {_against(verify)}.")
-    return f"**verify passed.** {_against(verify)}.{_unchecked(verify)}"
+    return _listed(f"**verify passed.** {_against(verify)}.{_unchecked(verify)}",
+                   _overridden_bullets(verify))
 
 
 def _in_diff(active: list[dict], changed: list[str]) -> list[dict]:
@@ -445,12 +502,12 @@ def _in_diff(active: list[dict], changed: list[str]) -> list[dict]:
 
 
 def named_by_findings(verify: dict | None) -> set[tuple[str, str]]:
-    """The (path, function) pairs verify's findings name: gate violations,
-    ratchet regressions and overridden entries. These are the only function
-    identities the comment holds: verify's `changed_paths` names files, not
-    functions."""
-    found = itertools.chain.from_iterable((verify or {}).get(key) or [] for key in _FINDING_LISTS)
-    return {(entry.get("path"), entry.get("long_name")) for entry in found}
+    """The (path, function) pairs verify's findings name: every item that
+    carries a path and a long_name (gate violations, ratchet regressions and
+    overridden functions). These are the only function identities the comment
+    holds: verify's `changed_paths` names files, not functions."""
+    return {(item["path"], item["long_name"]) for item in _items(verify)
+            if "path" in item and "long_name" in item}
 
 
 def _named_first(active: list[dict], named) -> list[dict]:
