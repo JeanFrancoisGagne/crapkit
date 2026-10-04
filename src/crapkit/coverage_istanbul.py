@@ -29,10 +29,6 @@ if TYPE_CHECKING:
     from .config import Lane
 
 
-def _rel_path(abs_path: str, repo_root: str) -> str:
-    return Reported(repo_root)(abs_path)
-
-
 # --- span attribution ------------------------------------------------------
 # mutable span layout while attributing: [name, start, end, invoked, b_total, b_cov, s_total,
 # s_cov, signature, body, finish], the last three as (line, column) positions; the
