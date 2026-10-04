@@ -6,15 +6,24 @@ on every deploy run from 2026-10-02 (run 37188668270) for three reasons a
 reader of the YAML can see: the job's Python had no pytest for the py lane,
 the container job's root user met a workspace git does not trust, and the tag
 upgrade seeded its consumer with the candidate instead of the release its
-old step runs.
+old step runs. A fourth sat in action.yml: inside a `container:` job the
+Action's install step ran a pip script whose interpreter path the container
+does not have.
 """
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
+from hang_guard import HANG_SECONDS
+
 ROOT = Path(__file__).resolve().parents[2]
+ACTION = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))
 WORKFLOWS = ROOT / ".github" / "workflows"
 CI = yaml.safe_load((WORKFLOWS / "ci.yml").read_text(encoding="utf-8"))
 DEPLOY = yaml.safe_load((WORKFLOWS / "deploy.yml").read_text(encoding="utf-8"))
@@ -79,3 +88,46 @@ def test_the_tag_upgrade_seeds_the_consumer_with_the_release_its_old_step_runs()
     build = next(step["run"] for step in job["steps"] if _builds_consumer(step))
 
     assert f"--seed-from {old}" in build
+
+
+def _bash() -> str:
+    """The bash a `shell: bash` step runs under: the one on PATH, or Git's in
+    place of the WSL launcher under System32, which cannot read the files this
+    test writes."""
+    bash = shutil.which("bash")
+    if bash is None or "system32" in bash.lower():
+        git = shutil.which("git")
+        candidate = Path(git).parent.parent / "bin" / "bash.exe" if git else None
+        bash = str(candidate) if candidate and candidate.is_file() else None
+    if bash is None:
+        pytest.skip("no bash on PATH to run the step under")
+    return bash
+
+
+def test_the_install_step_runs_pip_through_the_python_on_path(tmp_path):
+    """A `container:` job mounts the runner's tool cache at /__t, but the
+    scripts in it were written on the host, so pip's `#!` names
+    /opt/hostedtoolcache/.../bin/python, a path the container does not have:
+    `pip install` exits 127 ("required file not found") and the Action never
+    reaches its verdict. `python` is the interpreter itself, found on the PATH
+    setup-python set, and it runs pip as a module wherever the cache sits.
+    The tool cache here is one whose pip names a missing interpreter and whose
+    python records what it was asked to run."""
+    step = next(step for step in ACTION["runs"]["steps"] if "pip install" in step.get("run", ""))
+    tools, called = tmp_path / "toolcache" / "bin", tmp_path / "python.args"
+    tools.mkdir(parents=True)
+    scripts = {"pip": "#!/opt/hostedtoolcache/Python/3.12/x64/bin/python\nimport pip\n",
+               "python": f'#!/bin/sh\nprintf "%s\\n" "$@" > "{called.as_posix()}"\n'}
+    for name, text in scripts.items():
+        (tools / name).write_text(text, encoding="utf-8", newline="\n")
+        (tools / name).chmod(0o755)
+    script = tmp_path / "install.sh"
+    script.write_text(step["run"], encoding="utf-8", newline="\n")
+    env = {**os.environ, "GITHUB_ACTION_PATH": "/action/checkout",
+           "PATH": os.pathsep.join([str(tools), os.environ["PATH"]])}
+
+    done = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", script.as_posix()],
+                          env=env, capture_output=True, text=True, timeout=HANG_SECONDS)
+
+    assert done.returncode == 0, done.stderr
+    assert called.read_text(encoding="utf-8").splitlines() ==["-m", "pip", "install", "-e", "/action/checkout"]
