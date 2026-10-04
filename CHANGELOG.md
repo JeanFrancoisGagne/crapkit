@@ -6,6 +6,7 @@
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->
+- Library API: `FnCoverage` and `coverage_count` import from `crapkit.score`; `crapkit.coverage_istanbul` no longer exports them.
 <!-- /0.9.0:m1-foundations -->
 
 <!-- 0.9.0:mission-3 -->

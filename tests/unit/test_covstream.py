@@ -538,7 +538,7 @@ def _report():
 @pytest.mark.parametrize('chunk', [1, 7, 1024])
 def test_python_reader_returns_functions_missing_lines_and_digest_in_one_walk(tmp_path, monkeypatch, chunk):
     import hashlib
-    from crapkit.coverage_istanbul import FnCoverage
+    from crapkit.score import FnCoverage
 
     path = tmp_path / 'coverage.json'
     raw = json.dumps(_report(), sort_keys=True).encode('utf-8')

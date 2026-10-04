@@ -2,8 +2,7 @@
 import pytest
 
 from crapkit.analyze import analyze_source
-from crapkit.coverage_istanbul import FnCoverage
-from crapkit.score import SharedSpanFold, overlay_stale_coverage, score_rows
+from crapkit.score import FnCoverage, SharedSpanFold, overlay_stale_coverage, score_rows
 from crapkit.snapshot import build_inventory_rows
 
 

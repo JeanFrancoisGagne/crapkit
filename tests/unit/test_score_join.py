@@ -15,8 +15,7 @@ import random
 
 import pytest
 
-from crapkit.coverage_istanbul import FnCoverage
-from crapkit.score import ScoredRow, score_rows
+from crapkit.score import FnCoverage, ScoredRow, score_rows
 from crapkit.snapshot import InventoryRow
 
 

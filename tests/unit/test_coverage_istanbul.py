@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from crapkit.coverage_istanbul import FnCoverage
+from crapkit.score import FnCoverage
 from crapkit.errors import ToolError
 from coverage_readers import parse_istanbul
 

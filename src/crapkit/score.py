@@ -13,14 +13,98 @@ by-design flags score crap = ccn.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+import heapq
 import math
 from typing import NamedTuple
 
-from .coverage_istanbul import FnCoverage
+from .covstream import REGENERATE
 from .errors import ToolError
 from .keys import require_unambiguous
 from .records import decode_record, encode_record, record_lines
 from .snapshot import InventoryRow
+
+
+class FnCoverage(NamedTuple):
+    """One function's coverage as a producer measured it, the record every
+    coverage reader hands the join."""
+    name: str
+    start: int
+    end: int
+    invoked: bool
+    branches_total: int
+    branches_covered: int
+    statements_total: int = 0
+    statements_covered: int = 0
+    # The producer was told to leave the function out, so no test moves its number.
+    excluded: bool = False
+    # The reader lists every function the producer measured in this file, so a
+    # function missing from the list was left out on purpose.
+    full_listing: bool = False
+
+    @property
+    def coverage(self) -> float:
+        if self.branches_total > 0:
+            return self.branches_covered / self.branches_total
+        if self.statements_total > 0:
+            return self.statements_covered / self.statements_total
+        return 1.0 if self.invoked else 0.0
+
+
+def coverage_count(value: object, field: str) -> int:
+    """Admit a producer's count before attribution or ratio arithmetic."""
+    if type(value) is float and value.is_integer():
+        value = int(value)
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{field} must be a nonnegative integer count, got {value!r}; "
+                         f"{REGENERATE}")
+    return value
+
+
+# --- the innermost-span rule ---------------------------------------------------
+# span_owners reads a span as a list whose [2] is its end line, whose `opens`
+# index holds the (line, column) position it opens at, and whose [SPAN_FINISH]
+# holds the (line, column) position it closes at.
+SPAN_FINISH = 10
+
+
+def _push_started(heap: list, ordered: list[list], nxt: int, point: tuple, opens: int) -> int:
+    while nxt < len(ordered) and ordered[nxt][opens] <= point:
+        span = ordered[nxt]
+        line, column = span[opens]
+        heapq.heappush(heap, (span[2] - line, -line, -column, nxt, span))
+        nxt += 1
+    return nxt
+
+
+def _drop_ended(heap: list, point: tuple) -> None:
+    """Discard spans that closed before this point. Safe to do lazily and only at
+    the top: query points only increase, so anything popped here can never
+    contain a later point either."""
+    while heap and heap[0][-1][SPAN_FINISH] < point:
+        heapq.heappop(heap)
+
+
+def span_owners(fn_spans: list[list], points: set[tuple[int, int]],
+                opens: int) -> dict[tuple[int, int], list | None]:
+    """position -> innermost containing span, each span opening at its `opens`
+    position. A hit inside a nested function belongs to that function, never
+    to its encloser — else the nested one reads through its encloser and the
+    encloser answers for lines it can't fix. A counter that starts on a
+    function's line but ahead of where that function opens is the encloser's.
+
+    Sweeping spans by start into a heap keyed (lines, -start, index) settles
+    that in O((F + Q) log F) instead of a scan per query. The index term is
+    load-bearing: it is the sorted position, so an exact tie on (lines, -start)
+    resolves to the span the old linear scan met first."""
+    ordered = sorted(fn_spans, key=lambda s: s[opens])
+    heap: list[tuple] = []
+    owners: dict[tuple[int, int], list | None] = {}
+    nxt = 0
+    for point in sorted(points):
+        nxt = _push_started(heap, ordered, nxt, point, opens)
+        _drop_ended(heap, point)
+        owners[point] = heap[0][-1] if heap else None
+    return owners
 
 
 # A ratchet mark holds a CRAP score at this many decimal places, and a

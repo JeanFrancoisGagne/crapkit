@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import IO, NamedTuple
 
 from .config import Lane
-from .coverage_istanbul import FnCoverage
 from .coverage_format import lane_format
 from .doctor import container_marker, refused_in_container
 from .errors import GitError, ToolError
@@ -44,6 +43,7 @@ from .plaintext import strip_escapes
 from .procs import CwdMissing, NoProgress, own_processes, run_bounded
 from .repopath import Placing
 from .repotext import lenient, os_bytes
+from .score import FnCoverage
 from .universe import ScopeMatch, owning_scope
 from .userhome import user_home
 
