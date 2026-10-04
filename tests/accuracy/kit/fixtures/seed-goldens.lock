@@ -1,7 +1,7 @@
 path	sha256	change
 tests/accuracy/kit/fixtures/seed-goldens/coverage.json	f49a355b3df5ee365fe6631f20e7ff93716f67622603c1d27e91bd39f5435b57	K6
 tests/accuracy/kit/fixtures/seed-goldens/coverage.sarif	9955b4435679e9a7e74bbe11297ef3c526ba08ee6a9c481679b143ce6b1c4d85	K6
-tests/accuracy/kit/fixtures/seed-goldens/doctor.json	71e8bf7c6e7cefd8f0b9b0f32624ca369a03eb9debd458b35335df5cda810aed	K7
+tests/accuracy/kit/fixtures/seed-goldens/doctor.json	754f27b469484a3235862c70be171285da1642ca236175e54698bd28194fbf5d	K8
 tests/accuracy/kit/fixtures/seed-goldens/duplication.json	0915248c4d57fd34cfa813e35fbf9520382726e910aaac4540914a368bad1cb9	K1
 tests/accuracy/kit/fixtures/seed-goldens/inventory.tsv	290444c752b538bba02a6bd1ac876ce13a285fc803d96b4a6a73dd364d8332bd	K5
 tests/accuracy/kit/fixtures/seed-goldens/inventory.txt	154af596bad2848db36b939728f47f2b85e496068271f3f1f98ae43660f5f27c	K2

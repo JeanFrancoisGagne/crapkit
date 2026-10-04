@@ -6,7 +6,8 @@ the runner refusals, the first-run probes) keys on the same row name. Standard
 library only at module scope, and never a cli module, so any of them can import
 it cheaply.
 
-`infer` answers which row a lane runs. It reads the command through
+`infer` answers which row a lane runs; `step_runner` and `command_spells`
+answer it for a command alone, step by step. Each reads the command through
 lane_command's tokenizer, imported where it is called: lane_command asks this
 table for its pytest spellings, so a module-scope import either way would make
 the two a cycle.
@@ -44,6 +45,9 @@ class Toolchain(NamedTuple):
     extra_flags: str = ""
     # The scoped-tests template, `{files}` the files to narrow the run to.
     related_tests: str | None = None
+    # What doctor tells a lane that declares no results_artifact: the junit
+    # reporter's flags and the key. `{name}` is the lane's name.
+    junit_hint: str | None = None
 
 
 _ROWS = (
@@ -58,7 +62,9 @@ _ROWS = (
               init_command="{python} -m pytest --cov --cov-branch",
               reports_dir_flag="--cov-report=json:",
               junit_flags="--junitxml={cov}/junit-py.xml",
-              extra_flags=" --continue-on-collection-errors"),
+              extra_flags=" --continue-on-collection-errors",
+              junit_hint=("add --junitxml=.crapkit/cov/junit-{name}.xml to the command and "
+                          'results_artifact = ".crapkit/cov/junit-{name}.xml" to the lane')),
     # Each JS runner spells "write the coverage report here" its own way and
     # rejects the other's spelling outright. vitest ships its junit reporter, so
     # its flags cost the repo nothing. vitest also writes no coverage report
@@ -71,7 +77,10 @@ _ROWS = (
               reports_dir_flag="--coverage.reportsDirectory=",
               junit_flags="--reporter=default --reporter=junit --outputFile={cov}/junit.xml",
               extra_flags=" --coverage.reportOnFailure",
-              related_tests="npx vitest related --run {files}"),
+              related_tests="npx vitest related --run {files}",
+              junit_hint=("add --reporter=default --reporter=junit "
+                          "--outputFile=.crapkit/cov/{name}/junit.xml to the command and "
+                          'results_artifact = ".crapkit/cov/{name}/junit.xml" to the lane')),
     # jest needs the separate `jest-junit` package, and naming a reporter jest
     # cannot resolve turns a working lane into an error, so its flags are
     # written only when package.json already carries it. jest-junit takes no
@@ -85,7 +94,11 @@ _ROWS = (
               junit_package="jest-junit",
               junit_env=(("JEST_JUNIT_OUTPUT_DIR", "{cov}"),
                          ("JEST_JUNIT_OUTPUT_NAME", "junit.xml")),
-              related_tests="npx jest --findRelatedTests {files}"),
+              related_tests="npx jest --findRelatedTests {files}",
+              junit_hint=("add the jest-junit package, --reporters=default --reporters=jest-junit "
+                          'to the command, JEST_JUNIT_OUTPUT_DIR = ".crapkit/cov/{name}" and '
+                          'JEST_JUNIT_OUTPUT_NAME = "junit.xml" to its [lane.env], and '
+                          'results_artifact = ".crapkit/cov/{name}/junit.xml" to the lane')),
     Toolchain("bun", (("bun",),)),
     Toolchain("deno", (("deno",),)),
     Toolchain("cargo llvm-cov", (("cargo", "llvm-cov"),)),
@@ -262,13 +275,15 @@ def _past_options(words: list[str], takes_value: frozenset[str] = frozenset()) -
 
 
 def _module_hits(words: list[str], walk: _Walk) -> list[_Hit]:
-    """`python -m X` and `coverage run -m X`: the module X runs, read as a step."""
-    for at, word in enumerate(words[1:], 1):
-        if word == "-m":
-            return _step_hits(words[at + 1:], walk)
-        if not word.startswith("-") and word != "run":
+    """`python -m X` and `coverage run -m X`: the module X runs, read as a step.
+    An option's separate value (`-X utf8`, `--source src`) is skipped with it,
+    so it never reads as the word that ends the options."""
+    at = 1
+    while at < len(words) and words[at] != "-m":
+        if not words[at].startswith("-") and words[at] != "run":
             return []
-    return []
+        at += 2 if words[at] in _MODULE_VALUES else 1
+    return _step_hits(words[at + 1:], walk)
 
 
 def _through(takes_value: frozenset[str] = frozenset()):
@@ -287,6 +302,42 @@ def _manager_hits(words: list[str], walk: _Walk) -> list[_Hit]:
 def _opaque(words: list[str], walk: _Walk) -> list[_Hit]:
     """make, just, tox and nox run a recipe crapkit does not read."""
     return []
+
+
+# --- the runner one step spells, from the command alone ---------------------------
+#
+# Config load reads no file but crapkit.toml, and claude-hook loads config on
+# every edit, so the two config-load refusals read step 1 of `infer` alone:
+# the step's own words, the script-stem rule included, and no package.json.
+# The container refusal reads the command the same way.
+
+
+class Spelled(NamedTuple):
+    """The row one command step spells and the word that spells it, as written."""
+    name: str
+    word: str
+
+
+def step_runner(words, cmd: bool) -> Spelled | None:
+    """The row the step's own words spell, or None when they spell none or two.
+    `cmd` reads letter case the way Windows does."""
+    hits = _step_hits(list(words), _Walk({}, cmd))
+    if len({hit.name for hit in hits}) != 1:
+        return None
+    return Spelled(hits[0].name, hits[0].word)
+
+
+def command_spells(command: str, name: str, dialect: str | None = None) -> bool:
+    """Does any step of `command`, read from its own words, spell row `name`?"""
+    from .lane_command import command_steps
+
+    steps = command_steps(command, _reads_as_cmd(dialect)).steps
+    return any(_spells(step, name) for step in steps)
+
+
+def _spells(step, name: str) -> bool:
+    spelled = step_runner(step.words, step.cmd)
+    return spelled is not None and spelled.name == name
 
 
 # --- script runners: into the package.json script they name -----------------------
@@ -397,6 +448,10 @@ _NPM_VALUES = frozenset({"--prefix", "-w", "--workspace"})
 _ENV_VALUES = frozenset({"-u", "--unset", "-C", "--chdir"})
 _MANAGER_VALUES = frozenset({"--with", "--python", "-p", "--directory", "--project", "--extra",
                              "--group", "--package", "--env-file", "-C", "-P", "-e", "--env"})
+# A python's options that take a separate value, then `coverage run`'s.
+_MODULE_VALUES = frozenset({"-X", "-W", "--check-hash-based-pycs",
+                            "--rcfile", "--source", "--include", "--omit", "--data-file",
+                            "--context", "--concurrency", "--debug"})
 _NODE_VALUES = frozenset({"-r", "--require", "--import", "--loader", "--experimental-loader",
                           "-e", "--eval", "-p", "--print"})
 

@@ -107,8 +107,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # and doctor printed it (m1-foundations-08), and 3,794 once score joined
 # coverage evidence to inventory spans (m1-foundations-05).
 # A src change that adds or drops a def moves it on purpose: recount with
-# py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3797
+# py_ast_oracle.functions and change it in the same commit. 3,803 once the
+# runner refusals and hints read the spelled runner (m1-foundations-09).
+SRC_DEFS = 3803
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
