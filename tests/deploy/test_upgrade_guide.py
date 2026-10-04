@@ -170,10 +170,49 @@ def refuses_the_foreign_tree(box, repo, release: str) -> None:
     assert FOREIGN_KEY in output(step), box.transcript.text()
 
 
+# An istanbul lane that runs its suite through a package.json script, with a file
+# filter beside --coverage. N-1 guessed vitest from the parser and refused it at
+# load; the candidate reads the runner from the command, which names none, so the
+# lane loads and doctor says its runner is unknown.
+WRAPPED_COMMAND = "npm run test -- --coverage src/a.test.ts"
+WRAPPED_TREE = {
+    "src/a.ts": "export function a(x: number): number {\n  return x ? 1 : 2;\n}\n",
+    ".gitignore": ".crapkit/\n",
+    "crapkit.toml": ("[[scope]]\nname = 'web'\npaths = ['src']\nlanguages = ['typescript']\n\n"
+                     "[[lane]]\nname = 'js'\nparser = 'istanbul'\nscopes = ['web']\n"
+                     "artifact = '.crapkit/cov/js/coverage-final.json'\n"
+                     f"command = '{WRAPPED_COMMAND}'\n"),
+}
+
+
+def wrapped_lane_repo(box):
+    repo = box.root / "wrapped-lane"
+    state.write(repo, WRAPPED_TREE)
+    box.run(["git", "init", "-q"], cwd=repo, expect=0)
+    state.commit(box, repo, "an istanbul lane that runs vitest through npm")
+    return repo
+
+
+def wrapped_lane_loads(box, repo, release: str, loads: bool) -> None:
+    """Not a guide step: N-1 refuses the wrapped lane at load (exit 3); the
+    candidate loads it, and the guide names the change and its fix."""
+    step = box.run(["crapkit", "doctor"], cwd=repo, expect=None if loads else 3,
+                   note=f"not a guide step: a wrapped istanbul lane under {release}")
+    if not loads:
+        assert "file filter 'src/a.test.ts'" in output(step), box.transcript.text()
+        return
+    assert step.exit != 3 and "file filter" not in output(step), box.transcript.text()
+    assert "lane 'js': runner unknown" in output(step), box.transcript.text()
+    state.guide_span("npm run test -- --coverage src/a.test.ts")
+    state.guide_span("npx vitest run --coverage")
+
+
 @cell("lin-up-pip-n1", channel="pip venv", harness="none",
       scenario="upgrade from N-1 (wheelhouse.lock): verify after one coverage, no reseed, when the candidate "
                "keeps N-1's analysis version; the guide's reseed walk when it moves it; a path_prefix lane "
-               "fed another checkout's report exits 5 with the wrong-tree refusal before and after",
+               "fed another checkout's report exits 5 with the wrong-tree refusal before and after; an "
+               "istanbul lane running `npm run test -- --coverage src/a.test.ts` is refused at load by N-1 "
+               "and loads after the upgrade, with the guide naming the change",
       use_cases="upgrade guide", os="linux", image="core", cadence="push")
 def test_lin_up_pip_n1(box, templates, candidate, record_property):
     n1 = wheels.n_minus_1()
@@ -183,6 +222,8 @@ def test_lin_up_pip_n1(box, templates, candidate, record_property):
     install_old(box, source, "3.12", f"crapkit[py]=={n1}")
     foreign = foreign_tree_repo(box)
     refuses_the_foreign_tree(box, foreign, n1)
+    wrapped = wrapped_lane_repo(box)
+    wrapped_lane_loads(box, wrapped, n1, loads=False)
     moved = state.analysis_of(state.stamp_of(repo)) != state.analysis_version(candidate)
     record_property("analysis_moved", moved)
 
@@ -191,6 +232,7 @@ def test_lin_up_pip_n1(box, templates, candidate, record_property):
     else:
         same_analysis_upgrade(box, repo, candidate, source)
     refuses_the_foreign_tree(box, foreign, candidate.version)
+    wrapped_lane_loads(box, wrapped, candidate.version, loads=True)
 
 
 # --- from 0.4.x ----------------------------------------------------------------------

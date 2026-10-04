@@ -10,6 +10,7 @@ from typing import NamedTuple
 
 from .lane_command import command_steps
 from .named import first_few
+from .toolchain import command_spells
 from .universe import LANGUAGE_EXTENSIONS, exclude_matcher, scopes_with_tests
 
 from .config_contract import known_keys
@@ -892,13 +893,15 @@ def container_marker(environ, dockerenv: bool) -> str | None:
 
 
 def refused_in_container(lane) -> bool:
-    """A lane the runner refuses inside a container: a coverage.py suite that
-    does not say container_ok = true."""
-    return lane.parser == "coveragepy" and not lane.container_ok
+    """A lane the runner refuses inside a container: one whose command spells
+    pytest and that does not say container_ok = true. The command alone is
+    read (toolchain.command_spells), whatever the lane's parser: a lane running
+    `make cov` names no pytest and runs."""
+    return not lane.container_ok and command_spells(lane.command, "pytest")
 
 
 def container_lane_findings(lanes, marker: str | None) -> tuple[Finding, ...]:
-    """The coverage.py lanes `crapkit coverage` will refuse here, one WARN each.
+    """The pytest lanes `crapkit coverage` will refuse here, one WARN each.
 
     A devcontainer, Codespaces, Codex cloud or a CI job in a container passed
     doctor and then refused its first coverage run; the refusal is right, and
