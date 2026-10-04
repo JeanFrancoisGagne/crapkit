@@ -117,8 +117,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # met at 3,839, and 3,840 once the analysis pool started its workers under
 # PYTHONSAFEPATH (gate-group-17).
 # A src change that adds or drops a def moves it on purpose: recount with
-# py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3840
+# py_ast_oracle.functions and change it in the same commit. 3,846 once the
+# runner refusals and hints read the spelled runner (m1-foundations-09).
+SRC_DEFS = 3846
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

@@ -13,6 +13,7 @@
 - doctor names each lane's runner, read from its command, the package.json script it runs, or devDependencies, and `doctor --json` carries it as `lanes[].toolchain` (accuracy change C42). [How crapkit reads a lane's runner](docs/lanes.md#how-crapkit-reads-a-lanes-runner)
 - A lane that runs pytest as `pytest.exe` or `pytest.cmd` is read as running pytest, so doctor's pytest notes reach it.
 - Library API: `parse_istanbul_both_file` and `parse_coveragepy_both_file` return per-file `FileEvidence` as their second value.
+- Runner refusals and hints follow the runner a lane's command names, not its coverage format: the vitest file-filter, pytest narrowing and container refusals fire only on a command that names vitest or pytest, and doctor's junit hint follows the named runner. A wrapped command (`npm test`, `make cov`) gets neither; name the runner in the command to keep them. [Upgrading to 0.9.0](docs/upgrading.md#runner-refusals-and-hints-follow-the-runner-the-command-names)
 <!-- /0.9.0:m1-foundations -->
 
 <!-- 0.9.0:mission-3 -->
