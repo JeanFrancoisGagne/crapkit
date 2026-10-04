@@ -50,7 +50,7 @@ def test_split_window_hands_back_what_json_loads_reads(document, layout, chunk):
     covstream, window = _window(data, chunk)
 
     assert list(covstream.split_window(window)) == list(json.loads(data).items())
-    assert window.hasher.hexdigest() == hashlib.sha256(data).hexdigest()
+    assert window.reader.hexdigest() == hashlib.sha256(data).hexdigest()
 
 
 def _rebuilt(pairs) -> dict:

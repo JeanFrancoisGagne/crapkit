@@ -11,6 +11,16 @@ on a 150 MB istanbul artifact, for byte-identical output and the same sha256.
 Both shapes are split the same way. An istanbul artifact IS the {path: coverage}
 object, so its members are files. A coverage.py report wraps them one level down
 in "files", so the walk descends into that member and hands the rest back whole.
+
+Two pieces serve every format, so no reader hashes or decodes on its own:
+
+- `HashingReader` feeds each byte a consumer reads into one sha256, the digest
+  of every coverage artifact crapkit reads. The JSON walk's window reads
+  through it, and so do the four other formats: Cobertura and JaCoCo XML,
+  which go to `xml.etree.ElementTree.iterparse` as bytes, and lcov and Go
+  coverprofile, which go through `lines`.
+- `lines` splits a machine-written line format (lcov, Go coverprofile) under
+  the decode rule the JSON walk takes, `repotext.JsonStream`.
 """
 from __future__ import annotations
 
@@ -21,8 +31,8 @@ import re
 from pathlib import Path
 from typing import IO, Iterator
 
-from .errors import ToolError
-from .repotext import JsonStream
+from .errors import ConfigError, ToolError
+from .repotext import JsonStream, utf16_marked
 
 # What a refusal of the artifact's own bytes tells the user to do: the file was
 # cut off, merged or rewritten after the coverage tool wrote it.
@@ -61,16 +71,86 @@ _DECODER = json.JSONDecoder(parse_float=_finite_number, parse_constant=_finite_n
 _CLOSE_INNER = re.compile(_WS + r"\}")
 
 
+class HashingReader:
+    """A read-only binary file whose every byte read also goes into a sha256.
+
+    One pass over an artifact both parses it and hashes it, so a 150 MB file is
+    read once and never held whole."""
+
+    def __init__(self, handle: IO[bytes]):
+        self._handle = handle
+        self._hasher = hashlib.sha256()
+
+    def readable(self) -> bool:
+        return True
+
+    def read(self, size: int = -1) -> bytes:
+        data = self._handle.read(size)
+        self._hasher.update(data)
+        return data
+
+    def hexdigest(self) -> str:
+        """The digest of the whole file. The bytes the consumer did not read
+        are read here, so the digest never depends on where a parser stopped."""
+        while self.read(CHUNK):
+            pass
+        return self._hasher.hexdigest()
+
+
+# What the UTF-16 refusal of a line format adds to repotext's sentence: the
+# PowerShell 5.1 redirect wrote the file, and either fix writes UTF-8.
+_UTF16_FIX = "write the file with Out-File -Encoding utf8, or with the tool's own output-path flag"
+
+
+def _line_refusal(refusal: ConfigError, head: bytes) -> ToolError:
+    """repotext's decode refusal as a lane refusal (exit 5), as the JSON walk's
+    are, with the fix for a UTF-16 file."""
+    fix = f": {_UTF16_FIX}" if utf16_marked(head) else ""
+    return ToolError(f"{refusal}{fix}")
+
+
+def _decoded(reader: HashingReader, what: str, chunk: int) -> Iterator[str]:
+    """The reader's text, a read at a time, under repotext.JsonStream's rule."""
+    stream = JsonStream(what)
+    head = b""
+    try:
+        while raw := reader.read(chunk):
+            head = (head + raw[:2])[:2]
+            yield stream.decode(raw)
+        yield stream.decode(b"", True)
+    except ConfigError as refusal:
+        raise _line_refusal(refusal, head) from None
+
+
+def lines(reader: HashingReader, what: str, chunk: int = CHUNK) -> Iterator[str]:
+    """Each line of a machine-written line format, without its ending.
+
+    LF and CRLF end a line, and a lone CR stays inside one. A UTF-8 BOM is read
+    past; UTF-16 and a byte that is not UTF-8 are refused naming `what`. A CRLF
+    pair or a character that a read boundary splits reads whole, and one read
+    of text is live at a time."""
+    rest = ""
+    for text in _decoded(reader, what, max(chunk, 1)):
+        rest += text
+        start = 0
+        while (end := rest.find("\n", start)) >= 0:
+            yield rest[start:end].removesuffix("\r")
+            start = end + 1
+        rest = rest[start:]
+    if rest:
+        yield rest
+
+
 class _Window:
-    """A sliding decoded window over a byte stream, plus the sha256 of the bytes
-    that went past. Offsets stay valid across a refill because refilling only
-    appends; only drop() ever moves them, and it says so."""
+    """A sliding decoded window over a byte stream, read through a
+    HashingReader that keeps the sha256 of the artifact. Offsets stay valid
+    across a refill because refilling only appends; only drop() ever moves
+    them, and it says so."""
 
     def __init__(self, handle: IO[bytes], chunk: int = CHUNK, what: str = "the artifact"):
-        self._handle = handle
+        self.reader = HashingReader(handle)
         self._chunk = max(chunk, 1)
         self._decoder = JsonStream(what)
-        self.hasher = hashlib.sha256()
         self.buf = ""
         self.pos = 0
         self.eof = False
@@ -79,12 +159,11 @@ class _Window:
         """Pull one more chunk into the window. False once the stream is spent."""
         if self.eof:
             return False
-        raw = self._handle.read(self._chunk)
+        raw = self.reader.read(self._chunk)
         if not raw:
             self.eof = True
             self.buf += self._decoder.decode(b"", True)
             return False
-        self.hasher.update(raw)
         self.buf += self._decoder.decode(raw)
         return True
 
@@ -325,4 +404,4 @@ def read_walk(path: Path | str, walk, message: str, chunk: int = CHUNK):
     with open(path, "rb") as handle:
         w = _Window(handle, chunk, Path(path).name)
         result = _guarded(lambda: walk(w), message)
-    return result, w.hasher.hexdigest()
+        return result, w.reader.hexdigest()
