@@ -6,6 +6,7 @@ from typing import NamedTuple
 
 from .config import PYTEST_CONFIG_FILES, pytest_testpaths_texts as pytest_testpaths  # noqa: F401  init and tests import it from here
 from .config import _as_testpath
+from .coverage_format import lane_format
 from .toolchain import TOOLCHAINS, Toolchain
 
 from .universe import (LANGUAGE_EXTENSIONS, exclude_matcher, excluded, is_test_file,
@@ -830,9 +831,10 @@ def _artifact_ignore(artifact: str) -> str:
 
 
 def _runner_droppings(lane: LaneSpec) -> list[str]:
-    """What the lane's runner leaves beside the artifact; a pytest lane drops
-    coverage's data file and bytecode caches into the consumer's tree."""
-    return [".coverage", "__pycache__/"] if lane.parser == "coveragepy" else []
+    """What the lane's coverage producer leaves beside the artifact, whatever
+    runner starts it: coverage.py drops its data file and Python's bytecode
+    caches into the consumer's tree (coverage_format's `DROPPINGS`)."""
+    return list(lane_format(lane).DROPPINGS)
 
 
 def gitignore_entries(lanes: tuple[LaneSpec, ...]) -> list[str]:

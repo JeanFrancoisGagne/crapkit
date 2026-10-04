@@ -108,9 +108,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # coverage evidence to inventory spans (m1-foundations-05), and 3,804
 # once covstream took HashingReader and the line reader (m1-readers-10).
 # A src change that adds or drops a def moves it on purpose: recount with
-# py_ast_oracle.functions and change it in the same commit. 3,810 once the
-# runner refusals and hints read the spelled runner (m1-foundations-09).
-SRC_DEFS = 3810
+# py_ast_oracle.functions and change it in the same commit. 3,813 once the
+# producer facts read the coverage format adapter (m1-foundations-10).
+SRC_DEFS = 3813
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
