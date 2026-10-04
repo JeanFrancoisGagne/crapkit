@@ -7,8 +7,8 @@ commit is not the moment to reopen that.
 
 `rescore --gate` and `verify` both hold a scored row, so they keep the numeric
 rule: at or under the recorded mark it is carried debt, past it the mark rose
-and the verdict fails. Those two are `_unmarked_breaches`, and this file pins
-that the new hook rule did not leak into them.
+and the verdict fails. Both judge through the gate module's pardon, and this
+file pins that the new hook rule did not leak into rescore's.
 """
 import json
 
@@ -18,9 +18,11 @@ from cli_inproc_repo import (add_knotty, commit_all, git, repo,  # noqa: F401
                              seed_artifacts, template_repo)
 
 from crapkit.cli import main
-from crapkit.cli.scoring import _ceiling_breaches, _unmarked_breaches
+from crapkit.cli.scoring import _gate_breaches, _gate_changes
 from crapkit.cli.verifying import _split_marked
+from crapkit.gate import judge
 from crapkit.hook import Violation
+from crapkit.keys import MarkIndex
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
 
@@ -88,18 +90,20 @@ def test_how_far_over_the_ceiling_it_sits_changes_nothing(ccn: int):
 
 # --- rescore and verify: still the numeric rule -------------------------------
 
-def test_a_scored_breach_past_its_mark_is_still_kept():
-    breaches = _ceiling_breaches([scored("src/mod.py", "legacy( n )", 15, 70.0)],
-                                 {"src/mod.py": 6})
+def rescore_breaches(rows: list) -> list:
+    """The breaches rescore --gate fails on, each file taken whole, under MARK."""
+    changes = _gate_changes(rows, {}, {r.path for r in rows}, {})
+    return _gate_breaches(judge(changes, lambda scope: 6, lambda: MarkIndex([MARK])), rows)
 
-    assert [b.crap for b in _unmarked_breaches(breaches, [MARK])] == [70.0]
+
+def test_a_scored_breach_past_its_mark_is_still_kept():
+    breaches = rescore_breaches([scored("src/mod.py", "legacy( n )", 15, 70.0)])
+
+    assert [b.crap for b in breaches] == [70.0]
 
 
 def test_a_scored_breach_at_its_mark_is_still_carried_debt():
-    breaches = _ceiling_breaches([scored("src/mod.py", "legacy( n )", 15, 63.6)],
-                                 {"src/mod.py": 6})
-
-    assert _unmarked_breaches(breaches, [MARK]) == []
+    assert rescore_breaches([scored("src/mod.py", "legacy( n )", 15, 63.6)]) == []
 
 
 # --- the marks file deleted in the commit under gate ----------------------------

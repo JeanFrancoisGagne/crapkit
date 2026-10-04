@@ -17,8 +17,7 @@ from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from typing import Any, NamedTuple
 
-from .gate import (WHOLE, ChangedFile, CrapBound, Function, GateResult, Unread, UnreadableName, judge,
-                   touches)
+from .gate import WHOLE, ChangedFile, CrapBound, Function, GateResult, Unread, UnreadableName, judge
 from .keys import MarkIndex, mark_key, rows_by_key
 from .merge import UNREAD_ADVICE
 from .ratchet import RatchetEntry
@@ -632,18 +631,6 @@ def sarif_results(verdict: Verdict, uncovered: Sequence | None = None) -> list[d
     reported = _reported(verdict, uncovered)
     return [finding_result(row.sarif, entry) for row in FINDING_KINDS if row.sarif
             for entry in _entries(reported, row)]
-
-
-def touched_rows(rows: list[ScoredRow],
-                 changed_ranges: dict[str, list[tuple[int, int]]]) -> list[ScoredRow]:
-    """The gate's selection without its policy: rows whose span a change overlaps.
-
-    Every gate in crapkit judges touched functions only — untouched debt is the
-    ratchet's business. `rescore --gate` reuses this so its verdict and the
-    pre-commit hook's cannot disagree about which functions were even in scope.
-    The touch rule is the gate module's.
-    """
-    return [r for r in rows if touches(r, changed_ranges.get(r.path, ()))]
 
 
 def _ceiling(row: ScoredRow, target: int, scope_targets: dict[str, int] | None) -> int:

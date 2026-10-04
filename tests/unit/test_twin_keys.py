@@ -20,13 +20,14 @@ import pytest
 
 from crapkit.analyze import analyze_source
 from crapkit.cli.queue import _BriefLoader, _pick_function
-from crapkit.cli.scoring import _ceiling_breaches, _unmarked_breaches
+from crapkit.cli.scoring import _gate_breaches, _gate_changes
 from crapkit.cli.verifying import _split_marked
 from crapkit.cli.reports import cmd_explain
 from crapkit.config import load_config_text
 from crapkit.errors import CrapkitError
+from crapkit.gate import judge
 from crapkit.hook import Violation
-from crapkit.keys import key_name, key_names, key_of, split_ordinal
+from crapkit.keys import MarkIndex, key_name, key_names, key_of, split_ordinal
 from crapkit.ratchet import RatchetEntry, merge_ratchets, prune_ratchet, seed_ratchet
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
@@ -227,9 +228,8 @@ def test_rescore_gate_judges_each_twin_against_its_own_mark():
     """`rescore --gate` compares numbers where the commit gate compares
     existence, and it read the same collapsed key."""
     rows = [scored(POST_INIT, 7, 66.0714), scored(POST_INIT, 18, 60.0)]
-    breaches = _ceiling_breaches(rows, {"src/iso_cost.py": 6}, key_names(rows))
 
-    kept = _unmarked_breaches(breaches, [
+    kept = rescore_breaches(rows, {"src/iso_cost.py": [(1, 30)]}, [
         RatchetEntry("src/iso_cost.py", POST_INIT, 66.0714),
         RatchetEntry("src/iso_cost.py", f"{POST_INIT}#2", 30.0)])
 
@@ -237,14 +237,19 @@ def test_rescore_gate_judges_each_twin_against_its_own_mark():
 
 
 def test_the_breach_keys_come_from_the_whole_file_not_the_touched_rows():
-    """Only the second twin was touched, so it arrives alone. Counting ordinals
-    over the touched rows would call it twin #1 and hand it the bare mark."""
+    """Only the second twin was touched. Counting ordinals over the touched
+    rows would call it twin #1 and hand it the bare mark."""
     whole_file = [scored(POST_INIT, 7, 66.0714), scored(POST_INIT, 18, 60.0)]
-    touched = [whole_file[1]]
 
-    breaches = _ceiling_breaches(touched, {"src/iso_cost.py": 6}, key_names(whole_file))
+    breaches = rescore_breaches(whole_file, {"src/iso_cost.py": [(18, 18)]})
 
     assert [v.key_name for v in breaches] == [f"{POST_INIT}#2"]
+
+
+def rescore_breaches(rows: list, ranges: dict, marks=()) -> list:
+    """The breaches rescore --gate fails on: its changed files, the gate's judge."""
+    changes = _gate_changes(rows, ranges, set(), {})
+    return _gate_breaches(judge(changes, lambda scope: 6, lambda: MarkIndex(marks)), rows)
 
 
 # --- the merge driver ---------------------------------------------------------
