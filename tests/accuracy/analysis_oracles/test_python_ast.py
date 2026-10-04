@@ -101,10 +101,12 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # once keys answered which mark judges a function and which keys pair as a
 # move (gate-group-03), and 3,737 once marks_history answered the marks a
 # commit held and the moves between revisions (gate-group-04), and 3,740
-# once scaffold read its runner facts off the toolchain table (m1-foundations-07).
+# once scaffold read its runner facts off the toolchain table (m1-foundations-07),
+# and 3,780 once toolchain.infer read a lane's runner and doctor printed it
+# (m1-foundations-08).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3740
+SRC_DEFS = 3780
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

@@ -6,6 +6,8 @@
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->
+- doctor names each lane's runner, read from its command, the package.json script it runs, or devDependencies, and `doctor --json` carries it as `lanes[].toolchain` (accuracy change C40). [How crapkit reads a lane's runner](docs/lanes.md#how-crapkit-reads-a-lanes-runner)
+- A lane that runs pytest as `pytest.exe` or `pytest.cmd` is read as running pytest, so doctor's pytest notes reach it.
 <!-- /0.9.0:m1-foundations -->
 
 <!-- 0.9.0:mission-3 -->
