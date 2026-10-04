@@ -7,6 +7,7 @@ refusal gives. The lane layer, the dark-line fold and `explain --tests` ask the
 adapter; none of them compares parser strings of its own.
 """
 import json
+from array import array
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,7 @@ from crapkit import coverage_format, coverage_istanbul, coverage_py, lanes, repo
 from crapkit.config import Lane
 from crapkit.errors import ToolError
 from crapkit.repopath import Unplaced
+from crapkit.score import FileEvidence
 
 
 def _lane(parser: str, *, artifact: str = "cov.json", path_prefix: str = "") -> Lane:
@@ -55,12 +57,12 @@ def test_the_istanbul_adapter_reads_coverage_dead_lines_and_digest_in_one_walk(t
     artifact.write_text(json.dumps(_istanbul(f"{tmp_path.as_posix()}/src/a.ts")),
                         encoding="utf-8")
 
-    per_file, dead, digest = coverage_istanbul.read(_lane("istanbul"), tmp_path, artifact)
+    per_file, evidence, digest = coverage_istanbul.read(_lane("istanbul"), tmp_path, artifact)
 
     assert [fn.name for fn in per_file["src/a.ts"]] == ["f"]
-    assert dead == {"src/a.ts": {3}}
+    assert evidence == {"src/a.ts": FileEvidence(None, array("I", [3]))}
     assert len(digest) == 64
-    assert coverage_istanbul.missing(_lane("istanbul"), tmp_path, artifact) == dead
+    assert coverage_istanbul.missing(_lane("istanbul"), tmp_path, artifact) == {"src/a.ts": {3}}
 
 
 def test_the_coveragepy_adapter_keys_every_path_with_the_lanes_prefix(tmp_path):
@@ -68,11 +70,11 @@ def test_the_coveragepy_adapter_keys_every_path_with_the_lanes_prefix(tmp_path):
     artifact.write_text(json.dumps(_coveragepy("pkg\\mod.py")), encoding="utf-8")
     lane = _lane("coveragepy", path_prefix="backend")
 
-    per_file, dead, _ = coverage_py.read(lane, tmp_path, artifact)
+    per_file, evidence, _ = coverage_py.read(lane, tmp_path, artifact)
 
     assert list(per_file) == ["backend/pkg/mod.py"]
-    assert dead == {"backend/pkg/mod.py": {3}}
-    assert coverage_py.missing(lane, tmp_path, artifact) == dead
+    assert evidence == {"backend/pkg/mod.py": FileEvidence(None, array("I", [3]))}
+    assert coverage_py.missing(lane, tmp_path, artifact) == {"backend/pkg/mod.py": {3}}
     assert coverage_py.contexts(lane, tmp_path, artifact, "backend/pkg/mod.py") == {
         2: ["t.py::test_a"]}
 

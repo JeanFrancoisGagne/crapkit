@@ -17,6 +17,7 @@ JSON framing.
 from __future__ import annotations
 
 import sys
+from array import array
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -357,6 +358,18 @@ def _dead_lines(cov: dict) -> set[int]:
     return dead
 
 
+# The largest line number array("I") holds. A line past it, or below 1, sits in
+# no span a function or a changed range names, so the evidence leaves it out.
+_LAST_LINE = 2 ** 32 - 1
+
+
+def _missed_only(lines: set[int]) -> score.FileEvidence:
+    """A file's dead lines as its evidence. hit_lines is None: this reader
+    keeps its own function records, so the join builds none from it and only
+    the dead-line fold reads missed_lines."""
+    return score.FileEvidence(None, array("I", sorted(n for n in lines if 0 < n <= _LAST_LINE)))
+
+
 # --- reading the artifact ----------------------------------------------------
 
 _BAD_ISTANBUL = "unparseable istanbul artifact"
@@ -379,11 +392,13 @@ def _istanbul_map(w, repo_root: str, per_file) -> dict:
 
 
 def _istanbul_both(w, repo_root: str, keys: Reported | None = None) -> tuple[dict, dict]:
-    per_file, dead = {}, {}
+    """path -> function coverage and path -> FileEvidence, from one decode of
+    each file."""
+    per_file, evidence = {}, {}
     for rel, cov in _records(w, repo_root, keys):
         per_file[rel] = _named_file(rel, lambda: _file_coverage(cov))
-        dead[rel] = _dead_lines(cov)
-    return per_file, dead
+        evidence[rel] = _missed_only(_dead_lines(cov))
+    return per_file, evidence
 
 
 _CLAMPED_NAMED = 3
@@ -429,8 +444,10 @@ def _require_files(per_file: dict) -> None:
 
 def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = covstream.CHUNK,
                              reported: Reported | None = None
-                             ) -> tuple[dict[str, list[score.FnCoverage]], dict[str, set[int]], str]:
-    """Function coverage AND dead lines from ONE walk, plus the sha256 of the
+                             ) -> tuple[dict[str, list[score.FnCoverage]],
+                                        dict[str, score.FileEvidence], str]:
+    """Function coverage AND each file's FileEvidence (its dead lines as
+    missed_lines, hit_lines None) from ONE walk, plus the sha256 of the
     artifact's own bytes. `reported` keys the files, and holds the keys it left
     unplaced when the walk is done; one of the reader's own by default.
 
@@ -440,11 +457,11 @@ def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = c
     31,459-file tree, against 7.80 s merged. Decoding is the whole cost;
     _dead_lines over an already decoded file is near free.
     """
-    (per_file, dead), digest = covstream.read_walk(
+    (per_file, evidence), digest = covstream.read_walk(
         path, lambda w: _istanbul_both(w, repo_root, reported), f"{_BAD_ISTANBUL} {path}", chunk)
     _require_files(per_file)
     _note_clamped_branches(per_file)
-    return per_file, dead, digest
+    return per_file, evidence, digest
 
 
 def parse_istanbul_missing_file(path: Path | str, *, repo_root: str,
@@ -476,8 +493,9 @@ TAKES_PATH_PREFIX = False
 
 def read(lane: Lane, root: Path, artifact: Path, *,
          unplaced: dict[str, Unplaced] | None = None
-         ) -> tuple[dict[str, list[score.FnCoverage]], dict[str, set[int]], str]:
-    """The lane's function coverage, dead lines and artifact digest, one walk.
+         ) -> tuple[dict[str, list[score.FnCoverage]], dict[str, score.FileEvidence], str]:
+    """The lane's function coverage, each file's FileEvidence (its dead
+    lines) and the artifact digest, one walk.
     `unplaced` takes each key the walk could not rebase, with its reason: the
     keys it rebased are in the checkout, so none of them is there."""
     keys = Reported(str(root))

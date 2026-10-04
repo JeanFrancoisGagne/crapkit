@@ -19,8 +19,10 @@ import socket
 import sys
 import time
 import warnings
+from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from types import MappingProxyType
 from typing import IO, NamedTuple
 
 from .config import Lane
@@ -43,7 +45,7 @@ from .plaintext import strip_escapes
 from .procs import CwdMissing, NoProgress, own_processes, run_bounded
 from .repopath import Unplaced, absolute
 from .repotext import lenient, os_bytes
-from .score import FnCoverage
+from .score import FileEvidence, FnCoverage
 from .universe import ScopeMatch, owning_scope
 from .userhome import user_home
 
@@ -651,10 +653,13 @@ def staleness_reads(root: Path, lanes, scope_paths: dict, git=None):
     return nullcontext(_facts(root, git))
 
 
-def _read_and_parse(lane: Lane, root: Path, artifact_path: Path, dead_lines=None
+def _read_and_parse(lane: Lane, root: Path, artifact_path: Path, dead_lines=None,
+                    evidence: dict[str, FileEvidence] | None = None
                     ) -> tuple[dict[str, list[FnCoverage]], str, dict[str, Unplaced]]:
     """This lane's coverage, the sha256 of the artifact's own bytes, and each
     absolute key the reader did not place, with the placing step's reason.
+    `evidence`, when handed one, takes each file's FileEvidence from the same
+    walk, the record score_rows joins for a reader with no function records.
 
     The reader takes the PATH, not the text: a whole-document parse needs the
     bytes and their UTF-8 decode both live before the first function is
@@ -668,10 +673,12 @@ def _read_and_parse(lane: Lane, root: Path, artifact_path: Path, dead_lines=None
     same way, handed to the wrong-tree check.
     """
     unplaced: dict[str, Unplaced] = {}
-    per_file, dead, digest = lane_format(lane).read(lane, root, artifact_path,
-                                                    unplaced=unplaced)
+    per_file, by_path, digest = lane_format(lane).read(lane, root, artifact_path,
+                                                       unplaced=unplaced)
     if dead_lines is not None:
-        dead_lines.add(artifact_path, dead, digest)
+        dead_lines.add(artifact_path, by_path, digest)
+    if evidence is not None:
+        evidence.update(by_path)
     return per_file, digest, unplaced
 
 
@@ -989,10 +996,13 @@ def _retested_passes(root: Path, lane: Lane) -> set[str]:
 
 class LaneOutcome(NamedTuple):
     """One lane's result. `stamp` is what the caller must persist (empty when the
-    lane reused an artifact, or when there is no git repo to stamp against)."""
+    lane reused an artifact, or when there is no git repo to stamp against).
+    `evidence` is each measured file's FileEvidence from the walk that read
+    `coverage`, which score_rows joins per lane."""
     coverage: dict[str, list[FnCoverage]]
     provenance: dict
     stamp: dict
+    evidence: Mapping[str, FileEvidence] = MappingProxyType({})
 
 
 def _run_or_reuse(lane: Lane, fresh: Freshness, reuse_artifact: bool,
@@ -1073,8 +1083,9 @@ def _run_owned_lane(lane: Lane, fresh: Freshness, reuse_artifact: bool, dead_lin
     root = fresh.root
     before = None if reuse_artifact else _before_run(lane, fresh)
     exit_code, seconds = _run_or_reuse(lane, fresh, reuse_artifact, owner)
+    evidence: dict[str, FileEvidence] = {}
     coverage, digest, unplaced = _read_and_parse(lane, root, _artifact_path(root, lane),
-                                                 dead_lines)
+                                                 dead_lines, evidence)
     _judge_artifact_scope(lane, coverage, fresh.scope_paths, root, unplaced)
     provenance = {
         "artifact_sha256": digest,
@@ -1087,7 +1098,7 @@ def _run_owned_lane(lane: Lane, fresh: Freshness, reuse_artifact: bool, dead_lin
     stamp = {} if before is None else _stamp_entry(
         _facts(root, fresh.git), lane, seconds, provenance,
         _after_run(lane, fresh, coverage, before), fresh)
-    return LaneOutcome(coverage, provenance, stamp)
+    return LaneOutcome(coverage, provenance, stamp, evidence)
 
 
 def _output_lock(path: Path) -> Path:

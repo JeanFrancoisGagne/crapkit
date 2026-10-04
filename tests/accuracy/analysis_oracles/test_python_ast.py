@@ -108,7 +108,7 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # coverage evidence to inventory spans (m1-foundations-05).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3794
+SRC_DEFS = 3797
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
