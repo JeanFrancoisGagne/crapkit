@@ -287,7 +287,9 @@ def _external_owner(paths, *, optional: bool = False, label: str = "measurement"
     log = _OwnerLog(paths)
     with _OWNER_INPUTS_LOCK:
         try:
-            process = subprocess.Popen([sys.executable, *helper_flags(), "-c", bootstrap, package_root,
+            # -P: `-c` puts the working directory first on sys.path, where a
+            # repo's runpy.py or json.py ran inside the guardian.
+            process = subprocess.Popen([sys.executable, "-P", *helper_flags(), "-c", bootstrap, package_root,
                                         json.dumps(options)],
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                        stderr=log.target(), text=True, encoding="utf-8", **_OWN_GROUP)

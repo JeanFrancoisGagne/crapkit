@@ -490,7 +490,10 @@ def _run_cli(tool: dict, arguments: dict, repo: str, *, owner=None) -> dict:
         return _unread_name_answer(tool, Path(repo), unread)
     argv = build_argv(tool, arguments, repo)
     full = _full_command(tool, arguments, repo)
-    proc = run_owned([sys.executable, "-m", "crapkit", *argv], cwd=repo,
+    # -P: `-m` puts the working directory, the repo, first on sys.path, and a
+    # crapkit.py at its root ran in place of crapkit. The flag, not
+    # PYTHONSAFEPATH, so doctor's probes start the lane's python as the lane does.
+    proc = run_owned([sys.executable, "-Pm", "crapkit", *argv], cwd=repo,
                      capture_output=True, timeout=600, owner=owner)
     text = proc.stdout if proc.stdout.strip() else strip_escapes(proc.stderr)
     failed = proc.returncode != 0 and not _verdict_answer(tool, proc)

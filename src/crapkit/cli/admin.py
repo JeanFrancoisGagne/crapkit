@@ -2577,8 +2577,12 @@ def _watch_rescore(root: Path, moved: list[str]) -> None:
         return
     # flush: watch output exists to be tailed live; a block-buffered pipe sits silent
     print(f"--- changed: {', '.join(moved)}", flush=True)
-    # a subprocess so a half-saved syntax error can never kill the watcher
-    run_owned([sys.executable, "-m", "crapkit", "rescore", *present, "--repo", str(root)])
+    # a subprocess so a half-saved syntax error can never kill the watcher.
+    # PYTHONSAFEPATH=1: `-m` puts this working directory, the watched repo's
+    # root, first on sys.path, where a crapkit.py ran in place of crapkit. A
+    # rescore starts no configured command, so the variable reaches none.
+    run_owned([sys.executable, "-m", "crapkit", "rescore", *present, "--repo", str(root)],
+              env={**os.environ, "PYTHONSAFEPATH": "1"})
 
 
 def _watched_files(root: Path, cfg) -> list[str]:
