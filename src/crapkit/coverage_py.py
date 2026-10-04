@@ -25,6 +25,7 @@ import codecs
 import locale
 import os
 import sys
+from array import array
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -34,7 +35,7 @@ from .errors import ToolError
 from .repopath import Placing, Reported, Unplaced, absolute, file_separators
 from .repotext import json_kind, utf8_spelling
 from .named import first_few
-from .score import FnCoverage, coverage_count
+from .score import FileEvidence, FnCoverage, coverage_count
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -341,7 +342,7 @@ class _Files:
 
     def __init__(self) -> None:
         self.per_file: dict[str, list[FnCoverage]] = {}
-        self.dead: dict[str, set[int]] = {}
+        self.evidence: dict[str, FileEvidence] = {}
         self.regionless: list[str] = []
         self.total = 0
         self.branch_counted = 0
@@ -353,7 +354,7 @@ class _Files:
         path = measured_key(prefix, raw_path)
         if absolute(path):
             self.absolute.append(path)
-        self.dead[path] = _dead_lines(path, data)
+        self.evidence[path] = _missed_only(_dead_lines(path, data))
         if not has_regions(data):
             self.regionless.append(raw_path)
             return
@@ -367,6 +368,18 @@ def _dead_lines(path: str, data: object) -> set[int]:
     """The lines one file entry says never ran, refused by the file's name
     when the entry or its missing_lines is not the shape coverage.py writes."""
     return set(_line_list(path, _file_entry(path, data), "missing_lines"))
+
+
+# The largest line number array("I") holds. A line past it, or below 1, sits in
+# no span a function or a changed range names, so the evidence leaves it out.
+_LAST_LINE = 2 ** 32 - 1
+
+
+def _missed_only(lines: set[int]) -> FileEvidence:
+    """A file's dead lines as its evidence. hit_lines is None: this reader
+    keeps its own function records, so the join builds none from it and only
+    the dead-line fold reads missed_lines."""
+    return FileEvidence(None, array("I", sorted(n for n in lines if 0 < n <= _LAST_LINE)))
 
 
 def _file_entry(path: str, data: object) -> dict:
@@ -395,9 +408,10 @@ def _branchless(path: str, data: dict) -> list[str]:
 
 def _coveragepy_both(w, prefix: str, label: str,
                      written: list[str] | None = None) -> tuple[dict, dict]:
-    """path -> function coverage, salvaging the same way the whole-document
-    parser does: a statement-based downgrade with no branch data, and files with
-    no regions skipped rather than fatal. `written` takes each absolute key."""
+    """path -> function coverage and path -> FileEvidence, salvaging the same
+    way the whole-document parser does: a statement-based downgrade with no
+    branch data, and files with no regions skipped rather than fatal. `written`
+    takes each absolute key."""
     files, branch = _Files(), False
     for key, value, kind in covstream.walk_report(w, "files"):
         if kind == "member":
@@ -410,21 +424,23 @@ def _coveragepy_both(w, prefix: str, label: str,
     _judge_branch_counts(branch, files, label)
     if written is not None:
         written.extend(files.absolute)
-    return files.per_file, files.dead
+    return files.per_file, files.evidence
 
 
 def parse_coveragepy_both_file(path: Path | str, *, path_prefix: str,
                                chunk: int = covstream.CHUNK, label: str = "",
                                absolute_keys: list[str] | None = None
-                               ) -> tuple[dict, dict, str]:
-    """Function coverage, missing lines, and byte digest from one report walk.
+                               ) -> tuple[dict[str, list[FnCoverage]],
+                                          dict[str, FileEvidence], str]:
+    """Function coverage, each file's FileEvidence (its missing lines as
+    missed_lines, hit_lines None), and byte digest from one report walk.
     `absolute_keys` takes each absolute key the report wrote, `/` between
     directories and no prefix on it."""
     prefix = lane_prefix(path_prefix)
-    (per_file, dead), digest = covstream.read_walk(
+    (per_file, evidence), digest = covstream.read_walk(
         path, lambda w: _coveragepy_both(w, prefix, label, absolute_keys),
         f"{_BAD_REPORT} {path}", chunk)
-    return per_file, dead, digest
+    return per_file, evidence, digest
 
 
 def _coveragepy_missing(w, prefix: str) -> dict[str, set[int]]:
@@ -512,21 +528,23 @@ def _respelled(per_key: dict, spell: Callable[[str], str]) -> dict:
 
 
 def read(lane: Lane, root: Path, artifact: Path, *,
-         unplaced: dict[str, Unplaced] | None = None) -> tuple[dict, dict, str]:
-    """The lane's function coverage, dead lines and artifact digest, one walk.
+         unplaced: dict[str, Unplaced] | None = None
+         ) -> tuple[dict[str, list[FnCoverage]], dict[str, FileEvidence], str]:
+    """The lane's function coverage, each file's FileEvidence (its dead lines)
+    and the artifact digest, one walk.
     `unplaced` takes each absolute key, under the measured key it reads as,
     with the placing step's reason: KEPT_ABSOLUTE for one in this checkout,
     because this reader never rebases an absolute key (relative_files is the
     runner's own switch). The placing step is asked once a folder, and not at
     all for a report whose keys are all relative."""
     written: list[str] = []
-    per_file, dead, digest = parse_coveragepy_both_file(
+    per_file, evidence, digest = parse_coveragepy_both_file(
         artifact, path_prefix=lane.path_prefix, label=f"lane {lane.name!r}",
         absolute_keys=written)
     spell = _speller(root)
     if unplaced is not None:
         unplaced.update(_reasons(root, written, spell))
-    return _respelled(per_file, spell), _respelled(dead, spell), digest
+    return _respelled(per_file, spell), _respelled(evidence, spell), digest
 
 
 def _reasons(root: Path, written: list[str], spell: Callable[[str], str]) -> dict:

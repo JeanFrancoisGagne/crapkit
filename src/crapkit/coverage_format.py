@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
     from .config import Lane
     from .repopath import Unplaced
-    from .score import FnCoverage
+    from .score import FileEvidence, FnCoverage
 
 
 class CoverageFormat(Protocol):
@@ -33,9 +33,14 @@ class CoverageFormat(Protocol):
 
     `TAKES_PATH_PREFIX`: the reader joins the lane's path_prefix onto every
     relative key, so the key the runner wrote is the measured key less that
-    prefix. `read` fills `unplaced`, when handed one, with each absolute key it
-    did not place, spelled as the report wrote it (`/` between directories),
-    mapped to the placing step's reason."""
+    prefix. `read` returns the function records, one score.FileEvidence per
+    measured file, and the artifact's digest. A reader that keeps its own
+    function records (coverage.py, istanbul) leaves hit_lines None and fills
+    missed_lines with the dead lines; one that has none fills hit_lines too,
+    and score_rows joins it to the inventory's spans. `read` fills `unplaced`,
+    when handed one, with each absolute key it did not place, spelled as the
+    report wrote it (`/` between directories), mapped to the placing step's
+    reason."""
 
     WRONG_TREE_FIX: str
     ABSOLUTE_FIX: str
@@ -44,7 +49,7 @@ class CoverageFormat(Protocol):
 
     def read(self, lane: Lane, root: Path, artifact: Path, *,
              unplaced: dict[str, Unplaced] | None = None
-             ) -> tuple[dict[str, list[FnCoverage]], dict[str, set[int]], str]: ...
+             ) -> tuple[dict[str, list[FnCoverage]], dict[str, FileEvidence], str]: ...
 
     def missing(self, lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]: ...
 

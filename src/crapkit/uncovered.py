@@ -14,12 +14,16 @@ the reader that produces the numbers.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from threading import Lock
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from .invocation import _self
 from .lane_freshness import Freshness
+
+if TYPE_CHECKING:
+    from .score import FileEvidence
 
 
 class MissingLines(NamedTuple):
@@ -134,11 +138,13 @@ def _artifact_key(artifact: Path, digest: str = "") -> tuple | None:
     return (os.path.abspath(artifact), digest) if digest else None
 
 
-def _fold_into(missing: dict[str, set[int]], lines_by_path: dict[str, set[int]]) -> None:
+def _fold_into(missing: dict[str, set[int]], lines_by_path: Mapping[str, Iterable[int]]) -> None:
     """A file two lanes measured keeps a line dead only when NO lane ran it.
-    Per path this is an intersection, so lanes may arrive in any order."""
+    Per path this is an intersection, so lanes may arrive in any order. A
+    path's lines are a set read off the file, or the sorted missed_lines array
+    a walk's FileEvidence holds."""
     for path, lines in lines_by_path.items():
-        missing[path] = missing[path] & lines if path in missing else set(lines)
+        missing[path] = missing[path].intersection(lines) if path in missing else set(lines)
 
 
 class DeadLineFold:
@@ -153,14 +159,15 @@ class DeadLineFold:
         self._missing: dict[str, set[int]] = {}
         self._sources: set[tuple] = set()
 
-    def add(self, artifact: Path, dead: dict[str, set[int]], digest: str = "") -> None:
-        """The walk's dead lines for `artifact`, keyed on `digest`, the sha256 of
-        the bytes it walked (hashed now when the caller has none)."""
+    def add(self, artifact: Path, evidence: Mapping[str, FileEvidence], digest: str = "") -> None:
+        """The walk's evidence for `artifact`, each file's missed_lines folded
+        as its dead lines, keyed on `digest`, the sha256 of the bytes it walked
+        (hashed now when the caller has none)."""
         key = _artifact_key(artifact, digest)
         if key is None:
             return
         with self._lock:
-            _fold_into(self._missing, dead)
+            _fold_into(self._missing, {path: ev.missed_lines for path, ev in evidence.items()})
             self._sources.add(key)
 
     def take(self, wanted: set) -> tuple[dict[str, set[int]], set]:
