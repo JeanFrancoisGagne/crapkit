@@ -104,7 +104,7 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # once scaffold read its runner facts off the toolchain table (m1-foundations-07).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3740
+SRC_DEFS = 3749
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
