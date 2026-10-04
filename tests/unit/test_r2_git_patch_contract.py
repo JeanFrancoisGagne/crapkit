@@ -7,8 +7,10 @@ import pytest
 
 from crapkit.config import load_config_text
 from crapkit.diffparse import changed_ranges
+from crapkit.gate import judge
 from crapkit.gitio import config_value, diff_since, staged_reads
 from crapkit.hook import gate_staged
+from crapkit.keys import MarkIndex
 
 
 SETTINGS = [
@@ -30,6 +32,12 @@ coverage_optional=true
 
 def git(root, *args):
     return subprocess.check_output(["git", *args], cwd=root).decode("utf-8").strip()
+
+
+def over(verdict) -> list[tuple[str, int]]:
+    """(path, ccn) of each staged function the gate finds over its ceiling, no mark read."""
+    found = judge(verdict.changes, CONFIG.ceiling_of, lambda: MarkIndex(())).over_ceiling
+    return [(breach.path, breach.function.record.ccn) for breach in found]
 
 
 @pytest.fixture
@@ -62,7 +70,7 @@ def test_staged_gate_ignores_presentation(changed_repo, settings, prestarted):
             verdict = gate_staged(changed_repo, CONFIG, reads)
     else:
         verdict = gate_staged(changed_repo, CONFIG)
-    assert [(row.path, row.ccn) for row in verdict.violations] == [("b/app.py", 8)]
+    assert over(verdict) == [("b/app.py", 8)]
     assert verdict.unscoped == []
 
 
@@ -86,7 +94,7 @@ def test_staged_gate_reads_source_without_diff_programs(changed_repo, kind):
     else:
         (changed_repo / ".gitattributes").write_text("b/app.py diff=audit\n", encoding="utf-8")
         git(changed_repo, "config", "diff.audit.textconv", command)
-    assert [row.ccn for row in gate_staged(changed_repo, CONFIG).violations] == [8]
+    assert over(gate_staged(changed_repo, CONFIG)) == [("b/app.py", 8)]
 
 
 @pytest.mark.parametrize("prestarted", [False, True])
@@ -104,6 +112,6 @@ def test_inherited_context_cannot_make_untouched_debt_a_gate_violation(changed_r
             verdict = gate_staged(changed_repo, CONFIG, reads)
     else:
         verdict = gate_staged(changed_repo, CONFIG)
-    assert verdict.violations == []
+    assert over(verdict) == []
     assert changed_ranges(diff_since(changed_repo, "HEAD")) == {"b/app.py": [(12, 12)]}
     assert os.environ["GIT_DIFF_OPTS"] == "--unified=20"

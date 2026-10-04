@@ -32,6 +32,8 @@ import pytest
 import hang_guard
 from accuracy.corpus_goldens import action_runs, printed_runs, releases
 from accuracy.kit import exact, repos, surfaces
+from accuracy.verdict_model import test_exit_and_settle as exits
+from accuracy.verdict_model import verdict_world as vw
 
 pytestmark = pytest.mark.process
 A_DATE, B_DATE = repos.EPOCH, repos.EPOCH + 3600
@@ -186,14 +188,44 @@ def test_the_table_risk_is_ccn_times_the_recency_weight(full):
 
 # --- the verdict line, one rule per exit code ------------------------------------------------
 
-# README "What the comment looks like": the rule each exit code stands for.
+# README "What the comment looks like": the rule each exit code stands for, the
+# ceiling after the diff-coverage one.
 README_RULES = {6: "complexity gate", 7: "ratchet regressions", 8: "new test failures",
-                9: "diff-coverage ceiling 4"}
-VERIFY = {"ok": False, "run_id": 3, "baseline_run": 2, "changed_files": 1,
-          "gate_violations": [], "ratchet_regressions": [], "new_failures": [],
-          "diff_uncovered": [], "diff_uncovered_count": 0, "diff_uncovered_max": 4}
+                9: "diff-coverage ceiling"}
+CEILING = 4
+VERIFY = {"ok": False, "run_id": 3, "baseline_run": 2, "changed_files": 1, "findings": [],
+          "counts": {"diff_uncovered_count": 0, "diff_uncovered_max": CEILING}}
 COVERAGE = {"functions": 2, "files": 2, "over_target": 1, "crap_load": 8.0, "grade": "F",
             "target": 6}
+
+
+def _readme_rule(exit_code: int, ceiling) -> str:
+    return f"{README_RULES[exit_code]} {ceiling}" if exit_code == 9 else README_RULES[exit_code]
+
+
+# docs/agent-json.md, findings[].rule: the label of each kind's rule, and the
+# kind's own fields for one item of the kind each exit code fires on.
+_FIRES = {
+    6: ("gate_violation", "complexity gate",
+        {"path": "src/late.py", "long_name": "late( v )", "start": 1, "ccn": 7, "cov": 0.0, "crap": 7.0,
+         "remedy": "decompose", "key_name": "late( v )"}),
+    7: ("ratchet_regression", "ratchet regressions",
+        {"path": "src/a.py", "long_name": "f( x )", "recorded": 1.0, "fresh_crap": 2.0}),
+    8: ("new_failure", "new test failures", {"test": "tests/test_a.py::test_f"}),
+    9: ("diff_uncovered", "diff-coverage ceiling", {"path": "src/late.py", "line": 2}),
+}
+
+
+def _failing(exit_code: int) -> dict:
+    """VERIFY holding one failing item of that exit's kind, with one line past
+    the ceiling at exit 9. The item carries the documented rule label; the
+    README's words, ceiling included, are the expectation."""
+    kind, rule, own = _FIRES[exit_code]
+    item = {"kind": kind, "fails": True, "exit_code": exit_code, "overridable": kind == "gate_violation",
+            "dirty": False, "rule": rule, **own}
+    uncovered = CEILING + 1 if exit_code == 9 else 0
+    return {**VERIFY, "findings": [item],
+            "counts": {"diff_uncovered_count": uncovered, "diff_uncovered_max": CEILING}}
 
 
 def _comment(tmp_path: Path, verify: dict, exit_code: int, reason: str | None = None) -> str:
@@ -218,9 +250,49 @@ def _comment(tmp_path: Path, verify: dict, exit_code: int, reason: str | None = 
 
 @pytest.mark.parametrize("exit_code", sorted(README_RULES))
 def test_a_failed_verdict_names_the_readme_rule_for_its_exit(tmp_path, exit_code):
-    line = _verdict_line(_comment(tmp_path, VERIFY, exit_code))
+    line = _verdict_line(_comment(tmp_path, _failing(exit_code), exit_code))
 
-    assert line.startswith(f"**verify failed, exit {exit_code}: {README_RULES[exit_code]}.**")
+    assert line == f"**verify failed, exit {exit_code}: {_readme_rule(exit_code, CEILING)}.**"
+
+
+# --- verdict_model's subsets, through the CLI and into the comment ---------------------------
+
+def _planted(subset: frozenset) -> vw.World:
+    world = exits.BASE
+    for name in exits.FINDINGS:
+        world = exits.PLANTS[name](world) if name in subset else world
+    return world
+
+
+@pytest.fixture(scope="module")
+def seeded(repo_templates, tmp_path_factory):
+    """verdict_model's baseline: one coverage run, the ratchet seeded and committed."""
+    built = repo_templates.copy(vw.spec(exits.BASE), tmp_path_factory.mktemp("subsets") / "repo")
+    scenario = vw.Scenario(built, exits.BASE)
+    assert scenario.run("coverage").code == 0
+    assert scenario.run("ratchet", "seed").code == 0
+    scenario.commit("seed the ratchet")
+    return scenario
+
+
+@pytest.mark.parametrize("subset", exits.SUBSETS, ids=exits._id)
+def test_each_subset_s_payload_reads_the_readme_rule_for_its_exit(seeded, subset, tmp_path):
+    """Check 3: each of verdict_model's 16 subsets, verified by the CLI, feeds
+    comment.py, and the phrase is the README's rule for the exit the hand table
+    gives (diff_uncovered_max is 0 there)."""
+    scenario = seeded.copy(tmp_path / "repo")
+    scenario.set(_planted(subset))
+    scenario.write_artifacts()
+    result = scenario.run("verify", "--reuse-artifacts", "--json")
+    code = exits.TABLE[subset]
+
+    line = _verdict_line(_comment(tmp_path, result.json(), result.code))
+
+    assert result.code == code
+    if code == 0:
+        assert line.startswith("**verify passed.**"), line
+    else:
+        assert line == f"**verify failed, exit {code}: {_readme_rule(code, 0)}.**", line
 
 
 def test_a_pass_reads_passed_and_a_pass_without_a_base_run_says_so(tmp_path):
@@ -289,12 +361,16 @@ def test_a_retro_replay_runs_the_action_its_commit_holds(tmp_path, monkeypatch):
 def test_the_comment_renders_what_the_last_release_wrote(tmp_path):
     """The Action's steps run the last PyPI release (unpacked on PYTHONPATH, so
     the console script loads it) and this checkout's comment.py renders its
-    payloads: the pull request above still reads exit 6 and names late( v )."""
+    payloads: the pull request above still fails at exit 6, and the worklist
+    table names late( v ). The verdict's label and bullets come from verify's
+    `findings`, which no release before 0.9.0 prints, so they are not asked of
+    an older one; the Action installs crapkit from its own checkout, so a pinned
+    tag never pairs this comment.py with an older payload."""
     site = releases.site(releases.last(1)[0], tmp_path / "site")
 
     released = _run(tmp_path / "run", env={"PYTHONPATH": str(site)},
                     path=Path(__file__).resolve().parents[3])
 
-    assert _verdict_line(released.comment) == "**verify failed, exit 6: complexity gate.**"
-    assert "`late( v )` ccn 7, cov 0%, crap 7.0 -> decompose" in released.comment
+    assert _verdict_line(released.comment).startswith("**verify failed, exit 6")
+    assert "| `src/late.py:1` | `late( v )` | 7 |" in released.comment
     assert released.exit == 6

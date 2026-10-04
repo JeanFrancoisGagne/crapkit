@@ -15,6 +15,8 @@ CRAP score	readme-worklist-curve	ccn=9 covered=0 total=1	crap=90	README.md#risk-
 CRAP score	readme-worklist-spread	ccn=4 covered=3 total=4	crap=17/4	README.md#risk-what-ranks-the-worklist (line 865: spread, ccn 4, cov 75 percent, crap 4.2, which is 4.25 at 1 dp half-even)
 CRAP score	agent-json-classify	ccn=14 covered=45 total=100	crap=93219/2000	docs/agent-json.md#next-item (lines 69-75: ccn 14, cov 0.45, crap 46.6095)
 CRAP score	agent-json-parse-row	ccn=11 covered=2 total=3	crap=418/27	docs/agent-json.md#brief (line 341: ccn 11, crap 15.4814814, which is 121/27 + 11)
+CRAP score	flagged-untested-ccn8-cov0	ccn=8 covered=0 total=1 flag=untested	flagged_crap=72	docs/agent-json.md#item-fields (line 139: crap is ccn^2 * (1 - cov)^3 + ccn, so an untested ccn 8 at cov 0 is 64 + 8 = 72, the high end of the CRAP bound hook-precommit gives a staged ccn-8 function in a scope a lane measures)
+CRAP score	flagged-cc-only-ccn8	ccn=8 covered=0 total=1 flag=cc-only	flagged_crap=8	README.md#languages (line 552: a cc-only scope scores crap = ccn, so ccn 8 scores 8 and the absent coverage is never read as 0)
 Function coverage ratio	branches-first	branches=1/2 statements=4/4 invoked=1	cov=1/2	README.md#crapkit (lines 28-31: cov is branch coverage inside the span)
 Function coverage ratio	statement-fallback	branches=0/0 statements=3/4 invoked=1	cov=3/4	README.md#crapkit (lines 29-30: with no branches it falls back to statement coverage)
 Function coverage ratio	called-straight-line	branches=0/0 statements=0/0 invoked=1	cov=1	docs/lanes.md#the-istanbul-artifact (lines 236-237: neither a branch nor a statement: 1.0 when called)

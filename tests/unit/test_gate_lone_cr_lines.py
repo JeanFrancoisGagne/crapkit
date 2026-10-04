@@ -26,9 +26,11 @@ from crapkit.cli import main
 from crapkit.cli.analyses import _mutation_targets
 from crapkit.cli.claude_hook import _advise
 from crapkit.cli.reports import _function_commits
-from crapkit.cli.scoring import _changed_since_head, _gate_candidates
+from crapkit.cli.scoring import _changed_since_head, _gate_breaches, _gate_changes
 from crapkit.config import load_config_text
+from crapkit.gate import judge
 from crapkit.hook import gate_staged
+from crapkit.keys import MarkIndex
 from crapkit.score import ScoredRow
 
 CONFIG = ('[crapkit]\ntarget = 1\n\n[[scope]]\nname = "all"\npaths = ["."]\n'
@@ -61,8 +63,9 @@ def committed(tmp_path: Path, files: dict[str, bytes]) -> Path:
 
 
 def gated(repo: Path) -> list[str]:
-    verdict = gate_staged(repo, load_config_text(CONFIG))
-    return sorted(violation.long_name for violation in verdict.violations)
+    cfg = load_config_text(CONFIG)
+    found = judge(gate_staged(repo, cfg).changes, cfg.ceiling_of, lambda: MarkIndex(())).over_ceiling
+    return sorted(breach.function.long_name for breach in found)
 
 
 def test_a_new_cr_only_file_gates_every_function(tmp_path):
@@ -92,9 +95,11 @@ def test_rescore_gate_judges_an_edit_below_a_lone_cr(tmp_path):
     (repo / "m.py").write_bytes(EDITED)
     rows = [row("first( a )", 3, 6), row("target( b , c = 0 )", 9, 12)]
 
-    candidates = _gate_candidates(rows, _changed_since_head(repo), set())
+    changes = _gate_changes(rows, _changed_since_head(repo), set(), {})
+    result = judge(changes, lambda scope: 1, lambda: MarkIndex(()))
 
-    assert [r.long_name for r in candidates] == ["target( b , c = 0 )"]
+    assert (result.judged, [v.long_name for v in _gate_breaches(result, rows)]) == (
+        1, ["target( b , c = 0 )"])
 
 
 def test_verify_gates_an_edit_below_a_lone_cr(tmp_path, capsys):

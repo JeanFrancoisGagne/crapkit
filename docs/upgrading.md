@@ -52,6 +52,12 @@ whose version matches, so the install line alone leaves the old code in place;
 ## Upgrading to 0.9.0
 
 <!-- 0.9.0:gate-group -->
+A wrapper that read verify's exit 3 as "no verdict" now gets a verify payload on stdout under
+`--json` when the cause is a file a scope takes whose name is not UTF-8. Read
+`findings[].kind == "unreadable_name"`: one item per such file, with its `path`, `scope` and
+`reason`, and `run_id` null, since no lane ran. The exit code and the stderr line are
+unchanged, and the fix is still `git mv` to a UTF-8 name
+([verify](agent-json.md#a-scoped-file-whose-name-is-not-utf-8)).
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->
