@@ -77,10 +77,6 @@ class StagedGate(NamedTuple):
     whole: bool = False  # nothing was staged, so every tracked file was judged whole
 
 
-def _touches(record: FunctionRecord, ranges: list[tuple[int, int]]) -> bool:
-    return any(not (hi < record.start or lo > record.end) for lo, hi in ranges)
-
-
 def _materialized(tmp: Path, blobs: dict[str, bytes]) -> list[tuple[str, str]]:
     """Write each staged blob under its own repo-relative path.
 
@@ -139,14 +135,21 @@ def _function(record: FunctionRecord, scope: str, flag: str) -> Function:
                     scope, record.occurrence, record)
 
 
+def gate_functions(records: list, scope: str, cfg: Config) -> tuple[Function, ...]:
+    """One file's functions as the gate judges source no coverage stands
+    behind: a staged blob here, the edited working-tree file in claude-hook.
+    One bound for both, so the advisory and the commit gate judge alike."""
+    flag = "cc-only" if scope in cfg.coverage_optional_scopes else "untested"
+    return tuple(_function(record, scope, flag) for record in records)
+
+
 def _changed_file(rel: str, records: list, spans, scope: str, cfg: Config, unread: dict) -> ChangedFile:
     """One staged file a scope takes. A file no reader could read is taken
     whole: a staged file nothing read is refused whatever lines the diff
     names."""
     if rel in unread:
         return ChangedFile(rel, WHOLE, Unread(rel, unread[rel]))
-    flag = "cc-only" if scope in cfg.coverage_optional_scopes else "untested"
-    return ChangedFile(rel, spans, tuple(_function(record, scope, flag) for record in records))
+    return ChangedFile(rel, spans, gate_functions(records, scope, cfg))
 
 
 def _gate_blind_to(path: str, checked: set[str], exts: tuple, match) -> bool:

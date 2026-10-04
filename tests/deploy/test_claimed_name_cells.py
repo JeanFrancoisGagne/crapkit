@@ -28,7 +28,12 @@ the argument refusal's stderr line and its error object, and check_gate over
 MCP stdio: isError false, gate.ok false and the name in gate.unread_files, the
 answers 0.8.1 gave.
 
-gate-group-09 adds its claimed-name cells here.
+Cells `lin-claimed-name-claude-hook` and `lin-up-claimed-name-claude-hook`
+(gate-group-09) feed `crapkit claude-hook --protocol 1` a PostToolUse Edit of
+the name in Claude Code's shell: claude-hook hands it to the gate module,
+which refuses it before judging anything, so the hook exits 2 with the two
+advisory lines 0.8.1 printed, nothing on stdout, no lane run and no run
+stored.
 """
 from __future__ import annotations
 
@@ -280,3 +285,44 @@ def test_claimed_name_gate_fresh(box, templates, key):
                                 "check_gate answers gate.ok false", GATE_ROW))
 def test_claimed_name_gate_upgrade(box, candidate, record_property, key):
     assert_the_gates_answer_as_081(box, _upgraded(box, candidate, record_property, key))
+
+
+# claude-hook's cells: gate-group-09 judges the edited file through the gate
+# module, which refuses the name, and the advisory keeps the two lines 0.8.1
+# printed. Claude Code is the harness whose hook runs the command.
+HOOK_PACKET = "gate-group-09"
+HOOK_HARNESS = "claude-code"
+HOOK_ADVISORY = [f"crapkit advisory: {SHOWN} is in scope 'src', but git names it in bytes that are not UTF-8 and "
+                 "crapkit reads every path as UTF-8, so no function in it was judged (the edit landed; nothing "
+                 "was blocked)",
+                 "the commit gate refuses such a file (exit 3); rename it to a UTF-8 name"]
+
+
+def assert_the_hook_advises_as_081(box, repo: Path) -> None:
+    """A PostToolUse Edit of the name, as Claude Code sends it: exit 2, the
+    two advisory lines on stderr, nothing on stdout, nothing measured or
+    stored."""
+    runs, stored = _lane_runs(repo), _stored_runs(repo)
+    payload = json.dumps({"hook_event_name": "PostToolUse", "tool_name": "Edit", "cwd": str(repo),
+                          "tool_input": {"file_path": str(repo / os.fsdecode(NAME))}})
+
+    hook = box.run(["crapkit", "claude-hook", "--protocol", "1"], cwd=repo, input=payload, expect=2)
+
+    assert (hook.stdout, hook.stderr.splitlines()) == ("", HOOK_ADVISORY), box.transcript.text()
+    assert (_lane_runs(repo), _stored_runs(repo)) == (runs, stored), box.transcript.text()
+
+
+@cell("lin-claimed-name-claude-hook", channel="pip venv", harness=HOOK_HARNESS, use_cases="claude-hook, class U "
+      "path names", os="linux", image="core", cadence="nightly", packet=HOOK_PACKET,
+      scenario="fresh: README pip start; a PostToolUse Edit of a committed src/caf\\xe9.py makes claude-hook exit "
+               "2 with the 0.8.1 advisory lines, no lane run, no run stored")
+def test_claimed_name_claude_hook_fresh(box, templates):
+    assert_the_hook_advises_as_081(box, _fresh(box, templates, HOOK_HARNESS))
+
+
+@cell("lin-up-claimed-name-claude-hook", channel="pip venv", harness=HOOK_HARNESS, use_cases="claude-hook, class U "
+      "path names", os="linux", image="core", cadence="nightly", packet=HOOK_PACKET,
+      scenario="upgrade from N-1 by the guide's pip row: one coverage, then a PostToolUse Edit of a committed "
+               "src/caf\\xe9.py makes claude-hook exit 2 with the 0.8.1 advisory lines")
+def test_claimed_name_claude_hook_upgrade(box, candidate, record_property):
+    assert_the_hook_advises_as_081(box, _upgraded(box, candidate, record_property, HOOK_HARNESS))
