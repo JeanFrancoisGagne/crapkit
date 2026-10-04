@@ -106,11 +106,12 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # check_gate judged through the gate module (gate-group-07), 3,764 once
 # hook-precommit judged its staged functions through the gate module
 # (gate-group-08), 3,763 once claude-hook judged the edited file through
-# it (gate-group-09), and 3,772 once programs answered where crapkit finds the
-# programs it starts (gate-group-15).
+# it (gate-group-09), 3,772 once programs answered where crapkit finds the
+# programs it starts (gate-group-15), and 3,773 once the analysis pool
+# started its workers under PYTHONSAFEPATH (gate-group-17).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3772
+SRC_DEFS = 3773
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
