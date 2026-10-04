@@ -445,7 +445,6 @@ tools/accuracy/change_control.py	running	3f94ec12e2696b991b84effa031ba8fc05a2c48
 tools/accuracy/change_control.py	worktree_changes	2318a06c1c73c750631bd85004dc94f2c9a1b9119e96de79ce9c41cb1b606184	the argument is a full commit id, which names no path of the tree	2026-09-29
 src/crapkit/config.py	_asks_for_coverage	2925e560630101d2090a61f7608cc47168bd13ed1432aadf9fa2048945e498e3	a token equal to --coverage also starts with it, so the startswith clause answers for both spellings	2026-09-29
 src/crapkit/config.py	_asks_for_coverage	d50dad7d4996dccff3fbb6f2821e83d1a3da3b8d0cbfc629f12b49f1359fd0cc	a token equal to --coverage also starts with it, so the startswith clause answers for both spellings	2026-09-29
-src/crapkit/config.py	_first_filter_position	924c353f19ea05f29b0ce23ae516f10e42a80f1fa290011301d4bbb91c81ebb3	index 0 is the program; the two differ only when the program's own path ends in a source suffix, as in `./cov.mjs --coverage`, which index 0 refuses as a file filter and index 1 does not	2026-09-29
 src/crapkit/config.py	_ini_testpaths	77ae641d8cf70153ab302e18daa72fe49d1dcbe46270d9de59c409387c41f6c1	_split_testpaths reads a fallback of None as no testpaths, as it reads ""	2026-09-29
 src/crapkit/config.py	_ini_testpaths	d89a0207515313a1b418707227a4681f172bcc44397e82c88b489ee7d09990a2	configparser lowercases every option name it looks up, so TESTPATHS is testpaths	2026-09-29
 src/crapkit/config.py	_lane_dir	66741cd77c8e91d285b1f549685e186d9150a933219721f42ad9be2a469ab19b	Path(root) / "" is Path(root)	2026-09-29

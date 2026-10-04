@@ -187,6 +187,16 @@ def _marker_texts(root: Path) -> dict[str, str]:
 
 
 
+class PackageMap(NamedTuple):
+    """Every tracked package.json doctor or init read, by the directory holding it
+    ("" for the root), and the path of each one it could not read with the reason."""
+    packages: dict
+    unreadable: dict[str, str]
+
+
+NO_PACKAGES = PackageMap({}, {})
+
+
 def _package_json(root: Path, caller=None) -> dict:
     """Every tracked package.json, parsed once here into the fields init reads
     (scaffold.NpmPackage), keyed by the directory holding it and "" for the
@@ -272,12 +282,23 @@ def _unrouted_workspaces_note(written: tuple, package_json) -> str | None:
     from ..scaffold import runner_workspaces
 
     named = runner_workspaces(package_json)
-    if len(named) < 2 or any(lane.parser == "istanbul" for lane in written):
+    if len(named) < 2 or any(_js_runner_lane(lane, package_json) for lane in written):
         return None
     listed = ", ".join(f"{directory}: {runner}" for directory, runner in named)
     return (f"{len(named)} workspaces name a runner ({listed}) and the root names none, so "
             "no js lane was written: declare one [[lane]] per workspace from the commented "
             "template, each with its own cwd and artifact")
+
+
+def _js_runner_lane(lane, package_json: dict) -> bool:
+    """Does the lane run a runner a package.json can name (vitest, jest)? Read
+    by toolchain.infer, devDependencies included: the note's own claim, that
+    the root names none, is a devDependencies fact, so a root lane whose runner
+    only devDependencies name answers it."""
+    from ..toolchain import TOOLCHAINS
+
+    found = _lane_toolchain(lane, PackageMap(package_json, {}))
+    return found.name is not None and TOOLCHAINS[found.name].dev_dependency is not None
 
 
 def _print_init_summary(scopes: dict, lanes: tuple, package_json=None) -> None:
@@ -494,13 +515,28 @@ def _lane_first_run_note(spec: LaunchSpec, lane) -> str | None:
     return None
 
 
-def _probed_lanes(lanes: tuple) -> list:
-    """Only a coveragepy lane running `pytest --cov` has anything to probe."""
-    return [lane for lane in lanes
-            if lane.parser == "coveragepy" and "--cov" in lane.command]
+def _probed_lanes(lanes: tuple, packages: PackageMap = NO_PACKAGES) -> list:
+    """Only a lane that spells `pytest --cov` has a plugin to probe: pytest
+    named in its command or in the package.json script it runs
+    (toolchain.infer's `spelled`), with --cov written where pytest is."""
+    return [lane for lane in lanes if _spells_pytest_cov(lane, packages)]
 
 
-def _warn_missing_pytest_cov(root: Path, lanes: tuple) -> None:
+def _spells_pytest_cov(lane, packages: PackageMap) -> bool:
+    found = _lane_toolchain(lane, packages)
+    return found.name == "pytest" and found.spelled and "--cov" in _spelling_text(lane, found, packages)
+
+
+def _spelling_text(lane, found, packages: PackageMap) -> str:
+    """The text the runner word was read from: the lane's command, or the
+    package.json script that names it, from the package infer read."""
+    if found.script is None:
+        return lane.command
+    cwd_package, root_package = _lane_packages(packages, lane.cwd)
+    return (cwd_package or root_package).scripts[found.script]
+
+
+def _warn_missing_pytest_cov(root: Path, lanes: tuple, packages: PackageMap = NO_PACKAGES) -> None:
     """The first-run trap, caught where it starts. The py lane shells out to
     `pytest --cov`, and the --cov flags come from pytest-cov — a package of the
     REPO's interpreter, so a crapkit dependency could only ever cover installs
@@ -514,7 +550,7 @@ def _warn_missing_pytest_cov(root: Path, lanes: tuple) -> None:
     still earns the two notes ahead of the probe, a manager PATH does not carry
     and a first word the shell cannot start.
     """
-    for lane in _probed_lanes(lanes):
+    for lane in _probed_lanes(lanes, packages):
         note = _lane_first_run_note(launch_spec(root, lane), lane)
         if note:
             print(note, file=sys.stderr)
@@ -685,7 +721,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     gitignore = _extend_gitignore(root, live_lanes(lanes, scopes))
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes, packages)
-    _warn_missing_pytest_cov(root, written.lanes)
+    _warn_missing_pytest_cov(root, written.lanes, PackageMap(packages, {}))
     _print_gitignore_step(gitignore)
     return 0
 
@@ -923,16 +959,6 @@ def _lane_findings(cfg, by_lane: list[tuple]) -> list[Finding]:
 # handed to both the text lines and `doctor --json`.
 
 
-class PackageMap(NamedTuple):
-    """Every tracked package.json doctor read, by the directory holding it ("" for
-    the root), and the path of each one it could not read with the reason."""
-    packages: dict
-    unreadable: dict[str, str]
-
-
-NO_PACKAGES = PackageMap({}, {})
-
-
 def _doctor_packages(root: Path) -> PackageMap:
     """The package map, read through the one reader with doctor as its caller:
     a file doctor cannot read is recorded, never fatal."""
@@ -1012,7 +1038,7 @@ def _doctor_runners(cfg, packages: PackageMap) -> list[Finding]:
                                              for lane in cfg.lanes]
 
 
-def _doctor_lanes(root: Path, cfg) -> list[Finding]:
+def _doctor_lanes(root: Path, cfg, packages: PackageMap = NO_PACKAGES) -> list[Finding]:
     """The lane checks, then the probe of every lane that passed them. A lane
     with a problem of its own is not probed: the dead-interpreter FAIL already
     names the word, and init's note would say it again one line down."""
@@ -1020,8 +1046,8 @@ def _doctor_lanes(root: Path, cfg) -> list[Finding]:
 
     by_lane = [(lane, _lane_problems_of(root, lane)) for lane in cfg.lanes]
     healthy = [lane for lane, problems in by_lane if not problems]
-    return (_lane_findings(cfg, by_lane) + _doctor_results_artifacts(cfg)
-            + list(unreadable_payloads(cfg.lanes)) + _doctor_lane_probes(root, healthy))
+    return (_lane_findings(cfg, by_lane) + _doctor_results_artifacts(cfg, packages)
+            + list(unreadable_payloads(cfg.lanes)) + _doctor_lane_probes(root, healthy, packages))
 
 
 # One probe answers three questions about the python a lane names: where the
@@ -1141,34 +1167,43 @@ def _coverage_floor(name: str, executable: str, version: str) -> tuple[Finding, 
     return coverage_floor_gap(name, executable, version, upgrade)
 
 
-def _doctor_lane_probes(root: Path, lanes) -> list[Finding]:
-    """init's first-run lane note, asked again of every coverage.py lane that
-    runs `pytest --cov`, so a lane whose python cannot import pytest-cov fails
-    doctor instead of the first `crapkit coverage`. Only those lanes: an
-    istanbul lane has no plugin to import. A manager-headed one names no
-    python to ask and gets a note saying so."""
-    return [finding for lane in _probed_lanes(lanes)
+def _doctor_lane_probes(root: Path, lanes, packages: PackageMap = NO_PACKAGES) -> list[Finding]:
+    """init's first-run lane note, asked again of every lane that spells
+    `pytest --cov` (_probed_lanes), so a lane whose python cannot import
+    pytest-cov fails doctor instead of the first `crapkit coverage`. Only those
+    lanes: another runner has no plugin to import. A lane no python heads
+    names no python to ask and gets a note saying so."""
+    return [finding for lane in _probed_lanes(lanes, packages)
             for finding in _lane_probe_findings(root, lane)]
 
 
-_RESULTS_HINT = {
-    "coveragepy": ("add --junitxml=.crapkit/cov/junit-{name}.xml to the command and "
-                   'results_artifact = ".crapkit/cov/junit-{name}.xml" to the lane'),
-    "istanbul": ("add a junit reporter (vitest: --reporter=default --reporter=junit "
-                 "--outputFile=.crapkit/cov/{name}/junit.xml; jest: jest-junit) and a "
-                 "results_artifact naming its file"),
-}
+# The hint for a lane whose runner is not spelled, or whose runner's row carries
+# none: which flags write a junit file is the runner's to say, so only the key
+# is named.
+_JUNIT_HINT = ("add the runner's junit reporter to the command and a results_artifact "
+               "naming the file it writes")
 
 
-def _doctor_results_artifacts(cfg) -> list[Finding]:
+def _doctor_results_artifacts(cfg, packages: PackageMap = NO_PACKAGES) -> list[Finding]:
     """WARN, never FAIL: the lane measures coverage exactly as it did. What it
     cannot do without a results file is feed the two checks that read one, the
     crashed-worker trust check and no-new-failures, and until now nothing said
     they were off (#26)."""
     return [Finding("WARN", f"lane {lane.name!r} declares no results_artifact: the "
                             "crashed-worker check and the no-new-failures check (exit 8) "
-                            f"cannot run for it; {_RESULTS_HINT[lane.parser].format(name=lane.name)}")
-            for lane in cfg.lanes if lane.parser in _RESULTS_HINT and not lane.results_artifact]
+                            f"cannot run for it; {_junit_hint(lane, packages)}")
+            for lane in cfg.lanes if not lane.results_artifact]
+
+
+def _junit_hint(lane, packages: PackageMap) -> str:
+    """The junit_hint of the runner the lane spells, in its command or the
+    package.json script it runs; the generic hint when it spells none, or one
+    whose row carries no hint. devDependencies alone name no flags."""
+    from ..toolchain import TOOLCHAINS
+
+    found = _lane_toolchain(lane, packages)
+    hint = TOOLCHAINS[found.name].junit_hint if found.spelled else None
+    return (hint or _JUNIT_HINT).format(name=lane.name)
 
 
 def _doctor_artifact_litter(cfg) -> list[Finding]:
@@ -1617,7 +1652,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
     return (_doctor_keys(raw)
             + _doctor_scopes(root, cfg, files, show_files)
             + _doctor_path_names(cfg, raw, files)
-            + _doctor_lanes(root, cfg)
+            + _doctor_lanes(root, cfg, packages)
             + _doctor_runners(cfg, packages)
             + _doctor_inputs(root, cfg.lanes)
             + _doctor_stamps(root, cfg.lanes)

@@ -178,14 +178,34 @@ def test_a_lane_running_another_python_than_this_doctor_warns(monkeypatch):
     assert sys.executable in findings[1].text, "name both, so the reader knows which is which"
 
 
-def test_only_a_cov_flagged_coveragepy_lane_is_probed(monkeypatch):
+def test_only_a_lane_that_spells_pytest_with_cov_is_probed(monkeypatch):
     def boom(spec, lane):
         raise AssertionError("this lane must not be probed")
 
     monkeypatch.setattr(admin, "_lane_first_run_note", boom)
 
     assert admin._doctor_lane_probes(Path.cwd(), [_lane(command="npx vitest run --coverage", parser="istanbul"),
-                                      _lane(command="python -m pytest")]) == []
+                                      _lane(command="python -m pytest"),
+                                      _lane(command="make cov")]) == []
+
+
+@pytest.mark.parametrize("command", ["uv run pytest --cov", "python -m pytest --cov"])
+def test_a_lane_that_spells_pytest_with_cov_is_probed_whatever_its_parser(command):
+    lanes = [_lane(command=command, parser=parser) for parser in ("coveragepy", "istanbul")]
+
+    assert admin._probed_lanes(tuple(lanes)) == lanes
+
+
+def test_doctor_probes_a_pytest_its_package_json_script_names(monkeypatch):
+    """doctor holds the package map, so a pytest spelled in the script the lane
+    runs counts; the lane names no python, so the note says it was not asked."""
+    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: None)
+    packages = admin.PackageMap({"": npm_package({"scripts": {"cov": "pytest --cov"}})}, {})
+
+    (note,) = admin._doctor_lane_probes(Path.cwd(), [_lane(command="npm run cov")], packages)
+
+    assert note.level == "note"
+    assert note.text.startswith("lane 'py' runs pytest through `npm`"), note.text
 
 
 def test_a_stub_interpreter_with_no_version_to_print_is_no_finding(monkeypatch):
@@ -339,7 +359,7 @@ def test_init_says_when_two_workspaces_name_a_runner_and_no_js_lane_was_written(
 def test_the_summary_is_silent_about_workspaces_once_a_js_lane_was_written(capsys):
     from crapkit.scaffold import LaneSpec
 
-    js = LaneSpec("js", "npm run test -- --coverage", "coverage/coverage-final.json",
+    js = LaneSpec("js", "npx vitest run --coverage", "coverage/coverage-final.json",
                   "istanbul", ("typescript",))
     packages = {"api": npm_package({"devDependencies": {"jest": "1"}}),
                 "web": npm_package({"devDependencies": {"vitest": "1"}})}
@@ -347,6 +367,23 @@ def test_the_summary_is_silent_about_workspaces_once_a_js_lane_was_written(capsy
     admin._print_init_summary({"api": ("typescript",)}, (js,), packages)
 
     assert "workspaces name a runner" not in capsys.readouterr().out
+
+
+def test_a_root_lane_that_runs_no_js_runner_still_gets_the_note(capsys):
+    """The question is whether init wrote a lane that runs a JS runner, not
+    whether it wrote an istanbul lane: a root script that only chains the
+    workspaces runs none of them itself."""
+    from crapkit.scaffold import LaneSpec
+
+    js = LaneSpec("js", "npm run test -- --coverage", "coverage/coverage-final.json",
+                  "istanbul", ("typescript",))
+    packages = {"": npm_package({"scripts": {"test": "pnpm -r test"}}),
+                "api": npm_package({"devDependencies": {"jest": "1"}}),
+                "web": npm_package({"devDependencies": {"vitest": "1"}})}
+
+    admin._print_init_summary({"api": ("typescript",)}, (js,), packages)
+
+    assert "2 workspaces name a runner (api: jest, web: vitest)" in capsys.readouterr().out
 
 
 # --- the runner each lane runs ----------------------------------------------------
