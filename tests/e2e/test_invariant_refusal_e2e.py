@@ -410,6 +410,14 @@ def test_the_commit_hook_prints_no_verdict_over_a_violation_under_its_ceiling(re
     assert "crapkit gate:" not in done.stdout + done.stderr
 
 
+def _all_over(change):
+    """A ChangedFile whose every function the gate reads at CRAP 99."""
+    from crapkit import gate
+
+    return change._replace(content=tuple(function._replace(bound=gate.CrapBound(99.0, 99.0))
+                                         for function in change.content))
+
+
 def test_claude_hook_turns_the_stop_into_its_documented_silence(repo: Path, monkeypatch):
     """README: any internal failure of `claude-hook` exits 0 in silence. The
     stop still keeps a breach list past its bound from printing as advice."""
@@ -421,8 +429,11 @@ def test_claude_hook_turns_the_stop_into_its_documented_silence(repo: Path, monk
                           "tool_input": {"file_path": str(repo / "src" / "calc.py")}})
     advised = run_cli(repo, "claude-hook", "--protocol", "1", stdin=payload)
     assert advised.returncode == 2 and "crapkit advisory:" in advised.stderr, advised.stderr
-    monkeypatch.setattr(claude_hook, "_breaches", lambda records, ranges, ceiling: records)
-    monkeypatch.setattr(claude_hook, "_marks_for", lambda *args, **kwargs: set())
+    # The gate judges the whole file, every function over the ceiling at CRAP
+    # 99 while each ccn stays as read: calc.py's ccn-2 functions breach.
+    handed = claude_hook._change
+    monkeypatch.setattr(claude_hook, "_change", lambda cfg, scope, rel, records, ranges: _all_over(
+        handed(cfg, scope, rel, records, None)))
     silent = run_cli(repo, "claude-hook", "--protocol", "1", stdin=payload)
     assert (silent.returncode, silent.stdout, silent.stderr) == (0, "", "")
 

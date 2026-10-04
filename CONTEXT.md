@@ -136,7 +136,7 @@ A new test failure that passed its flake retry. It fails no verdict, the OK line
 _Avoid_: flaky failure, forgiven failure
 
 **Gate**:
-The rule that a new or changed function may not exceed its ceiling; enforced by the pre-commit hook, `verify` and the Action.
+The rule that a new or changed function may not exceed its ceiling. One gate module holds it, with the touch, pardon, unread-file and unreadable-name rules, and four gate adapters call it, each mapping its findings to its own exits and lines: the pre-commit hook (`hook-precommit`), `rescore --gate` with the `check_gate` MCP tool over it, `verify` (which the Action runs) and `claude-hook`.
 
 **Advisory**:
 What `claude-hook` prints after an agent's edit lands: exit 2 and stderr naming each changed function over its ceiling, or naming a changed file it could not judge because no reader could read it or git could not report the change. It blocks nothing. After a `Bash` event it judges each file's bytes once per session.
