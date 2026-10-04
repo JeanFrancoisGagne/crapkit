@@ -194,6 +194,18 @@ _ADDED = (
                "why --reuse-artifacts will not score the lane's artifact on disk: the lane's "
                "last attempt wrote no artifact and the file predates it, or "
                ".crapkit/artifacts.json cannot be read; null when reuse would score it"),
+    AgentField("doctor --json", "lanes[].toolchain", ("object",),
+               "the runner the lane runs and where crapkit read it, from the lane's command, "
+               "else the package.json script it runs, else devDependencies; no config key "
+               "names it"),
+    AgentField("doctor --json", "lanes[].toolchain.name", ("string", "null"),
+               "the runner: pytest, vitest, jest, bun, deno, cargo llvm-cov, go test or c8; "
+               "null when crapkit knows none the lane runs, or the lane runs two"),
+    AgentField("doctor --json", "lanes[].toolchain.source", ("string", "null"),
+               "where crapkit read the runner: command (the lane's command names it), script "
+               "(the package.json script the command runs names it) or package.json (only "
+               "devDependencies name it, so no runner check keys on it); null when name is "
+               "null"),
 )
 
 
@@ -1189,7 +1201,12 @@ _DOCTOR = {
                 "refusal": schema_of("doctor --json", "lanes[].refusal"),
                 "seconds": {
                     "type": ("number", "null"),
-                    "description": "how long the lane took last time, null when it never ran"}}}}}
+                    "description": "how long the lane took last time, null when it never ran"},
+                "toolchain": {
+                    **schema_of("doctor --json", "lanes[].toolchain"),
+                    "properties": {
+                        "name": schema_of("doctor --json", "lanes[].toolchain.name"),
+                        "source": schema_of("doctor --json", "lanes[].toolchain.source")}}}}}}
 
 
 _COUPLING = {

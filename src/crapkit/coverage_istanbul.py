@@ -9,18 +9,19 @@ AST-remapped output of @vitest/coverage-v8 >= 3.2, which is istanbul-schema-iden
 
 This module is also the istanbul adapter (coverage_format looks it up from a
 lane's `parser`): it reads the artifact through covstream's framing, keys each
-file by rebasing it under the checkout root, and owns the advice a wrong-tree refusal
+file by rebasing it under the checkout root, records each key it could not
+rebase with the placing step's reason, and owns the advice a wrong-tree refusal
 gives an istanbul lane. Attribution itself stays independent of file I/O and
 JSON framing.
 """
 from __future__ import annotations
 
-import heapq
 import sys
+from array import array
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING
 
-from . import covstream
+from . import covstream, score
 from .errors import ToolError
 from .istanbul_lines import on_reader_lines
 from .repopath import Reported
@@ -28,53 +29,17 @@ from .repotext import json_kind
 
 if TYPE_CHECKING:
     from .config import Lane
-
-
-class FnCoverage(NamedTuple):
-    name: str
-    start: int
-    end: int
-    invoked: bool
-    branches_total: int
-    branches_covered: int
-    statements_total: int = 0
-    statements_covered: int = 0
-    # The producer was told to leave the function out, so no test moves its number.
-    excluded: bool = False
-    # The reader lists every function the producer measured in this file, so a
-    # function missing from the list was left out on purpose.
-    full_listing: bool = False
-
-    @property
-    def coverage(self) -> float:
-        if self.branches_total > 0:
-            return self.branches_covered / self.branches_total
-        if self.statements_total > 0:
-            return self.statements_covered / self.statements_total
-        return 1.0 if self.invoked else 0.0
-
-
-def _rel_path(abs_path: str, repo_root: str) -> str:
-    return Reported(repo_root)(abs_path)
+    from .repopath import Unplaced
 
 
 # --- span attribution ------------------------------------------------------
 # mutable span layout while attributing: [name, start, end, invoked, b_total, b_cov, s_total,
-# s_cov, signature, body, finish], the last three as (line, column) positions
+# s_cov, signature, body, finish], the last three as (line, column) positions; the
+# finish sits where score.span_owners reads it, at score.SPAN_FINISH
 _B_TOTAL, _B_COV, _S_TOTAL, _S_COV = 4, 5, 6, 7
-_SIGNATURE, _BODY, _FINISH = 8, 9, 10
+_SIGNATURE, _BODY = 8, 9
 _COUNTS = slice(0, 8)
 _LINE_END = sys.maxsize
-
-
-def coverage_count(value: object, field: str) -> int:
-    """Admit a producer's count before attribution or ratio arithmetic."""
-    if type(value) is float and value.is_integer():
-        value = int(value)
-    if type(value) is not int or value < 0:
-        raise ValueError(f"{field} must be a nonnegative integer count, got {value!r}; "
-                         f"{covstream.REGENERATE}")
-    return value
 
 
 def _field(node: object, key: str) -> object:
@@ -128,7 +93,7 @@ def _admit_branch(value: object, field: str) -> int:
         value = int(value)
     if type(value) is int and value < 0:
         return 0
-    return coverage_count(value, field)
+    return score.coverage_count(value, field)
 
 
 def _admit_hits(cov: dict) -> int:
@@ -140,7 +105,7 @@ def _admit_hits(cov: dict) -> int:
     """
     for group in ("f", "s"):
         for key, value in cov.get(group, {}).items():
-            coverage_count(value, f"{group}[{key!r}]")
+            score.coverage_count(value, f"{group}[{key!r}]")
     return sum(_admit_branch_hits(key, hits) for key, hits in cov.get("b", {}).items())
 
 
@@ -326,52 +291,12 @@ def _points(entries: dict, point_of) -> set[tuple[int, int]]:
     return points
 
 
-def _push_started(heap: list, ordered: list[list], nxt: int, point: tuple, opens: int) -> int:
-    while nxt < len(ordered) and ordered[nxt][opens] <= point:
-        span = ordered[nxt]
-        line, column = span[opens]
-        heapq.heappush(heap, (span[2] - line, -line, -column, nxt, span))
-        nxt += 1
-    return nxt
-
-
-def _drop_ended(heap: list, point: tuple) -> None:
-    """Discard spans that closed before this point. Safe to do lazily and only at
-    the top: query points only increase, so anything popped here can never
-    contain a later point either."""
-    while heap and heap[0][-1][_FINISH] < point:
-        heapq.heappop(heap)
-
-
-def _span_owners(fn_spans: list[list], points: set[tuple[int, int]],
-                 opens: int) -> dict[tuple[int, int], list | None]:
-    """position -> innermost containing span, each span opening at its `opens`
-    position. A hit inside a nested function belongs to that function, never
-    to its encloser — else the nested one reads through its encloser and the
-    encloser answers for lines it can't fix. A counter that starts on a
-    function's line but ahead of where that function opens is the encloser's.
-
-    Sweeping spans by start into a heap keyed (lines, -start, index) settles
-    that in O((F + Q) log F) instead of a scan per query. The index term is
-    load-bearing: it is the sorted position, so an exact tie on (lines, -start)
-    resolves to the span the old linear scan met first."""
-    ordered = sorted(fn_spans, key=lambda s: s[opens])
-    heap: list[tuple] = []
-    owners: dict[tuple[int, int], list | None] = {}
-    nxt = 0
-    for point in sorted(points):
-        nxt = _push_started(heap, ordered, nxt, point, opens)
-        _drop_ended(heap, point)
-        owners[point] = heap[0][-1] if heap else None
-    return owners
-
-
 def _attach_branches(fn_spans: list[list], cov: dict) -> None:
     """A function holds branches from its signature on: a default argument's
     arm sits between its name and its body. A ternary that opens ahead of a
     function on the same line (`flag ? (x) => x : y`) is the code around it."""
     branches = cov.get("branchMap", {})
-    owners = _span_owners(fn_spans, _points(branches, _branch_point), _SIGNATURE)
+    owners = score.span_owners(fn_spans, _points(branches, _branch_point), _SIGNATURE)
     hits_by_id = cov.get("b", {})
     for bid, branch in branches.items():
         best = owners.get(_branch_point(bid, branch))
@@ -387,7 +312,7 @@ def _attach_statements(fn_spans: list[list], cov: dict) -> None:
     when the declaration does, at import for a module-level arrow: the code
     around the arrow owns it, or an arrow no test calls reads half covered."""
     statements = cov.get("statementMap", {})
-    owners = _span_owners(fn_spans, _points(statements, _stmt_point), _BODY)
+    owners = score.span_owners(fn_spans, _points(statements, _stmt_point), _BODY)
     hits_by_id = cov.get("s", {})
     for sid, stmt in statements.items():
         best = owners.get(_stmt_point(sid, stmt))
@@ -404,13 +329,13 @@ def _instrumented(cov: dict) -> bool:
     return bool(cov.get("statementMap"))
 
 
-def _file_coverage(cov: dict) -> list[FnCoverage]:
+def _file_coverage(cov: dict) -> list[score.FnCoverage]:
     clamped = _admit_hits(cov)
     fn_spans = _fn_spans(cov)
     _attach_branches(fn_spans, cov)
     _attach_statements(fn_spans, cov)
     full = _instrumented(cov)
-    rows = [FnCoverage(*s[_COUNTS], full_listing=full) for s in fn_spans]
+    rows = [score.FnCoverage(*s[_COUNTS], full_listing=full) for s in fn_spans]
     return ClampedBranchCounts(rows, clamped) if clamped else rows
 
 
@@ -433,16 +358,29 @@ def _dead_lines(cov: dict) -> set[int]:
     return dead
 
 
+# The largest line number array("I") holds. A line past it, or below 1, sits in
+# no span a function or a changed range names, so the evidence leaves it out.
+_LAST_LINE = 2 ** 32 - 1
+
+
+def _missed_only(lines: set[int]) -> score.FileEvidence:
+    """A file's dead lines as its evidence. hit_lines is None: this reader
+    keeps its own function records, so the join builds none from it and only
+    the dead-line fold reads missed_lines."""
+    return score.FileEvidence(None, array("I", sorted(n for n in lines if 0 < n <= _LAST_LINE)))
+
+
 # --- reading the artifact ----------------------------------------------------
 
 _BAD_ISTANBUL = "unparseable istanbul artifact"
 
 
-def _records(w, repo_root: str):
+def _records(w, repo_root: str, keys: Reported | None = None):
     """(repo-relative path, record) per measured file, once every counter of the
     record is there, with its positions on the lines the reader numbers that file
-    by (istanbul_lines). A refusal names the file."""
-    keys = Reported(repo_root)
+    by (istanbul_lines). A refusal names the file. `keys` records each key it
+    left unplaced."""
+    keys = Reported(repo_root) if keys is None else keys
     for abs_path, cov in covstream.split_window(w):
         rel = keys(abs_path)
         yield rel, _named_file(rel, lambda: on_reader_lines(_require_counters(cov),
@@ -453,12 +391,14 @@ def _istanbul_map(w, repo_root: str, per_file) -> dict:
     return {rel: _named_file(rel, lambda: per_file(cov)) for rel, cov in _records(w, repo_root)}
 
 
-def _istanbul_both(w, repo_root: str) -> tuple[dict, dict]:
-    per_file, dead = {}, {}
-    for rel, cov in _records(w, repo_root):
+def _istanbul_both(w, repo_root: str, keys: Reported | None = None) -> tuple[dict, dict]:
+    """path -> function coverage and path -> FileEvidence, from one decode of
+    each file."""
+    per_file, evidence = {}, {}
+    for rel, cov in _records(w, repo_root, keys):
         per_file[rel] = _named_file(rel, lambda: _file_coverage(cov))
-        dead[rel] = _dead_lines(cov)
-    return per_file, dead
+        evidence[rel] = _missed_only(_dead_lines(cov))
+    return per_file, evidence
 
 
 _CLAMPED_NAMED = 3
@@ -502,10 +442,14 @@ def _require_files(per_file: dict) -> None:
             "rerun the lane and check that its command runs the tests")
 
 
-def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = covstream.CHUNK
-                             ) -> tuple[dict[str, list[FnCoverage]], dict[str, set[int]], str]:
-    """Function coverage AND dead lines from ONE walk, plus the sha256 of the
-    artifact's own bytes.
+def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = covstream.CHUNK,
+                             reported: Reported | None = None
+                             ) -> tuple[dict[str, list[score.FnCoverage]],
+                                        dict[str, score.FileEvidence], str]:
+    """Function coverage AND each file's FileEvidence (its dead lines as
+    missed_lines, hit_lines None) from ONE walk, plus the sha256 of the
+    artifact's own bytes. `reported` keys the files, and holds the keys it left
+    unplaced when the walk is done; one of the reader's own by default.
 
     verify asks both questions of every istanbul artifact: the lane wants
     function coverage, diff coverage wants the lines no statement ran. Asking
@@ -513,11 +457,11 @@ def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = c
     31,459-file tree, against 7.80 s merged. Decoding is the whole cost;
     _dead_lines over an already decoded file is near free.
     """
-    (per_file, dead), digest = covstream.read_walk(
-        path, lambda w: _istanbul_both(w, repo_root), f"{_BAD_ISTANBUL} {path}", chunk)
+    (per_file, evidence), digest = covstream.read_walk(
+        path, lambda w: _istanbul_both(w, repo_root, reported), f"{_BAD_ISTANBUL} {path}", chunk)
     _require_files(per_file)
     _note_clamped_branches(per_file)
-    return per_file, dead, digest
+    return per_file, evidence, digest
 
 
 def parse_istanbul_missing_file(path: Path | str, *, repo_root: str,
@@ -544,12 +488,21 @@ ABSOLUTE_FIX = ("The reader rebases every measured path that resolves under this
                 "checkout, and these could not be opened here: rerun the lane on this "
                 "machine rather than reusing a report written somewhere else")
 UNMEASURED_READING = "or the suite measured a part of the tree these scopes do not name"
+TAKES_PATH_PREFIX = False
 
 
-def read(lane: Lane, root: Path, artifact: Path
-         ) -> tuple[dict[str, list[FnCoverage]], dict[str, set[int]], str]:
-    """The lane's function coverage, dead lines and artifact digest, one walk."""
-    return parse_istanbul_both_file(artifact, repo_root=str(root))
+def read(lane: Lane, root: Path, artifact: Path, *,
+         unplaced: dict[str, Unplaced] | None = None
+         ) -> tuple[dict[str, list[score.FnCoverage]], dict[str, score.FileEvidence], str]:
+    """The lane's function coverage, each file's FileEvidence (its dead
+    lines) and the artifact digest, one walk.
+    `unplaced` takes each key the walk could not rebase, with its reason: the
+    keys it rebased are in the checkout, so none of them is there."""
+    keys = Reported(str(root))
+    both = parse_istanbul_both_file(artifact, repo_root=str(root), reported=keys)
+    if unplaced is not None:
+        unplaced.update(keys.unplaced)
+    return both
 
 
 def missing(lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]:
@@ -560,10 +513,3 @@ def missing(lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]:
 def contexts(lane: Lane, root: Path, artifact: Path, source_path: str) -> dict[int, list[str]]:
     """Istanbul records no per-line test contexts, so there is nothing to read."""
     return {}
-
-
-def as_reported(lane: Lane, key: str) -> str:
-    """The key as the runner wrote it. The reader only ever strips the root, so
-    a key that still looks absolute is spelled the way the artifact spells it,
-    and path_prefix, which this reader never adds, is never taken off."""
-    return key

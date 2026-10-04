@@ -99,18 +99,25 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # touch, ceiling and pardon rules verify judged by (gate-group-06), 3,714
 # once the marks history read whole revisions (gate-group-04a), and 3,728
 # once keys answered which mark judges a function and which keys pair as a
-# move (gate-group-03), 3,737 once marks_history answered the marks a
-# commit held and the moves between revisions (gate-group-04), 3,750 once
-# verify --json listed every finding as one item and verify's claimed-name
-# stop became a verdict (gate-group-10), 3,755 once rescore --gate and
-# check_gate judged through the gate module (gate-group-07), 3,764 once
-# hook-precommit judged its staged functions through the gate module
-# (gate-group-08), 3,763 once claude-hook judged the edited file through
-# it (gate-group-09), and 3,772 once programs answered where crapkit finds the
-# programs it starts (gate-group-15).
+# move (gate-group-03), and 3,737 once marks_history answered the marks a
+# commit held and the moves between revisions (gate-group-04). On
+# 090/integration it reached 3,740 once scaffold read its runner facts off the
+# toolchain table (m1-foundations-07), 3,745 once repopath's placing rule said
+# why it left a path unplaced (m1-foundations-03), 3,785 once toolchain.infer
+# read a lane's runner and doctor printed it (m1-foundations-08), 3,794 once
+# score joined coverage evidence to inventory spans (m1-foundations-05), and
+# 3,804 once covstream took HashingReader and the line reader (m1-readers-10).
+# On 090/gate-group it reached 3,750 once verify --json listed every finding
+# as one item and verify's claimed-name stop became a verdict (gate-group-10),
+# 3,755 once rescore --gate and check_gate judged through the gate module
+# (gate-group-07), 3,764 once hook-precommit judged its staged functions
+# through the gate module (gate-group-08), 3,763 once claude-hook judged the
+# edited file through it (gate-group-09), and 3,772 once programs answered
+# where crapkit finds the programs it starts (gate-group-15). The two lines
+# met at 3,839.
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3772
+SRC_DEFS = 3839
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

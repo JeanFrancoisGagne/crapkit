@@ -15,12 +15,13 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from crapkit.repopath import (Refused, Reported, declared, disk_spelling, entries,
-                              file_separators, fragments, inside, native, on_a_share,
+import crapkit.repopath as repopath
+from crapkit.repopath import (Refused, Reported, Unplaced, declared, disk_spelling, entries,
+                              file_separators, fragments, inside, native, on_a_share, place,
                               tracked_spelling, typed, typed_path)
 
 from path_spellings import (admin_share, link_directory, lower_drive, need_case_insensitive,
-                            need_case_sensitive, only_posix, only_windows)
+                            need_case_sensitive, only_posix, only_windows, short_name)
 
 
 @pytest.mark.parametrize("raw, drive", [
@@ -177,21 +178,219 @@ def test_a_reported_path_reads_as_git_spells_the_file(tmp_path, which):
     """A JUnit file attribute or classname, in each spelling a runner writes."""
     spell, expected = REPORTED[which]
     root = _tree(tmp_path).resolve()
+    keys = Reported(root)
 
-    assert Reported(root)(spell(root)) == expected
+    assert keys(spell(root)) == expected
+    assert keys.unplaced == {}
 
 
 def test_a_reported_path_in_another_case_takes_the_listed_case(tmp_path):
     need_case_insensitive(tmp_path)
+    keys = Reported(_tree(tmp_path))
 
-    assert Reported(_tree(tmp_path))("SRC\\Pkg\\mod.py") == "src/pkg/mod.py"
+    assert keys("SRC\\Pkg\\mod.py") == "src/pkg/mod.py"
+    assert keys.unplaced == {}
 
 
 def test_a_reported_path_elsewhere_comes_back_folded(tmp_path):
     root = _tree(tmp_path / "repo").resolve()
     other = (tmp_path / "other" / "mod.py").resolve()
+    keys = Reported(root)
 
-    assert Reported(root)(str(other)) == str(other).replace("\\", "/")
+    assert keys(str(other)) == str(other).replace("\\", "/")
+    assert keys.unplaced == {str(other).replace("\\", "/"): Unplaced.ANOTHER_TREE}
+
+
+# --- the reported entry's absolute keys: placed, or the reason they were not ---
+# Every spelling a runner writes for src/app.ts, the one file of a git checkout.
+# A placed key is the path `git ls-files` prints for the file. An unplaced one
+# comes back as the runner wrote it, with `/` between directories, and
+# `Reported.unplaced` says why. `place` answers the absolute rows directly.
+
+def _git_tree(root: Path) -> Path:
+    """A checkout whose index holds src/app.ts, resolved as a runner's root is."""
+    return _tracked(root, "src/app.ts").resolve()
+
+
+def _ls_files(root: Path) -> list[str]:
+    return subprocess.run(["git", "-C", str(root), "ls-files"], check=True,
+                          capture_output=True, text=True).stdout.split()
+
+
+def _beside(root: Path, name: str) -> Path:
+    """A directory next to the checkout, inside the test's own tmp_path."""
+    return root.parent / name
+
+
+def _another_checkout(root: Path) -> str:
+    return str(_tracked(_beside(root, "other"), "src/app.ts").resolve() / "src" / "app.ts")
+
+
+def _linked(root: Path) -> str:
+    link = _beside(root, "alias")
+    link_directory(link, root)
+    return str(link / "src" / "app.ts")
+
+
+
+# id -> (what the host needs, the key under `root`, the reason it stays unplaced)
+ABSOLUTE_KEYS = {
+    "exact-root": ("", lambda root: str(root / "src" / "app.ts"), None),
+    "exact-root-forward": ("", lambda root: (root / "src" / "app.ts").as_posix(), None),
+    "lower-drive": ("windows", lambda root: lower_drive(root / "src" / "app.ts"), None),
+    "lower-drive-forward": ("windows", lambda root: lower_drive(root / "src" / "app.ts")
+                            .replace("\\", "/"), None),
+    "upper-cased": ("windows", lambda root: str(root / "src" / "app.ts").upper(), None),
+    "extended-length": ("windows", lambda root: "\\\\?\\" + str(root / "src" / "app.ts"), None),
+    "admin-share": ("windows", lambda root: admin_share(root / "src" / "app.ts"), None),
+    "junction": ("windows", _linked, None),
+    "symlink": ("posix", _linked, None),
+    "short-name": ("windows", lambda root: short_name(root / "src" / "app.ts"), None),
+    "dot-dot": ("", lambda root: str(_beside(root, "repo-build") / ".." / root.name / "src"
+                                     / "app.ts"), None),
+    "directory-case": ("case", lambda root: str(root / "SRC" / "app.ts"), None),
+    "directory-case-forward": ("case", lambda root: (root / "SRC" / "App.ts").as_posix(), None),
+    "another-checkout": ("", _another_checkout, Unplaced.ANOTHER_TREE),
+    "drive-on-posix": ("posix", lambda root: "C:/repo/src/app.ts", Unplaced.UNOPENABLE),
+    "drive-on-posix-backslash": ("posix", lambda root: "C:\\repo\\src\\app.ts",
+                                 Unplaced.UNOPENABLE),
+    "nul-in-a-folder": ("", lambda root: str(_beside(root, "a\0b") / "app.ts"),
+                        Unplaced.UNOPENABLE),
+    "unencodable-folder": ("posix", lambda root: str(_beside(root, "a\ud800b") / "app.ts"),
+                           Unplaced.UNOPENABLE),
+}
+
+# id -> (what the host needs, the key): relative keys, which nothing places.
+RELATIVE_KEYS = {
+    "relative": ("", "src/app.ts"),
+    "relative-backslash": ("", "src\\app.ts"),
+    "dot-slash": ("", "./src/app.ts"),
+    "dot-backslash": ("", ".\\src\\app.ts"),
+    "relative-case": ("case", "SRC/APP.ts"),
+}
+
+
+def _spelled_key(which: str, root: Path) -> tuple[str, Unplaced | None]:
+    need, spell, reason = ABSOLUTE_KEYS[which]
+    NEEDS[need](root)
+    _beside(root, "repo-build").mkdir(exist_ok=True)
+    return spell(root), reason
+
+
+@pytest.mark.parametrize("which", ABSOLUTE_KEYS)
+def test_the_reported_entry_places_an_absolute_key_or_says_why_not(tmp_path, which):
+    root = _git_tree(tmp_path / "repo")
+    key, reason = _spelled_key(which, root)
+    keys = Reported(root)
+
+    if reason is None:
+        assert [keys(key)] == _ls_files(root) == ["src/app.ts"]
+        assert keys.unplaced == {}
+    else:
+        assert keys(key) == file_separators(key)
+        assert keys.unplaced == {file_separators(key): reason}
+
+
+@pytest.mark.parametrize("which", RELATIVE_KEYS)
+def test_the_reported_entry_spells_a_relative_key_as_git_does(tmp_path, which):
+    need, key = RELATIVE_KEYS[which]
+    root = _git_tree(tmp_path / "repo")
+    NEEDS[need](root)
+    keys = Reported(root)
+
+    assert [keys(key)] == _ls_files(root)
+    assert keys.unplaced == {}
+
+
+@pytest.mark.parametrize("which", ABSOLUTE_KEYS)
+def test_place_answers_the_same_rows_and_inside_answers_none_for_each_reason(tmp_path, which):
+    root = _git_tree(tmp_path / "repo")
+    key, reason = _spelled_key(which, root)
+    placed = place(key, root)
+
+    assert placed == (_ls_files(root)[0] if reason is None else reason)
+    assert inside(key, root) == (None if isinstance(placed, Unplaced) else placed)
+
+
+def test_a_relative_path_names_no_place(tmp_path):
+    """Read against the working directory, a relative name could land in the
+    checkout crapkit stands in."""
+    root = _git_tree(tmp_path / "repo")
+
+    assert place("src/app.ts", root) is Unplaced.UNOPENABLE
+    assert inside("src/app.ts", root) is None
+
+
+def test_a_report_of_many_keys_places_each_folder_once(tmp_path, monkeypatch):
+    """1,000 keys in 10 folders, through a linked checkout so that no key
+    starts with the root's own text: `place` runs once a folder."""
+    root = _git_tree(tmp_path / "repo")
+    for j in range(10):
+        (root / "src" / f"d{j}").mkdir()
+    link = tmp_path / "alias"
+    link_directory(link, root)
+    asked: list[str] = []
+    real = repopath.place
+
+    def counted(path, top):
+        asked.append(str(path))
+        return real(path, top)
+
+    monkeypatch.setattr(repopath, "place", counted)
+    keys = Reported(root)
+    names = [keys(str(link / "src" / f"d{i % 10}" / f"m{i}.ts")) for i in range(1000)]
+
+    assert names == [f"src/d{i % 10}/m{i}.ts" for i in range(1000)]
+    assert len(asked) == 10
+    assert keys.unplaced == {}
+
+
+def test_a_report_of_many_files_lists_each_folder_once(tmp_path, monkeypatch):
+    """Spelling each key walks its folders, and a report names thousands of
+    files in a few hundred folders, so the reader asks the disk once a folder."""
+    root = _git_tree(tmp_path / "repo")
+    asked: list[Path] = []
+
+    def counted(folder):
+        asked.append(folder)
+        return entries(folder)
+
+    monkeypatch.setattr(repopath, "entries", counted)
+    keys = Reported(str(root))
+    names = [keys(str(root / "src" / f"m{i}.ts")) for i in range(40)]
+
+    assert names == [f"src/m{i}.ts" for i in range(40)]
+    assert sorted(asked) == [root, root / "src"]
+
+
+@only_posix
+@pytest.mark.parametrize("absolute", [True, False], ids=["absolute", "relative"])
+def test_posix_folds_a_backslash_the_tree_holds_in_a_file_name(tmp_path, absolute):
+    """A key cannot say whether its backslash is a Windows separator or a POSIX
+    name character, so it separates directories on every OS, and a tracked
+    name holding one is unsupported (doctor names it)."""
+    root = _git_tree(tmp_path / "repo")
+    (root / "src" / "we\\ird.ts").write_text("export const b = 2;\n", encoding="utf-8")
+    key = str(root / "src" / "we\\ird.ts") if absolute else "src/we\\ird.ts"
+    keys = Reported(root)
+
+    assert keys(key) == "src/we/ird.ts"
+    assert keys.unplaced == {}
+
+
+def test_the_module_imports_only_the_standard_library_in_a_fresh_interpreter():
+    """claude-hook imports repopath on every edit."""
+    import sys
+
+    probe = ("import sys; before = set(sys.modules); import crapkit.repopath; "
+             "added = set(sys.modules) - before - {'crapkit', 'crapkit.repopath'}; "
+             "print(sorted(m for m in added if m.split('.')[0] not in sys.stdlib_module_names))")
+    src = Path(repopath.__file__).resolve().parents[1]
+    env = dict(os.environ, PYTHONPATH=str(src))
+    out = subprocess.run([sys.executable, "-c", probe], check=True, capture_output=True,
+                         text=True, env=env).stdout
+
+    assert out.strip() == "[]"
 
 
 def test_an_absolute_path_through_a_linked_directory_lands_in_the_checkout(tmp_path):
@@ -446,6 +645,26 @@ def test_the_typed_entry_names_nothing_for_a_file_outside_the_root(tmp_path):
 
     assert typed(str(tmp_path / "other.ts"), root) is None
     assert typed("/other.ts", root) is None
+
+
+@pytest.mark.parametrize("tail, expected", [
+    (("src", "*.ts"), "src/*.ts"),
+    (("src", "app.ts:10"), "src/app.ts:10"),
+    (("src", "a?.ts"), "src/a?.ts"),
+    (("a<b", "app.ts"), "a<b/app.ts"),
+    (("src", 'a"b.ts'), 'src/a"b.ts'),
+], ids=["glob", "line-suffix", "question-mark", "angle-bracket", "quote"])
+def test_the_typed_entry_places_a_name_windows_cannot_hold_under_the_root(tmp_path, tail,
+                                                                        expected):
+    r"""`crapkit test-scoped <repo>\src\*.ts` and `<repo>\src\app.ts:10` name a
+    place in the checkout's src scope. A placing rule that refused every
+    character Windows keeps out of a name told the user the path was outside
+    the repo; only NUL is refused."""
+    root = _app_tree(tmp_path / "repo").resolve()
+    path = str(root.joinpath(*tail))
+
+    assert place(path, root) == expected
+    assert typed(path, root) == expected
 
 
 @only_posix

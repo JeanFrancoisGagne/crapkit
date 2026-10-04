@@ -31,7 +31,8 @@ def test_lane_retries_recover_a_flaky_command(tmp_path):
     )
     lane = Lane(name="flaky", command=f'"{PY}" -c "{script}"',
                 artifact="cov.json", parser="istanbul", scopes=(), retries=1)
-    coverage, prov, _ = run_lane(tmp_path, lane)
+    outcome = run_lane(tmp_path, lane)
+    coverage, prov = outcome.coverage, outcome.provenance
     assert prov["exit_code"] == 0
     log = (tmp_path / ".crapkit" / "lane-flaky.log").read_text(encoding="utf-8")
     assert "attempt 2" in log, "the retry must be visible in the lane log"

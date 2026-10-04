@@ -1215,7 +1215,8 @@ $ crapkit doctor --json
       "commit": "402d25c96687135d15a5a0d3dc40f571edfa5210",
       "name": "py",
       "refusal": null,
-      "seconds": 1.8
+      "seconds": 1.8,
+      "toolchain": {"name": "pytest", "source": "command"}
     }
   ],
   "newest_run": {"id": 1, "kind": "coverage", "verdict_ok": null},
@@ -1250,17 +1251,19 @@ $ crapkit doctor --json
 | Key | Meaning |
 |---|---|
 | `problems` | The FAIL findings, as text. **Non-empty is exit 1.** |
-| `warnings` | The WARN findings as text; exit stays 0. They include unmeasured directories, scopes a lane measures with no `scoped_tests` template, lanes writing their artifacts at the repo root instead of under `.crapkit/`, lanes with no `results_artifact`, a lane whose artifact on disk is the leftover its last attempt failed to replace (the lane's `refusal`, prefixed `lane '<name>': `), a `.crapkit/artifacts.json` crapkit cannot read, a lane whose python is not the one running this doctor, two or more `crapkit` launchers on PATH at different versions, an `[exclude]` glob that matches no tracked file ([configuration](configuration.md#exclude)), a deprecated config key, a marks file with no merge driver set ([ratchet](ratchet.md#the-git-merge-driver)), a container a `coveragepy` lane refuses ([lanes](lanes.md#containers)) and marks stamped by another metric version. |
+| `warnings` | The WARN findings as text; exit stays 0. They include unmeasured directories, scopes a lane measures with no `scoped_tests` template, lanes writing their artifacts at the repo root instead of under `.crapkit/`, lanes with no `results_artifact`, a lane whose artifact on disk is the leftover its last attempt failed to replace (the lane's `refusal`, prefixed `lane '<name>': `), a `.crapkit/artifacts.json` crapkit cannot read, a lane whose python is not the one running this doctor, two or more `crapkit` launchers on PATH at different versions, an `[exclude]` glob that matches no tracked file ([configuration](configuration.md#exclude)), a deprecated config key, a marks file with no merge driver set ([ratchet](ratchet.md#the-git-merge-driver)), a container a `coveragepy` lane refuses ([lanes](lanes.md#containers)), marks stamped by another metric version and a tracked package.json doctor cannot read (it then reads the runner of each lane under that file from the lane's command alone). |
 | `versions` | crapkit, lizard, python. `lizard` is `null` when it is not importable, which is also a FAIL. |
 | `resources` | The worker, memory and log policy doctor resolved for this host, 18 keys, the same policy plain `doctor` prints first. [docs/resources.md](resources.md) says what each budget bounds. |
 | `analysis_version` | The analysis semantics version, currently `13`. Together with `lizard` it forms the ratchet's metric stamp. Follow [the upgrade checks](upgrading.md#measure-before-changing-marks) before restamping; changed function identity can require a reviewed mapping. |
 | `store` | `.crapkit/crap.sqlite`: whether it exists and how big it is. `present: false` and `size_bytes: 0` on a fresh repo. |
 | `newest_run` | `{id, kind, verdict_ok}`, or `null` when nothing has run. `verdict_ok` is `null` for non-verify runs. |
-| `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. `refusal` (since 0.8.1) is `null`, or the sentence saying why `--reuse-artifacts` will not score the file on disk: the lane's last attempt wrote no artifact, and the file predates that attempt, or `.crapkit/artifacts.json` cannot be read, so crapkit cannot tell whether the file is such a leftover. doctor asks the question `--reuse-artifacts` asks, so both give one answer for a lane. `artifact_present: true` beside a `refusal` is a file reuse will not score, not the lane's output. |
+| `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. `refusal` (since 0.8.1) is `null`, or the sentence saying why `--reuse-artifacts` will not score the file on disk: the lane's last attempt wrote no artifact, and the file predates that attempt, or `.crapkit/artifacts.json` cannot be read, so crapkit cannot tell whether the file is such a leftover. doctor asks the question `--reuse-artifacts` asks, so both give one answer for a lane. `artifact_present: true` beside a `refusal` is a file reuse will not score, not the lane's output. `toolchain` (since 0.9.0) is `{name, source}`: the runner the lane runs (`pytest`, `vitest`, `jest`, `bun`, `deno`, `cargo llvm-cov`, `go test` or `c8`) and where crapkit read it: `command` (the lane's command names it), `script` (the package.json script the command runs names it) or `package.json` (only devDependencies name it, so no runner check keys on it). Both are `null` when crapkit knows no runner the lane runs, or the lane runs two; no config key names it ([lanes](lanes.md#how-crapkit-reads-a-lanes-runner)). |
 
 `note`-level findings (a file over `max_file_bytes`, no lanes declared, a coverage.py lane
-an environment manager heads and doctor therefore did not probe) appear in the plain output
-only. They are neither problems nor warnings.
+an environment manager heads and doctor therefore did not probe, a lane whose runner is
+unknown) appear in the plain output only. They are neither problems nor warnings. The plain
+output's runner line per lane (`ok   lane 'py': runs pytest (named in its command)`) is the
+same answer as `lanes[].toolchain`.
 
 The `results_artifact` warning is new in 0.4.5 (#26), and it names the two checks the lane
 loses rather than the key alone. A repo whose one lane declares neither the artifact nor a

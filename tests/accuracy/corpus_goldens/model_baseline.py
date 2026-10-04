@@ -1,7 +1,7 @@
 """Which stored run `verify` compares against, written from the README, never from crapkit's code.
 
 doc: README.md:1379-1408 sha256=7f5557010eafb657cd12fe9309214b790a9754819cb173db18d7282a8c4f958d
-doc: docs/agent-json.md:1548-1548 sha256=7126e96cfb925301765ba840cdf2aa02149184e27bcda7e45955446d71e36f0e
+doc: docs/agent-json.md:1551-1551 sha256=7126e96cfb925301765ba840cdf2aa02149184e27bcda7e45955446d71e36f0e
 
 The input is the store's runs table read with sqlite3: id, kind and
 verdict_ok (1 passed, 0 failed, NULL for a run that renders no verdict).

@@ -184,7 +184,7 @@ def _marker_texts(root: Path) -> dict[str, str]:
 
 
 
-def _package_json(root: Path) -> dict:
+def _package_json(root: Path, caller=None) -> dict:
     """Every tracked package.json, parsed once here into the fields init reads
     (scaffold.NpmPackage), keyed by the directory holding it and "" for the
     root one. No other module parses the file.
@@ -193,12 +193,17 @@ def _package_json(root: Path) -> dict:
     from the root alone, init bound the js lane to a root script that only
     chains the workspaces and produces no coverage of its own. A vendored
     node_modules is skipped: its packages describe somebody else's tests.
+
+    `caller` is the reader that reads one file for its command, and says what a
+    file it cannot read means there: init's by default, which stops on the root
+    one and skips a nested one with a line; doctor's records it and goes on.
     """
     from ..scaffold import npm_package
 
+    read = caller or _package_object
     found = {}
     for path in _package_files(root):
-        data = _package_object(root, path)
+        data = read(root, path)
         if data is not None:
             found[path.rpartition("/")[0]] = npm_package(data)
     return found
@@ -908,6 +913,102 @@ def _lane_findings(cfg, by_lane: list[tuple]) -> list[Finding]:
             or [_doctor_lane_summary(cfg)])
 
 
+# --- the runner each lane runs ---------------------------------------------------
+#
+# Read from the lane's command, then the package.json script it runs, then
+# devDependencies (toolchain.infer). The package map is read once per doctor and
+# handed to both the text lines and `doctor --json`.
+
+
+class PackageMap(NamedTuple):
+    """Every tracked package.json doctor read, by the directory holding it ("" for
+    the root), and the path of each one it could not read with the reason."""
+    packages: dict
+    unreadable: dict[str, str]
+
+
+NO_PACKAGES = PackageMap({}, {})
+
+
+def _doctor_packages(root: Path) -> PackageMap:
+    """The package map, read through the one reader with doctor as its caller:
+    a file doctor cannot read is recorded, never fatal."""
+    unreadable: dict[str, str] = {}
+
+    def read(root: Path, rel: str) -> dict | None:
+        from ..repotext import repo_json
+
+        try:
+            return repo_json(root / rel, "it")
+        except ConfigError as exc:
+            unreadable[rel] = str(exc)
+            return None
+
+    return PackageMap(_package_json(root, read), unreadable)
+
+
+def _upward(cwd: str) -> list[str]:
+    """The lane's directory, then each directory above it, ending at the root ("")."""
+    parts = [part for part in cwd.replace("\\", "/").split("/") if part not in ("", ".")]
+    return ["/".join(parts[:end]) for end in range(len(parts), -1, -1)]
+
+
+def _lane_packages(packages: PackageMap, cwd: str) -> tuple:
+    """(the package at the lane's cwd or nearest above it, the root's). Both
+    None when the nearest is one doctor could not read: the lane's runner is
+    then read from its command alone."""
+    unread = {rel.rpartition("/")[0] for rel in packages.unreadable}
+    nearest = _nearest(cwd, {*packages.packages, *unread})
+    if nearest is None or nearest in unread:
+        return None, None
+    return packages.packages[nearest], packages.packages.get("")
+
+
+def _nearest(cwd: str, directories: set[str]) -> str | None:
+    """The first of `directories` at or above the lane's cwd, or None."""
+    return next((d for d in _upward(cwd) if d in directories), None)
+
+
+def _lane_toolchain(lane, packages: PackageMap):
+    from ..toolchain import infer
+
+    cwd_package, root_package = _lane_packages(packages, lane.cwd)
+    return infer(lane.command, cwd_package=cwd_package, root_package=root_package)
+
+
+_READ_FROM = {"command": "named in its command",
+              "script": 'named in package.json script "{script}"',
+              "package.json": "package.json devDependencies; the command names no runner"}
+
+
+def _runner_line(lane, found) -> Finding:
+    """One line per lane: the runner and where crapkit read it, or why it
+    cannot tell and what that turns off."""
+    if found.name:
+        where = _READ_FROM[found.source].format(script=found.script)
+        return Finding("ok", f"lane {lane.name!r}: runs {found.name} ({where})")
+    return Finding("note", f"lane {lane.name!r}: runner unknown ({_unknown_runner(lane, found)}); "
+                           "runner-specific hints and refusals are off for it")
+
+
+def _unknown_runner(lane, found) -> str:
+    if found.words:
+        return f"it runs more than one: {', '.join(found.words)}"
+    return f"{lane.command} names none crapkit knows"
+
+
+def _unreadable_packages(packages: PackageMap) -> list[Finding]:
+    return [Finding("WARN", f"{rel}: {reason}; doctor read the runner of each lane under it "
+                            "from the lane's command alone")
+            for rel, reason in sorted(packages.unreadable.items())]
+
+
+def _doctor_runners(cfg, packages: PackageMap) -> list[Finding]:
+    """A WARN per package.json doctor cannot read, then the runner line of every lane."""
+    return _unreadable_packages(packages) + [_runner_line(lane, _lane_toolchain(lane, packages))
+                                             for lane in cfg.lanes]
+
+
 def _doctor_lanes(root: Path, cfg) -> list[Finding]:
     """The lane checks, then the probe of every lane that passed them. A lane
     with a problem of its own is not probed: the dead-interpreter FAIL already
@@ -1508,12 +1609,13 @@ def _doctor_marks_stamp(root: Path, cfg) -> list[Finding]:
 
 
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
-                     show_files: bool) -> list[Finding]:
+                     show_files: bool, packages: PackageMap) -> list[Finding]:
     named = [f for f in files if readable(f)]
     return (_doctor_keys(raw)
             + _doctor_scopes(root, cfg, files, show_files)
             + _doctor_path_names(cfg, raw, files)
             + _doctor_lanes(root, cfg)
+            + _doctor_runners(cfg, packages)
             + _doctor_inputs(root, cfg.lanes)
             + _doctor_stamps(root, cfg.lanes)
             + _doctor_artifact_litter(cfg)
@@ -1597,21 +1699,25 @@ def _newest_run_report(store: SnapshotStore | None) -> dict | None:
             "verdict_ok": runs[-1]["verdict_ok"]}
 
 
-def _lane_report(root: Path, lane, stamps) -> dict:
+def _lane_report(root: Path, lane, stamps, packages: PackageMap = NO_PACKAGES) -> dict:
+    """One `lanes[]` item of doctor --json. With no package map the toolchain
+    is read from the lane's command alone."""
     stamp = stamps.entry(lane.artifact)
+    found = _lane_toolchain(lane, packages)
     return {"artifact": lane.artifact,
             "artifact_present": (root / lane.artifact).is_file(),
             "commit": stamp.get("commit"),
             "name": lane.name,
             "refusal": _lane_refusal(lane, stamps),
-            "seconds": stamp.get("seconds")}
+            "seconds": stamp.get("seconds"),
+            "toolchain": {"name": found.name, "source": found.source}}
 
 
-def _lane_reports(root: Path, cfg) -> list[dict]:
+def _lane_reports(root: Path, cfg, packages: PackageMap) -> list[dict]:
     from ..lane_stamps import read
 
     stamps = read(root)
-    return [_lane_report(root, lane, stamps) for lane in cfg.lanes]
+    return [_lane_report(root, lane, stamps, packages) for lane in cfg.lanes]
 
 
 def _lane_refusal(lane, stamps) -> str | None:
@@ -1671,13 +1777,13 @@ def _unreadable_stamps_file_note(fault: str) -> str:
             "writes the file again, or delete it")
 
 
-def _doctor_report(root: Path, cfg, findings: list[Finding]) -> dict:
+def _doctor_report(root: Path, cfg, findings: list[Finding], packages: PackageMap) -> dict:
     """Everything a wrapper needs to tell lane rot from a stale artifact without
     parsing prose: versions, store, newest run, per-lane stamps, findings."""
     from ..analyze import ANALYSIS_VERSION
 
     return {"analysis_version": ANALYSIS_VERSION,
-            "lanes": _lane_reports(root, cfg),
+            "lanes": _lane_reports(root, cfg, packages),
             "newest_run": _newest_run_report(_store_if_any(root)),
             "problems": _at_level(findings, "FAIL"),
             "resources": _resource_policy(cfg),
@@ -1713,9 +1819,10 @@ def _print_findings(findings: list[Finding]) -> None:
     print(_doctor_verdict(findings))
 
 
-def _emit_doctor(root: Path, cfg, findings: list[Finding], as_json: bool) -> None:
+def _emit_doctor(root: Path, cfg, findings: list[Finding], as_json: bool,
+                 packages: PackageMap) -> None:
     if as_json:
-        _print_json(_doctor_report(root, cfg, findings))
+        _print_json(_doctor_report(root, cfg, findings, packages))
         return
     policy = _resource_policy(cfg)
     print(f"resources: up to {policy['pool_worker_limit']} analysis worker(s) per pool, "
@@ -2444,8 +2551,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if args.tune:
         return _doctor_tune(root, cfg)
     raw = tomllib.loads(repo_text(root / "crapkit.toml", "crapkit.toml"))
-    findings = _doctor_findings(root, cfg, raw, ls_files(root), args.show_files)
-    _emit_doctor(root, cfg, findings, args.json)
+    packages = _doctor_packages(root)  # read once, for the text lines and --json alike
+    findings = _doctor_findings(root, cfg, raw, ls_files(root), args.show_files, packages)
+    _emit_doctor(root, cfg, findings, args.json, packages)
     return 1 if _at_level(findings, "FAIL") else 0
 
 

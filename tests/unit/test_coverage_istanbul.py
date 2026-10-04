@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from crapkit.coverage_istanbul import FnCoverage
+from crapkit.score import FnCoverage
 from crapkit.errors import ToolError
 from coverage_readers import parse_istanbul
 
@@ -100,6 +100,8 @@ def test_branches_attach_to_the_innermost_containing_function():
 # attached to no function; it now sits on the `line` producers write beside
 # loc. A branch with neither was left out, and the function it sat in lost its
 # arms with nothing said; it now refuses the artifact naming the branch id.
+# Each field's refusal, dropped or retyped, is a row of coverage_fields.FIELDS
+# that tests/unit/test_coverage_reader_contract.py runs through read().
 
 def _with(mutate) -> str:
     art = copy.deepcopy(ARTIFACT)
@@ -114,17 +116,6 @@ def _set(entry: dict, key: str, value) -> None:
         entry[key] = value
 
 
-@pytest.mark.parametrize("loc", ["absent", None, {}, {"start": {"line": 1}},
-                                 {"end": {"line": None}}, {"end": {"line": "13"}}],
-                         ids=["loc-absent", "loc-null", "loc-empty", "end-absent",
-                              "end-line-null", "end-line-a-string"])
-def test_a_function_with_no_end_line_refuses_the_artifact_naming_the_entry(loc):
-    text = _with(lambda cov: _set(cov["fnMap"]["0"], "loc", loc))
-
-    with pytest.raises(ToolError, match=r"istanbul artifact .*fnMap\['0'\] has no loc\.end\.line"):
-        parse_istanbul(text, repo_root="C:\\repo")
-
-
 @pytest.mark.parametrize("loc", ["absent", None, {"end": {"line": 2}}],
                          ids=["loc-absent", "loc-null", "start-absent"])
 def test_a_branch_with_no_loc_attaches_by_the_line_beside_it(loc):
@@ -135,25 +126,6 @@ def test_a_branch_with_no_loc_attaches_by_the_line_beside_it(loc):
     per_file = parse_istanbul(_with(mutate), repo_root="C:\\repo")
 
     assert per_file == parse_istanbul(json.dumps(ARTIFACT), repo_root="C:\\repo")
-
-
-@pytest.mark.parametrize("loc", ["absent", None, {}, {"start": None}, {"start": {"line": None}},
-                                 {"start": {"line": "2"}}],
-                         ids=["loc-absent", "loc-null", "loc-empty", "start-null", "start-line-null",
-                              "start-line-a-string"])
-@pytest.mark.parametrize("line", ["absent", None, "2"],
-                         ids=["line-absent", "line-null", "line-a-string"])
-def test_a_branch_with_neither_loc_nor_line_refuses_the_artifact_naming_it(loc, line):
-    def mutate(cov):
-        _set(cov["branchMap"]["1"], "loc", loc)
-        _set(cov["branchMap"]["1"], "line", line)
-
-    with pytest.raises(ToolError) as raised:
-        parse_istanbul(_with(mutate), repo_root="C:\\repo")
-
-    assert str(raised.value).endswith(
-        ": src/app.ts: branchMap['1'] has no loc.start.line and no line (every istanbul "
-        "reporter writes one; regenerate the artifact with the runner's reporter)"), raised.value
 
 
 def test_the_lanes_page_quotes_the_branch_refusal():
@@ -322,122 +294,44 @@ def test_a_branch_record_with_no_locations_counts_its_hit_counts():
     assert (hot.branches_total, hot.branches_covered) == (2, 1)
 
 
-# --- a checkout root the reporter spelled another way ---------------------------
+# --- every key through the reported entry -------------------------------------
 #
 # The reader stripped the root off each key as literal text. A report made from
 # a shell standing in `c:\...`, reached through a junction or symlink, or keyed
 # with the `\\?\` prefix named this checkout in a spelling the text strip missed,
 # so every key stayed absolute and the lane FAILED, telling the user to point
-# the reporter at the checkout it already measured.
-
-import os as _os
-from pathlib import Path as _Path
-
-import pytest as _pytest
+# the reporter at the checkout it already measured. Each key now goes through
+# repopath.Reported, whose spelling rows live in test_repopath.py.
 
 from crapkit import coverage_istanbul as _adapter
 from crapkit.config import Lane as _Lane
-from crapkit import repopath as _repopath
-from crapkit.repopath import entries as _entries
-
-from path_spellings import (link_directory as _link, lower_drive as _lower,
-                            need_case_insensitive as _need_case_insensitive)
+from crapkit.repopath import Reported as _Reported
 
 
-def _tree(root: _Path) -> _Path:
-    (root / "src").mkdir(parents=True)
-    (root / "src" / "app.ts").write_text("export const a = 1;\n", encoding="utf-8")
-    return root.resolve()
+def test_the_reader_keys_every_file_through_the_reported_entry(tmp_path, monkeypatch):
+    """A counting stand-in for Reported sees each key of the report once, and
+    the reader keys each file by what it answered."""
+    seen: list[str] = []
 
+    class Counted(_Reported):
+        def __call__(self, raw: str) -> str:
+            seen.append(raw)
+            return super().__call__(raw)
 
-def _read_keyed(root: _Path, key: str) -> list[str]:
-    body = dict(ARTIFACT["C:\\repo\\src\\app.ts"], path=key)
-    artifact = root / "coverage-final.json"
-    artifact.write_text(json.dumps({key: body}), encoding="utf-8")
+    body = ARTIFACT["C:\\repo\\src\\app.ts"]
+    keys = (str(tmp_path / "src" / "a.ts"), "src/b.ts", "C:\\elsewhere\\c.ts")
+    artifact = tmp_path / "coverage-final.json"
+    artifact.write_text(json.dumps({key: dict(body, path=key) for key in keys}), encoding="utf-8")
     lane = _Lane(name="unit", command="x", artifact="coverage-final.json", parser="istanbul",
                  scopes=("src",))
-    return list(_adapter.read(lane, root, artifact)[0])
+    monkeypatch.setattr(_adapter, "Reported", Counted)
 
+    per_file, dead, _ = _adapter.read(lane, tmp_path, artifact)
+    expected = [_Reported(tmp_path)(key) for key in keys]
 
-def _extended(root: _Path) -> str:
-    return "\\\\?\\" + str(root / "src" / "app.ts")
-
-
-KEY_SPELLINGS = {
-    "native": ("", lambda root, tmp: str(root / "src" / "app.ts")),
-    "forward-slashes": ("", lambda root, tmp: (root / "src" / "app.ts").as_posix()),
-    "relative": ("", lambda root, tmp: "src/app.ts"),
-    "relative-backslash": ("", lambda root, tmp: "src\\app.ts"),
-    "dot-slash": ("", lambda root, tmp: "./src/app.ts"),
-    "dot-backslash": ("", lambda root, tmp: ".\\src\\app.ts"),
-    "dot-dot-sibling": ("", lambda root, tmp: str(root.parent / (root.name + "-build") / ".."
-                                                   / root.name / "src" / "app.ts")),
-    "linked-checkout": ("", lambda root, tmp: str(tmp / "alias" / "src" / "app.ts")),
-    "lower-drive": ("windows", lambda root, tmp: _lower(root / "src" / "app.ts")),
-    "lower-drive-forward": ("windows", lambda root, tmp: _lower(root / "src" / "app.ts")
-                            .replace("\\", "/")),
-    "upper-cased": ("windows", lambda root, tmp: str(root / "src" / "app.ts").upper()),
-    "extended-length": ("windows", lambda root, tmp: _extended(root)),
-    "directory-case": ("case", lambda root, tmp: str(root / "SRC" / "app.ts")),
-    "directory-case-forward": ("case", lambda root, tmp: (root / "SRC" / "App.ts").as_posix()),
-    "relative-case": ("case", lambda root, tmp: "SRC/APP.ts"),
-}
-
-
-@_pytest.mark.parametrize("which", KEY_SPELLINGS)
-def test_every_spelling_of_this_checkout_keys_the_file_git_names(tmp_path, which):
-    """A key that keeps this checkout's root as crapkit spells it can still name
-    a directory or the file in another case, and a case-insensitive disk opens
-    it: the reader keys it in the case the directory lists, as git does."""
-    need, spell = KEY_SPELLINGS[which]
-    if need == "windows" and _os.name != "nt":
-        _pytest.skip("needs Windows path rules")
-    if need == "case":
-        _need_case_insensitive(tmp_path)
-    root = _tree(tmp_path / "repo")
-    (tmp_path / "repo-build").mkdir()
-    _link(tmp_path / "alias", root)
-
-    assert _read_keyed(root, spell(root, tmp_path)) == ["src/app.ts"]
-
-
-def test_a_report_of_many_files_lists_each_folder_once(tmp_path, monkeypatch):
-    """Spelling each key walks its folders, and a report names thousands of
-    files in a few hundred folders, so the reader asks the disk once a folder."""
-    root = _tree(tmp_path / "repo")
-    asked: list[_Path] = []
-
-    def counted(folder):
-        asked.append(folder)
-        return _entries(folder)
-
-    monkeypatch.setattr(_repopath, "entries", counted)
-    keys = _repopath.Reported(str(root))
-    names = [keys(str(root / "src" / f"m{i}.ts")) for i in range(40)]
-
-    assert names == [f"src/m{i}.ts" for i in range(40)]
-    assert sorted(asked) == [root, root / "src"]
-
-
-def test_a_key_from_another_tree_stays_as_the_report_wrote_it(tmp_path):
-    root = _tree(tmp_path / "repo")
-    elsewhere = _tree(tmp_path / "other")
-
-    assert _read_keyed(root, str(elsewhere / "src" / "app.ts")) == \
-        [str(elsewhere / "src" / "app.ts").replace("\\", "/")]
-
-
-@_pytest.mark.skipif(_os.name == "nt", reason="needs POSIX path rules")
-@_pytest.mark.parametrize("absolute", [True, False], ids=["absolute", "relative"])
-def test_posix_folds_a_backslash_the_tree_holds_in_a_file_name(tmp_path, absolute):
-    """A key cannot say whether its backslash is a Windows separator or a POSIX
-    name character, so it separates directories on every OS, and a tracked
-    name holding one is unsupported (doctor names it)."""
-    root = _tree(tmp_path / "repo")
-    (root / "src" / "we\\ird.ts").write_text("export const b = 2;\n", encoding="utf-8")
-    key = str(root / "src" / "we\\ird.ts") if absolute else "src/we\\ird.ts"
-
-    assert _read_keyed(root, key) == ["src/we/ird.ts"]
+    assert sorted(seen) == sorted(keys)
+    assert sorted(per_file) == sorted(dead) == sorted(expected)
+    assert "src/a.ts" in expected and "src/b.ts" in expected
 
 
 def _at(line, column):

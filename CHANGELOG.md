@@ -3,12 +3,16 @@
 ## 0.9.0 — unreleased
 
 <!-- 0.9.0:gate-group -->
-- `verify --json` gains `findings`, one item per finding with `kind`, `fails`, `exit_code`, `overridable`, `dirty` and `rule`, and `counts` (`diff_uncovered_count`, `diff_uncovered_max`), beside the 0.8.1 per-kind keys. A file a scope takes whose name is not UTF-8 is now a `findings` item of kind `unreadable_name` with `exit_code` 3, where 0.8.1 printed an error object, and `--sarif` reports it under `crapkit/unreadable-name` (accuracy change C39). [The findings list](docs/agent-json.md#the-findings-list)
+- `verify --json` gains `findings`, one item per finding with `kind`, `fails`, `exit_code`, `overridable`, `dirty` and `rule`, and `counts` (`diff_uncovered_count`, `diff_uncovered_max`), beside the 0.8.1 per-kind keys. A file a scope takes whose name is not UTF-8 is now a `findings` item of kind `unreadable_name` with `exit_code` 3, where 0.8.1 printed an error object, and `--sarif` reports it under `crapkit/unreadable-name` (accuracy change C47). [The findings list](docs/agent-json.md#the-findings-list)
 - The Action's comment reads verify's `findings` list and `counts`, and no 0.8.1 per-kind key. A file a scope takes whose name is not UTF-8 now gets a verdict, `**verify failed, exit 3: unreadable name.**`, with a `- unreadable name:` bullet that names the file as `\xNN`, its scope and the `git mv` rename to a UTF-8 name, where 0.8.1 said verify wrote no verdict. Each function an `--override` passed gets a `- overridden:` bullet, on a failing verdict and after the pass line, where 0.8.1 left it out. [What the comment looks like](README.md#what-the-comment-looks-like)
 - Security: crapkit starts git and the other programs it runs itself (the `claude` that doctor asks for its version, and `taskkill`, which it takes from the Windows system directory first) from PATH's absolute entries only, never from the working directory or an empty or relative PATH entry. doctor asks a launcher it found for its version from that launcher's own folder, with cmd.exe's search of the current directory off, so an interpreter the launcher starts by name, such as npm's `node`, never comes from the repo either. On Windows, a repo holding a planted `git.exe` at its root could make crapkit 0.8.1 and every earlier version run that file, whether a user, a pre-commit hook or the Claude Code hook started crapkit there.
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->
+- Library API: `FnCoverage` and `coverage_count` import from `crapkit.score`; `crapkit.coverage_istanbul` no longer exports them.
+- doctor names each lane's runner, read from its command, the package.json script it runs, or devDependencies, and `doctor --json` carries it as `lanes[].toolchain` (accuracy change C42). [How crapkit reads a lane's runner](docs/lanes.md#how-crapkit-reads-a-lanes-runner)
+- A lane that runs pytest as `pytest.exe` or `pytest.cmd` is read as running pytest, so doctor's pytest notes reach it.
+- Library API: `parse_istanbul_both_file` and `parse_coveragepy_both_file` return per-file `FileEvidence` as their second value.
 <!-- /0.9.0:m1-foundations -->
 
 <!-- 0.9.0:mission-3 -->
