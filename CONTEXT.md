@@ -44,6 +44,10 @@ A named set of path prefixes and languages that shares one ceiling and one set o
 **Lane**:
 One configured test command that writes one coverage artifact for the scopes it lists.
 
+**Toolchain**:
+The runner a lane's command runs, read from the command, else from the package.json script it runs, else from devDependencies. No config key names it. Only the first two are spelled in what runs, so only they turn on runner-specific hints and refusals; doctor prints all three, and "runner unknown" when none names one.
+_Avoid_: parser (that is how crapkit reads the lane's artifact)
+
 **Lane log**:
 The file a lane's output streams to, `.crapkit/lane-<name>.log`, kept as the command wrote it, colour included. A refusal quotes its tail as plain text.
 
