@@ -17,7 +17,8 @@ One entry per source of a path, since each source brings its own extra input:
   `cwd`. It takes the directory the user stands in.
 - declared (`declared`): a path crapkit.toml holds, read as its key's kind.
 - reported (`Reported`): a path a runner wrote into its report, with a
-  per-folder cache for a report of thousands of keys.
+  per-folder cache for a report of thousands of keys. It records each key it
+  leaves unplaced and why (`Unplaced`).
 - fragment (`fragment`, `fragments`): a piece of a path to match.
 
 They share four rules. `native` gives, on Windows, the drive spelling of an
@@ -27,16 +28,19 @@ directories of a path a file carries: such a file travels between OSes, so its
 backslash separates directories on every OS, and a tracked name that holds one
 is unsupported. `disk_spelling` gives a root-relative path the letter case its
 directories list, and `tracked_spelling` the case git tracks it in when the
-listing names it otherwise. And `inside`, the one placing rule, answers whether an
+listing names it otherwise. And `place`, the one placing rule, answers whether an
 absolute path is in this checkout by the file it names, so a symlink, a
 junction, a lower-case drive letter or a UNC alias of a local drive still lands
-in it; istanbul's rebase and lanes' wrong-tree check both ask it (`Placing`).
+in it, and says why when it does not: another tree, or a name this platform
+cannot open. `inside` is its answer as the path or None; istanbul's rebase and
+lanes' wrong-tree check ask it once a folder (`Placing`).
 
 Stdlib only at import: the advisory hook imports this on every edit. Only a
 name whose case the listing changes asks git, and imports gitio then.
 """
 from __future__ import annotations
 
+import enum
 import functools
 import os
 import posixpath
@@ -170,6 +174,21 @@ def file_separators(raw: str) -> str:
     return raw.replace("\\", "/")
 
 
+class Unplaced(enum.Enum):
+    """Why the one placing rule left an absolute path unplaced."""
+
+    ANOTHER_TREE = "another-tree"
+    """The path resolves, and names a place outside this checkout."""
+    UNOPENABLE = "unopenable"
+    """This platform cannot open the name at all: it has no root or drive this
+    OS reads (`C:/repo/a.ts` on POSIX), or holds a NUL, which no OS's names can
+    hold, or a code point POSIX's filesystem encoding has no bytes for."""
+
+
+# `C:/...`: a drive's root, which POSIX reads as a relative name.
+_DRIVE_ROOT = re.compile(r"[A-Za-z]:/")
+
+
 class Reported:
     r"""The reported entry: a path a runner wrote into its report (a coverage
     key, a JUnit file attribute or classname), as git spells the file it names.
@@ -182,7 +201,11 @@ class Reported:
     one; any other absolute key is placed by the one placing rule; and a
     root-relative key takes the letter case git tracks the file in. A key that
     names nothing under the root comes back folded. A report names thousands of
-    files in a few hundred folders, so each folder is listed and placed once."""
+    files in a few hundred folders, so each folder is listed and placed once.
+
+    `unplaced` holds each absolute key the placing rule left unplaced, spelled
+    as the call returned it, with its `Unplaced` reason. A drive-rooted key
+    (`C:/repo/a.ts`) counts as absolute on every OS: on POSIX it is UNOPENABLE."""
 
     def __init__(self, root: str | os.PathLike) -> None:
         self._root = Path(root)
@@ -190,12 +213,13 @@ class Reported:
         self._placing = Placing(root)
         self._listing = functools.cache(entries)
         self._tracked: dict[str, str] | None = None
+        self.unplaced: dict[str, Unplaced] = {}
 
     def __call__(self, raw: str) -> str:
         key = file_separators(raw)
         if key.startswith(self._prefix):
             return self.relative(key[len(self._prefix):])
-        return self._placed(key) if os.path.isabs(key) else self.relative(key)
+        return self._placed(key) if _absolute(key) else self.relative(key)
 
     def relative(self, key: str) -> str:
         """`key`, a root-relative key with `/` between directories, with no
@@ -218,8 +242,16 @@ class Reported:
         return self._tracked
 
     def _placed(self, key: str) -> str:
-        rel = self._placing(key)
-        return key if rel is None else self.relative(rel)
+        rel = self._placing.placed(key)
+        if isinstance(rel, Unplaced):
+            self.unplaced[key] = rel
+            return key
+        return self.relative(rel)
+
+
+def _absolute(key: str) -> bool:
+    """Is `key`, `/` between directories, a path from a root or a drive?"""
+    return os.path.isabs(key) or bool(_DRIVE_ROOT.match(key))
 
 
 def tracked_spelling(root: str | os.PathLike, rel: str,
@@ -308,52 +340,89 @@ def entries(folder: Path) -> set[str]:
         return set()
 
 
-def inside(path: str | os.PathLike, root: str | os.PathLike) -> str | None:
-    """`path`, an absolute path, as the root-relative path git spells, or None
-    when it names nothing under `root`. The one placing rule: the istanbul
-    reader's rebase, lanes' wrong-tree check and every typed or declared
-    absolute path ask it.
+def place(path: str | os.PathLike, root: str | os.PathLike) -> str | Unplaced:
+    """`path`, an absolute path, as the root-relative path git spells, or why
+    it names nothing under `root`. The one placing rule: the istanbul reader's
+    rebase, lanes' wrong-tree check and every typed or declared absolute path
+    ask it.
 
     Text says too little here. `c:\\repo`, `C:\\REPO`, a junction or symlink to
     the checkout and `\\\\localhost\\C$\\repo` all name one directory, so each
     side is resolved, and when the two still differ, each directory above
-    `path` is asked whether it is the root itself. A path with no root or drive
-    this OS reads (`C:/repo/a.ts` on POSIX) and a name this platform cannot
-    express land nowhere: resolved against the working directory, the first
-    could land in the checkout crapkit stands in."""
+    `path` is asked whether it is the root itself. A path that resolves
+    elsewhere is ANOTHER_TREE. A path with no root or drive this OS reads
+    (`C:/repo/a.ts` on POSIX) and a name this platform cannot express are
+    UNOPENABLE: resolved against the working directory, the first could land
+    in the checkout crapkit stands in, and Python 3.11 on Windows resolves a
+    name cut short at its NUL."""
     try:
         resolved, top = _anchored(path).resolve(), Path(root).resolve()
     except (OSError, ValueError):
-        return None
+        return Unplaced.UNOPENABLE
     rel = _relative(resolved, top)
     if rel is None:
         rel = _relative_by_identity(resolved, top)
-    return None if rel is None else disk_spelling(top, rel)
+    return Unplaced.ANOTHER_TREE if rel is None else disk_spelling(top, rel)
+
+
+def inside(path: str | os.PathLike, root: str | os.PathLike) -> str | None:
+    """`place` for a caller that needs no reason (the typed and declared
+    entries): the root-relative path, or None."""
+    return _path_or_none(place(path, root))
+
+
+def _path_or_none(placed: str | Unplaced) -> str | None:
+    return None if isinstance(placed, Unplaced) else placed
 
 
 def _anchored(path: str | os.PathLike) -> Path:
     named = Path(path)
     if not named.anchor:
         raise ValueError(f"{path} names no root")
+    if not _nameable(str(named)[len(named.anchor):]):
+        raise ValueError(f"{path} holds a character no name on this OS can")
     return named
 
 
+def _nameable(tail: str) -> bool:
+    r"""Can this OS hold every name in `tail`, a path below its anchor? Every
+    OS refuses NUL, and POSIX a code point its filesystem encoding has no bytes
+    for. Nothing else is refused: a typed `src\*.ts` or `src\app.ts:10` holds a
+    character Windows keeps out of a name, and still names a place under the
+    root, as it did before the placing rule gave reasons."""
+    try:
+        return b"\0" not in os.fsencode(tail)
+    except UnicodeError:
+        return False
+
+
 class Placing:
-    """`inside`, asked of every absolute path one report names. A report
-    names thousands of files in a few hundred folders, so each folder is placed
-    once, and a path comes back relative to the root with its own name as the
-    report wrote it, or None when its folder is not in the checkout."""
+    """The one placing rule, asked of every absolute path one report names. A
+    report names thousands of files in a few hundred folders, so each folder is
+    placed once, and a path comes back relative to the root with its own name
+    as the report wrote it. `placed` asks `place` and answers the reason a
+    folder is not in the checkout; the call asks `inside` and answers None,
+    for lanes' wrong-tree check until it reads the reason."""
 
     def __init__(self, root: str | os.PathLike) -> None:
         self._root = Path(root)
-        self._folders: dict[str, str | None] = {}
+        self._paths: dict[str, str | None] = {}
+        self._reasons: dict[str, str | Unplaced] = {}
 
     def __call__(self, path: str) -> str | None:
+        return self._each_folder(self._paths, inside, path)
+
+    def placed(self, path: str) -> str | Unplaced:
+        return self._each_folder(self._reasons, place, path)
+
+    def _each_folder(self, folders: dict, ask: Callable, path: str) -> str | Unplaced | None:
         folder, _, name = file_separators(path).rpartition("/")
-        if folder not in self._folders:
-            self._folders[folder] = inside(folder + "/", self._root)
-        base = self._folders[folder]
-        return None if base is None else posixpath.normpath(posixpath.join(base, name))
+        if folder not in folders:
+            folders[folder] = ask(folder + "/", self._root)
+        base = folders[folder]
+        if base is None or isinstance(base, Unplaced):
+            return base
+        return posixpath.normpath(posixpath.join(base, name))
 
 
 def _relative(path: Path, top: Path) -> str | None:
