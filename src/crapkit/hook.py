@@ -1,4 +1,10 @@
-"""Pre-commit gate: min-CCN over the target on functions touched by the staged diff.
+"""Pre-commit gate: the staged functions, handed to the gate module to judge.
+
+`gate_staged` reads the staged diff and blobs and returns each staged file a
+scope takes as a `gate.ChangedFile`: its functions, each with what a blob can
+say of its CRAP (`CrapBound`, ccn alone, no coverage), or why no reader could
+read it, or, for a name that is not UTF-8, an `UnreadableName`. The CLI judges
+the rows with `gate.judge` and maps the findings to the hook's exits.
 
 Checks STAGED blobs, never the working tree, so unstaged noise cannot block a
 clean commit and a dirty checkout cannot sneak past one.
@@ -26,12 +32,12 @@ from typing import NamedTuple
 from .analyze import analyze_jobs, analyze_sources, decode_source, unread_reasons
 from .config import Config
 from .diffparse import changed_ranges, reader_ranges
+from .gate import WHOLE, ChangedFile, CrapBound, Function, Unread, UnreadableName
 from .gitio import GitReads
 from .gitpaths import readable
-from .invariants import check_violations
-from .keys import key_names, key_of
 from .merge import FunctionRecord
-from .universe import _source_extensions, exclude_matcher, excluded, scan_files
+from .score import flagged_crap
+from .universe import _source_extensions, claimed_unreadable, exclude_matcher, excluded, scan_files
 
 # A commit's worth of files, not an inventory's, and never more workers than a
 # commit can keep busy: each worker re-imports lizard, which is the whole cost of
@@ -57,14 +63,16 @@ class Violation(NamedTuple):
     # a ccn-6 breach of a target-5 scope read "exceed the complexity ceiling of
     # 6". None only on a Violation built by hand with no scope behind it.
     ceiling: int | None = None
+    # The high end of the CRAP bound the gate judged it on, ccn^2 + ccn or ccn
+    # in a cc-only scope: the mark an override grant writes.
+    high: float | None = None
 
 
 class StagedGate(NamedTuple):
-    """The verdict on the staged blobs."""
-    violations: list[Violation]
+    """The staged change as the gate module reads it, and what the hook says beside it."""
+    changes: tuple[ChangedFile, ...] = ()  # each staged file a scope takes, for gate.judge
     unscoped: list[str] = []  # staged source files no scope claims: ungated, but never silently
     records: tuple = ()  # full staged identities, including siblings below the ceiling
-    unread: dict = {}  # staged path -> why no reader could read it: judged nothing, so refused
     unreadable: tuple[str, ...] = ()  # staged names that are not UTF-8 and no scope takes
     whole: bool = False  # nothing was staged, so every tracked file was judged whole
 
@@ -121,27 +129,24 @@ def file_ceilings(cfg, in_scope, checked_files) -> dict[str, int]:
     return {rel: cfg.ceiling_of(scope_of.get(rel, "")) for rel in checked_files}
 
 
-def _file_violations(rel: str, records: list, ranges, ceiling: int) -> list[Violation]:
-    """One file's breaches, each carrying the ratchet key it will be judged under.
-
-    Keyed here because this is where the file's whole record list is in hand:
-    the ordinal counts same-named functions in file order, and the breaching
-    subset alone cannot say which twin a record is.
-    """
-    keys = key_names(records)
-    return [Violation(rel, rec.long_name, rec.start, rec.ccn, key_of(keys, rec)[1], ceiling)
-            for rec in records if rec.ccn > ceiling and _touches(rec, ranges)]
+def _function(record: FunctionRecord, scope: str, flag: str) -> Function:
+    """One staged function as the gate judges it. A blob carries no coverage, so
+    its CRAP is at least ccn (full coverage) and at most what `score` gives it at
+    coverage 0 under its scope's flag: ccn in a cc-only scope, ccn^2 + ccn
+    elsewhere. The high end is what an override grant marks."""
+    return Function(record.long_name, record.start, record.end,
+                    CrapBound(record.ccn, flagged_crap(record.ccn, 0.0, flag)),
+                    scope, record.occurrence, record)
 
 
-def _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, in_scope) -> list[Violation]:
-    by_file = file_ceilings(cfg, in_scope, checked_files)
-    violations = []
-    for rel in checked_files:
-        violations.extend(_file_violations(rel, records_by_path[rel], ranges_by_path[rel],
-                                           by_file[rel]))
-    violations.sort(key=lambda v: (-v.ccn, v.path, v.start))
-    check_violations(violations, in_scope, cfg.ceiling_of)
-    return violations
+def _changed_file(rel: str, records: list, spans, scope: str, cfg: Config, unread: dict) -> ChangedFile:
+    """One staged file a scope takes. A file no reader could read is taken
+    whole: a staged file nothing read is refused whatever lines the diff
+    names."""
+    if rel in unread:
+        return ChangedFile(rel, WHOLE, Unread(rel, unread[rel]))
+    flag = "cc-only" if scope in cfg.coverage_optional_scopes else "untested"
+    return ChangedFile(rel, spans, tuple(_function(record, scope, flag) for record in records))
 
 
 def _gate_blind_to(path: str, checked: set[str], exts: tuple, match) -> bool:
@@ -160,9 +165,9 @@ def _unscoped_sources(staged: list[str], checked: set[str], cfg: Config) -> list
     return sorted(f for f in staged if _gate_blind_to(f, checked, exts, match))
 
 
-def _claimed_files(in_scope: dict) -> list[str]:
-    """Every file some scope claims, once, sorted."""
-    return sorted({f for files in in_scope.values() for f in files})
+def _scope_of(in_scope: dict) -> dict[str, str]:
+    """Each file some scope claims, with that scope, sorted by path."""
+    return dict(sorted((f, scope) for scope, files in in_scope.items() for f in files))
 
 
 def gate_staged(root: Path, cfg: Config, reads=None, *, whole: bool = False) -> StagedGate:
@@ -187,23 +192,33 @@ def _whole_files(paths: list[str]) -> dict[str, list[tuple[int, int]]]:
     return {path: [(1, sys.maxsize)] for path in paths}
 
 
+def _claimed_rows(claimed: list[tuple[str, str]], ranges_by_path: dict) -> tuple[ChangedFile, ...]:
+    """Each staged name a scope takes that is not UTF-8, as the gate's input."""
+    return tuple(ChangedFile(path, ranges_by_path[path], UnreadableName(path, scope)) for path, scope in claimed)
+
+
 def _gate_ranges(cfg: Config, reads, ranges_by_path: dict, staged: dict) -> StagedGate:
-    """The functions `ranges_by_path` touches over their ceiling. Only files in
-    `staged` can be named as unscoped: the note is about a staged hole."""
+    """The rows the gate judges for the files `ranges_by_path` names. A name
+    that is not UTF-8 a scope takes comes first and alone, as the scan's
+    refusal did: nothing else is read. Only files in `staged` can be named as
+    unscoped: the note is about a staged hole."""
     if not ranges_by_path:
-        return StagedGate([])
-    universe = scan_files(sorted(ranges_by_path), cfg)
-    in_scope = universe.by_scope
-    checked_files = _claimed_files(in_scope)
-    unscoped = _unscoped_sources(sorted(staged), set(checked_files), cfg)
-    if not checked_files:
-        return StagedGate([], unscoped, unreadable=universe.unreadable)
-    blobs = reads.staged_blobs(checked_files)
+        return StagedGate()
+    paths = sorted(ranges_by_path)
+    claimed = claimed_unreadable(paths, cfg)
+    if claimed:
+        return StagedGate(_claimed_rows(claimed, ranges_by_path))
+    universe = scan_files(paths, cfg)
+    scope_of = _scope_of(universe.by_scope)
+    unscoped = _unscoped_sources(sorted(staged), set(scope_of), cfg)
+    if not scope_of:
+        return StagedGate((), unscoped, unreadable=universe.unreadable)
+    blobs = reads.staged_blobs(list(scope_of))
     records_by_path = staged_records(blobs, worker_budget=cfg.analysis_worker_budget)
     # The staged blob is the diff's new side: its bytes place git's lines.
-    ranges_by_path = reader_ranges(ranges_by_path, blobs.get)
-    return StagedGate(
-        _touched_over_ceiling(records_by_path, ranges_by_path, checked_files, cfg, in_scope),
-        unscoped, tuple(chain.from_iterable(records_by_path.values())),
-        unread_reasons(records_by_path), universe.unreadable
-    )
+    spans = reader_ranges(ranges_by_path, blobs.get)
+    unread = unread_reasons(records_by_path)
+    changes = tuple(_changed_file(rel, records_by_path[rel], spans[rel], scope, cfg, unread)
+                    for rel, scope in scope_of.items())
+    return StagedGate(changes, unscoped, tuple(chain.from_iterable(records_by_path.values())),
+                      universe.unreadable)

@@ -1309,18 +1309,6 @@ def _print_clear_the_reason() -> None:
           "here - clear it where it was set.")
 
 
-def _granted_crap(cfg, violation) -> float:
-    """The mark the hook's grant writes: the CRAP the function's scope scores
-    with no coverage behind it. A staged blob carries no coverage, so a scope a
-    lane measures marks the untested CRAP, and a cc-only scope marks ccn, as
-    `score` scores it there."""
-    from ..score import flagged_crap
-
-    scope = owning_scope(violation.path, path_matchers({s.name: s.paths for s in cfg.scopes}))
-    flag = "cc-only" if scope in cfg.coverage_optional_scopes else "untested"
-    return flagged_crap(violation.ccn, 0.0, flag)
-
-
 def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) -> None:
     """The audited hook override: alert line, ratchet debt (staged into the
     pending commit), and a snapshot record — all three or nothing."""
@@ -1339,8 +1327,8 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, records, store)
     run_id = store.write_run(commit=head_commit(root), tool_versions={}, rows=[],
                              lanes={"_hook_override": {"staged": True}}, kind="hook")
-    gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0,
-                          _granted_crap(cfg, v), "decompose", False, v.key_name)
+    # Each mark is the high end of the CRAP bound the gate judged the function on.
+    gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0, v.high, "decompose", False, v.key_name)
             for v in violations]
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=gate, reason=reason,
@@ -1361,53 +1349,93 @@ def _warn_unscoped_staged(unscoped: list) -> None:
               "(see docs/configuration.md)", file=sys.stderr)
 
 
-def _split_marked(violations: list, entries: list) -> tuple[list, list]:
-    """Staged violations split into (gated, exempt) on ratchet-mark EXISTENCE.
-
-    Existence, not the `crap > mark` rule `rescore --gate` uses: the gate judges
-    staged blobs, a blob carries no coverage, and without coverage there is no
-    CRAP to compare against a mark. So the question the hook can answer is the
-    only one it asks — did the repo already sign for this function?
-
-    Without this exemption, a comment inside a marked function can refuse the
-    commit while `rescore --gate` on the same tree passes. `verify` keeps the
-    numeric check and catches a mark that actually rose.
-    """
-    from ..keys import stated_key
-
-    marked = {(e.path, e.long_name) for e in entries}
-    gated, exempt = [], []
-    for v in violations:
-        (exempt if stated_key(v) in marked else gated).append(v)
-    return gated, exempt
-
-
-def _note_marked_staged(exempt: list, noun: str = "staged") -> None:
+def _note_marked_staged(carried: int, noun: str = "staged") -> None:
     """One line, never a list. The count says the exemption fired; the marks
     themselves are in the committed TSV, and naming them at every commit would
     reprint debt the repo reads through `crapkit ratchet report`."""
-    if exempt:
-        print(f"crapkit gate: {len(exempt)} {noun} function(s) carry a ratchet mark and "
+    if carried:
+        print(f"crapkit gate: {carried} {noun} function(s) carry a ratchet mark and "
               "were not gated - `crapkit verify` fails a mark that rises", file=sys.stderr)
 
 
-def _gated_violations(root: Path, cfg, violations: list, records=(), noun: str = "staged") -> list:
-    """The breaches the commit is actually refused for.
+# The gate's pardon kinds the hook passes on a mark's existence, with one count
+# line: a blob has no coverage, so a marked function's CRAP is a range and
+# `verify` judges the mark. mission-3-04 turns marked_rise into a refusal.
+_CARRIED = ("pardoned", "marked_rise", "unproven")
 
-    The marks file is read only once something breached: a clean commit is the
-    common case and must not pay to load 40,303 rows it has no question for.
+
+def _hook_marks(root: Path, cfg, records):
+    """The marks callable the gate reads, at most once and only on a breach:
+    a clean commit must not pay to load 40,303 rows it has no question for.
 
     Through `_load_ratchet_or_die`, so an unparseable marks file names itself
     and exits 3. Reading it raw would end a `git commit` in a traceback, which
-    is the one thing a gate on the mandatory path must not do.
-    """
-    if not violations:
-        return []
-    entries = _load_ratchet_or_die(root / cfg.ratchet_file, cfg.ratchet_file)
-    _ratchet_key_version(root, cfg, records, entries=entries)
-    gated, exempt = _split_marked(violations, entries)
-    _note_marked_staged(exempt, noun)
-    return gated
+    is the one thing a gate on the mandatory path must not do."""
+    from ..keys import MarkIndex
+
+    def marks() -> MarkIndex:
+        entries = _load_ratchet_or_die(root / cfg.ratchet_file, cfg.ratchet_file)
+        _ratchet_key_version(root, cfg, records, entries=entries)
+        return MarkIndex(entries)
+    return marks
+
+
+def _judge_hook(root: Path, cfg, gate):
+    """The gate module's findings on the staged rows."""
+    from ..gate import judge
+
+    return judge(gate.changes, cfg.ceiling_of, _hook_marks(root, cfg, gate.records))
+
+
+def _violation(breach):
+    """A breach as the row the hook prints and grants: the function's ccn, its
+    ratchet key, its scope's ceiling and the high end of its CRAP bound."""
+    from ..hook import Violation
+
+    record = breach.function.record
+    return Violation(breach.path, record.long_name, record.start, record.ccn, breach.key_name,
+                     breach.ceiling, breach.function.bound.high)
+
+
+def _breach_scopes(breaches) -> dict[str, list[str]]:
+    """Each scope with the files of its breaches, as check_violations reads them."""
+    scopes: dict[str, list[str]] = {}
+    for breach in breaches:
+        scopes.setdefault(breach.function.scope, []).append(breach.path)
+    return scopes
+
+
+def _refused_violations(cfg, result) -> tuple[list, int]:
+    """The breaches the commit is refused for, worst ccn first, and how many a
+    mark carries. Every breach is held to its scope's ceiling first."""
+    from ..invariants import check_violations
+
+    breaches = (*result.over_ceiling, *(breach for kind in _CARRIED for breach in getattr(result, kind)))
+    check_violations([_violation(breach) for breach in breaches], _breach_scopes(breaches), cfg.ceiling_of)
+    refused = sorted(map(_violation, result.over_ceiling), key=lambda v: (-v.ccn, v.path, v.start))
+    return refused, len(breaches) - len(refused)
+
+
+def _contents(gate, kind) -> tuple:
+    """The staged rows of one kind, read off the gate's input before it judges:
+    `gate.judge` reads the marks file on a breach, so a finding the hook must
+    say first cannot wait for its result. The hook takes an unread file whole,
+    so every Unread row here is one `judge` reports."""
+    return tuple(change.content for change in gate.changes if isinstance(change.content, kind))
+
+
+def _refuse_claimed(gate) -> None:
+    """Exit 3 on a staged name a scope takes that is not UTF-8, before any
+    other line and any override side effect, with the sentence the scan
+    refused it with in 0.8.1: the first name, the rest counted."""
+    from ..errors import UnreadableNameError
+    from ..gate import UnreadableName
+    from ..universe import claimed_text
+
+    names = _contents(gate, UnreadableName)
+    if names:
+        raise UnreadableNameError(claimed_text([(name.path, name.scope) for name in names]),
+                                  [name.path for name in names])
 
 
 def _staged_gate(root: Path, cfg, base: str | None = None, *, whole: bool = False):
@@ -1424,11 +1452,13 @@ def _staged_gate(root: Path, cfg, base: str | None = None, *, whole: bool = Fals
         _analysis_tools()  # importing crapkit.hook reaches lizard too, so it waits its turn
         from ..hook import gate_staged
 
-        gate = gate_staged(root, cfg, reads, whole=whole)
+        return gate_staged(root, cfg, reads, whole=whole)
+
+
+def _say_whole(gate) -> None:
     if gate.whole:
         print("crapkit gate: nothing is staged and no commit is running, so every tracked "
               "file was judged", file=sys.stderr)
-    return gate
 
 
 def _in_a_commit() -> bool:
@@ -1505,15 +1535,38 @@ def _owned_paths(top: Path, base: str | None) -> list[str]:
 def _hook_gate(root: Path, shown: str, base: str | None) -> int:
     """One root's verdict. `shown` prefixes every path it prints: "" at the
     command's own root, `packages/api/` for a root found below the top."""
+    cfg = _load_repo_config(root)
+    return _hook_exit(root, cfg, _staged_gate(root, cfg, base, whole=_may_judge_tracked(base)), shown)
+
+
+def _hook_exit(root: Path, cfg, gate, shown: str = "") -> int:
+    """The staged rows judged and mapped to the hook's exit: a claimed name
+    exits 3 before anything else, an unread file exits 6 before any grant, a
+    function over its ceiling exits 6 unless granted, and a marked breach
+    passes with the count line.
+
+    Every line the gate says beside its verdict prints before `judge` runs:
+    judging reads the marks file on a breach, and an unreadable one exits 3
+    there, so printing after it lost the unread and unscoped lines 0.8.1 gave."""
+    _refuse_claimed(gate)
+    unread = _say_staged(gate, shown)
+    code = _judge_staged(root, cfg, gate, _judge_hook(root, cfg, gate), unread, shown)
+    return 6 if unread else code
+
+
+def _say_staged(gate, shown: str) -> dict[str, str]:
+    """The notes beside the verdict: the whole-tree note, the names left out,
+    the staged files no scope takes and the unread block. Returns each unread
+    path with why no reader read it."""
+    from ..gate import Unread
     from ._shared import _print_unread
 
-    cfg = _load_repo_config(root)
-    gate = _staged_gate(root, cfg, base, whole=_may_judge_tracked(base))
+    _say_whole(gate)
     _say_left_out(gate.unreadable)
     _warn_unscoped_staged([shown + path for path in gate.unscoped])
-    _print_unread({shown + path: why for path, why in gate.unread.items()}, _judged(gate))
-    code = _judge_staged(root, cfg, gate, shown)
-    return 6 if gate.unread else code
+    unread = {found.path: found.reason for found in _contents(gate, Unread)}
+    _print_unread({shown + path: why for path, why in unread.items()}, _judged(gate))
+    return unread
 
 
 def _may_judge_tracked(base: str | None) -> bool:
@@ -1542,9 +1595,10 @@ def _hook_override_refusal(unread: dict) -> str | None:
         unread_files=tuple(Unread(path, why) for path, why in sorted(unread.items()))))
 
 
-def _judge_staged(root: Path, cfg, gate, shown: str = "") -> int:
-    violations = _gated_violations(root, cfg, gate.violations, gate.records, _judged(gate))
-    refusal = _hook_override_refusal(gate.unread) if _env_override_reason() else None
+def _judge_staged(root: Path, cfg, gate, result, unread: dict, shown: str = "") -> int:
+    violations, carried = _refused_violations(cfg, result)
+    _note_marked_staged(carried, _judged(gate))
+    refusal = _hook_override_refusal(unread) if _env_override_reason() else None
     if violations:
         _print_staged_violations(root, cfg, gate, violations, shown)
     if refusal:

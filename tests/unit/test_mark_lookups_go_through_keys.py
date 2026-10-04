@@ -207,8 +207,10 @@ def test_the_allowlist_holds_the_three_pardon_copies_and_who_deletes_them():
 
 
 def _without(source: str, function: str) -> str:
-    """`source` with the top-level `function` cut out."""
-    node = next(n for n in ast.parse(source).body if getattr(n, "name", None) == function)
+    """`source` with the top-level `function` cut out, if it is there."""
+    node = next((n for n in ast.parse(source).body if getattr(n, "name", None) == function), None)
+    if node is None:
+        return source
     lines = source.splitlines(keepends=True)
     return "".join(lines[:node.lineno - 1] + lines[node.end_lineno:])
 

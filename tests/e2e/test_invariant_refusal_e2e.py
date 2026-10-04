@@ -398,12 +398,13 @@ def test_the_gate_prints_no_verdict_over_a_row_off_the_remedy_table(repo: Path, 
 
 def test_the_commit_hook_prints_no_verdict_over_a_violation_under_its_ceiling(repo: Path,
                                                                              monkeypatch):
-    from crapkit import hook
+    from crapkit import gate, hook
 
     write(repo, "src/calc.py", CALC.replace("n = n + 1", "n = n + 5", 1))
     git(repo, "add", "src/calc.py")
-    monkeypatch.setattr(hook, "_file_violations", lambda rel, records, ranges, ceiling: [
-        hook.Violation(rel, "alpha( n )", 1, 2, "alpha( n )")])
+    # Every staged function judged over the ceiling while its ccn stays 2.
+    monkeypatch.setattr(hook, "_function", lambda record, scope, flag: gate.Function(
+        record.long_name, record.start, record.end, gate.CrapBound(99.0, 99.0), scope, record.occurrence, record))
     done = run_cli(repo, "hook-precommit")
     stopped(done, "a gate violation has ccn over its file's ceiling")
     assert "crapkit gate:" not in done.stdout + done.stderr

@@ -28,7 +28,9 @@ from crapkit.cli.claude_hook import _advise
 from crapkit.cli.reports import _function_commits
 from crapkit.cli.scoring import _changed_since_head, _gate_candidates
 from crapkit.config import load_config_text
+from crapkit.gate import judge
 from crapkit.hook import gate_staged
+from crapkit.keys import MarkIndex
 from crapkit.score import ScoredRow
 
 CONFIG = ('[crapkit]\ntarget = 1\n\n[[scope]]\nname = "all"\npaths = ["."]\n'
@@ -61,8 +63,9 @@ def committed(tmp_path: Path, files: dict[str, bytes]) -> Path:
 
 
 def gated(repo: Path) -> list[str]:
-    verdict = gate_staged(repo, load_config_text(CONFIG))
-    return sorted(violation.long_name for violation in verdict.violations)
+    cfg = load_config_text(CONFIG)
+    found = judge(gate_staged(repo, cfg).changes, cfg.ceiling_of, lambda: MarkIndex(())).over_ceiling
+    return sorted(breach.function.long_name for breach in found)
 
 
 def test_a_new_cr_only_file_gates_every_function(tmp_path):

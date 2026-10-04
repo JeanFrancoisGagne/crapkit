@@ -21,7 +21,6 @@ import pytest
 from crapkit.analyze import analyze_source
 from crapkit.cli.queue import _BriefLoader, _pick_function
 from crapkit.cli.scoring import _ceiling_breaches, _unmarked_breaches
-from crapkit.cli.verifying import _split_marked
 from crapkit.cli.reports import cmd_explain
 from crapkit.config import load_config_text
 from crapkit.errors import CrapkitError
@@ -31,6 +30,8 @@ from crapkit.ratchet import RatchetEntry, merge_ratchets, prune_ratchet, seed_ra
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 from crapkit.verify import evaluate
+
+from test_gate_hook_mapping import hook_split
 
 POST_INIT = "__post_init__( self )"
 
@@ -206,21 +207,21 @@ def test_the_commit_gate_no_longer_exempts_the_unmarked_twin():
     read as a mark on the name, so the first one committed at any ccn."""
     violations = [staged(POST_INIT, 7, POST_INIT), staged(POST_INIT, 18, f"{POST_INIT}#2")]
 
-    gated, exempt = _split_marked(
+    gated, carried = hook_split(
         violations, [RatchetEntry("src/iso_cost.py", f"{POST_INIT}#2", 30.0)])
 
     assert [v.start for v in gated] == [7]
-    assert [v.start for v in exempt] == [18]
+    assert carried == 1
 
 
 def test_a_violation_nobody_keyed_is_judged_under_its_bare_name():
     """A lone function's key IS its long_name, so an unkeyed violation is not a
     special case — it is the ordinary one."""
-    gated, exempt = _split_marked(
+    gated, carried = hook_split(
         [Violation("src/mod.py", "legacy( n )", 4, 9)],
         [RatchetEntry("src/mod.py", "legacy( n )", 63.6)])
 
-    assert (gated, len(exempt)) == ([], 1)
+    assert (gated, carried) == ([], 1)
 
 
 def test_rescore_gate_judges_each_twin_against_its_own_mark():

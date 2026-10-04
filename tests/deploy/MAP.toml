@@ -155,6 +155,9 @@ modules = ["tests/deploy/test_claimed_name_cells.py"]
 [packets.gate-group-10]
 modules = ["tests/deploy/test_claimed_name_cells.py"]
 
+[packets.gate-group-08]
+modules = ["tests/deploy/test_claimed_name_hook_cells.py"]
+
 # --- every-harness rows -----------------------------------------------------------
 # What a nightly run takes of each row: "all" its cells on all 17 harnesses,
 # "core" on the 3 core-image ones. The header says how a row's tests name it.
@@ -544,6 +547,9 @@ lin-up-claimed-name-json-junie = { packet = "gate-group-10", cadence = "nightly"
 lin-up-claimed-name-json-omp = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
 lin-up-claimed-name-json-opencode = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
 lin-up-claimed-name-json-vscode-test-electron = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+# gate-group-08: the class U claimed-name cells committing through the hook, fresh and upgrade
+lin-claimed-name-hook = { packet = "gate-group-08", cadence = "nightly", os = "linux", image = "core" }
+lin-up-claimed-name-hook = { packet = "gate-group-08", cadence = "nightly", os = "linux", image = "core" }
 
 # --- what blocks a cell or a job -------------------------------------------------
 # Each is work outside this packet (the kit, a cell no packet writes yet) or a
