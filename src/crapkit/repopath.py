@@ -32,8 +32,9 @@ listing names it otherwise. And `place`, the one placing rule, answers whether a
 absolute path is in this checkout by the file it names, so a symlink, a
 junction, a lower-case drive letter or a UNC alias of a local drive still lands
 in it, and says why when it does not: another tree, or a name this platform
-cannot open. `inside` is its answer as the path or None; istanbul's rebase and
-lanes' wrong-tree check ask it once a folder (`Placing`).
+cannot open. `inside` is its answer as the path or None. The reported entry
+and the coverage.py reader ask it once a folder (`Placing`), and lanes'
+wrong-tree check reads the reasons they recorded.
 
 Stdlib only at import: the advisory hook imports this on every edit. Only a
 name whose case the listing changes asks git, and imports gitio then.
@@ -183,6 +184,10 @@ class Unplaced(enum.Enum):
     """This platform cannot open the name at all: it has no root or drive this
     OS reads (`C:/repo/a.ts` on POSIX), or holds a NUL, which no OS's names can
     hold, or a code point POSIX's filesystem encoding has no bytes for."""
+    KEPT_ABSOLUTE = "kept-absolute"
+    """The path lands in this checkout, and its format keeps an absolute key
+    as written: coverage.py's reader never rebases one (relative_files is the
+    runner's own switch)."""
 
 
 # `C:/...`: a drive's root, which POSIX reads as a relative name.
@@ -205,7 +210,8 @@ class Reported:
 
     `unplaced` holds each absolute key the placing rule left unplaced, spelled
     as the call returned it, with its `Unplaced` reason. A drive-rooted key
-    (`C:/repo/a.ts`) counts as absolute on every OS: on POSIX it is UNOPENABLE."""
+    (`C:/repo/a.ts`) counts as absolute on every OS: on POSIX it is UNOPENABLE.
+    So does a key from `/` (`absolute`)."""
 
     def __init__(self, root: str | os.PathLike) -> None:
         self._root = Path(root)
@@ -219,7 +225,7 @@ class Reported:
         key = file_separators(raw)
         if key.startswith(self._prefix):
             return self.relative(key[len(self._prefix):])
-        return self._placed(key) if _absolute(key) else self.relative(key)
+        return self._placed(key) if absolute(key) else self.relative(key)
 
     def relative(self, key: str) -> str:
         """`key`, a root-relative key with `/` between directories, with no
@@ -249,9 +255,12 @@ class Reported:
         return self.relative(rel)
 
 
-def _absolute(key: str) -> bool:
-    """Is `key`, `/` between directories, a path from a root or a drive?"""
-    return os.path.isabs(key) or bool(_DRIVE_ROOT.match(key))
+def absolute(key: str) -> bool:
+    """Is `key`, a reported path with `/` between directories, a path from a
+    root or a drive? The shape alone, on every OS and every Python: 3.13 on
+    Windows stopped calling `/x` absolute, and a key that read as relative
+    there reached a root scope (`.`) from another tree."""
+    return key.startswith("/") or bool(_DRIVE_ROOT.match(key))
 
 
 def tracked_spelling(root: str | os.PathLike, rel: str,
@@ -401,8 +410,7 @@ class Placing:
     report names thousands of files in a few hundred folders, so each folder is
     placed once, and a path comes back relative to the root with its own name
     as the report wrote it. `placed` asks `place` and answers the reason a
-    folder is not in the checkout; the call asks `inside` and answers None,
-    for lanes' wrong-tree check until it reads the reason."""
+    folder is not in the checkout; the call asks `inside` and answers None."""
 
     def __init__(self, root: str | os.PathLike) -> None:
         self._root = Path(root)

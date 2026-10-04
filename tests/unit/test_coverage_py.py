@@ -453,7 +453,7 @@ from pathlib import Path as _Path
 
 from crapkit import coverage_py as _adapter
 from crapkit.config import Lane as _Lane
-from crapkit.lanes import _judge_artifact_scope
+from crapkit.lanes import run_lane as _run_lane
 
 from path_spellings import lower_drive as _lower
 
@@ -499,10 +499,10 @@ def test_an_absolute_key_under_this_checkout_fails_the_lane_naming_relative_file
     (root / "pylib" / "mod.py").write_text("x = 1\n", encoding="utf-8")
     lane = _Lane(name="py", command="x", artifact="cov.json", parser="coveragepy",
                  scopes=("py",))
-    measured = dict.fromkeys(_read_keyed(root, ABSOLUTE_KEYS[which](root)), [])
+    _read_keyed(root, ABSOLUTE_KEYS[which](root))
 
     with pytest.raises(ToolError, match="relative_files = true"):
-        _judge_artifact_scope(lane, measured, {"py": ("pylib",)}, root)
+        _run_lane(root, lane, reuse_artifact=True, scope_paths={"py": ("pylib",)})
 
 
 @pytest.mark.skipif(_os.name == "nt", reason="needs POSIX path rules")
