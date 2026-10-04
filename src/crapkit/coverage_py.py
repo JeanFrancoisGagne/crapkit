@@ -12,7 +12,10 @@ This module is also the coverage.py adapter (coverage_format looks it up from a
 lane's `parser`): it walks the report's "files" member through covstream's
 framing, keys each relative file with the lane's path_prefix, records each
 absolute key with the placing step's reason for the wrong-tree check, and owns
-the runner advice a refusal gives.
+the runner advice a refusal gives. It owns coverage.py's producer facts too,
+which hold whatever runner starts it: where the data file lands, the shards a
+killed parallel run leaves with the recipe that combines them, and what a run
+drops in the tree.
 
 Under a POSIX locale that is not UTF-8 the lane's own Python names files in that
 locale's encoding, so its report keys `pkg/café.py` as `pkg/cafÃ©.py`. The
@@ -26,12 +29,13 @@ import locale
 import os
 import sys
 from array import array
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import covstream
 from .errors import ToolError
+from .lane_command import command_steps
 from .repopath import Placing, Reported, Unplaced, absolute, file_separators
 from .repotext import json_kind, utf8_spelling
 from .named import first_few
@@ -504,6 +508,44 @@ ABSOLUTE_FIX = ("Make the runner write relative paths: `relative_files = true` "
                 "`[run] relative_files = true` in .coveragerc, then rerun the lane")
 UNMEASURED_READING = "or the runner reports paths this lane needs path_prefix to rebase"
 TAKES_PATH_PREFIX = True
+
+# Producer facts: what coverage.py writes and leaves whichever runner starts it,
+# pytest-cov, `coverage run` or a `make cov` that wraps either.
+# A run in parallel mode writes one shard per process and combines them at the end.
+SHARD_GLOB = ".coverage.*"
+# Two commands, never one `&&` chain: Windows PowerShell 5.1 has no `&&`, and the
+# shard hint hands them to whatever shell the operator stands in.
+COMBINE_RECIPE = ("coverage combine", "coverage json -o {target}")
+# coverage's data file, and the bytecode caches Python leaves on every run.
+DROPPINGS = (".coverage", "__pycache__/")
+
+
+def data_file(lane: Lane) -> str:
+    """Where the lane's data file lands, as far as the config says: the
+    command's own `--data-file`, else COVERAGE_FILE from the lane's env, else
+    coverage.py's default, in the directory the lane starts in."""
+    name = (_data_file_flag(lane.command) or dict(lane.env).get("COVERAGE_FILE")
+            or ".coverage")
+    return os.path.normcase(os.path.normpath(os.path.join(lane.cwd or ".", name)))
+
+
+def _data_file_flag(command: str) -> str:
+    """The first `--data-file` a step of the command hands coverage, "" when
+    none does. Read as the shell reads the line, a `bash -c` payload included: a
+    regex stopped at the first space or quote, so `"cov a/.coverage"` and
+    `"cov b/.coverage"` both read as `cov`."""
+    values = (value for step in command_steps(command).steps
+              for value in _flag_values(step.words, "--data-file"))
+    return next(values, "")
+
+
+def _flag_values(words: tuple[str, ...], flag: str) -> Iterator[str]:
+    """Every value `flag` takes in one argv: `--flag=value` or `--flag value`."""
+    for at, word in enumerate(words):
+        if word.startswith(flag + "="):
+            yield word[len(flag) + 1:]
+        elif word == flag and at + 1 < len(words):
+            yield words[at + 1]
 
 
 def _speller(root: Path) -> Callable[[str], str]:
