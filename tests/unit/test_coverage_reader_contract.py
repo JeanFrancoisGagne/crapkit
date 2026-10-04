@@ -15,13 +15,14 @@ import codecs
 import copy
 import hashlib
 import json
+from array import array
 from pathlib import Path
 
 import pytest
 
 from crapkit import coverage_format
 from crapkit.config import Lane
-from crapkit.score import FnCoverage
+from crapkit.score import FileEvidence, FnCoverage
 from crapkit.errors import ToolError
 
 FORMATS = sorted(coverage_format._FORMATS)
@@ -69,6 +70,9 @@ KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py"}
 # (coverage_istanbul._instrumented; test_coverage_istanbul pins both readings).
 ROWS = {"istanbul": [FnCoverage("f", 1, 6, True, 2, 1, 3, 2, full_listing=True)],
         "coveragepy": [FnCoverage("f", 1, 5, True, 2, 1, 3, 2)]}
+# read()'s second value: the control's one file, its dead line 5 as missed_lines.
+# Both formats keep their own function records, so hit_lines is None.
+DEAD = FileEvidence(hit_lines=None, missed_lines=array("I", [5]))
 
 
 def _ist(doc: dict) -> dict:
@@ -124,10 +128,10 @@ def _holds(text: str, words) -> None:
 def test_every_format_reads_its_control_in_one_walk_with_the_digest_of_its_bytes(tmp_path, fmt):
     raw = _bytes(tmp_path, fmt)
 
-    per_file, dead, digest = _read(tmp_path, fmt, raw)
+    per_file, evidence, digest = _read(tmp_path, fmt, raw)
 
     assert per_file == {KEYS[fmt]: ROWS[fmt]}
-    assert dead == {KEYS[fmt]: {5}}
+    assert evidence == {KEYS[fmt]: DEAD}
     assert digest == hashlib.sha256(raw).hexdigest()
 
 
@@ -137,7 +141,7 @@ def test_every_format_reads_its_control_in_one_walk_with_the_digest_of_its_bytes
 def test_the_same_document_laid_out_another_way_reads_the_same(tmp_path, fmt, layout):
     raw = json.dumps(CONTROLS[fmt](tmp_path), **layout).encode("utf-8")
 
-    assert _read(tmp_path, fmt, raw)[:2] == ({KEYS[fmt]: ROWS[fmt]}, {KEYS[fmt]: {5}})
+    assert _read(tmp_path, fmt, raw)[:2] == ({KEYS[fmt]: ROWS[fmt]}, {KEYS[fmt]: DEAD})
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
@@ -147,10 +151,10 @@ def test_a_utf8_byte_order_mark_is_read_past(tmp_path, fmt):
     stays the file's own bytes, mark included."""
     raw = codecs.BOM_UTF8 + _bytes(tmp_path, fmt)
 
-    per_file, dead, digest = _read(tmp_path, fmt, raw)
+    per_file, evidence, digest = _read(tmp_path, fmt, raw)
 
     assert per_file == {KEYS[fmt]: ROWS[fmt]}
-    assert dead == {KEYS[fmt]: {5}}
+    assert evidence == {KEYS[fmt]: DEAD}
     assert digest == hashlib.sha256(raw).hexdigest()
 
 
@@ -537,7 +541,7 @@ def _row_id(row) -> str:
 
 
 def _outcome(root: Path, fmt: str, raw: bytes):
-    """read()'s function coverage and dead lines, or its refusal's text."""
+    """read()'s function coverage and per-file FileEvidence, or its refusal's text."""
     try:
         return _read(root, fmt, raw)[:2]
     except ToolError as refused:
@@ -604,12 +608,12 @@ def test_every_format_has_rows_in_the_field_table():
 
 @pytest.mark.parametrize("fmt", FORMATS)
 def test_the_minimal_artifact_reads_one_function_with_its_branches_and_a_dead_line(tmp_path, fmt):
-    per_file, dead = _outcome(tmp_path, fmt, minimal_artifact(fmt))
+    per_file, evidence = _outcome(tmp_path, fmt, minimal_artifact(fmt))
 
     (row,) = per_file[KEYS[fmt]]
     assert (row.name, row.start, row.invoked, row.statements_covered) == ("f", 1, True, 2)
     assert row.branches_total > row.branches_covered > 0
-    assert dead == {KEYS[fmt]: {5}}
+    assert evidence == {KEYS[fmt]: DEAD}
 
 
 @pytest.mark.parametrize("row", [pytest.param(row, id=_row_id(row)) for row in FIELDS])

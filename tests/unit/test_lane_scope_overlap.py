@@ -125,7 +125,7 @@ def test_one_file_in_reach_is_enough_to_let_the_artifact_through(tmp_path):
     """A lane measuring part of what it claims is ordinary; only zero is not."""
     _artifact(tmp_path, OTHER, "src/faro/core.py")
 
-    coverage, _, _ = _run(tmp_path, _lane(), {"src": ("src",)})
+    coverage = _run(tmp_path, _lane(), {"src": ("src",)}).coverage
 
     assert "src/faro/core.py" in coverage
 
@@ -135,7 +135,7 @@ def test_a_scope_that_declares_individual_files_is_reached_exactly(tmp_path):
     calls every one of them unreachable."""
     _artifact(tmp_path, "src/faro/core.py")
 
-    coverage, _, _ = _run(tmp_path, _lane(), {"src": ("src/faro/core.py",)})
+    coverage = _run(tmp_path, _lane(), {"src": ("src/faro/core.py",)}).coverage
 
     assert list(coverage) == ["src/faro/core.py"]
 
@@ -145,7 +145,7 @@ def test_the_prefix_the_lane_declares_is_applied_before_the_question(tmp_path):
     rescues must not be refused on the paths it had before."""
     _artifact(tmp_path, "faro/core.py")
 
-    coverage, _, _ = _run(tmp_path, _lane(path_prefix="src"), {"src": ("src",)})
+    coverage = _run(tmp_path, _lane(path_prefix="src"), {"src": ("src",)}).coverage
 
     assert list(coverage) == ["src/faro/core.py"]
 
@@ -260,8 +260,8 @@ def test_a_relative_key_beside_one_from_another_tree_still_joins(tmp_path):
     did before, glue or no glue."""
     _artifact(tmp_path, "a.py", "/other/checkout/backend/a.py")
 
-    coverage, _, _ = _run(tmp_path, _lane(scopes=("backend",), path_prefix="backend"),
-                          {"backend": ("backend",)})
+    coverage = _run(tmp_path, _lane(scopes=("backend",), path_prefix="backend"),
+                    {"backend": ("backend",)}).coverage
 
     assert "backend/a.py" in coverage
 
@@ -272,7 +272,7 @@ def test_in_tree_paths_that_miss_the_scope_warn_rather_than_fail(tmp_path, capsy
     the repos that are adopting crapkit."""
     _artifact(tmp_path, "tests/test_core.py")
 
-    coverage, _, _ = _run(tmp_path, _lane(), {"src": ("src",)})
+    coverage = _run(tmp_path, _lane(), {"src": ("src",)}).coverage
 
     assert list(coverage) == ["tests/test_core.py"]
     err = capsys.readouterr().err
@@ -342,7 +342,7 @@ def test_a_lane_whose_scopes_declare_no_path_is_not_judged(tmp_path, capsys):
     """Nothing to compare against is not evidence of a mismatch."""
     _artifact(tmp_path, OTHER)
 
-    coverage, _, _ = _run(tmp_path, _lane(scopes=()), {"src": ("src",)})
+    coverage = _run(tmp_path, _lane(scopes=()), {"src": ("src",)}).coverage
 
     assert list(coverage) == [OTHER]
     assert capsys.readouterr().err == ""
@@ -351,7 +351,7 @@ def test_a_lane_whose_scopes_declare_no_path_is_not_judged(tmp_path, capsys):
 def test_a_caller_that_passes_no_scope_paths_is_not_judged(tmp_path):
     _artifact(tmp_path, OTHER)
 
-    coverage, _, _ = run_lane(tmp_path, _lane(), reuse_artifact=True)
+    coverage = run_lane(tmp_path, _lane(), reuse_artifact=True).coverage
 
     assert list(coverage) == [OTHER]
 
