@@ -6,6 +6,10 @@
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->
+- Library API: `FnCoverage` and `coverage_count` import from `crapkit.score`; `crapkit.coverage_istanbul` no longer exports them.
+- doctor names each lane's runner, read from its command, the package.json script it runs, or devDependencies, and `doctor --json` carries it as `lanes[].toolchain` (accuracy change C42). [How crapkit reads a lane's runner](docs/lanes.md#how-crapkit-reads-a-lanes-runner)
+- A lane that runs pytest as `pytest.exe` or `pytest.cmd` is read as running pytest, so doctor's pytest notes reach it.
+- Library API: `parse_istanbul_both_file` and `parse_coveragepy_both_file` return per-file `FileEvidence` as their second value.
 <!-- /0.9.0:m1-foundations -->
 
 <!-- 0.9.0:mission-3 -->

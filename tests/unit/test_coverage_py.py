@@ -260,16 +260,6 @@ def test_the_refusal_names_the_first_function_without_a_start_line():
     assert _read_7_12(written, _starts) == NO_START.replace("outer:", "outer.inner:")
 
 
-@pytest.mark.parametrize("start", ["1", 1.0, True, 0, -1, [1]],
-                         ids=["a-string", "a-float", "true", "zero", "negative", "a-list"])
-def test_a_start_line_that_is_not_a_line_number_refuses_the_report(start):
-    read = _read_7_12({**WRITTEN_7_13, "outer": start}, _starts)
-
-    assert read == (f"pkg/mod.py: outer: start_line must be a line number, got {start!r}; "
-                    "coverage.py writes the def's line there, so regenerate the report "
-                    "with `coverage json`")
-
-
 def test_the_extras_install_the_coverage_the_reader_names():
     """`pip install "crapkit[py]"` and the dev install must land a coverage
     whose report this reader takes, or the lane fails on a fresh setup."""
@@ -293,27 +283,6 @@ def test_the_lanes_page_quotes_the_start_line_refusal():
     page = (root / "docs" / "lanes.md").read_text(encoding="utf-8")
 
     assert f"/repo/.crapkit/cov/py.json: {NO_START}" in page
-
-
-# --- a function region with no summary ----------------------------------------
-#
-# coverage.py writes a summary on every region. `.get("summary", {})` read an
-# absent one as zero statements and zero branches, so the function scored as
-# never run, while a null one refused the report with an AttributeError.
-# Both now refuse the report with a line naming the function.
-
-@pytest.mark.parametrize("summary", ["absent", None, [], "4 of 4"],
-                         ids=["absent", "null", "a-list", "a-string"])
-def test_a_region_without_a_summary_object_refuses_the_report_naming_the_function(summary):
-    report = json.loads(json.dumps(REPORT))
-    guarded = report["files"]["pylib\\mod.py"]["functions"]["guarded"]
-    if summary == "absent":
-        del guarded["summary"]
-    else:
-        guarded["summary"] = summary
-
-    with pytest.raises(ToolError, match=r"coverage\.py report .*guarded: no summary object"):
-        parse_coveragepy(json.dumps(report), path_prefix="")
 
 
 # Every other shape a region's fields arrive in, and the bytes the report
@@ -357,9 +326,6 @@ def _no_branch_and(edit):
 
 
 REFUSED = {
-    "function-summary-missing": (lambda fn: fn.pop("summary"),
-                                 "guarded: no summary object, so crapkit cannot tell how much "
-                                 "of it ran"),
     "covered-lines-missing": (_drop("covered_lines"),
                               "guarded: num_statements without covered_lines; coverage.py "
                               "writes both, so regenerate the report with `coverage json`"),
@@ -379,16 +345,16 @@ REFUSED = {
         _no_branch_and(_drop("covered_lines", "num_statements")),
         "guarded: summary holds no statement counts and no branch, so crapkit cannot tell how "
         "much of it ran; regenerate the report with `coverage json`"),
-    "count-not-a-count": (lambda fn: fn["summary"].update(covered_lines=-1),
-                          "guarded: covered_lines must be a nonnegative integer count, got -1"),
 }
 
 
 @pytest.mark.parametrize("form", sorted(REFUSED))
-def test_a_summary_missing_a_count_refuses_the_report_naming_the_file_and_the_fix(form):
+def test_a_summary_count_without_what_it_pairs_with_refuses_naming_the_file_and_the_fix(form):
     """The refusal names the source file as well as the function, since one
     report holds many files with a function of that name, and ends with what
-    to do, as the istanbul refusals do."""
+    to do, as the istanbul refusals do. A summary that is gone or holds a count
+    of the wrong shape is a row of coverage_fields.FIELDS; these forms tie one
+    count to another."""
     edit, named = REFUSED[form]
 
     with pytest.raises(ToolError) as raised:
@@ -487,7 +453,7 @@ from pathlib import Path as _Path
 
 from crapkit import coverage_py as _adapter
 from crapkit.config import Lane as _Lane
-from crapkit.lanes import _judge_artifact_scope
+from crapkit.lanes import run_lane as _run_lane
 
 from path_spellings import lower_drive as _lower
 
@@ -533,10 +499,10 @@ def test_an_absolute_key_under_this_checkout_fails_the_lane_naming_relative_file
     (root / "pylib" / "mod.py").write_text("x = 1\n", encoding="utf-8")
     lane = _Lane(name="py", command="x", artifact="cov.json", parser="coveragepy",
                  scopes=("py",))
-    measured = dict.fromkeys(_read_keyed(root, ABSOLUTE_KEYS[which](root)), [])
+    _read_keyed(root, ABSOLUTE_KEYS[which](root))
 
     with pytest.raises(ToolError, match="relative_files = true"):
-        _judge_artifact_scope(lane, measured, {"py": ("pylib",)}, root)
+        _run_lane(root, lane, reuse_artifact=True, scope_paths={"py": ("pylib",)})
 
 
 @pytest.mark.skipif(_os.name == "nt", reason="needs POSIX path rules")

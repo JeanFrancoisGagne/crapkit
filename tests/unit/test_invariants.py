@@ -24,7 +24,7 @@ import pytest
 
 from crapkit import invariants as inv
 from crapkit.churn import FileChurn
-from crapkit.coverage_istanbul import FnCoverage
+from crapkit.score import FnCoverage
 from crapkit.errors import InternalCheckError, ToolError
 from crapkit.merge import FunctionRecord
 from crapkit.ratchet import RatchetEntry

@@ -188,10 +188,16 @@ def _version_payloads(capsys, monkeypatch, where: Path) -> list[dict]:
 
 def _doctor_payloads(repo: Path, capsys) -> list[dict]:
     """doctor over the seeded artifacts, then with the stamp file unreadable,
-    so each lane's `refusal` prints its null once and its sentence once."""
+    so each lane's `refusal` prints its null once and its sentence once. The
+    first runs with the unit lane spelling pytest, so its `toolchain` prints a
+    name and a source beside the ui lane's nulls."""
     stamps = repo / ".crapkit" / "artifacts.json"
     kept = stamps.read_bytes() if stamps.is_file() else None
+    config = (repo / "crapkit.toml").read_bytes()
+    unit = b'command = "python -c pass"'  # the unit lane's, the first one the file holds
+    (repo / "crapkit.toml").write_bytes(config.replace(unit, b'command = "python -m pytest"', 1))
     clean = run_json(repo, capsys, "doctor", "--json")
+    (repo / "crapkit.toml").write_bytes(config)
     stamps.write_text("not json", encoding="utf-8")
     refused = run_json(repo, capsys, "doctor", "--json")
     stamps.unlink()
@@ -356,6 +362,19 @@ def test_each_added_field_is_printed(payloads):
                if not [v for payload in payloads[f.payload] for v in values_at(payload, f.key)]]
 
     assert missing == []
+
+
+@NOT_UTF8_NAMES
+def test_doctors_lane_toolchain_prints_a_runner_and_both_nulls(payloads):
+    """`lanes[].toolchain` is {name, source}: a named runner and where it was
+    read, or two nulls; three declarations, one per field."""
+    printed = [lane["toolchain"] for payload in payloads["doctor --json"]
+               for lane in payload["lanes"]]
+
+    assert {"name": "pytest", "source": "command"} in printed
+    assert {"name": None, "source": None} in printed
+    assert {f.key for f in ADDED if f.key.startswith("lanes[].toolchain")} == {
+        "lanes[].toolchain", "lanes[].toolchain.name", "lanes[].toolchain.source"}
 
 
 @NOT_UTF8_NAMES

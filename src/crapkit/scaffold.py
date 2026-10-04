@@ -6,6 +6,7 @@ from typing import NamedTuple
 
 from .config import PYTEST_CONFIG_FILES, pytest_testpaths_texts as pytest_testpaths  # noqa: F401  init and tests import it from here
 from .config import _as_testpath
+from .toolchain import TOOLCHAINS, Toolchain
 
 from .universe import (LANGUAGE_EXTENSIONS, exclude_matcher, excluded, is_test_file,
                        scopes_with_tests)
@@ -134,7 +135,6 @@ def lockfile_runner(present: frozenset[str]) -> str:
 
 _PY_LANGUAGES = ("python",)
 _JS_LANGUAGES = ("javascript", "tsx", "typescript")
-_JS_RUNNER_COMMAND = {"jest": "npx jest --coverage", "vitest": "npx vitest run --coverage"}
 
 # Every artifact a scaffolded lane writes lands under .crapkit/, which init
 # ignores in the same breath. A 14-lane repo that let each runner default grew
@@ -150,49 +150,21 @@ _JS_ARTIFACT = f"{_JS_COV_DIR}/coverage-final.json"
 _JS_RESULTS = f"{_JS_COV_DIR}/junit.xml"
 _JS_DEFAULT_ARTIFACT = "coverage/coverage-final.json"
 
-# Each runner spells "write the coverage report here" its own way and rejects
-# the other's spelling outright.
-_JS_REPORTS_DIR_FLAG = {"jest": "--coverageDirectory=",
-                        "vitest": "--coverage.reportsDirectory="}
 
-# The junit half. vitest ships its junit reporter, so the flags cost the repo
-# nothing; jest needs the separate `jest-junit` package, and naming a reporter
-# jest cannot resolve turns a working lane into an error — so its flags are
-# written only when package.json already carries it.
-_JS_JUNIT_FLAGS = {"jest": "--reporters=default --reporters=jest-junit",
-                   "vitest": "--reporter=default --reporter=junit "
-                             "--outputFile={cov}/junit.xml"}
-
-# vitest writes no coverage report when a test fails, so one red test turned
-# `crapkit coverage` into exit 5 naming a missing coverage-final.json — a
-# message about a file, for a run that was really about a flag. Per runner, not
-# shared: jest reports on a red run already and exits on a flag it does not
-# know, which is the failure `_js_runner` exists to prevent.
-_JS_EXTRA_FLAGS = {"vitest": " --coverage.reportOnFailure"}
-
-# pytest's half of the same rule. pytest raises Interrupted at the END of
-# collection when any module fails to import, so pytest-cov's session finish
-# never runs and the lane writes no coverage JSON at all: one renamed module or
-# one missing optional extra takes the whole lane down and every scope falls to
-# no-lane, while the junit still lands and makes the run look half finished.
-# With the flag the modules that did collect run and report, and the
-# uncollected file's tests stay in the junit as errors, so nothing is hidden.
-_PY_COLLECT_FLAG = "--continue-on-collection-errors"
-_JS_JUNIT_PACKAGE = {"jest": "jest-junit"}
-# jest-junit takes no path on the command line: package.json, the jest config or
-# these two variables are the whole list, and the first two are the repo's files
-# to own. Without them it drops junit.xml at the repo root, which is the litter
-# `artifact` was routed away from in the first place.
-_JS_JUNIT_ENV = {"jest": (("JEST_JUNIT_OUTPUT_DIR", "{cov}"),
-                          ("JEST_JUNIT_OUTPUT_NAME", "junit.xml"))}
+def _pytest_command(interpreter: str) -> str:
+    """The pytest row's command with both reports routed under .crapkit/ and
+    its collection flag last. `{python}` keeps the placeholder a template
+    carries."""
+    row = TOOLCHAINS["pytest"]
+    return (f"{row.init_command.replace('{python}', interpreter)} "
+            f"{row.reports_dir_flag}{_PY_ARTIFACT} "
+            f"{row.junit_flags.format(cov=_COV_DIR)}{row.extra_flags}")
 
 
 def _pytest_lane(markers: frozenset[str], interpreter: str) -> LaneSpec | None:
     if not markers.intersection(PYTEST_MARKERS):
         return None
-    return LaneSpec("py", f"{interpreter} -m pytest --cov --cov-branch "
-                          f"--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS} "
-                          f"{_PY_COLLECT_FLAG}",
+    return LaneSpec("py", _pytest_command(interpreter),
                     _PY_ARTIFACT, "coveragepy", _PY_LANGUAGES, _PY_RESULTS)
 
 
@@ -207,11 +179,16 @@ def _npm_test_script(scripts: dict) -> str | None:
     return named[0] if named else None
 
 
+def _named_runners(dev_dependencies: frozenset[str]) -> list[str]:
+    """The toolchain rows whose package devDependencies names, sorted by row
+    name so the choice never moves."""
+    return [name for name, row in sorted(TOOLCHAINS.items())
+            if row.dev_dependency in dev_dependencies]
+
+
 def _js_runner_command(dev_dependencies: frozenset[str]) -> str | None:
-    for runner in sorted(_JS_RUNNER_COMMAND):
-        if runner in dev_dependencies:
-            return _JS_RUNNER_COMMAND[runner]
-    return None
+    named = _named_runners(dev_dependencies)
+    return TOOLCHAINS[named[0]].init_command if named else None
 
 
 class NpmPackage(NamedTuple):
@@ -268,11 +245,11 @@ def _js_runner(dev_dependencies: frozenset[str]) -> str | None:
     `--coverageDirectory`. Unresolved, the lane keeps the directory its runner
     already defaults to and doctor says so.
     """
-    named = [runner for runner in sorted(_JS_REPORTS_DIR_FLAG) if runner in dev_dependencies]
+    named = _named_runners(dev_dependencies)
     return named[0] if len(named) == 1 else None
 
 
-def _js_junit(runner: str, dev_dependencies: frozenset[str],
+def _js_junit(row: Toolchain, dev_dependencies: frozenset[str],
               cov_dir: str) -> tuple[str, str, tuple]:
     """Flags, results_artifact and env for this runner's junit report, or three
     empty values when the reporter it needs is not installed.
@@ -282,12 +259,11 @@ def _js_junit(runner: str, dev_dependencies: frozenset[str],
     coverage flag does. `results_artifact` stays root-relative either way:
     crapkit reads it from the root, never from the lane's cwd.
     """
-    package = _JS_JUNIT_PACKAGE.get(runner)
+    package = row.junit_package
     if package is not None and package not in dev_dependencies:
         return "", "", ()
-    env = tuple((key, value.format(cov=cov_dir))
-                for key, value in _JS_JUNIT_ENV.get(runner, ()))
-    return f" {_JS_JUNIT_FLAGS[runner].format(cov=cov_dir)}", _JS_RESULTS, env
+    env = tuple((key, value.format(cov=cov_dir)) for key, value in row.junit_env)
+    return f" {row.junit_flags.format(cov=cov_dir)}", _JS_RESULTS, env
 
 
 def _npm_test_command(scripts: dict) -> str | None:
@@ -313,10 +289,16 @@ def _js_routed_lane(package: NpmPackage, command: str, runner: str, cwd: str) ->
     """
     up = "../" * (cwd.count("/") + 1) if cwd else ""
     cov_dir = up + _JS_COV_DIR
-    junit, results, env = _js_junit(runner, package.dev_dependencies, cov_dir)
-    routing = f" {_JS_REPORTS_DIR_FLAG[runner]}{cov_dir}"
-    return LaneSpec("js", command + routing + _JS_EXTRA_FLAGS.get(runner, "") + junit,
+    row = TOOLCHAINS[runner]
+    junit, results, env = _js_junit(row, package.dev_dependencies, cov_dir)
+    return LaneSpec("js", command + _js_routing(row, cov_dir) + junit,
                     _JS_ARTIFACT, "istanbul", _JS_LANGUAGES, results, env, cwd)
+
+
+def _js_routing(row: Toolchain, cov_dir: str) -> str:
+    """The runner's coverage report flag pointed at `cov_dir`, then its extra
+    flags: a JS lane's routing, which the istanbul template carries too."""
+    return f" {row.reports_dir_flag}{cov_dir}{row.extra_flags}"
 
 
 def _js_root_lane(package: NpmPackage) -> LaneSpec | None:
@@ -363,7 +345,7 @@ def _js_workspace_lane(packages: Packages) -> LaneSpec | None:
         return None
     directory, runner = named[0]
     package = packages[directory]
-    command = _npm_test_command(package.scripts) or _JS_RUNNER_COMMAND[runner]
+    command = _npm_test_command(package.scripts) or TOOLCHAINS[runner].init_command
     return _js_routed_lane(package, command, runner, directory)
 
 
@@ -549,18 +531,15 @@ def _live_lanes(lanes: tuple[LaneSpec, ...],
 # the scoped-tests entries carry one: what a reader uncomments has to be the
 # command init would have written live. A repo whose lockfile pins `uv run`
 # read a bare `python` here and got the environment bug one uncomment later.
+_VITEST = TOOLCHAINS["vitest"]
 _TEMPLATES = {
     "coveragepy": ("# [[lane]]", '# name = "py"',
-                   '# command = "{python} -m pytest --cov --cov-branch '
-                   f'--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS} '
-                   f'{_PY_COLLECT_FLAG}"',
+                   f'# command = "{_pytest_command("{python}")}"',
                    f'# artifact = "{_PY_ARTIFACT}"',
                    f'# results_artifact = "{_PY_RESULTS}"', '# parser = "coveragepy"'),
     "istanbul": ("# [[lane]]", '# name = "js"',
-                 '# command = "npx vitest run --coverage '
-                 f'{_JS_REPORTS_DIR_FLAG["vitest"]}{_JS_COV_DIR}'
-                 f'{_JS_EXTRA_FLAGS["vitest"]} '
-                 f'{_JS_JUNIT_FLAGS["vitest"].format(cov=_JS_COV_DIR)}"',
+                 f'# command = "{_VITEST.init_command}{_js_routing(_VITEST, _JS_COV_DIR)} '
+                 f'{_VITEST.junit_flags.format(cov=_JS_COV_DIR)}"',
                  f'# artifact = "{_JS_ARTIFACT}"',
                  f'# results_artifact = "{_JS_RESULTS}"', '# parser = "istanbul"'),
 }
@@ -575,8 +554,6 @@ _TEMPLATES = {
 # 5, and a jest workspace was handed a vitest command.
 _PYTEST_FILES = "{python} -m pytest {files} -q -p no:cacheprovider"
 _PYTEST_SUITE = "{python} -m pytest {positional}-q -p no:cacheprovider"
-_JS_RELATED = {"jest": "npx jest --findRelatedTests {files}",
-               "vitest": "npx vitest related --run {files}"}
 _NPM_WORKSPACE = "npm run {script} -w {directory}"
 _SCOPED_TEST_PLACEHOLDER = "<your test command> {files}"
 _DEFAULT_PYTHON = "python"
@@ -710,7 +687,7 @@ def _js_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
                            "run from the root with -w", True)
     runner = _js_runner(facts.packages.get("", NO_PACKAGE).dev_dependencies)
     if runner:
-        return ScopedEntry(_JS_RELATED[runner], f"{runner}'s related-tests mode, keyed by "
+        return ScopedEntry(TOOLCHAINS[runner].related_tests, f"{runner}'s related-tests mode, keyed by "
                            "the runner package.json names", False)
     return ScopedEntry(_SCOPED_TEST_PLACEHOLDER,
                        "package.json names no single runner; replace the placeholder", False)

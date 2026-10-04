@@ -288,10 +288,13 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
     """Fold the outcomes back together in DECLARATION order, whatever order they
     finished in, and persist every stamp in one write: the fresh stamps of the
     lanes that succeeded, and the refusal each failed lane's error carries for
-    the artifact its attempt left unwritten."""
+    the artifact its attempt left unwritten. Each lane's FileEvidence joins
+    evidence_by_path as its own entry under the path: score_rows joins every
+    lane on its own and never unions their hits."""
     from ..lanes import refusal_stamp, write_stamps
 
     coverage_by_path: dict[str, list] = {}
+    evidence_by_path: dict[str, list] = {}
     provenance: dict[str, dict] = {}
     lane_errors: dict[str, str] = {}
     stamps: dict[str, dict] = {}
@@ -303,14 +306,22 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
             print(f"crapkit: lane {lane.name!r} FAILED: {error}", file=sys.stderr)
             stamps.update(refusal_stamp(root, lane, error))
             continue
-        for path, fns in outcome.coverage.items():
-            coverage_by_path.setdefault(path, []).extend(fns)
+        _gather(coverage_by_path, outcome, evidence_by_path)
         provenance[lane.name] = outcome.provenance
         stamps[lane.artifact] = outcome.stamp
         succeeded.append(lane)
     write_stamps(root, stamps)
     _refuse_all_failed(lanes, lane_errors, succeeded)
-    return coverage_by_path, provenance, lane_errors, succeeded
+    return coverage_by_path, provenance, lane_errors, succeeded, evidence_by_path
+
+
+def _gather(coverage_by_path: dict, outcome, evidence_by_path: dict) -> None:
+    """One lane's function records onto each path's list, and its evidence as
+    one more entry on each path's."""
+    for path, fns in outcome.coverage.items():
+        coverage_by_path.setdefault(path, []).extend(fns)
+    for path, evidence in outcome.evidence.items():
+        evidence_by_path.setdefault(path, []).append(evidence)
 
 
 def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | None = None,
@@ -385,7 +396,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
     sources = _content_record(root, rows)
     dead_lines = DeadLineFold()
 
-    coverage_by_path, provenance, lane_errors, succeeded = _run_lanes(
+    coverage_by_path, provenance, lane_errors, succeeded, evidence_by_path = _run_lanes(
         root, lanes, reuse_artifacts, cfg.scope_paths, reuse_unchanged,
         cfg.max_parallel_lanes, git, dead_lines)
 
@@ -396,7 +407,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
     scored = score_rows(rows, coverage_by_path, lane_scopes=lane_scopes, target=cfg.target,
                         scope_targets=cfg.scope_targets,
                         cc_only_scopes=cfg.coverage_optional_scopes,
-                        shared_spans=shared_spans)
+                        shared_spans=shared_spans, evidence_by_path=evidence_by_path)
     _note_shared_spans(shared_spans, cfg)
     return _ScoredRun(commit, scored, provenance, lane_errors, set(failure_ids(provenance)),
                       tool_versions, corpus, cache_hits, dead_lines, sources)

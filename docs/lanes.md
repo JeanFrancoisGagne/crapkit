@@ -45,6 +45,7 @@ ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
 WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
 ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.13.1)
+ok   lane 'py': runs pytest (named in its command)
 ok   lizard 1.24.0
 doctor: no problems found, 1 warning above
 ```
@@ -172,6 +173,7 @@ ok   config keys all recognized
 ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 FAIL lane 'py': cmd.exe cannot run 'python3' (exit 9009) - the lane cannot start, so its scopes can only ever score no-lane
+ok   lane 'py': runs pytest (named in its command)
 ok   lizard 1.24.0
 doctor: 1 problem(s)
 ```
@@ -179,6 +181,56 @@ doctor: 1 problem(s)
 The probe runs from the lane's `cwd` with its `env` merged in, the way the lane itself
 starts, and is memoized on the word and that directory and environment, so a repo declaring
 14 lanes over 2 runners from one directory starts two processes, not fourteen.
+
+## How crapkit reads a lane's runner
+
+No key in crapkit.toml names a lane's runner. crapkit reads it from what the lane runs, and
+`doctor` prints the answer, one line per lane:
+
+```
+ok   lane 'py': runs pytest (named in its command)
+ok   lane 'js': runs vitest (named in package.json script "test")
+ok   lane 'js': runs vitest (package.json devDependencies; the command names no runner)
+note lane 'js': runner unknown (npm run cov names none crapkit knows); runner-specific hints and refusals are off for it
+```
+
+`doctor --json` carries the same answer as each lane's `toolchain`
+([agent-json](agent-json.md#doctor---json)). The runners are pytest, vitest, jest, bun,
+deno, `cargo llvm-cov`, `go test` and c8. Three places are read, in this order:
+
+1. **The command.** Each segment is read the way the shell that runs it reads it (sh, or
+   cmd.exe on Windows), a `bash -c` script included. A runner counts as a bare word
+   (`pytest`), a path's last part (`.venv/bin/pytest`), or either with `.cmd`, `.exe`,
+   `.js`, `.cjs` or `.mjs` (`.venv\Scripts\pytest.exe`, `node_modules\.bin\vitest.cmd`).
+   On Windows letter case does not matter. These wrappers are read through to the command
+   they run: `npx`, `bunx`, `pnpm exec` and `pnpm dlx` (with `--dir D`, `-C D` or
+   `--filter F` in front), `yarn exec` and `yarn dlx`, `uv run`, `poetry run`,
+   `pipenv run`, `pdm run`, `hatch run`, `python -m`, `coverage run -m`, `env` and
+   `cross-env` with their variable assignments. A script file that node, bun or deno runs
+   names a runner when the runner's name is one of the hyphen- or underscore-separated
+   parts of its stem: `node scripts/run-vitest.mjs` runs vitest. A dot does not separate,
+   so `node scripts/run.vitest.mjs` names nothing.
+2. **The package.json script it runs.** `npm test`, `npm run X`, `pnpm test`, `pnpm run X`,
+   `pnpm X` when X is a script, `yarn test`, `yarn X`, `yarn run X` and `bun run X` are
+   followed into that script, which is read by the same rules. A script that runs another
+   script is followed three scripts deep; a fourth, or a script that leads back to one
+   already read, names nothing. The package.json is the one in the lane's `cwd`, else the
+   nearest one above it in the repo, else the root one.
+3. **devDependencies.** When neither names a runner, a package.json whose devDependencies
+   name exactly one runner (vitest, or jest) gives that runner. Nothing in what runs
+   spells it, so it feeds this line alone: no runner-specific check keys on it.
+
+`make`, `just`, `tox` and `nox` run recipes crapkit does not read, so the command stops
+there and only the script and devDependencies steps can answer. A lane that names two
+runners, in two segments or in its command and its script, gets no runner, and its line
+says which two.
+
+"runner unknown" is not a failure, and doctor's exit code does not change. It means the
+hints and refusals that key on one runner skip that lane. Naming the runner in the command
+turns them back on:
+`npx vitest run --coverage` in place of `npm run cov`. A package.json crapkit cannot read
+(not UTF-8, UTF-16, or not one JSON object) is one WARN naming the file, and each lane under
+it is read from its command alone.
 
 ---
 

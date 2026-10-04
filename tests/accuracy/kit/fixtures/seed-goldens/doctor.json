@@ -7,7 +7,11 @@
    "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
    "name": "py",
    "refusal": null,
-   "seconds": "<seconds>"
+   "seconds": "<seconds>",
+   "toolchain": {
+    "name": null,
+    "source": null
+   }
   },
   {
    "artifact": ".crapkit/cov/ts.json",
@@ -15,7 +19,11 @@
    "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
    "name": "ts",
    "refusal": null,
-   "seconds": "<seconds>"
+   "seconds": "<seconds>",
+   "toolchain": {
+    "name": null,
+    "source": null
+   }
   }
  ],
  "newest_run": {

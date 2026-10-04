@@ -1638,6 +1638,7 @@ ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
 ok   lane 'py': python3 -> /home/you/.venvs/ledger/bin/python3 (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.13.1)
+ok   lane 'py': runs pytest (named in its command)
 ok   lizard 1.24.0
 doctor: no problems found
 ```

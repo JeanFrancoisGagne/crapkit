@@ -30,6 +30,7 @@ from typing import NamedTuple
 
 from .invocation import interpreter_word
 from .repopath import declared
+from .toolchain import runner_word
 
 _WINDOWS = os.name == "nt"
 
@@ -649,12 +650,14 @@ def first_word(command: str) -> str:
 
 
 def pytest_step(command: str, cmd: bool | None = None) -> list[str]:
-    """The one command on the line that runs pytest, or nothing when none does.
+    r"""The one command on the line that runs pytest, or nothing when none does.
     A lane chains steps (`coverage run -m pytest --cov=pylib && coverage json`),
     and only the step holding pytest says anything about pytest-cov. A `bash -c`
-    payload is read down to the step inside it that runs pytest."""
+    payload is read down to the step inside it that runs pytest. A token runs
+    pytest when the toolchain table reads it as pytest's spelling, so
+    `.venv\Scripts\pytest.exe` does and `run-mypytest` does not."""
     for step in command_steps(command, cmd).steps:
-        if any(token.endswith("pytest") for token in step.words):
+        if any(runner_word(token, step.cmd) == "pytest" for token in step.words):
             return list(step.words)
     return []
 
