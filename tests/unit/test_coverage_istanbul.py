@@ -100,6 +100,8 @@ def test_branches_attach_to_the_innermost_containing_function():
 # attached to no function; it now sits on the `line` producers write beside
 # loc. A branch with neither was left out, and the function it sat in lost its
 # arms with nothing said; it now refuses the artifact naming the branch id.
+# Each field's refusal, dropped or retyped, is a row of coverage_fields.FIELDS
+# that tests/unit/test_coverage_reader_contract.py runs through read().
 
 def _with(mutate) -> str:
     art = copy.deepcopy(ARTIFACT)
@@ -114,17 +116,6 @@ def _set(entry: dict, key: str, value) -> None:
         entry[key] = value
 
 
-@pytest.mark.parametrize("loc", ["absent", None, {}, {"start": {"line": 1}},
-                                 {"end": {"line": None}}, {"end": {"line": "13"}}],
-                         ids=["loc-absent", "loc-null", "loc-empty", "end-absent",
-                              "end-line-null", "end-line-a-string"])
-def test_a_function_with_no_end_line_refuses_the_artifact_naming_the_entry(loc):
-    text = _with(lambda cov: _set(cov["fnMap"]["0"], "loc", loc))
-
-    with pytest.raises(ToolError, match=r"istanbul artifact .*fnMap\['0'\] has no loc\.end\.line"):
-        parse_istanbul(text, repo_root="C:\\repo")
-
-
 @pytest.mark.parametrize("loc", ["absent", None, {"end": {"line": 2}}],
                          ids=["loc-absent", "loc-null", "start-absent"])
 def test_a_branch_with_no_loc_attaches_by_the_line_beside_it(loc):
@@ -135,25 +126,6 @@ def test_a_branch_with_no_loc_attaches_by_the_line_beside_it(loc):
     per_file = parse_istanbul(_with(mutate), repo_root="C:\\repo")
 
     assert per_file == parse_istanbul(json.dumps(ARTIFACT), repo_root="C:\\repo")
-
-
-@pytest.mark.parametrize("loc", ["absent", None, {}, {"start": None}, {"start": {"line": None}},
-                                 {"start": {"line": "2"}}],
-                         ids=["loc-absent", "loc-null", "loc-empty", "start-null", "start-line-null",
-                              "start-line-a-string"])
-@pytest.mark.parametrize("line", ["absent", None, "2"],
-                         ids=["line-absent", "line-null", "line-a-string"])
-def test_a_branch_with_neither_loc_nor_line_refuses_the_artifact_naming_it(loc, line):
-    def mutate(cov):
-        _set(cov["branchMap"]["1"], "loc", loc)
-        _set(cov["branchMap"]["1"], "line", line)
-
-    with pytest.raises(ToolError) as raised:
-        parse_istanbul(_with(mutate), repo_root="C:\\repo")
-
-    assert str(raised.value).endswith(
-        ": src/app.ts: branchMap['1'] has no loc.start.line and no line (every istanbul "
-        "reporter writes one; regenerate the artifact with the runner's reporter)"), raised.value
 
 
 def test_the_lanes_page_quotes_the_branch_refusal():
