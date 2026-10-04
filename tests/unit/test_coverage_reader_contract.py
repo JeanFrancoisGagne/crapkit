@@ -20,7 +20,7 @@ import pytest
 
 from crapkit import coverage_format
 from crapkit.config import Lane
-from crapkit.coverage_istanbul import FnCoverage
+from crapkit.score import FnCoverage
 from crapkit.errors import ToolError
 
 FORMATS = sorted(coverage_format._FORMATS)
