@@ -512,8 +512,8 @@ TYPE_UNNAMED = {
     ("coveragepy", "files.*.functions.*"): "files.*.functions.*.summary",
     ("coveragepy", "files.*.functions.*.summary"): "files.*.functions.*.summary",
 }
-# Retyped to anything but null or `{}`, these optional fields read as if they
-# were left out, with no refusal.
+# Retyped to anything but null, these optional fields read as if they were left
+# out, with no refusal.
 READ_AS_ABSENT = {
     ("istanbul", locator) for locator in (
         "*.fnMap.*.decl.start.column", "*.fnMap.*.loc.start", "*.fnMap.*.loc.start.line",
@@ -521,6 +521,19 @@ READ_AS_ABSENT = {
         "*.statementMap.*.start.column", "*.branchMap.0.loc.start.column",
         "*.branchMap.0.locations")} | {
     ("coveragepy", locator) for locator in ("meta", "meta.branch_coverage")}
+# null on these optional fields reads as the field left out, with no refusal:
+# its row's `reads`. null on any other optional field must be refused.
+NULL_READS_AS_LEFT_OUT = {
+    ("istanbul", locator) for locator in (
+        "*.fnMap.*.name", "*.fnMap.*.decl.start.column", "*.fnMap.*.loc.start",
+        "*.fnMap.*.loc.start.line", "*.fnMap.*.loc.start.column", "*.fnMap.*.loc.end.column",
+        "*.statementMap.*.start.line", "*.statementMap.*.start.column",
+        "*.branchMap.0.loc.start.column", "*.branchMap.0.locations")} | {
+    ("coveragepy", locator) for locator in ("meta", "meta.branch_coverage")}
+# `{}` on these optional fields reads as the field left out too: an empty start
+# has no line, which leaves its statement out, and an empty name is (anonymous).
+EMPTY_READS_AS_LEFT_OUT = {("istanbul", "*.statementMap.*.start"),
+                           ("istanbul", "*.fnMap.*.name")}
 # A name that is not a string is kept as the function's name (coverage_istanbul._fn_span).
 KEPT_AS_WRITTEN = {("istanbul", "*.fnMap.*.name")}
 # null on these required fields is refused in the words of the field left out,
@@ -532,8 +545,6 @@ NULL_AS_ABSENT = {("coveragepy", locator) for locator in (
 FILE_UNNAMED = {("coveragepy", "files.*.functions"):
                 "coverage.py report has no function regions for any of its 1 file(s)"
                 " - needs coverage>=7.13.1"}
-
-NOT_REFUSED = READ_AS_ABSENT | KEPT_AS_WRITTEN
 
 
 def _row_id(row) -> str:
@@ -569,21 +580,28 @@ def _retypes(row) -> list:
     return [value for value in WRONG[row.type] if keep_empty or value != {}]
 
 
-def _reads_as_left_out(value) -> bool:
-    """null, or an object emptied of its fields: on an optional field, the
-    reading of the field left out is a documented answer."""
-    return value is None or value == {}
+def _left_out(row, value) -> bool:
+    """A retype the lists above hold to the reading of the field left out, the
+    `reads` its row writes."""
+    key = (row.format, row.locator)
+    if value is None:
+        return key in NULL_READS_AS_LEFT_OUT
+    return key in READ_AS_ABSENT or (value == {} and key in EMPTY_READS_AS_LEFT_OUT)
+
+
+def _unrefused(row, value) -> bool:
+    """A retype the lists above hold to a reading with no refusal."""
+    return _left_out(row, value) or (row.format, row.locator) in KEPT_AS_WRITTEN
 
 
 def _refused_case(row, value):
-    gap = (row.format, row.locator) in NOT_REFUSED and not _reads_as_left_out(value)
     return pytest.param(row, value, id=f"{_row_id(row)}={value!r}",
-                        marks=_xfail(gap, "reads with no refusal"))
+                        marks=_xfail(_unrefused(row, value), "reads with no refusal"))
 
 
 def _typed_case(row, value):
     key = (row.format, row.locator)
-    gap = (key in TYPE_UNNAMED or (key in NOT_REFUSED and value is not None)
+    gap = (key in TYPE_UNNAMED or _unrefused(row, value)
            or (key in NULL_AS_ABSENT and value is None))
     return pytest.param(row, value, id=f"{_row_id(row)}={value!r}",
                         marks=_xfail(gap, "not named by the type it found"))
@@ -644,40 +662,35 @@ def test_dropping_a_required_field_names_the_artifact_and_the_file_key(tmp_path,
 
 @pytest.mark.parametrize("row", OPTIONAL)
 def test_dropping_an_optional_field_reads_as_its_row_documents(tmp_path, row):
+    """The field left out, and the field set to the value its row documents,
+    each read as the row's written `reads`, never as another read."""
     dropped = _outcome(tmp_path, row.format, minimal_artifact(row.format, drop=row.locator))
     documented = _outcome(tmp_path, row.format,
                           minimal_artifact(row.format, retype=(row.locator, row.absent.value)))
 
-    assert not isinstance(dropped, str), dropped
-    assert dropped == documented, row.absent.means
+    assert dropped == row.absent.reads, row.absent.means
+    assert documented == row.absent.reads, row.absent.means
 
 
 @pytest.mark.parametrize("row, value", RETYPED)
 def test_a_retyped_field_is_refused_naming_it(tmp_path, row, value):
-    """Every wrong value is refused naming the field. Only null or `{}` on an
-    optional field may instead read as the field left out."""
+    """Every wrong value, null included, is refused naming the field. A case
+    that reads instead is listed above and held to its reading by
+    test_a_listed_shortfall_reads_as_it_does_today."""
     retyped = _outcome(tmp_path, row.format,
                        minimal_artifact(row.format, retype=(row.locator, value)))
 
-    if isinstance(retyped, str):
-        _holds(retyped, [row.named])
-        return
-    assert _reads_as_left_out(value) and not row.required, \
-        f"{row.locator} = {value!r} read as {retyped}"
-    assert retyped == _outcome(tmp_path, row.format,
-                               minimal_artifact(row.format, drop=row.locator)), row.absent.means
+    assert isinstance(retyped, str), f"{row.locator} = {value!r} read as {retyped}"
+    _holds(retyped, [row.named])
 
 
 @pytest.mark.parametrize("row, value", RETYPED_TO_A_KIND)
 def test_a_retyped_fields_refusal_names_what_it_found(tmp_path, row, value):
     """The refusal names the type or the value found after the file, null
-    included. null on an optional field that reads as left out is judged by
-    test_a_retyped_field_is_refused_naming_it."""
+    included."""
     retyped = _outcome(tmp_path, row.format,
                        minimal_artifact(row.format, retype=(row.locator, value)))
 
-    if value is None and not row.required and not isinstance(retyped, str):
-        return
     assert isinstance(retyped, str), f"{row.locator} = {value!r} read as {retyped}"
     _holds(retyped, ["cov.json"])
     said = retyped.split("cov.json", 1)[1]
@@ -685,28 +698,33 @@ def test_a_retyped_fields_refusal_names_what_it_found(tmp_path, row, value):
 
 
 def _listed(row, value) -> bool:
-    """A retype the lists above hold short of a claim."""
+    """A retype the lists above hold short of a claim. `{}` empties an object,
+    so it is held here only where it reads as the field left out."""
     key = (row.format, row.locator)
-    return (key in TYPE_UNNAMED or (key in NOT_REFUSED and not _reads_as_left_out(value))
-            or (key in NULL_AS_ABSENT and value is None))
+    if _left_out(row, value):
+        return True
+    return value != {} and (key in TYPE_UNNAMED or key in KEPT_AS_WRITTEN
+                            or (key in NULL_AS_ABSENT and value is None))
 
 
 LISTED = [pytest.param(row, value, id=f"{_row_id(row)}={value!r}")
-          for row in FIELDS for value in _retypes(row) if value != {} and _listed(row, value)]
+          for row in FIELDS for value in _retypes(row) if _listed(row, value)]
 
 
 def _today(root: Path, row, value):
-    """What read() gives today for a listed retype, built from another artifact:
-    a drop's refusal or reading, the name kept as written, or null's refusal."""
+    """What read() gives today for a listed retype: the field left out's written
+    reading, that reading with the name kept as written, or a refusal built from
+    another artifact (a drop's, or null's)."""
     key = (row.format, row.locator)
+    if _left_out(row, value):
+        return row.absent.reads
+    if key in KEPT_AS_WRITTEN:
+        per_file, dead = row.absent.reads
+        return {path: [fn._replace(name=value) for fn in fns] for path, fns in per_file.items()}, dead
     if key in TYPE_UNNAMED and TYPE_UNNAMED[key] is None:
         return _outcome(root, row.format, minimal_artifact(row.format, retype=(row.locator, None)))
-    dropped = _outcome(root, row.format,
-                       minimal_artifact(row.format, drop=TYPE_UNNAMED.get(key, row.locator)))
-    if key not in KEPT_AS_WRITTEN:
-        return dropped
-    per_file, dead = dropped
-    return {path: [fn._replace(name=value) for fn in fns] for path, fns in per_file.items()}, dead
+    return _outcome(root, row.format,
+                    minimal_artifact(row.format, drop=TYPE_UNNAMED.get(key, row.locator)))
 
 
 @pytest.mark.parametrize("row, value", LISTED)

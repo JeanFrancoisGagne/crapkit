@@ -15,8 +15,9 @@ FIELDS holds one row per field an adapter in coverage_format._FORMATS reads:
 - absent: what the adapter makes of the field when it is not there. For a
   required field, the words the refusal prints besides the field and the file;
   for an optional one, a ReadsAs: the artifact reads the same with the field set
-  to that value. None marks a member of a map or an array, which has no absence
-  of its own: dropping one is another artifact, not a missing field.
+  to that value, and the minimal artifact without the field reads as its
+  `reads`, written out. None marks a member of a map or an array, which has no
+  absence of its own: dropping one is another artifact, not a missing field.
 - named: the words a refusal names the field by.
 
 minimal_artifact(format, drop=None, retype=None) writes the format's smallest
@@ -31,14 +32,21 @@ from __future__ import annotations
 
 import copy
 import json
+from array import array
 from typing import NamedTuple
+
+from crapkit.score import FileEvidence, FnCoverage
 
 
 class ReadsAs(NamedTuple):
-    """An optional field's reading: the artifact reads as if the field held `value`."""
+    """An optional field's reading: the artifact reads as if the field held
+    `value`, and the minimal artifact without the field reads as `reads`, what
+    read() gives per file (function coverage, FileEvidence), written out so no
+    test compares one read with another."""
 
     value: object
     means: str
+    reads: tuple[dict, dict]
 
 
 class Field(NamedTuple):
@@ -77,44 +85,71 @@ _FN = "*.fnMap.*"
 _B0, _B1 = "*.branchMap.0", "*.branchMap.1"
 _PY_FN = "files.*.functions.*"
 
+
+def _reads(format: str, *functions: FnCoverage, dead: tuple[int, ...] = (5,)) -> tuple[dict, dict]:
+    """What read() gives for the format's minimal artifact: these functions and
+    these dead lines in its one file."""
+    key = FILE_KEYS[format]
+    return {key: list(functions)}, {key: FileEvidence(None, array("I", dead))}
+
+
+# The function each minimal artifact (below) holds, as read() gives it. f holds
+# istanbul's statements on lines 2, 3 and 5, and with its body read from the
+# signature, or to the end of its last line, one more that ran.
+_F = FnCoverage("f", 1, 6, True, 4, 2, 3, 2, full_listing=True)
+_F_WIDER = _F._replace(statements_total=4, statements_covered=3)
+_PY_F = FnCoverage("f", 1, 5, True, 2, 1, 3, 2)
+
 FIELDS = [
     Field("istanbul", "*", True, "object", None, "the file entry"),
-    Field("istanbul", "*.fnMap", False, "object", ReadsAs({}, "no function is measured"),
-          "`fnMap`"),
+    Field("istanbul", "*.fnMap", False, "object",
+          ReadsAs({}, "no function is measured", _reads("istanbul")), "`fnMap`"),
     Field("istanbul", _FN, True, "object", None, "fnMap['0']"),
     Field("istanbul", f"{_FN}.name", False, "string",
-          ReadsAs("(anonymous)", "the function is named (anonymous)"), "name"),
+          ReadsAs("(anonymous)", "the function is named (anonymous)",
+                  _reads("istanbul", _F._replace(name="(anonymous)"))), "name"),
     Field("istanbul", f"{_FN}.decl", True, "object", (), "decl.start.line"),
     Field("istanbul", f"{_FN}.decl.start", True, "object", (), "decl.start.line"),
     Field("istanbul", f"{_FN}.decl.start.line", True, "integer", (), "decl.start.line"),
     Field("istanbul", f"{_FN}.decl.start.column", False, "integer",
-          ReadsAs(0, "the signature starts the line"), "column"),
+          ReadsAs(0, "the signature starts the line", _reads("istanbul", _F)), "column"),
     Field("istanbul", f"{_FN}.loc", True, "object", (), "loc.end.line"),
     Field("istanbul", f"{_FN}.loc.start", False, "object",
-          ReadsAs({}, "the body starts at the signature"), "loc.start"),
+          ReadsAs({}, "the body starts at the signature", _reads("istanbul", _F_WIDER)),
+          "loc.start"),
     Field("istanbul", f"{_FN}.loc.start.line", False, "integer",
-          ReadsAs(None, "the body starts at the signature"), "loc.start.line"),
+          ReadsAs(None, "the body starts at the signature", _reads("istanbul", _F_WIDER)),
+          "loc.start.line"),
     Field("istanbul", f"{_FN}.loc.start.column", False, "integer",
-          ReadsAs(0, "the body starts the line"), "column"),
+          ReadsAs(0, "the body starts the line", _reads("istanbul", _F_WIDER)), "column"),
     Field("istanbul", f"{_FN}.loc.end", True, "object", (), "loc.end.line"),
     Field("istanbul", f"{_FN}.loc.end.line", True, "integer", (), "loc.end.line"),
     Field("istanbul", f"{_FN}.loc.end.column", False, "integer",
-          ReadsAs(None, "the function ends with its last line"), "column"),
+          ReadsAs(None, "the function ends with its last line", _reads("istanbul", _F_WIDER)),
+          "column"),
     Field("istanbul", "*.f", True, "object", (), "`f`"),
     Field("istanbul", "*.f.*", True, "count", None, "f['0']"),
     Field("istanbul", "*.statementMap", False, "object",
-          ReadsAs({}, "no statement is measured, so the fnMap may not list every function"),
+          ReadsAs({}, "no statement is measured, so the fnMap may not list every function",
+                  _reads("istanbul", _F._replace(statements_total=0, statements_covered=0,
+                                                 full_listing=False), dead=())),
           "`statementMap`"),
     Field("istanbul", "*.statementMap.*", True, "object", None, "`statementMap['0']`"),
     Field("istanbul", "*.statementMap.*.start", False, "object",
-          ReadsAs({}, "the statement is left out"), "`statementMap['0'].start`"),
+          ReadsAs({}, "the statement is left out",
+                  _reads("istanbul", _F._replace(statements_total=2, statements_covered=1))),
+          "`statementMap['0'].start`"),
     Field("istanbul", "*.statementMap.*.start.line", False, "integer",
-          ReadsAs(None, "the statement is left out"), "`statementMap['0'].start.line`"),
+          ReadsAs(None, "the statement is left out",
+                  _reads("istanbul", _F._replace(statements_total=2, statements_covered=1))),
+          "`statementMap['0'].start.line`"),
     Field("istanbul", "*.statementMap.*.start.column", False, "integer",
-          ReadsAs(0, "the statement starts the line"), "column"),
+          ReadsAs(0, "the statement starts the line", _reads("istanbul", _F)), "column"),
     Field("istanbul", "*.s", True, "object", (), "`s`"),
     Field("istanbul", "*.s.*", True, "count", None, "s['0']"),
-    Field("istanbul", "*.branchMap", False, "object", ReadsAs({}, "no branch is measured"),
+    Field("istanbul", "*.branchMap", False, "object",
+          ReadsAs({}, "no branch is measured",
+                  _reads("istanbul", _F._replace(branches_total=0, branches_covered=0))),
           "`branchMap`"),
     Field("istanbul", _B0, True, "object", None, "branchMap['0']"),
     Field("istanbul", f"{_B0}.loc", True, "object", (), "branchMap['0'] has no loc.start.line"),
@@ -123,10 +158,10 @@ FIELDS = [
     Field("istanbul", f"{_B0}.loc.start.line", True, "integer", (),
           "branchMap['0'] has no loc.start.line"),
     Field("istanbul", f"{_B0}.loc.start.column", False, "integer",
-          ReadsAs(0, "the branch starts the line"), "column"),
+          ReadsAs(0, "the branch starts the line", _reads("istanbul", _F)), "column"),
     Field("istanbul", f"{_B0}.locations", False, "array",
-          ReadsAs(None, "the hit counts are not checked against the branch's paths"),
-          "locations"),
+          ReadsAs(None, "the hit counts are not checked against the branch's paths",
+                  _reads("istanbul", _F)), "locations"),
     # A branch with no loc sits on the `line` producers write beside it.
     Field("istanbul", _B1, True, "object", None, "branchMap['1']"),
     Field("istanbul", f"{_B1}.line", True, "integer", (), "branchMap['1'] has no loc.start.line"),
@@ -135,24 +170,30 @@ FIELDS = [
     Field("istanbul", "*.b.*.*", True, "branch count", None, "b['0'][0]"),
 
     Field("coveragepy", "meta", False, "object",
-          ReadsAs({}, "branches are measured when a function carries branch counts"), "meta"),
+          ReadsAs({}, "branches are measured when a function carries branch counts",
+                  _reads("coveragepy", _PY_F)), "meta"),
     Field("coveragepy", "meta.branch_coverage", False, "boolean",
-          ReadsAs(False, "branches are measured when a function carries branch counts"),
-          "branch_coverage"),
-    Field("coveragepy", "files", False, "object", ReadsAs({}, "no file is measured"), "'files'"),
+          ReadsAs(False, "branches are measured when a function carries branch counts",
+                  _reads("coveragepy", _PY_F)), "branch_coverage"),
+    Field("coveragepy", "files", False, "object",
+          ReadsAs({}, "no file is measured", ({}, {})), "'files'"),
     Field("coveragepy", "files.*", True, "object", None, "the file entry"),
     Field("coveragepy", "files.*.missing_lines", False, "line numbers",
-          ReadsAs([], "no line of the file is dead"), "missing_lines"),
+          ReadsAs([], "no line of the file is dead", _reads("coveragepy", _PY_F, dead=())),
+          "missing_lines"),
     Field("coveragepy", "files.*.functions", True, "object", ("coverage>=7.13.1",), "function"),
     Field("coveragepy", _PY_FN, True, "object", None, "f: no summary object"),
     Field("coveragepy", f"{_PY_FN}.start_line", True, "line number",
           ("no start_line", "coverage>=7.13.1"), "start_line"),
     Field("coveragepy", f"{_PY_FN}.executed_lines", False, "line numbers",
-          ReadsAs([], "the region ends on its last missing or excluded line"), "executed_lines"),
+          ReadsAs([], "the region ends on its last missing or excluded line",
+                  _reads("coveragepy", _PY_F)), "executed_lines"),
     Field("coveragepy", f"{_PY_FN}.missing_lines", False, "line numbers",
-          ReadsAs([], "the region ends on its last executed or excluded line"), "missing_lines"),
+          ReadsAs([], "the region ends on its last executed or excluded line",
+                  _reads("coveragepy", _PY_F._replace(end=3))), "missing_lines"),
     Field("coveragepy", f"{_PY_FN}.excluded_lines", False, "line numbers",
-          ReadsAs([], "the region ends on its last executed or missing line"), "excluded_lines"),
+          ReadsAs([], "the region ends on its last executed or missing line",
+                  _reads("coveragepy", _PY_F)), "excluded_lines"),
     Field("coveragepy", f"{_PY_FN}.summary", True, "object", (), "summary"),
     Field("coveragepy", f"{_PY_FN}.summary.num_statements", True, "count", (), "num_statements"),
     Field("coveragepy", f"{_PY_FN}.summary.covered_lines", True, "count", (), "covered_lines"),
@@ -160,7 +201,8 @@ FIELDS = [
     Field("coveragepy", f"{_PY_FN}.summary.covered_branches", True, "count", (),
           "covered_branches"),
     Field("coveragepy", f"{_PY_FN}.summary.excluded_lines", False, "count",
-          ReadsAs(0, "no line of the function is excluded"), "excluded_lines"),
+          ReadsAs(0, "no line of the function is excluded", _reads("coveragepy", _PY_F)),
+          "excluded_lines"),
 ]
 
 
@@ -169,7 +211,8 @@ FIELDS = [
 def _istanbul() -> dict:
     """One function on lines 1-6: an if on line 2 (loc only) with one arm taken, a
     branch on line 3 (line only) with one arm taken, statements on lines 2, 3 and 5,
-    the last never run."""
+    the last never run. Two more statements ran outside the function: one on line
+    1 between the signature and the body, one on line 6 past the closing brace."""
     return {FILE_KEYS["istanbul"]: {
         "path": FILE_KEYS["istanbul"],
         "fnMap": {"0": {"name": "f", "decl": {"start": {"line": 1, "column": 0}},
@@ -182,8 +225,10 @@ def _istanbul() -> dict:
         "b": {"0": [1, 0], "1": [0, 1]},
         "statementMap": {"0": {"start": {"line": 2, "column": 2}},
                          "1": {"start": {"line": 3, "column": 2}},
-                         "2": {"start": {"line": 5, "column": 2}}},
-        "s": {"0": 1, "1": 1, "2": 0}}}
+                         "2": {"start": {"line": 5, "column": 2}},
+                         "3": {"start": {"line": 1, "column": 4}},
+                         "4": {"start": {"line": 6, "column": 3}}},
+        "s": {"0": 1, "1": 1, "2": 0, "3": 1, "4": 1}}}
 
 
 def _coveragepy() -> dict:
