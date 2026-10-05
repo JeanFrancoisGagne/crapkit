@@ -20,6 +20,7 @@
 <!-- /0.9.0:mission-3 -->
 
 <!-- 0.9.0:metric-stamp -->
+- The analysis version is now one number per language (`analyze.ANALYSIS_VERSIONS`, each starting at 13) and one per coverage reader (`coverage_format.READER_VERSIONS`, each starting at 1), and a change raises only the numbers it moves. The analysis cache keys each file on its language's number, so a change to one language's reader re-reads only that language's files. `ANALYSIS_VERSION` stays 13 and counts the tables' revisions, so the marks-file stamp and every JSON field read as in 0.8.1.
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->

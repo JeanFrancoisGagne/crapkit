@@ -121,8 +121,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit. 090/m1-foundations
 # reached 3,813 once the producer facts read the coverage format adapter
-# (m1-foundations-10), and the third sync met at 3,849.
-SRC_DEFS = 3849
+# (m1-foundations-10), and the third sync met at 3,849. 090/metric-stamp reached
+# 3,850 with analyze.analysis_version_of (metric-stamp-02).
+SRC_DEFS = 3850
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
