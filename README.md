@@ -1080,13 +1080,13 @@ file`` for each scope that scored nothing, and a failed lane's first error line 
 error object it printed instead: `` `crapkit coverage` exited 5: lane 'py' cannot import
 pytest-cov; pip install pytest-cov. ``
 
-The verdict opens with the exit code and the rule it stands for (`complexity gate`,
+The verdict opens with the exit code and the rule it stands for (`unreadable name`, `complexity gate`,
 `ratchet regressions`, `new test failures`, `diff-coverage ceiling N`), then one bullet per
-finding: each gate violation with its function, ccn, coverage, CRAP and remedy; each
+finding: each file a scope takes whose name is not UTF-8, as `` - unreadable name: `src/caf\xe9.py`: `` and the sentence naming its scope and the `git mv` rename to a UTF-8 name (verify stops on it before any lane runs, so the counts line opens `Nothing was measured against baseline 1` and counts `1 unreadable name`); each gate violation with its function, ccn, coverage, CRAP and remedy; each
 changed file no reader could read, as `` - unread: `src/a.ts`, so the gate judged none of
 its functions: `` and the reader's reason; each ratchet regression as recorded -> fresh;
-each new test failure by id; and the first twenty uncovered changed lines, one bullet per
-file, with a count of the rest. Each kind prints fifty bullets at most, then `- and 1450
+each new test failure by id; the first twenty uncovered changed lines, one bullet per
+file, with a count of the rest; and each function an `--override` passed, as `- overridden:` with the fields of its gate bullet, under a failing verdict or after the pass line. Each kind prints fifty bullets at most, then `- and 1450
 more new test failures; `crapkit verify` lists them all`. The counts line closes it,
 naming up to three of the files verify judged and counting the rest:
 ``1 changed file (`app/calc.py`)``. An unread file fails the gate as a function over the ceiling does, so the counts line counts
@@ -1638,6 +1638,7 @@ ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
 ok   lane 'py': python3 -> /home/you/.venvs/ledger/bin/python3 (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.13.1)
+ok   lane 'py': runs pytest (named in its command)
 ok   lizard 1.24.0
 doctor: no problems found
 ```

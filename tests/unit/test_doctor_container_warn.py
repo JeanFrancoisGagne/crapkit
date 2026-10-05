@@ -1,6 +1,6 @@
-"""doctor WARNs on a coverage.py lane that `crapkit coverage` will refuse in a container.
+"""doctor WARNs on a pytest lane that `crapkit coverage` will refuse in a container.
 
-The lane runner refuses a `coveragepy` lane inside a container unless the lane
+The lane runner refuses a lane whose command spells pytest inside a container unless the lane
 says `container_ok = true` (docs/lanes.md#containers), and exits 5. doctor never
 looked, so a devcontainer, a Codespace, a Codex cloud task or a CI job in a
 container passed doctor and then refused its first coverage run. doctor now
@@ -18,8 +18,9 @@ from crapkit.doctor import container_lane_findings, container_marker
 from crapkit.errors import ToolError
 
 
-def lane(name: str, parser: str = "coveragepy", container_ok: bool = False) -> Lane:
-    return Lane(name=name, command="python -m pytest", artifact=f".crapkit/cov/{name}.json",
+def lane(name: str, parser: str = "coveragepy", container_ok: bool = False,
+         command: str = "python -m pytest") -> Lane:
+    return Lane(name=name, command=command, artifact=f".crapkit/cov/{name}.json",
                 parser=parser, scopes=("src",), container_ok=container_ok)
 
 
@@ -39,6 +40,7 @@ def test_the_marker_names_the_trigger_a_user_can_check(environ, dockerenv, marke
 @pytest.mark.parametrize("dockerenv", [False, True])
 @pytest.mark.parametrize("shape", [
     {}, {"container_ok": True}, {"parser": "istanbul"}, {"parser": "istanbul", "container_ok": True},
+    {"command": "make cov"}, {"command": "npm run cov"},
 ])
 def test_doctor_reads_a_container_exactly_where_the_lane_runner_refuses(monkeypatch, variable,
                                                                        dockerenv, shape):
@@ -72,11 +74,14 @@ def test_a_coveragepy_lane_warns_naming_the_lane_the_trigger_and_the_key():
 
 
 def test_only_the_lanes_the_runner_would_refuse_are_named():
+    """The command decides, not the parser: an istanbul lane running pytest is
+    refused, and a coverage.py lane running `make cov` runs."""
     found = container_lane_findings(
-        [lane("py"), lane("ok", container_ok=True), lane("js", parser="istanbul"), lane("b")],
+        [lane("py"), lane("ok", container_ok=True), lane("js", parser="istanbul"), lane("b"),
+         lane("make", command="make cov")],
         "CRAPKIT_INSIDE_CONTAINER=1")
 
-    assert [f.text.split()[1] for f in found] == ["'py'", "'b'"]
+    assert [f.text.split()[1] for f in found] == ["'py'", "'js'", "'b'"]
 
 
 def test_outside_a_container_nothing_is_said():

@@ -7,7 +7,11 @@
    "commit": "901b727247a28c5d34a593db89a0b9065772919e",
    "name": "py",
    "refusal": null,
-   "seconds": "<seconds>"
+   "seconds": "<seconds>",
+   "toolchain": {
+    "name": null,
+    "source": null
+   }
   },
   {
    "artifact": ".crapkit/cov/js.json",
@@ -15,7 +19,11 @@
    "commit": "901b727247a28c5d34a593db89a0b9065772919e",
    "name": "js",
    "refusal": null,
-   "seconds": "<seconds>"
+   "seconds": "<seconds>",
+   "toolchain": {
+    "name": null,
+    "source": null
+   }
   }
  ],
  "newest_run": {

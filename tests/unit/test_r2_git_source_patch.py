@@ -10,8 +10,10 @@ from crapkit.config import load_config_text
 from crapkit.diffparse import changed_ranges
 from crapkit.errors import ConfigError
 from crapkit.gitio import diff_since, staged_reads
+from crapkit.gate import judge
 from crapkit.marks_history import marks_history
 from crapkit.hook import gate_staged
+from crapkit.keys import MarkIndex
 from crapkit.ratchet_report import mark_events
 from crapkit.records import encode_record
 from crapkit.universe import assign_files
@@ -30,6 +32,11 @@ CONFIG = load_config_text(CONFIG_TEXT)
 
 def git(root, *args):
     return subprocess.check_output(["git", *args], cwd=root)
+
+
+def over(verdict) -> list:
+    """Each staged function the gate finds over its ceiling, no mark read."""
+    return list(judge(verdict.changes, CONFIG.ceiling_of, lambda: MarkIndex(())).over_ceiling)
 
 
 def source(changed, encoding):
@@ -75,7 +82,8 @@ def test_binary_marked_source_reaches_staged_gate(source_repo, encoding, prestar
             verdict = gate_staged(source_repo, CONFIG, reads)
     else:
         verdict = gate_staged(source_repo, CONFIG)
-    assert [(v.path, v.long_name, v.ccn) for v in verdict.violations] == [(rel, "café( x )", 8)]
+    assert [(b.path, b.function.long_name, b.function.record.ccn) for b in over(verdict)] == [
+        (rel, "café( x )", 8)]
     assert verdict.unscoped == []
 
 
@@ -91,7 +99,7 @@ def test_binary_marked_source_has_worktree_and_explicit_base_ranges(source_repo)
     assert changed_ranges(diff_since(source_repo, "comparison")) == {rel: [(2, 9)]}
     with staged_reads(source_repo, base="comparison") as reads:
         verdict = gate_staged(source_repo, CONFIG, reads)
-    assert [(v.path, v.ccn) for v in verdict.violations] == [(rel, 8)]
+    assert [(b.path, b.function.record.ccn) for b in over(verdict)] == [(rel, 8)]
 
 
 def test_advisory_uses_same_binary_source_and_display_protocol(source_repo):

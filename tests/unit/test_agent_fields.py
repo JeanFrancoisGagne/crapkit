@@ -188,10 +188,16 @@ def _version_payloads(capsys, monkeypatch, where: Path) -> list[dict]:
 
 def _doctor_payloads(repo: Path, capsys) -> list[dict]:
     """doctor over the seeded artifacts, then with the stamp file unreadable,
-    so each lane's `refusal` prints its null once and its sentence once."""
+    so each lane's `refusal` prints its null once and its sentence once. The
+    first runs with the unit lane spelling pytest, so its `toolchain` prints a
+    name and a source beside the ui lane's nulls."""
     stamps = repo / ".crapkit" / "artifacts.json"
     kept = stamps.read_bytes() if stamps.is_file() else None
+    config = (repo / "crapkit.toml").read_bytes()
+    unit = b'command = "python -c pass"'  # the unit lane's, the first one the file holds
+    (repo / "crapkit.toml").write_bytes(config.replace(unit, b'command = "python -m pytest"', 1))
     clean = run_json(repo, capsys, "doctor", "--json")
+    (repo / "crapkit.toml").write_bytes(config)
     stamps.write_text("not json", encoding="utf-8")
     refused = run_json(repo, capsys, "doctor", "--json")
     stamps.unlink()
@@ -244,6 +250,44 @@ def _verifies(out: dict, repo: Path, capsys) -> None:
     out["verify --json"] = verify
 
 
+def _verify_stop(out: dict, repo: Path, capsys) -> None:
+    """verify --json at the claimed-name stop: a file a scope takes whose name
+    is not UTF-8 in the index and nowhere on disk, which every OS can hold. The
+    payload is a verify payload with run_id null; the name leaves the index after."""
+    import subprocess
+
+    name = UNREADABLE.encode("utf-8", "surrogateescape")
+    blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=repo, input=ARROW.encode(),
+                          capture_output=True, check=True).stdout.strip()
+    subprocess.run(["git", "update-index", "--add", "-z", "--index-info"], cwd=repo,
+                   input=b"100644 " + blob + b"\t" + name + b"\0", capture_output=True, check=True)
+    out["verify --json"].append(_verify(repo, capsys))
+    subprocess.run(["git", "update-index", "--force-remove", "-z", "--stdin"], cwd=repo, input=name + b"\0",
+                   capture_output=True, check=True)
+
+
+def _every_kind_payload(capsys) -> dict:
+    """verify --json's verdict part holding one finding of every kind, past a
+    diff-coverage ceiling, so each kind's findings item and the ceiling's
+    integer print: a run over one repo reaches a few kinds at a time."""
+    from crapkit.cli._shared import _print_json
+    from crapkit.cli.verifying import _verify_result
+    from crapkit.gate import Unread, UnreadableName
+    from crapkit.verify import GateViolation, RatchetRegression, Verdict, settle_verdict, with_diff_coverage
+
+    gate = GateViolation("src/app.ts", "knotty ( n )", 21, 8, 0.25, 34.75, "decompose", True, "knotty ( n )")
+    verdict = settle_verdict(Verdict.passing()._replace(
+        claimed_names=(UnreadableName(UNREADABLE, "src", True),), gate_violations=[gate],
+        unread_files=(Unread("src/b.ts", "src/b.ts:1: arrow refused", True),),
+        ratchet_regressions=[RatchetRegression("src/app.ts", "dispatch ( kind )", 9.0, 12.5)],
+        new_failures=["tests/t.py::test_a"], overridden=(gate._replace(start=40),)))
+    lines = [("src/app.ts", 22)]
+    verdict = with_diff_coverage(verdict, lines, 0, {"src/app.ts"})
+    _print_json(_verify_result(verdict, 7, {"id": 1, "commit": "a" * 40}, "a" * 40, {"src/app.ts": [(21, 30)]},
+                               lines, 0, 0, {"src/app.ts"}))
+    return json.loads(capsys.readouterr().out)
+
+
 def _override(out: dict, repo: Path, capsys) -> None:
     with open(repo / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
         fh.write(KNOTTY.replace("knotty", "knottier"))
@@ -273,6 +317,8 @@ def payloads(repo, capsys, monkeypatch, tmp_path_factory) -> dict[str, list]:
     _print_all(out, repo, capsys, _RANKED.items())
     _gate_and_errors(out, repo, capsys)
     _verifies(out, repo, capsys)
+    _verify_stop(out, repo, capsys)
+    out["verify --json"].append(_every_kind_payload(capsys))
     _override(out, repo, capsys)
     _print(out, repo, capsys, "clean --json", "clean", "--dry-run", "--json")
     _empty_scope(out, repo, capsys)
@@ -359,6 +405,19 @@ def test_each_added_field_is_printed(payloads):
 
 
 @NOT_UTF8_NAMES
+def test_doctors_lane_toolchain_prints_a_runner_and_both_nulls(payloads):
+    """`lanes[].toolchain` is {name, source}: a named runner and where it was
+    read, or two nulls; three declarations, one per field."""
+    printed = [lane["toolchain"] for payload in payloads["doctor --json"]
+               for lane in payload["lanes"]]
+
+    assert {"name": "pytest", "source": "command"} in printed
+    assert {"name": None, "source": None} in printed
+    assert {f.key for f in ADDED if f.key.startswith("lanes[].toolchain")} == {
+        "lanes[].toolchain", "lanes[].toolchain.name", "lanes[].toolchain.source"}
+
+
+@NOT_UTF8_NAMES
 def test_doctors_lane_refusal_is_declared_as_a_sentence_or_null(payloads):
     """0.8.1 gives each doctor --json lane a `refusal`; the declaration left it
     out, so no check caught a type or a null the key does not allow."""
@@ -391,6 +450,32 @@ def test_the_unread_finding_has_one_shape_in_every_payload(payloads):
 
     assert set(shapes.values()) == {"gate.unread_files", "unread_files", "error.unread_files"}
     assert keys == {payload: [["dirty", "path", "reason"]] for payload in shapes}
+
+
+FINDING_KINDS = ("unreadable_name", "gate_violation", "unread_file", "ratchet_regression", "new_failure",
+                 "diff_uncovered", "overridden")
+
+
+@NOT_UTF8_NAMES
+def test_verify_prints_a_findings_item_of_every_kind_against_the_declaration(payloads):
+    """The union item: each kind's item carries the six common fields and its
+    own, each declared; the type checks above hold them to the declared types."""
+    declared = {f.key.removeprefix("findings[].") for f in FIELDS
+                if f.payload == "verify --json" and f.key.startswith("findings[].")}
+    printed = [item for payload in payloads["verify --json"] for item in payload.get("findings", [])]
+
+    assert sorted({item["kind"] for item in printed}) == sorted(FINDING_KINDS)
+    assert sorted({key for item in printed for key in item} - declared) == []
+
+
+@NOT_UTF8_NAMES
+def test_verify_at_the_claimed_name_stop_prints_a_declared_verify_payload(payloads):
+    (stop,) = [payload for payload in payloads["verify --json"] if payload["run_id"] is None]
+    (item,) = stop["findings"]
+
+    assert (item["kind"], item["exit_code"], stop["ok"]) == ("unreadable_name", 3, False)
+    assert _undeclared("verify --json", [stop]) == [] and _mistyped("verify --json", [stop]) == []
+    assert sorted(stop) == sorted(payloads["verify --json"][0])
 
 
 @pytest.mark.parametrize("page", ["AGENTS.md", "docs/agent-json.md"])

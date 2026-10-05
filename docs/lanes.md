@@ -45,6 +45,7 @@ ok   every tracked source file belongs to a scope
 ok   1 lane(s) declared
 WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add --junitxml=.crapkit/cov/junit-py.xml to the command and results_artifact = ".crapkit/cov/junit-py.xml" to the lane
 ok   lane 'py': python -> /home/you/ledger/.venv/bin/python (pytest 8.3.3, pytest-cov 7.1.0, coverage 7.13.1)
+ok   lane 'py': runs pytest (named in its command)
 ok   lizard 1.24.0
 doctor: no problems found, 1 warning above
 ```
@@ -172,6 +173,7 @@ ok   config keys all recognized
 ok   scope 'calc': 1 file
 ok   every tracked source file belongs to a scope
 FAIL lane 'py': cmd.exe cannot run 'python3' (exit 9009) - the lane cannot start, so its scopes can only ever score no-lane
+ok   lane 'py': runs pytest (named in its command)
 ok   lizard 1.24.0
 doctor: 1 problem(s)
 ```
@@ -179,6 +181,59 @@ doctor: 1 problem(s)
 The probe runs from the lane's `cwd` with its `env` merged in, the way the lane itself
 starts, and is memoized on the word and that directory and environment, so a repo declaring
 14 lanes over 2 runners from one directory starts two processes, not fourteen.
+
+## How crapkit reads a lane's runner
+
+No key in crapkit.toml names a lane's runner. crapkit reads it from what the lane runs, and
+`doctor` prints the answer, one line per lane:
+
+```
+ok   lane 'py': runs pytest (named in its command)
+ok   lane 'js': runs vitest (named in package.json script "test")
+ok   lane 'js': runs vitest (package.json devDependencies; the command names no runner)
+note lane 'js': runner unknown (npm run cov names none crapkit knows); runner-specific hints and refusals are off for it
+```
+
+`doctor --json` carries the same answer as each lane's `toolchain`
+([agent-json](agent-json.md#doctor---json)). The runners are pytest, vitest, jest, bun,
+deno, `cargo llvm-cov`, `go test` and c8. Three places are read, in this order:
+
+1. **The command.** Each segment is read the way the shell that runs it reads it (sh, or
+   cmd.exe on Windows), a `bash -c` script included. A runner counts as a bare word
+   (`pytest`), a path's last part (`.venv/bin/pytest`), or either with `.cmd`, `.exe`,
+   `.js`, `.cjs` or `.mjs` (`.venv\Scripts\pytest.exe`, `node_modules\.bin\vitest.cmd`).
+   On Windows letter case does not matter. These wrappers are read through to the command
+   they run: `npx`, `bunx`, `pnpm exec` and `pnpm dlx` (with `--dir D`, `-C D` or
+   `--filter F` in front), `yarn exec` and `yarn dlx`, `uv run`, `poetry run`,
+   `pipenv run`, `pdm run`, `hatch run`, `python -m` (past the interpreter's own options,
+   such as `-X utf8` or `-W error`), `coverage run -m` (past `--source src` and the like),
+   `env` and `cross-env` with their variable assignments. No other wrapper is read
+   through: a runner that `timeout`, `nice`, `xvfb-run`, `pipx run` or `dotenv run` starts
+   counts as not named, so set `timeout_seconds` in place of `timeout`. A script file
+   that node, bun or deno runs names a runner when the runner's name is one of the
+   hyphen- or underscore-separated parts of its stem: `node scripts/run-vitest.mjs` runs vitest. A dot does not separate,
+   so `node scripts/run.vitest.mjs` names nothing.
+2. **The package.json script it runs.** `npm test`, `npm run X`, `pnpm test`, `pnpm run X`,
+   `pnpm X` when X is a script, `yarn test`, `yarn X`, `yarn run X` and `bun run X` are
+   followed into that script, which is read by the same rules. A script that runs another
+   script is followed three scripts deep; a fourth, or a script that leads back to one
+   already read, names nothing. The package.json is the one in the lane's `cwd`, else the
+   nearest one above it in the repo, else the root one.
+3. **devDependencies.** When neither names a runner, a package.json whose devDependencies
+   name exactly one runner (vitest, or jest) gives that runner. Nothing in what runs
+   spells it, so it feeds this line alone: no runner-specific check keys on it.
+
+`make`, `just`, `tox` and `nox` run recipes crapkit does not read, so the command stops
+there and only the script and devDependencies steps can answer. A lane that names two
+runners, in two segments or in its command and its script, gets no runner, and its line
+says which two.
+
+"runner unknown" is not a failure, and doctor's exit code does not change. It means the
+hints and refusals that key on one runner skip that lane. Naming the runner in the command
+turns them back on:
+`npx vitest run --coverage` in place of `npm run cov`. A package.json crapkit cannot read
+(not UTF-8, UTF-16, or not one JSON object) is one WARN naming the file, and each lane under
+it is read from its command alone.
 
 ---
 
@@ -564,7 +619,15 @@ that starts with `test`, the command runs that script. With no such script it wr
 
 Never put a file filter in a `--coverage` command. vitest silently narrows the coverage
 include set to the filtered files, so everything else reads as uncovered. crapkit refuses
-the config rather than letting that happen at runtime:
+the config rather than letting that happen at runtime. It checks each segment of the
+command that names vitest, read by step 1 of
+[How crapkit reads a lane's runner](#how-crapkit-reads-a-lanes-runner), whatever the
+lane's `parser`: `npx vitest run`, `pnpm exec vitest` and, by the script-stem rule,
+`node scripts/run-vitest.mjs run`. Config load reads crapkit.toml and nothing else, so a
+vitest that a package.json script or a recipe runs is not checked:
+`npm run test -- --coverage src/a.test.ts` and `make cov` load. Write
+`npx vitest run --coverage` to keep the check. The scan starts after the word that names
+vitest, past a `run` right behind it:
 
 ```
 crapkit: lane 'js': file filter 'src/grade.ts' combined with --coverage silently narrows the coverage include set; drop the filter or use a dedicated config
@@ -913,7 +976,13 @@ crapkit's own lane uses the module form because of it.
 
 ### The full-suite rule
 
-A lane whose `parser` is `coveragepy` refuses a positional argument in a pytest command:
+A lane refuses a positional argument in each segment of its command that names pytest,
+read by step 1 of [How crapkit reads a lane's runner](#how-crapkit-reads-a-lanes-runner),
+whatever its `parser`: `pytest`, `python -m pytest`, `uv run pytest`, `.venv/bin/pytest`
+and, by the script-stem rule, a script that node, bun or deno runs whose stem names pytest
+(`node scripts/run-pytest.mjs`). The command alone is read: a pytest that `make cov` or a
+package.json script runs is not checked, so write `python -m pytest` in the command to keep
+the check:
 
 ```
 crapkit: lane 'api': positional argument 'api' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately; a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact
@@ -1171,7 +1240,7 @@ pass --repo packages/api`.
 
 ## Containers
 
-A `coveragepy` lane refuses to run inside a container and exits 5:
+A lane whose command names pytest refuses to run inside a container and exits 5:
 
 ```
 crapkit: lane 'py' FAILED: lane 'py' runs the python suite, which is host-only (container runs OOM); set container_ok = true only if this environment truly differs
@@ -1182,7 +1251,7 @@ Two triggers, either one is enough: the file `/.dockerenv` exists, or
 every container it starts, so these all count as containers: a devcontainer, a GitHub
 Codespace, a CI job that runs in a `container:` image or on a Docker executor, and an agent
 that works in a cloud container, such as a Codex cloud task. `crapkit doctor` names each
-coverage.py lane the guard will refuse with a WARN, before the first `crapkit coverage`
+lane the guard will refuse with a WARN, before the first `crapkit coverage`
 does. Podman writes `/run/.containerenv` instead, which the guard does not read; set
 `CRAPKIT_INSIDE_CONTAINER=1` there if the container caps memory. The guard exists because a python
 suite under coverage is memory-hungry and a container memory cap turns that into an OOM kill
@@ -1195,12 +1264,15 @@ so per lane:
 container_ok = true
 ```
 
-`istanbul` lanes are never refused.
+The guard reads the command alone, by the rules in
+[How crapkit reads a lane's runner](#how-crapkit-reads-a-lanes-runner) step 1, whatever
+the lane's `parser`: a lane whose command names no pytest is never refused. `make cov`
+runs, and so does a vitest lane; write `python -m pytest` in the command to keep the guard.
 
 `crapkit doctor` reads the same two triggers, so a devcontainer, a Codespace, a Codex cloud
 task or a CI job in a container hears about the guard before the first `coverage` run
-refuses. It prints one WARN per `coveragepy` lane that has no `container_ok`, naming the
-trigger it found:
+refuses. It prints one WARN per lane whose command names pytest and that has no
+`container_ok`, naming the trigger it found:
 
 ```
 WARN lane 'py' runs a coverage.py suite and this is a container (/.dockerenv exists): `crapkit coverage` refuses it with exit 5; if the container is sized for the suite, set container_ok = true on the lane (docs/lanes.md#containers)

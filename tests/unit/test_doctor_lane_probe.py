@@ -7,6 +7,7 @@ when that interpreter is not the one running doctor, and FAILs a `{files}`
 template on a scope that holds no test file, which is the template that hands
 the runner a source path and collects nothing.
 """
+import json
 import os
 import sys
 from pathlib import Path
@@ -14,7 +15,9 @@ from pathlib import Path
 import coverage
 import pytest
 
-from crapkit.cli import admin
+from cli_inproc_repo import commit_all, repo, template_repo  # noqa: F401
+
+from crapkit.cli import admin, main
 from crapkit.config import Config, Lane, Scope
 from crapkit.lane_command import LaunchSpec
 from crapkit.doctor import files_template_gaps
@@ -175,14 +178,34 @@ def test_a_lane_running_another_python_than_this_doctor_warns(monkeypatch):
     assert sys.executable in findings[1].text, "name both, so the reader knows which is which"
 
 
-def test_only_a_cov_flagged_coveragepy_lane_is_probed(monkeypatch):
+def test_only_a_lane_that_spells_pytest_with_cov_is_probed(monkeypatch):
     def boom(spec, lane):
         raise AssertionError("this lane must not be probed")
 
     monkeypatch.setattr(admin, "_lane_first_run_note", boom)
 
     assert admin._doctor_lane_probes(Path.cwd(), [_lane(command="npx vitest run --coverage", parser="istanbul"),
-                                      _lane(command="python -m pytest")]) == []
+                                      _lane(command="python -m pytest"),
+                                      _lane(command="make cov")]) == []
+
+
+@pytest.mark.parametrize("command", ["uv run pytest --cov", "python -m pytest --cov"])
+def test_a_lane_that_spells_pytest_with_cov_is_probed_whatever_its_parser(command):
+    lanes = [_lane(command=command, parser=parser) for parser in ("coveragepy", "istanbul")]
+
+    assert admin._probed_lanes(tuple(lanes)) == lanes
+
+
+def test_doctor_probes_a_pytest_its_package_json_script_names(monkeypatch):
+    """doctor holds the package map, so a pytest spelled in the script the lane
+    runs counts; the lane names no python, so the note says it was not asked."""
+    monkeypatch.setattr(admin, "_runner_report", lambda word, spec: None)
+    packages = admin.PackageMap({"": npm_package({"scripts": {"cov": "pytest --cov"}})}, {})
+
+    (note,) = admin._doctor_lane_probes(Path.cwd(), [_lane(command="npm run cov")], packages)
+
+    assert note.level == "note"
+    assert note.text.startswith("lane 'py' runs pytest through `npm`"), note.text
 
 
 def test_a_stub_interpreter_with_no_version_to_print_is_no_finding(monkeypatch):
@@ -336,7 +359,7 @@ def test_init_says_when_two_workspaces_name_a_runner_and_no_js_lane_was_written(
 def test_the_summary_is_silent_about_workspaces_once_a_js_lane_was_written(capsys):
     from crapkit.scaffold import LaneSpec
 
-    js = LaneSpec("js", "npm run test -- --coverage", "coverage/coverage-final.json",
+    js = LaneSpec("js", "npx vitest run --coverage", "coverage/coverage-final.json",
                   "istanbul", ("typescript",))
     packages = {"api": npm_package({"devDependencies": {"jest": "1"}}),
                 "web": npm_package({"devDependencies": {"vitest": "1"}})}
@@ -344,3 +367,176 @@ def test_the_summary_is_silent_about_workspaces_once_a_js_lane_was_written(capsy
     admin._print_init_summary({"api": ("typescript",)}, (js,), packages)
 
     assert "workspaces name a runner" not in capsys.readouterr().out
+
+
+def test_a_root_lane_that_runs_no_js_runner_still_gets_the_note(capsys):
+    """The question is whether init wrote a lane that runs a JS runner, not
+    whether it wrote an istanbul lane: a root script that only chains the
+    workspaces runs none of them itself."""
+    from crapkit.scaffold import LaneSpec
+
+    js = LaneSpec("js", "npm run test -- --coverage", "coverage/coverage-final.json",
+                  "istanbul", ("typescript",))
+    packages = {"": npm_package({"scripts": {"test": "pnpm -r test"}}),
+                "api": npm_package({"devDependencies": {"jest": "1"}}),
+                "web": npm_package({"devDependencies": {"vitest": "1"}})}
+
+    admin._print_init_summary({"api": ("typescript",)}, (js,), packages)
+
+    assert "2 workspaces name a runner (api: jest, web: vitest)" in capsys.readouterr().out
+
+
+# --- the runner each lane runs ----------------------------------------------------
+#
+# One line per lane, read by toolchain.infer from the lane's command, the
+# package.json script it runs, or devDependencies. The package map is read once
+# per doctor, and a package.json doctor cannot read is a WARN, never a stop.
+
+def _js(name: str = "js", command: str = "npm run cov", cwd: str = "") -> Lane:
+    return Lane(name=name, command=command, artifact=f"{name}.json", parser="istanbul",
+                scopes=("pkg",), results_artifact=f"{name}-junit.xml", cwd=cwd)
+
+
+def _map(packages: dict, unreadable: dict | None = None) -> admin.PackageMap:
+    return admin.PackageMap(packages, unreadable or {})
+
+
+def _runner_lines(*lanes: Lane, packages: admin.PackageMap = admin.NO_PACKAGES) -> list[tuple]:
+    return [(f.level, f.text) for f in admin._doctor_runners(_cfg(*lanes), packages)]
+
+
+@pytest.mark.parametrize("lane, packages, line", [
+    (_lane(command="python -m pytest --cov"), {},
+     ("ok", "lane 'py': runs pytest (named in its command)")),
+    (_js(command="npm test"), {"": npm_package({"scripts": {"test": "vitest run"}})},
+     ("ok", "lane 'js': runs vitest (named in package.json script \"test\")")),
+    (_js(command="make cov"), {"": npm_package({"devDependencies": {"vitest": "1"}})},
+     ("ok", "lane 'js': runs vitest (package.json devDependencies; the command names no runner)")),
+    (_js(command="npm run cov"), {"": npm_package({"scripts": {"cov": "node cov.js"}})},
+     ("note", "lane 'js': runner unknown (npm run cov names none crapkit knows); "
+              "runner-specific hints and refusals are off for it")),
+    (_js(command="npx vitest run && npx jest"), {},
+     ("note", "lane 'js': runner unknown (it runs more than one: vitest, jest); "
+              "runner-specific hints and refusals are off for it")),
+], ids=["command", "script", "devdependencies", "unknown", "two-runners"])
+def test_doctor_prints_one_runner_line_per_lane(lane, packages, line):
+    assert _runner_lines(lane, packages=_map(packages)) == [line]
+
+
+def test_every_lane_gets_its_line_in_declared_order():
+    lines = _runner_lines(_lane(), _js(command="npx jest"), _js(name="ui", command="make cov"))
+
+    assert [text.split(":")[0] for _, text in lines] == ["lane 'py'", "lane 'js'", "lane 'ui'"]
+
+
+@pytest.mark.parametrize("cwd, expected", [
+    ("web", "web"),          # the lane's own directory
+    ("web/src/deep", "web"),  # the nearest above it
+    ("api", ""),             # the root's when nothing nearer has one
+    ("", ""),
+])
+def test_the_lane_reads_the_package_at_its_cwd_or_the_nearest_above(cwd, expected):
+    web, root = npm_package({"scripts": {"test": "web"}}), npm_package({"scripts": {"test": "root"}})
+    packages = _map({"": root, "web": web})
+
+    nearest, at_root = admin._lane_packages(packages, cwd)
+
+    assert (nearest, at_root) == ({"web": web, "": root}[expected], root)
+
+
+def test_an_unreadable_nearest_package_leaves_the_command_alone():
+    packages = _map({"": npm_package({"scripts": {"test": "jest"}})},
+                    {"web/package.json": "it is not UTF-8"})
+
+    assert admin._lane_packages(packages, "web/src") == (None, None)
+
+
+# The three faults the one reader refuses, as a nested package.json holds them.
+_UNREADABLE = {
+    "not-utf8": b'{"scripts": {"test": "caf\xe9"}}',
+    "utf16": "﻿{}".encode("utf-16-le"),
+    "not-an-object": b'["vitest"]',
+}
+
+
+def _packaged_repo(repo: Path, web: bytes) -> Path:
+    """The in-process repo with a readable root package.json naming vitest in
+    its test script, and `web/package.json` holding `web`."""
+    (repo / "package.json").write_text('{"scripts": {"test": "vitest run"}}', encoding="utf-8")
+    (repo / "web" / "package.json").write_bytes(web)
+    commit_all(repo, "packages")
+    return repo
+
+
+@pytest.mark.parametrize("web", _UNREADABLE.values(), ids=_UNREADABLE)
+def test_a_package_json_doctor_cannot_read_is_one_warn_and_the_lane_reads_its_command(repo, web):
+    root = _packaged_repo(repo, web)
+    packages = admin._doctor_packages(root)
+    lanes = (_js("unit", "npm test"), _js("ui", "npm test", cwd="web"))
+
+    lines = [(f.level, f.text) for f in admin._doctor_runners(_cfg(*lanes), packages)]
+
+    (warn,) = [text for level, text in lines if level == "WARN"]
+    assert warn.startswith("web/package.json: it ") and warn.endswith(
+        "; doctor read the runner of each lane under it from the lane's command alone"), warn
+    assert ("ok", "lane 'unit': runs vitest (named in package.json script \"test\")") in lines
+    assert ("note", "lane 'ui': runner unknown (npm test names none crapkit knows); "
+                    "runner-specific hints and refusals are off for it") in lines
+
+
+def test_inits_reader_still_skips_a_nested_package_json_it_cannot_read(repo, capsys):
+    root = _packaged_repo(repo, _UNREADABLE["not-an-object"])
+
+    packages = admin._package_json(root)
+
+    assert set(packages) == {""}
+    assert capsys.readouterr().err.startswith("crapkit: init skipped web/package.json: it holds")
+
+
+def test_doctor_reads_each_tracked_package_json_once(repo, monkeypatch, capsys):
+    """The text lines and --json both need the map; one read serves both."""
+    from crapkit import repotext
+
+    root = _packaged_repo(repo, b'{"devDependencies": {"jest": "1"}}')
+    real, reads = repotext.repo_json, []
+
+    def counted(path, what):
+        if path.name == "package.json":
+            reads.append(path.relative_to(root).as_posix())
+        return real(path, what)
+
+    monkeypatch.setattr(repotext, "repo_json", counted)
+    for argv in (["doctor"], ["doctor", "--json"]):
+        reads.clear()
+        main([*argv, "--repo", str(root)])
+        assert sorted(reads) == ["package.json", "web/package.json"], argv
+    capsys.readouterr()
+
+
+def test_no_config_key_names_a_toolchain(repo, capsys):
+    """The runner is read, never declared in crapkit.toml. Today's unknown-key text."""
+    text = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    (repo / "crapkit.toml").write_text(text.replace('name = "unit"\n',
+                                                    'name = "unit"\ntoolchain = "vitest"\n'),
+                                       encoding="utf-8")
+
+    main(["doctor", "--repo", str(repo)])
+
+    assert ("FAIL unknown key lane 'unit'.toolchain - crapkit ignores it (typo?); [[lane]] "
+            "accepts these keys: ") in capsys.readouterr().out
+
+
+def test_the_json_lane_carries_the_toolchain_the_line_names(repo, capsys):
+    """The ui lane runs `npm test` in web/, whose script runs jest; the unit
+    lane's `python -c pass` names no runner."""
+    text = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    ui = 'name = "ui"\ncommand = "python -c pass"\n'
+    (repo / "crapkit.toml").write_text(text.replace(ui, 'name = "ui"\ncommand = "npm test"\n'
+                                                        'cwd = "web"\n'), encoding="utf-8")
+    root = _packaged_repo(repo, b'{"scripts": {"test": "jest"}}')
+
+    main(["doctor", "--json", "--repo", str(root)])
+
+    lanes = json.loads(capsys.readouterr().out)["lanes"]
+    assert [lane["toolchain"] for lane in lanes] == [{"name": None, "source": None},
+                                                     {"name": "jest", "source": "script"}]
