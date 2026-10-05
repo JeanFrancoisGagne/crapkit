@@ -55,7 +55,7 @@ def test_source_platform_matrix_has_one_owner_and_keeps_install_and_gate_contrac
         assert_source_install(job)
     action = step(dogfood["steps"], "uses", "./")
     assert action["with"]["python-version"] == "3.12"
-    assert step(dogfood["steps"], "run", 'python -m crapkit hook-precommit --base "$BASE_REF"') is not None
+    assert step(dogfood["steps"], "run", 'python -P -m crapkit hook-precommit --base "$BASE_REF"') is not None
     config = tomllib.loads((ROOT / "crapkit.toml").read_text(encoding="utf-8"))
     assert config["lane"][0]["command"] == "python tools/testing/run.py --coverage --output .crapkit/cov"
     assert step(jobs["verdict"]["steps"], "run", 'python tools/testing/ci.py --base "$BASE_REF" --join') is not None
