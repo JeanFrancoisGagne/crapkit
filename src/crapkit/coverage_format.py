@@ -10,8 +10,14 @@ relative key, and the advice a refusal gives. The lane run, the dark-line fold
 and `explain --tests` look the adapter up here once and ask it, so none of them
 compares parser strings of its own.
 
-Runner and config knowledge stays with its owners: config validation, init,
-doctor, the container guard and the shard hint still read `parser`.
+An adapter also owns its producer's facts, which hold whatever runner starts
+the producer, because `parser` names the producer and not the runner: where its
+data file lands (doctor's shared data-file finding), the shards a killed
+parallel run leaves with the recipe that combines them (the lane's missing
+artifact refusal), and what a run drops in the tree (init's .gitignore). A
+format with no such fact leaves it empty. Runner facts read the toolchain
+table, so no module but this one compares parser strings
+(tests/unit/test_parser_strings_live_in_one_module.py).
 """
 from __future__ import annotations
 
@@ -40,12 +46,23 @@ class CoverageFormat(Protocol):
     and score_rows joins it to the inventory's spans. `read` fills `unplaced`,
     when handed one, with each absolute key it did not place, spelled as the
     report wrote it (`/` between directories), mapped to the placing step's
-    reason."""
+    reason.
+
+    The producer facts: `data_file` is where the lane's data file lands, or
+    None; `SHARD_GLOB` matches the shards a killed parallel run leaves in the
+    lane's directory, and `COMBINE_RECIPE` is the commands that combine them,
+    `{target}` the artifact path from there, both None for a format with no
+    shards; `DROPPINGS` is what a run leaves in the tree for init to ignore."""
 
     WRONG_TREE_FIX: str
     ABSOLUTE_FIX: str
     UNMEASURED_READING: str
     TAKES_PATH_PREFIX: bool
+    SHARD_GLOB: str | None
+    COMBINE_RECIPE: tuple[str, ...] | None
+    DROPPINGS: tuple[str, ...]
+
+    def data_file(self, lane: Lane) -> str | None: ...
 
     def read(self, lane: Lane, root: Path, artifact: Path, *,
              unplaced: dict[str, Unplaced] | None = None

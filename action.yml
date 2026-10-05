@@ -61,9 +61,14 @@ runs:
     # is crapkit itself (`uses: ./`) the lane's `--cov=crapkit` then measures the
     # copy in site-packages: 61 files outside the checkout, and the wrong-tree
     # refusal failed the lane on the first run of this action.
+    #
+    # `python -m pip`, not the `pip` script: a `container:` job mounts the
+    # runner's tool cache at /__t, and the script's `#!` still names the host
+    # path it was written under, so `pip` exits 127 there ("required file not
+    # found"). The python setup-python put on PATH runs pip wherever it sits.
     - name: install crapkit from this action's own checkout
       shell: bash
-      run: pip install -e "$GITHUB_ACTION_PATH"
+      run: python -m pip install -e "$GITHUB_ACTION_PATH"
 
     # The steps below that run crapkit, and the one that posts the comment, keep
     # their own status at 0 and record what they got. The comment is this

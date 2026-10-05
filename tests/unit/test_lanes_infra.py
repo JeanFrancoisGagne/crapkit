@@ -8,10 +8,18 @@ import pytest
 from crapkit.config import Lane, load_config_text
 from crapkit.errors import ConfigError, ToolError
 from crapkit.lanes import run_lane
+from crapkit.repotext import lenient
 
 PY = sys.executable
 
 MINIMAL_ART = json.dumps({"C:/r/src/a.ts": {"fnMap": {}, "f": {}, "branchMap": {}, "b": {}}})
+
+
+def _lane_log(root, name: str) -> str:
+    """The lane log as crapkit reads it. The body is the command's own bytes:
+    on Windows cmd.exe writes its "not recognized" line in the OEM code page,
+    so a strict UTF-8 read raised before the assertion ran."""
+    return lenient((root / ".crapkit" / f"lane-{name}.log").read_bytes())
 
 
 def test_lane_timeout_kills_the_command_and_says_so(tmp_path):
@@ -34,7 +42,7 @@ def test_lane_retries_recover_a_flaky_command(tmp_path):
     outcome = run_lane(tmp_path, lane)
     coverage, prov = outcome.coverage, outcome.provenance
     assert prov["exit_code"] == 0
-    log = (tmp_path / ".crapkit" / "lane-flaky.log").read_text(encoding="utf-8")
+    log = _lane_log(tmp_path, "flaky")
     assert "attempt 2" in log, "the retry must be visible in the lane log"
 
 
@@ -43,7 +51,7 @@ def test_lane_log_streams_the_command_header_even_on_failure(tmp_path):
                 artifact="cov.json", parser="istanbul", scopes=())
     with pytest.raises(ToolError, match="no artifact"):
         run_lane(tmp_path, lane)
-    log = (tmp_path / ".crapkit" / "lane-dead.log").read_text(encoding="utf-8")
+    log = _lane_log(tmp_path, "dead")
     assert log.startswith("$ "), "the log opens with the command that ran"
 
 
@@ -118,6 +126,35 @@ def test_a_lane_with_no_shards_gets_no_salvage_hint(tmp_path):
         run_lane(tmp_path, lane)
 
     assert "coverage shard" not in str(exc.value)
+
+
+def test_an_init_written_pytest_lane_is_refused_in_a_container(tmp_path, monkeypatch):
+    """The lane init writes runs `python -m pytest --cov`, which spells pytest,
+    so inside a container it is refused before it starts, as it always was."""
+    from crapkit.scaffold import detect_lanes
+
+    monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "1")
+    (spec,) = detect_lanes(frozenset({"pyproject.toml"}), None, interpreter="python")
+    lane = Lane(name=spec.name, command=spec.command, artifact=spec.artifact, parser=spec.parser,
+                scopes=())
+
+    with pytest.raises(ToolError, match="runs the python suite, which is host-only"):
+        run_lane(tmp_path, lane)
+    assert not (tmp_path / ".crapkit" / "lane-py.log").exists(), "refused before it started"
+
+
+def test_a_coveragepy_lane_running_make_cov_starts_in_a_container(tmp_path, monkeypatch):
+    """`make cov` names no pytest, so the container guard has nothing to read:
+    the lane starts, and fails here only because no Makefile writes the file."""
+    monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "1")
+    lane = Lane(name="py", command="make cov", artifact="cov.json", parser="coveragepy", scopes=())
+
+    with pytest.raises(ToolError) as exc:
+        run_lane(tmp_path, lane)
+
+    assert "host-only" not in str(exc.value)
+    log = _lane_log(tmp_path, "py")
+    assert log.startswith("$ make cov"), log
 
 
 def test_config_parses_timeout_and_retries():

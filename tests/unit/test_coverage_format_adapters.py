@@ -7,6 +7,7 @@ refusal gives. The lane layer, the dark-line fold and `explain --tests` ask the
 adapter; none of them compares parser strings of its own.
 """
 import json
+import os
 from array import array
 from types import SimpleNamespace
 
@@ -260,3 +261,83 @@ def test_explain_asks_every_lane_for_contexts_and_istanbul_answers_none(tmp_path
 
     assert asked == ["py"]
     assert by_line == {2: {"t.py::test_a"}}
+
+
+# Producer facts: what coverage.py itself writes and leaves, whichever runner
+# starts it. `parser` names the producer, so a wrapped command keeps them.
+def _producing(parser: str, command: str = "python -m pytest --cov", *, name: str = "l",
+               env: tuple = (), cwd: str = "") -> Lane:
+    return Lane(name=name, command=command, artifact="cov.json", parser=parser, scopes=("src",),
+                cwd=cwd, env=env)
+
+
+# (command, env, cwd, where the data file lands as path parts)
+DATA_FILES = [
+    ("coverage run --data-file=out/.cov -m pytest", (), "", ("out", ".cov")),
+    ("coverage run --data-file out/.cov -m pytest", (("COVERAGE_FILE", ".env"),), "",
+     ("out", ".cov")),
+    ("python -m pytest --cov", (("COVERAGE_FILE", ".coverage.unit"),), "", (".coverage.unit",)),
+    ("python -m pytest --cov", (), "", (".coverage",)),
+    ("make cov", (), "pkg", ("pkg", ".coverage")),
+    ("python -m pytest --cov", (("COVERAGE_FILE", "../.coverage.web"),), "web",
+     (".coverage.web",)),
+]
+
+
+@pytest.mark.parametrize("command, env, cwd, lands", DATA_FILES)
+def test_coveragepy_names_where_its_data_file_lands(command, env, cwd, lands):
+    lane = _producing("coveragepy", command, env=env, cwd=cwd)
+
+    assert coverage_py.data_file(lane) == os.path.normcase(os.path.join(*lands))
+
+
+def test_coveragepy_names_its_shards_their_combine_and_what_it_drops():
+    assert coverage_py.SHARD_GLOB == ".coverage.*"
+    assert coverage_py.COMBINE_RECIPE == ("coverage combine", "coverage json -o {target}")
+    assert coverage_py.DROPPINGS == (".coverage", "__pycache__/")
+
+
+def test_istanbul_has_no_producer_facts():
+    lane = _producing("istanbul", "npx vitest run --coverage")
+
+    assert coverage_istanbul.data_file(lane) is None
+    assert coverage_istanbul.SHARD_GLOB is None
+    assert coverage_istanbul.COMBINE_RECIPE is None
+    assert coverage_istanbul.DROPPINGS == ()
+
+
+@pytest.mark.parametrize("command", ["python -m pytest --cov --cov-report=json", "make cov"])
+def test_two_coveragepy_lanes_on_one_data_file_collide_whatever_they_run(command):
+    from crapkit.doctor import shared_coverage_data
+
+    pair = [_producing("coveragepy", command, name="a"), _producing("coveragepy", command, name="b")]
+
+    assert shared_coverage_data(pair) == (("a", "b"),)
+
+
+def test_an_istanbul_lane_never_shares_a_coverage_data_file():
+    from crapkit.doctor import shared_coverage_data
+
+    pytest_cmd = "python -m pytest --cov"
+    assert shared_coverage_data([_producing("istanbul", pytest_cmd, name="a"),
+                                 _producing("istanbul", pytest_cmd, name="b")]) == ()
+    assert shared_coverage_data([_producing("coveragepy", pytest_cmd, name="a"),
+                                 _producing("istanbul", pytest_cmd, name="b")]) == ()
+
+
+@pytest.mark.parametrize("command", ["python -m pytest --cov", "make cov"])
+def test_a_coveragepy_lane_that_left_shards_gets_the_recipe_whatever_it_runs(tmp_path, command):
+    (tmp_path / ".coverage.box.pid5.aaaa").write_text("x", encoding="utf-8")
+
+    hint = lanes._shard_hint(tmp_path, _producing("coveragepy", command))
+
+    assert hint == (f"; 1 coverage shard (.coverage.box.pid5.aaaa, ...) sits in {tmp_path}, "
+                    "which is what a killed parallel run leaves behind: `coverage combine` "
+                    "followed by `coverage json -o cov.json` there, then a re-run with "
+                    "--reuse-artifacts, scores what that suite did measure")
+
+
+def test_an_istanbul_lane_beside_coverage_shards_gets_no_recipe(tmp_path):
+    (tmp_path / ".coverage.box.pid5.aaaa").write_text("x", encoding="utf-8")
+
+    assert lanes._shard_hint(tmp_path, _producing("istanbul", "python -m pytest --cov")) == ""

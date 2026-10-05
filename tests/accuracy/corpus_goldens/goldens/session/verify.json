@@ -9,6 +9,10 @@
  ],
  "commit": "fd39664600a49bbb2c85fee100ae7eb2dd1e190d",
  "committed_findings": 0,
+ "counts": {
+  "diff_uncovered_count": 13,
+  "diff_uncovered_max": null
+ },
  "diff_uncovered": [
   {
    "line": 4,
@@ -67,6 +71,170 @@
  "diff_uncovered_max": null,
  "dirty_failures": [],
  "dirty_findings": 2,
+ "findings": [
+  {
+   "ccn": 9,
+   "cov": 0.0,
+   "crap": 90.0,
+   "dirty": true,
+   "exit_code": 6,
+   "fails": true,
+   "key_name": "route( a , b , c , d )",
+   "kind": "gate_violation",
+   "long_name": "route( a , b , c , d )",
+   "overridable": true,
+   "path": "src/py/fresh.py",
+   "remedy": "decompose",
+   "rule": "complexity gate",
+   "start": 4
+  },
+  {
+   "ccn": 7,
+   "cov": 0.5,
+   "crap": 13.125,
+   "dirty": true,
+   "exit_code": 6,
+   "fails": true,
+   "key_name": "letter( score )",
+   "kind": "gate_violation",
+   "long_name": "letter( score )",
+   "overridable": true,
+   "path": "src/py/grades.py",
+   "remedy": "decompose",
+   "rule": "complexity gate",
+   "start": 8
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 4,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 5,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 6,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 7,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 8,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 9,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 10,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 11,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 12,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 13,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 14,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 15,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  },
+  {
+   "dirty": true,
+   "exit_code": null,
+   "fails": false,
+   "kind": "diff_uncovered",
+   "line": 16,
+   "overridable": false,
+   "path": "src/py/fresh.py",
+   "rule": "diff-coverage ceiling"
+  }
+ ],
  "forgiven_failures": [],
  "gate_violations": [
   {
