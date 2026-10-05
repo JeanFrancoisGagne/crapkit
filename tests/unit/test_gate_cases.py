@@ -25,6 +25,7 @@ from typing import NamedTuple
 import pytest
 
 from crapkit import gate
+from crapkit.errors import ToolError
 from crapkit.keys import MarkIndex, key_names, key_of
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import CRAP_PLACES, ScoredRow, crap, over_ceiling
@@ -218,12 +219,26 @@ def test_twin_keys_come_from_the_whole_files_functions_not_the_breaching_subset(
     assert result.marked_rise[0].mark == 25.0
 
 
-def test_scope_copies_of_one_function_share_its_key():
-    copies = [fn(start=5, end=9, low=10.0, scope=scope, occurrence=1) for scope in ("src", "lib")]
+@pytest.mark.parametrize("occurrence", [0, 1], ids=["legacy", "positioned"])
+def test_scope_copies_of_one_function_share_its_key(occurrence):
+    """Two scopes taking one path score each function twice. At occurrence 0, a
+    run older than within-line positions, the copies are still one function, not
+    same-line twins: keys counts each scope's copy once."""
+    copies = [fn(start=5, end=9, low=10.0, scope=scope, occurrence=occurrence) for scope in ("src", "lib")]
 
     result, _ = judged(changed(PATH, *copies))
 
     assert names(result.over_ceiling) == [NAME, NAME]
+
+
+def test_legacy_same_line_twins_are_refused_by_their_file_and_name():
+    """Two functions of one name on one line with no recorded position cannot be
+    told apart, so no mark can be read for either: the gate refuses the file's
+    pair as keys.require_unambiguous words it."""
+    twins = [fn(start=5, end=9, low=10.0), fn(start=5, end=7, low=10.0)]
+
+    with pytest.raises(ToolError, match=r"^ambiguous legacy function identity in src/a\.py: f\( x \); "):
+        judged(changed(PATH, *twins))
 
 
 def test_a_finding_hands_back_the_callers_own_record():
