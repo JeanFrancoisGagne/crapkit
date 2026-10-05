@@ -65,24 +65,27 @@ def test_empty_artifact_is_a_loud_error_not_a_silent_all_untested():
         parse_istanbul("{}", repo_root="C:\repo")
 
 
+# handler on lines 10-40 holds the callback cb on 20-24; the branch on line 12
+# is the handler's, the one on line 22 the callback's.
+NESTED_CALLBACK = {"C:/repo/src/a.ts": {
+    "fnMap": {
+        "0": {"name": "handler", "decl": {"start": {"line": 10}}, "loc": {"end": {"line": 40}}},
+        "1": {"name": "cb", "decl": {"start": {"line": 20}}, "loc": {"end": {"line": 24}}},
+    },
+    "f": {"0": 1, "1": 1},
+    "branchMap": {
+        "b0": {"loc": {"start": {"line": 12}}},
+        "b1": {"loc": {"start": {"line": 22}}},
+    },
+    "b": {"b0": [1, 0], "b1": [0, 0]},
+}}
+
+
 def test_branches_attach_to_the_innermost_containing_function():
     # A callback nested inside a handler owns the branches in ITS span; the
     # invocation fallback must never report a nested function as fully
     # covered while its own branch arms sit untaken.
-    import json
-    art = {"C:/repo/src/a.ts": {
-        "fnMap": {
-            "0": {"name": "handler", "decl": {"start": {"line": 10}}, "loc": {"end": {"line": 40}}},
-            "1": {"name": "cb", "decl": {"start": {"line": 20}}, "loc": {"end": {"line": 24}}},
-        },
-        "f": {"0": 1, "1": 1},
-        "branchMap": {
-            "b0": {"loc": {"start": {"line": 12}}},
-            "b1": {"loc": {"start": {"line": 22}}},
-        },
-        "b": {"b0": [1, 0], "b1": [0, 0]},
-    }}
-    per_file = parse_istanbul(json.dumps(art), repo_root="C:/repo")
+    per_file = parse_istanbul(json.dumps(NESTED_CALLBACK), repo_root="C:/repo")
     by_name = {f.name: f for f in per_file["src/a.ts"]}
     assert by_name["cb"].branches_total == 2 and by_name["cb"].coverage == 0.0, \
         "nested cb owns line-22 branches; invoked-fallback 1.0 hides its untaken arms"
@@ -215,11 +218,12 @@ def test_every_counter_present_reads_as_before():
     assert (hot.statements_total, hot.statements_covered) == (3, 2)
 
 
+MAPS_NOTHING = {KEY: {"path": KEY, "fnMap": {}, "statementMap": {}, "branchMap": {}}}
+
+
 def test_a_file_that_maps_nothing_needs_no_counters():
     """An empty map pairs with an absent counter group: nothing is missing."""
-    bare = {KEY: {"path": KEY, "fnMap": {}, "statementMap": {}, "branchMap": {}}}
-
-    assert parse_istanbul(json.dumps(bare), repo_root="C:\\repo") == {"src/hot.ts": []}
+    assert parse_istanbul(json.dumps(MAPS_NOTHING), repo_root="C:\\repo") == {"src/hot.ts": []}
 
 
 def test_the_lanes_page_quotes_the_refusal_a_dropped_counter_draws():
