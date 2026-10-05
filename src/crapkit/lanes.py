@@ -294,32 +294,40 @@ def _shard_hint(root: Path, lane: Lane) -> str:
     crashed-worker check exists to refuse; whether this half-run is worth
     scoring is the operator's call, and `--reuse-artifacts` is where they say so.
 
-    `coverage combine` is coverage.py's command, so only a coveragepy lane gets
-    the recipe: a JS lane sharing the root with a python one finds the python
-    lane's shards and would be handed advice that cannot work for it.
+    The shards and the commands that combine them are the producer's facts, so
+    only a lane whose format names them gets the recipe (coverage_format's
+    `SHARD_GLOB` and `COMBINE_RECIPE`), whatever runner its command spells: a JS
+    lane sharing the root with a python one finds the python lane's shards and
+    would be handed advice that cannot work for it.
 
     The `-o` target is printed relative to the shard directory, because that is
     where the operator is told to stand. `artifact` is repo-relative, so a lane
     with a `cwd` that pasted the key verbatim wrote the JSON one directory below
     the path crapkit reads, and the next run refused it again. The target goes
-    in as one word of the operator's shell, and the recipe is two commands, not
-    a chain: Windows PowerShell 5.1 has no `&&`.
+    in as one word of the operator's shell, and the recipe is commands one after
+    another, not a chain: Windows PowerShell 5.1 has no `&&`.
     """
-    if lane.parser != "coveragepy":
+    producer = lane_format(lane)
+    if producer.SHARD_GLOB is None:
         return ""
     shard_dir = launch_spec(root, lane).cwd
-    shards = sorted(shard_dir.glob(".coverage.*"))
+    shards = sorted(shard_dir.glob(producer.SHARD_GLOB))
     if not shards:
         return ""
     unreadable = _unreadable_shard_name(shard_dir, shards[0])
     if unreadable:
         return unreadable
-    target = Path(os.path.relpath(root / lane.artifact, shard_dir)).as_posix()
+    target = shell_arg(Path(os.path.relpath(root / lane.artifact, shard_dir)).as_posix())
     noun, verb = ("shard", "sits") if len(shards) == 1 else ("shards", "sit")
     return (f"; {len(shards)} coverage {noun} ({shards[0].name}, ...) {verb} in "
             f"{shard_dir}, which is what a killed parallel run leaves behind: "
-            f"`coverage combine` followed by `coverage json -o {shell_arg(target)}` "
+            f"{_recipe(producer.COMBINE_RECIPE, target)} "
             "there, then a re-run with --reuse-artifacts, scores what that suite did measure")
+
+
+def _recipe(commands: tuple[str, ...], target: str) -> str:
+    """The combine commands as one phrase, each in backticks, `{target}` filled."""
+    return " followed by ".join(f"`{command.format(target=target)}`" for command in commands)
 
 
 def _unreadable_shard_name(shard_dir: Path, shard: Path) -> str:
