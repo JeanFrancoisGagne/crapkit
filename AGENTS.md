@@ -12,7 +12,7 @@ Two audiences, two sections. Read the one that matches the repo you are in:
   itself.
 
 Every command below runs as `crapkit <sub>` (console script) or
-`python -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
+`python -P -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
 nearest `crapkit.toml` at or above the working directory
 (docs/adr/0002-configuration-is-found-upward-nearest-wins.md), except `claude-hook`, which
 reads its root from the hook payload on stdin. A leading `~` in PATH is your home directory
@@ -713,7 +713,7 @@ run. The store fills missing per-run rollups when `trend` or `report` asks for t
     pip install -e ".[dev,accuracy-push]"
     npm ci --prefix tools/accuracy/node/push
     git config core.hooksPath git-hooks
-    git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+    git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"
 
 The driver line makes git merge `crapkit-ratchet.tsv` through `crapkit ratchet merge`,
 so a land or a worktree merge combines the marks instead of leaving a conflict for a
@@ -974,11 +974,18 @@ else, usually later, usually as a plausible wrong number.
   gate refuses the rest; the section below says what a refusal means.
 - **Register a new command once, in the parser.** Import helpers directly from their
   owning family module. Keep `crapkit.cli.main` as the public process entry point.
-- **Change what a metric measures and bump `ANALYSIS_VERSION` in `analyze.py`.** The
+- **Change what a metric measures and raise the number of each language or coverage
+  reader the change moves, and `ANALYSIS_VERSION` by one, in the same change.** The
+  numbers live in `ANALYSIS_VERSIONS` in `analyze.py`, one per language, and
+  `READER_VERSIONS` in `coverage_format.py`, one per coverage reader; `ANALYSIS_VERSION`
+  is their revision. A new language enters at 13 (`FIRST_ANALYSIS_VERSION`) and a new
+  reader at 1 (`FIRST_READER_VERSION`), and neither raises a number. The analysis cache
+  keys each file on its language's number, so a Go fix re-reads the Go files alone. The
   ratchet stamps every marks file with the version that produced it, and `verify` refuses
   to weigh fresh scores against marks another version signed. 0.4.5 bumped it to 8,
-  because shell blocks now nest. Without the bump nothing refuses, and 40k marks are
-  quietly compared against numbers they never described. Then re-measure `GOLDEN_RECORDS`
+  because shell blocks now nest. Without the raise nothing refuses, and 40k marks are
+  quietly compared against numbers they never described. Update the pinned literal in
+  `tests/unit/test_analysis_versions.py`, then re-measure `GOLDEN_RECORDS`
   in `tests/unit/test_analysis_cache_identity.py` on every Python the CI runs and set
   `GOLDEN_ANALYSIS_VERSION` to the new version; a test fails until you do. Declare the
   change too: `python tools/accuracy/change_control.py declare` appends the
@@ -1009,7 +1016,7 @@ that fails on the parent commit. A bug fix lands with the test that reproduces i
 
 Every function you add or edit must sit at or under its scope's `target` in this repo's
 own `crapkit.toml`: 6 for `src` and `tools`, 5 for `tools/accuracy`. The pre-commit hook
-runs `python -m crapkit hook-precommit` over the staged blobs:
+runs `python -P -m crapkit hook-precommit` over the staged blobs:
 
     crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
       ccn   7  calc/report.py:39  tally( rows , low , high , invert , label , pad , strict )
@@ -1065,7 +1072,7 @@ fails, not a reader.
 
 `crapkit.toml` and `crapkit-ratchet.tsv` at the repo root are live.
 
-    python -m crapkit coverage
-    python -m crapkit verify
+    python -P -m crapkit coverage
+    python -P -m crapkit verify
 
 must stay green on your branch.

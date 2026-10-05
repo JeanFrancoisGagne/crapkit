@@ -389,7 +389,7 @@ def test_a_failure_no_run_recorded_counts_as_new_and_says_why(repo, capsys, form
 
     payload = json.loads(out)
     assert code == 8, out + err
-    assert payload["new_failures"] == ["t::c0"]
+    assert [f["test"] for f in payload["findings"] if f["kind"] == "new_failure"] == ["t::c0"]
     assert payload["lanes_without_baseline_results"] == ["unit"]
     assert ("warning: lane 'unit': no trusted run at or behind the baseline recorded which of "
             "its tests failed, so its 1 new failure may predate this change; a baseline "
@@ -493,7 +493,7 @@ def test_a_failure_a_076_verify_retried_into_a_pass_is_new_when_it_fails_its_ret
     payload = json.loads(out)
     assert payload["baseline_run"] == verify_run
     assert code == 8, out + err
-    assert payload["new_failures"] == ["t::c0"]
+    assert [f["test"] for f in payload["findings"] if f["kind"] == "new_failure"] == ["t::c0"]
     assert (f"warning: lane 'unit': baseline run {verify_run} was written by crapkit 0.7.6, "
             "which kept a failure that passed its flake retry in its failure list, so its "
             "failures are compared with run 1's") in err, err
@@ -616,7 +616,7 @@ def test_a_readable_failing_junit_fails_the_verdict(counted, capsys):
 
     payload = json.loads(out)
     assert code == 8, out + err
-    assert payload["new_failures"] == ["t::c1"]
+    assert [f["test"] for f in payload["findings"] if f["kind"] == "new_failure"] == ["t::c1"]
     assert payload["lanes_without_results"] == ["ui"]
 
 

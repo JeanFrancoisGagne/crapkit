@@ -33,7 +33,7 @@ def venv(root: Path, *, uv: bool) -> Path:
 
 @pytest.mark.parametrize("uv, line", [
     (True, "uv pip install --python .venv/bin/python pytest-cov"),
-    (False, ".venv/bin/python -m pip install pytest-cov"),
+    (False, ".venv/bin/python -P -m pip install pytest-cov"),
 ], ids=["uv-made", "venv-made"])
 def test_the_install_line_is_the_one_that_venv_can_run(tmp_path, uv, line):
     python = venv(tmp_path, uv=uv)
@@ -42,7 +42,8 @@ def test_the_install_line_is_the_one_that_venv_can_run(tmp_path, uv, line):
 
 
 def test_a_python_with_no_venv_around_it_gets_pip(tmp_path):
-    assert pip_install(str(tmp_path / "python3"), "pytest-cov") == f"{tmp_path / 'python3'} -m pip install pytest-cov"
+    python = tmp_path / "python3"
+    assert pip_install(str(python), "pytest-cov") == f"{python} -P -m pip install pytest-cov"
 
 
 def test_the_missing_pytest_cov_note_names_uv_pip_in_a_venv_uv_made(tmp_path):

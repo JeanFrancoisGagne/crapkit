@@ -556,7 +556,7 @@ jobs:
         shell: bash
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: python -m crapkit hook-precommit --base "$BASE_REF"
+        run: python -P -m crapkit hook-precommit --base "$BASE_REF"
       - name: retain the action's test evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -58,6 +58,51 @@ A wrapper that read verify's exit 3 as "no verdict" now gets a verify payload on
 `reason`, and `run_id` null, since no lane ran. The exit code and the stderr line are
 unchanged, and the fix is still `git mv` to a UTF-8 name
 ([verify](agent-json.md#a-scoped-file-whose-name-is-not-utf-8)).
+
+Add `-P` by hand to a git hook that ends in `exec python -m crapkit hook-precommit`, in
+`.git/hooks/pre-commit` or a committed hooks directory, and to the merge driver set with
+`git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"`:
+upgrading the package rewrites neither. Git runs both from the repository root, and
+`python -m` puts that directory first on `sys.path`, so a `crapkit.py` placed there runs in
+place of crapkit. The lines README now prints are
+`exec python -P -m crapkit hook-precommit` for the hook ([the gate](../README.md#the-gate))
+and `git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"`
+for the driver ([Development](../README.md#development)); run the driver's line again in
+each clone. A `python` older than 3.11 has no `-P`, so a hook that reaches its `python`
+line stops there with `Unknown option: -P` and exit 2.
+
+The pip lines crapkit prints, the pytest-cov, coverage.py and lizard installs and
+`doctor`'s upgrade and reinstall of the CLI, now read `<python> -P -m pip install`, so a
+`pip.py` at the repository root no longer runs in place of pip when you paste one there. A
+wrapper that matches `python -m pip install` in crapkit's output finds
+`python -P -m pip install` there. The Action installs crapkit with
+`python -P -m pip install -e`, since it runs pip in your checkout. An Action
+`python-version` older than 3.11 still fails at the install step, as it did on 0.8.1,
+where pip said `requires a different Python` and exited 1. The step now prints
+`crapkit needs Python 3.11 or newer, and python-version installed Python 3.10.21: set python-version to 3.11 or newer`
+for a 3.10.21, then Python's `Unknown option: -P`, and exits 2.
+
+### verify --json drops the 0.8.1 per-kind keys
+
+`verify --json` no longer prints the eight keys 0.8.1 listed its findings and their
+counts under. Every value they held is in `findings`, one item per finding, or in
+`counts` ([The findings list](agent-json.md#the-findings-list)). A wrapper reads each
+old key's value from the place on its row:
+
+| 0.8.1 key | Where its value is in 0.9.0 |
+|---|---|
+| `gate_violations` | `findings` items of kind `gate_violation` |
+| `ratchet_regressions` | `findings` items of kind `ratchet_regression` |
+| `overridden` | `findings` items of kind `overridden`, with `fails` false and `exit_code` null |
+| `new_failures` | `findings` items of kind `new_failure`, each test id in field `test` |
+| `diff_uncovered` | `findings` items of kind `diff_uncovered`, at most 50 |
+| `unread_files` | `findings` items of kind `unread_file`; a file a scope takes whose name is not UTF-8 is an item of kind `unreadable_name`, where 0.8.1 printed an error object whose `unread_files` listed it |
+| `diff_uncovered_count` | `counts.diff_uncovered_count` |
+| `diff_uncovered_max` | `counts.diff_uncovered_max` |
+
+Each item carries the entry's own fields and its `dirty` flag, as the old list's entry
+did. `rescore --gate --json` and the `check_gate` tool keep `gate.breaches` and
+`gate.unread_files`, and the `--json` error object keeps its `unread_files`.
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->

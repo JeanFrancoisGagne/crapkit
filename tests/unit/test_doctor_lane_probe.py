@@ -113,7 +113,7 @@ def test_a_healthy_lane_prints_the_interpreter_and_plugin_versions_it_resolves_t
 
 # coverage.py writes each function's start_line from 7.13.1; 7.6.0 to 7.13.0
 # write regions without it, and older releases write no regions at all.
-_FLOOR_INSTALL = {False: '{python} -m pip install "coverage>=7.13.1"',
+_FLOOR_INSTALL = {False: '{python} -P -m pip install "coverage>=7.13.1"',
                   True: 'uv pip install --python {python} "coverage>=7.13.1"'}
 
 

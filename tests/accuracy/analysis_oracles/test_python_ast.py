@@ -121,9 +121,13 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit. 090/m1-foundations
 # reached 3,813 once the producer facts read the coverage format adapter
-# (m1-foundations-10), and the third sync met at 3,849. The repair that names
-# the js lane init wrote in its workspace note (m1-foundations-09) added one.
-SRC_DEFS = 3850
+# (m1-foundations-10), and the third sync met at 3,849. 090/metric-stamp reached
+# 3,850 with analyze.analysis_version_of (metric-stamp-02), and 3,866 once each
+# marks revision carried the marks of the one it changed (gate-group-04a), and
+# 3,862 once verify --json dropped the 0.8.1 per-kind keys (gate-group-13). The
+# repair that names the js lane init wrote in its workspace note
+# (m1-foundations-09) added one.
+SRC_DEFS = 3863
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

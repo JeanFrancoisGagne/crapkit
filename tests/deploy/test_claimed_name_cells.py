@@ -181,7 +181,7 @@ def assert_verify_json_gives_a_verdict(box, repo: Path) -> None:
     assert as_json.stderr == f"crapkit: {STOP}\n", box.transcript.text()
     assert printed["findings"] == [FINDING], as_json.stdout
     assert (printed["ok"], printed["run_id"], "error" in printed) == (False, None, False), as_json.stdout
-    assert printed["unread_files"] == [{"path": SHOWN, "reason": UNREAD_NAME_REASON, "dirty": False}]
+    assert printed["counts"]["diff_uncovered_count"] == 0, as_json.stdout
     assert (_lane_runs(repo), _stored_runs(repo)) == (runs, stored), box.transcript.text()
 
 

@@ -130,4 +130,4 @@ def test_the_install_step_runs_pip_through_the_python_on_path(tmp_path):
                           env=env, capture_output=True, text=True, timeout=HANG_SECONDS)
 
     assert done.returncode == 0, done.stderr
-    assert called.read_text(encoding="utf-8").splitlines() ==["-m", "pip", "install", "-e", "/action/checkout"]
+    assert called.read_text(encoding="utf-8").splitlines() == ["-P", "-m", "pip", "install", "-e", "/action/checkout"]
