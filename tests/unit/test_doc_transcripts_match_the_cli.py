@@ -22,10 +22,21 @@ from crapkit.errors import ToolError
 
 ROOT = Path(__file__).resolve().parents[2]
 MARKS = "crapkit-ratchet.tsv"
+HANDBOOK = "docs/handbook.html"
 
 
 def _page(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
+
+
+def _page_text(rel: str) -> str:
+    """The page as a reader sees it. The handbook is HTML: each <pre> block
+    becomes a fence, tags go, and `&gt;` reads as `>` again."""
+    text = _page(rel)
+    if rel.endswith(".html"):
+        text = re.sub(r"</?pre\b[^>]*>", "\n```\n", text)
+        text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return text
 
 
 def _output_under(lines: list[str]) -> list[str]:
@@ -86,6 +97,176 @@ def test_each_doctor_report_closes_on_the_verdict_its_findings_print(page):
     assert reports, f"{page} prints no doctor verdict"
     for report in reports:
         assert report[-1] == _verdict_of(report), (page, report[-2:])
+
+
+# --- the runner line doctor prints for each lane ---------------------------------
+#
+# doctor names each lane's runner on a line of its own. The two checks above
+# read a report's first line and its verdict only, so a page could drop every
+# runner line and stay green.
+
+RUNNER_LINE = re.compile(r"(ok  |note) lane '[^']*': (runs |runner unknown)")
+_TOML_BLOCK = re.compile(r"^```toml\n(.*?)^```", re.M | re.S)
+
+
+def _printed(findings, capsys) -> list[str]:
+    """The lines doctor prints for these findings, less the closing verdict."""
+    from crapkit.cli.admin import _print_findings
+
+    _print_findings(findings)
+    return capsys.readouterr().out.splitlines()[:-1]
+
+
+def _lane_reports(lines: list[str]) -> list[tuple[int, list[str]]]:
+    """(line index, output) for each `$ crapkit doctor` report that names a lane."""
+    found = [(i, _output_under(lines[i + 1:])) for i, line in enumerate(lines)
+             if line.strip() == "$ crapkit doctor"]
+    return [(i, report) for i, report in found
+            if any(line.startswith(FINDINGS) and (" lane '" in line or "lane(s) declared" in line)
+                   for line in report)]
+
+
+def _config_above(lines: list[str], at: int):
+    """The last toml block above line `at` that declares a lane, the config the
+    report under it reads, loaded with a scope for each name its lanes claim
+    and it does not declare: the lanes page opens on a lone [[lane]]."""
+    import tomllib
+
+    from crapkit.config import load_config_text
+
+    *_, body = [block for block in _TOML_BLOCK.findall("\n".join(lines[:at]) + "\n")
+                if re.search(r"^\[\[lane\]\]$", block, re.M)]
+    raw = tomllib.loads(body)
+    declared = {scope["name"] for scope in raw.get("scope", ())}
+    missing = sorted({name for lane in raw["lane"] for name in lane["scopes"]} - declared)
+    scopes = "".join(f'[[scope]]\nname = "{name}"\npaths = ["{name}"]\nlanguages = ["python"]\n'
+                     for name in missing)
+    return load_config_text(scopes + body)
+
+
+def test_every_doctor_report_that_lists_lanes_prints_each_lane_s_runner_line(capsys):
+    """README's quickstart and the lanes page show doctor over the lane the
+    page declares above the report. Each report carries the runner lines doctor
+    prints for that config, no more and no fewer."""
+    from crapkit.cli.admin import NO_PACKAGES, _doctor_runners
+
+    checked = []
+    for page in DOCTOR_PAGES:
+        lines = _page(page).splitlines()
+        for at, report in _lane_reports(lines):
+            expected = _printed(_doctor_runners(_config_above(lines, at), NO_PACKAGES), capsys)
+            checked.append((f"{page}:{at + 1}", [line for line in report if RUNNER_LINE.match(line)],
+                            expected))
+
+    assert len(checked) >= 3, "the reports stopped being found, so nothing is checked"
+    assert [row for row in checked if row[1] != row[2]] == []
+
+
+def test_the_runner_section_shows_the_line_doctor_prints_for_each_place_it_reads(capsys):
+    """One lane per place a runner is read from: the command, the package.json
+    script it runs, devDependencies, and nowhere."""
+    from crapkit.cli.admin import PackageMap, _doctor_runners
+    from crapkit.config import Config
+    from crapkit.scaffold import npm_package
+
+    shapes = [("py", "python -m pytest --cov", None),
+              ("js", "npm run test -- --coverage", {"scripts": {"test": "vitest run"}}),
+              ("js", "make cov", {"devDependencies": {"vitest": "^2.0.0"}}),
+              ("js", "npm run cov", None)]
+    text = _page("docs/lanes.md")
+    section = text[text.index("## How crapkit reads a lane's runner"):]
+    block = section[section.index("```\n") + 4:]
+    printed = [line for name, command, package in shapes
+               for line in _printed(_doctor_runners(
+                   Config(lanes=(Lane(name, command, "cov.json", "istanbul", ("src",)),)),
+                   PackageMap({"": npm_package(package)} if package else {}, {})), capsys)]
+
+    assert block[:block.index("```")].splitlines() == printed
+
+
+# --- the refusals a lane's runner word turns on ----------------------------------
+#
+# The narrowing, file-filter and container refusals fire on the runner a
+# command spells. The checks above skip a refusal block, which has no finding
+# line and no verdict, so a reworded refusal left these transcripts stale.
+
+def _one_lane(name: str, command: str, parser: str) -> str:
+    return ('[[scope]]\nname = "calc"\npaths = ["calc"]\nlanguages = ["python"]\n'
+            f'[[lane]]\nname = "{name}"\ncommand = {json.dumps(command)}\n'
+            f'artifact = ".crapkit/cov/{name}.json"\nparser = "{parser}"\nscopes = ["calc"]\n')
+
+
+def _refusal_transcripts(page: str) -> list[tuple[str, str, str, list[str]]]:
+    """(page:line, lane, command, output) for each `$ crapkit doctor` whose
+    output is a lane refusal, the command read off the `command = "..."` line
+    above it and the lane off the refusal."""
+    import tomllib
+
+    lines = _page_text(page).splitlines()
+    found = []
+    for i, line in enumerate(lines):
+        output = _output_under(lines[i + 1:]) if line.strip() == "$ crapkit doctor" else []
+        named = re.match(r"crapkit: lane '([^']+)'", output[0]) if output else None
+        if not named:
+            continue
+        written = next(above for above in reversed(lines[:i]) if re.match(r"(# )?command = ", above))
+        command = tomllib.loads(written.removeprefix("# "))["command"]
+        found.append((f"{page}:{i + 1}", named.group(1), command, output))
+    return found
+
+
+def test_every_narrowing_transcript_prints_what_doctor_prints_under_cmd_exe(monkeypatch, repo,
+                                                                            capsys):
+    """README, the lanes page and the handbook show doctor refusing a lane that
+    narrows a full-suite run. The single quotes and the `;` are cmd.exe cases,
+    so each is read as cmd.exe reads it; the `&&` ones read the same under
+    either shell."""
+    from crapkit import config
+
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    checked = []
+    for page in ("README.md", "docs/lanes.md", HANDBOOK):
+        for where, name, command, output in _refusal_transcripts(page):
+            (repo / "crapkit.toml").write_text(_one_lane(name, command, "coveragepy"), encoding="utf-8")
+            code = main(["doctor", "--repo", str(repo)])
+            printed = capsys.readouterr().err.splitlines()
+            exit_line = [f"EXIT={code}"] if output[len(printed):] else []
+            checked.append((where, output, printed + exit_line))
+
+    assert len(checked) >= 6, "the transcripts stopped being found, so nothing is checked"
+    assert [row for row in checked if row[1] != row[2]] == []
+
+
+def test_the_lanes_page_quotes_the_file_filter_refusal_a_vitest_lane_draws():
+    from crapkit.config import load_config_text
+    from crapkit.errors import ConfigError
+
+    with pytest.raises(ConfigError) as raised:
+        load_config_text(_one_lane("js", "npx vitest run --coverage src/grade.ts", "istanbul"))
+
+    assert f"crapkit: {raised.value}" in _page("docs/lanes.md").splitlines()
+
+
+def test_the_lanes_page_quotes_the_container_refusal_a_pytest_lane_draws(monkeypatch):
+    from crapkit import lanes
+
+    monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "1")
+    lane = Lane("py", "python -m pytest --cov", ".crapkit/cov/py.json", "coveragepy", ("calc",))
+    with pytest.raises(ToolError) as raised:
+        lanes._refuse_container_python(lane)
+
+    assert f"crapkit: lane 'py' FAILED: {raised.value}" in _page("docs/lanes.md").splitlines()
+
+
+def test_the_lanes_page_quotes_the_container_warn_doctor_prints_before_that_refusal(capsys):
+    """The WARN called every lane it reached a coverage.py suite after the rule
+    moved to the command, and nothing held the page to the line doctor prints."""
+    from crapkit.doctor import container_lane_findings
+
+    lane = Lane("py", "python -m pytest --cov", ".crapkit/cov/py.json", "coveragepy", ("calc",))
+    printed = _printed(container_lane_findings([lane], "/.dockerenv exists"), capsys)
+
+    assert printed and printed[0] in _page("docs/lanes.md").splitlines(), printed
 
 
 def test_the_quickstarts_verify_ok_lines_carry_the_ratchet_tail_their_steps_write():
@@ -214,7 +395,6 @@ def test_the_lanes_page_quotes_the_held_line_tune_prints_for_its_testpath_lanes(
 
 # --- the next step worklist and seed end with -----------------------------------
 
-HANDBOOK = "docs/handbook.html"
 TRANSCRIPT_PAGES = ("README.md", HANDBOOK,
                     *sorted(str(p.relative_to(ROOT)).replace("\\", "/")
                             for p in (ROOT / "docs").glob("*.md")))
@@ -225,16 +405,6 @@ def _as_typed(lines: list[str]) -> list[str]:
     from crapkit.invocation import _self
 
     return [line.replace(_self(), "crapkit") for line in lines]
-
-
-def _page_text(rel: str) -> str:
-    """The page as a reader sees it. The handbook is HTML: each <pre> block
-    becomes a fence, tags go, and `&gt;` reads as `>` again."""
-    text = _page(rel)
-    if rel.endswith(".html"):
-        text = re.sub(r"</?pre\b[^>]*>", "\n```\n", text)
-        text = html.unescape(re.sub(r"<[^>]+>", "", text))
-    return text
 
 
 def _outputs(page: str, prefix: str) -> list[tuple[str, list[str]]]:

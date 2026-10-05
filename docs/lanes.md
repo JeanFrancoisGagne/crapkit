@@ -1275,7 +1275,7 @@ refuses. It prints one WARN per lane whose command names pytest and that has no
 `container_ok`, naming the trigger it found:
 
 ```
-WARN lane 'py' runs a coverage.py suite and this is a container (/.dockerenv exists): `crapkit coverage` refuses it with exit 5; if the container is sized for the suite, set container_ok = true on the lane (docs/lanes.md#containers)
+WARN lane 'py' runs pytest and this is a container (/.dockerenv exists): `crapkit coverage` refuses it with exit 5; if the container is sized for the suite, set container_ok = true on the lane (docs/lanes.md#containers)
 doctor: no problems found, 1 warning above
 ```
 
