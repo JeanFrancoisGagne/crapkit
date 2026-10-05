@@ -15,8 +15,9 @@ Expected values come from the docs, never from a crapkit run:
 - docs/lanes.md "The interpreter a lane binds to": the lockfile table, where
   the first match in table order wins; with no lockfile the lane runs the
   launcher token `{python}`, or `{python:.venv}` for a venv in the tree.
-- docs/lanes.md "Containers": doctor WARNs on a coverage.py lane without
-  container_ok when /.dockerenv exists or CRAPKIT_INSIDE_CONTAINER=1.
+- docs/lanes.md "Containers": doctor WARNs on a lane whose command names
+  pytest and that lacks container_ok when /.dockerenv exists or
+  CRAPKIT_INSIDE_CONTAINER=1.
 - docs/configuration.md `scoped_tests` row: `{files}` only where the scope's
   own paths hold a test file; the whole-suite form otherwise, naming the test
   directory unless pytest's testpaths already collects it.
@@ -59,9 +60,9 @@ PYTEST_GITIGNORE = [".crapkit/", ".coverage", "__pycache__/"]
 # README:1186, the WARN a vitest scope carries until its scoped_tests line is uncommented.
 VITEST_WARN = "scope 'src' has a lane but no [crapkit.scoped_tests] template"
 # docs/lanes.md#containers: either trigger is enough, and doctor WARNs on a
-# coverage.py lane that does not set container_ok.
+# lane whose command names pytest and that does not set container_ok.
 IN_CONTAINER = Path("/.dockerenv").exists() or os.environ.get("CRAPKIT_INSIDE_CONTAINER") == "1"
-CONTAINER_WARN = "lane 'py' runs a coverage.py suite and this is a container"
+CONTAINER_WARN = "lane 'py' runs pytest and this is a container"
 SOURCE = {"calc/grade.py": "def grade(score):\n    return score\n"}
 PYPROJECT = {"pyproject.toml": "[project]\nname = \"calc\"\nversion = \"0\"\n"}
 

@@ -273,29 +273,44 @@ def _next_step(scopes: dict, lanes: tuple) -> str:
 
 
 def _unrouted_workspaces_note(written: tuple, package_json) -> str | None:
-    """Why there is no js lane when several workspaces could each have had
-    one. File presence cannot pick among them, and saying nothing left a
-    monorepo lead to learn it from doctor's next line."""
+    """Why no lane init wrote runs a JS runner when several workspaces could
+    each have had one. File presence cannot pick among them, and saying nothing
+    left a monorepo lead to learn it from doctor's next line."""
     from ..scaffold import runner_workspaces
 
     named = runner_workspaces(package_json)
-    if len(named) < 2 or any(_js_runner_lane(lane, package_json) for lane in written):
+    found = [(lane, _lane_toolchain(lane, PackageMap(package_json, {}))) for lane in written]
+    if len(named) < 2 or any(_js_runner(runner) for _, runner in found):
         return None
     listed = ", ".join(f"{directory}: {runner}" for directory, runner in named)
     return (f"{len(named)} workspaces name a runner ({listed}) and the root names none, so "
-            "no js lane was written: declare one [[lane]] per workspace from the commented "
-            "template, each with its own cwd and artifact")
+            f"{_in_their_place(found)}, each with its own cwd and artifact")
 
 
-def _js_runner_lane(lane, package_json: dict) -> bool:
-    """Does the lane run a runner a package.json can name (vitest, jest)? Read
-    by toolchain.infer, devDependencies included: the note's own claim, that
-    the root names none, is a devDependencies fact, so a root lane whose runner
-    only devDependencies name answers it."""
+def _js_runner(found) -> bool:
+    """Does toolchain.infer name a runner a package.json can name (vitest,
+    jest)? devDependencies count: the note's own claim, that the root names
+    none, is a devDependencies fact, so a root lane whose runner only
+    devDependencies name answers it."""
     from ..toolchain import TOOLCHAINS
 
-    found = _lane_toolchain(lane, PackageMap(package_json, {}))
     return found.name is not None and TOOLCHAINS[found.name].dev_dependency is not None
+
+
+def _in_their_place(found: list) -> str:
+    """What init wrote in place of the workspace lanes. A root test script
+    that only fans out to the workspaces gets the root js lane, whose runner
+    nothing names; saying no js lane was written then contradicted init's own
+    `detected ... lane(s)` line one line up. The one shape this misreads: a
+    root script that names a single non-JS runner, such as pytest, reads as
+    no js lane."""
+    unknown = [(lane, runner) for lane, runner in found if runner.name is None]
+    if not unknown:
+        return ("no js lane was written: declare one [[lane]] per workspace from the "
+                "commented template")
+    lane, runner = unknown[0]
+    return (f"the runner of lane {lane.name!r} is unknown ({_unknown_runner(lane, runner)}): "
+            "replace it with one [[lane]] per workspace")
 
 
 def _print_init_summary(scopes: dict, lanes: tuple, package_json=None) -> None:
@@ -1506,7 +1521,7 @@ def _doctor_commit_encoding(root: Path) -> list[Finding]:
 
 
 def _doctor_container(cfg) -> list[Finding]:
-    """A coverage.py lane `crapkit coverage` refuses in this container (WARN)."""
+    """A pytest lane `crapkit coverage` refuses in this container (WARN)."""
     from ..doctor import container_lane_findings, container_marker
 
     marker = container_marker(os.environ, Path("/.dockerenv").exists())

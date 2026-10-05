@@ -11,8 +11,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from cli_inproc_repo import repo, template_repo  # noqa: F401
+
 from crapkit import lanes as lanes_module
-from crapkit.cli import admin
+from crapkit.cli import admin, main
 from crapkit.config import Lane
 from crapkit.doctor import container_lane_findings, container_marker
 from crapkit.errors import ToolError
@@ -68,7 +70,7 @@ def test_a_coveragepy_lane_warns_naming_the_lane_the_trigger_and_the_key():
 
     assert finding.level == "WARN"
     assert finding.text == (
-        "lane 'py' runs a coverage.py suite and this is a container (/.dockerenv exists): "
+        "lane 'py' runs pytest and this is a container (/.dockerenv exists): "
         "`crapkit coverage` refuses it with exit 5; if the container is sized for the suite, "
         "set container_ok = true on the lane (docs/lanes.md#containers)")
 
@@ -82,6 +84,24 @@ def test_only_the_lanes_the_runner_would_refuse_are_named():
         "CRAPKIT_INSIDE_CONTAINER=1")
 
     assert [f.text.split()[1] for f in found] == ["'py'", "'js'", "'b'"]
+
+
+def test_doctor_names_pytest_on_an_istanbul_lane_it_warns_about(repo, monkeypatch, capsys):
+    """An istanbul lane running pytest then vitest gets the WARN since the rule
+    reads the command, and it runs no coverage.py: the line names the runner
+    the rule read, true for every lane it reaches."""
+    text = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    unit = 'name = "unit"\ncommand = "python -c pass"\n'
+    both = 'name = "unit"\ncommand = "python -m pytest && npx vitest run --coverage"\n'
+    (repo / "crapkit.toml").write_text(text.replace(unit, both), encoding="utf-8")
+    monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "1")
+
+    main(["doctor", "--repo", str(repo)])
+
+    assert ("WARN lane 'unit' runs pytest and this is a container (CRAPKIT_INSIDE_CONTAINER=1): "
+            "`crapkit coverage` refuses it with exit 5; if the container is sized for the suite, "
+            "set container_ok = true on the lane (docs/lanes.md#containers)"
+            ) in capsys.readouterr().out.splitlines()
 
 
 def test_outside_a_container_nothing_is_said():
@@ -126,5 +146,5 @@ def test_a_container_run_closes_on_the_warning_it_printed(capsys):
     admin._print_findings(list(container_lane_findings([lane("py")], "/.dockerenv exists")))
 
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0].startswith("WARN lane 'py' runs a coverage.py suite"), lines
+    assert lines[0].startswith("WARN lane 'py' runs pytest and this is a container"), lines
     assert lines[-1] == "doctor: no problems found, 1 warning above", lines
