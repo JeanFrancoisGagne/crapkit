@@ -138,6 +138,6 @@ def test_redaction_folds_every_spelling_of_the_interpreter(tmp_path, interpreter
     """An interpreter path holding a space prints with only its spaced segment
     quoted on Windows, as its 8.3 short name where the volume keeps one, and in
     single quotes on POSIX. Each still folds to `crapkit`."""
-    text = demo_run.redact(f"then run `{interpreter} -m crapkit coverage`", tmp_path)
+    text = demo_run.redact(f"then run `{interpreter} -P -m crapkit coverage`", tmp_path)
 
     assert text == "then run `crapkit coverage`"

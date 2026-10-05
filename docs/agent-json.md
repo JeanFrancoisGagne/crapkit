@@ -1417,7 +1417,7 @@ script goes into that venv's `Scripts` and nothing else on the machine sees it.
 `pip install --user` is the other: the script goes into `~/.local/bin` or
 `%APPDATA%\Python\Python312\Scripts`, which most PATHs lack. When the crapkit running
 doctor has its own launcher in such a directory, run by that launcher's full path or as
-`python -m crapkit`, the line ends by naming it:
+`python -P -m crapkit`, the line ends by naming it:
 
 ```
 This crapkit's launcher is in /home/dev/.local/bin, which PATH does not list: add that directory to PATH, then restart the agent.
