@@ -862,45 +862,71 @@ The verdict, plus the receipt that says what produced it.
 $ crapkit verify --json
 ```
 
+This one is `tests/fixtures/mini_repo` measured once, then verified with a function over the
+ceiling appended to `src/app.ts` and not yet committed, so `commit` is the baseline's:
+
 ```json
 {
   "baseline_commit": "8c780bb18da329dfe039b55d14faa5a6dc9fcb50",
-  "baseline_run": 8,
+  "baseline_run": 1,
   "changed_files": 1,
-  "changed_paths": ["app/m.py"],
+  "changed_paths": ["src/app.ts"],
   "commit": "8c780bb18da329dfe039b55d14faa5a6dc9fcb50",
-  "committed_findings": 1,
+  "committed_findings": 0,
+  "counts": {"diff_uncovered_count": 0, "diff_uncovered_max": null},
   "diff_uncovered": [],
   "diff_uncovered_count": 0,
   "diff_uncovered_max": null,
   "dirty_failures": [],
-  "dirty_findings": 0,
+  "dirty_findings": 1,
+  "findings": [
+    {
+      "ccn": 8,
+      "cov": 0.0,
+      "crap": 72.0,
+      "dirty": true,
+      "exit_code": 6,
+      "fails": true,
+      "key_name": "knotty ( n )",
+      "kind": "gate_violation",
+      "long_name": "knotty ( n )",
+      "overridable": true,
+      "path": "src/app.ts",
+      "remedy": "decompose",
+      "rule": "complexity gate",
+      "start": 21
+    }
+  ],
   "forgiven_failures": [],
-  "gate_violations": [],
+  "gate_violations": [
+    {
+      "ccn": 8,
+      "cov": 0.0,
+      "crap": 72.0,
+      "dirty": true,
+      "key_name": "knotty ( n )",
+      "long_name": "knotty ( n )",
+      "path": "src/app.ts",
+      "remedy": "decompose",
+      "start": 21
+    }
+  ],
   "lanes_without_baseline_results": [],
-  "lanes_without_results": [],
+  "lanes_without_results": ["unit"],
   "new_failures": [],
   "ok": false,
   "overridden": [],
   "ratchet_changes": null,
-  "ratchet_regressions": [
-    {
-      "dirty": false,
-      "fresh_crap": 20.0,
-      "long_name": "pick( a , b , c )",
-      "path": "app/m.py",
-      "recorded": 10.75
-    }
-  ],
-  "ratchet_sha256": "3d05caa586f1d6e63cfce21b70ac06dc31243f82c9ac3071398f67f463cafe2f",
+  "ratchet_regressions": [],
+  "ratchet_sha256": null,
   "ratchet_source": "tree",
   "ratchet_source_commit": null,
-  "ratchet_source_sha256": "3d05caa586f1d6e63cfce21b70ac06dc31243f82c9ac3071398f67f463cafe2f",
+  "ratchet_source_sha256": null,
   "retried_passes": [],
-  "run_id": 9,
+  "run_id": 2,
   "schema": 1,
   "tool_versions": {"analysis_version": "13", "crapkit": "<version>", "lizard": "1.24.0"},
-  "unmarked_over_target": 0,
+  "unmarked_over_target": 1,
   "unread_files": [],
   "unreadable_names": [],
   "untracked_in_scope": []
@@ -912,13 +938,74 @@ $ crapkit verify --json
 | Key | Type | Meaning |
 |---|---|---|
 | `ok` | bool | The final verdict after allowed overrides and flake retests. It agrees with the stored run verdict and command exit. Remaining findings or an ungranted diff-coverage breach make it `false`. |
-| `run_id` | int | The run this verify wrote. |
+| `run_id` | int or null | The run this verify wrote. `null` when verify stopped before any lane ran, on [a scoped file whose name is not UTF-8](#a-scoped-file-whose-name-is-not-utf-8). |
 | `baseline_run`, `baseline_commit` | int, string | What it was measured against. |
 | `commit` | string | The commit the verified tree is at. Equal to `baseline_commit` when you are verifying uncommitted work. |
 | `changed_files` | int | Files in the diff being judged. |
-| `unreadable_names` | array of strings | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`: the names the `crapkit: left out` lines on stderr give. `[]` when every name is UTF-8. A scope that takes such a name never gets here: the command exits 3 first. |
+| `unreadable_names` | array of strings | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`: the names the `crapkit: left out` lines on stderr give. `[]` when every name is UTF-8. A file a scope takes whose name is not UTF-8 is a finding instead, and stops verify before any lane runs ([below](#a-scoped-file-whose-name-is-not-utf-8)). |
 | `changed_paths` | array of strings | Those files, sorted, since 0.8.1. The text form names the first three on a line under the verdict, the files verify scored ahead of the rest, `changed files: app/m.py, app/n.py, tests/test_m.py`, then `and N more`. |
 | `untracked_in_scope` | array of strings | Source files inside a scope that git does not track, since 0.8.1. verify's diff and corpus hold git-tracked files only, so these were not judged. The text form warns on stderr, names the first three and says to `git add` them. |
+
+### The findings list
+
+`findings` (since 0.9.0) lists every finding once, one item each. Every item carries the six
+fields below, then the fields of its kind. The 0.8.1 per-kind keys under
+[Findings](#findings) still print beside it, holding the same entries, until a later release
+drops them: read `findings` and `counts`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `kind` | string | `unreadable_name`, `gate_violation`, `unread_file`, `ratchet_regression`, `new_failure`, `diff_uncovered` or `overridden`. |
+| `fails` | bool | `true` when the item fails the verdict: its kind fires an exit code and the verdict holds it. A `diff_uncovered` item fails only past `diff_uncovered_max`, and an `overridden` one never does. |
+| `exit_code` | int or null | The exit code the item fires when it fails; `null` when `fails` is `false`. The first item whose `fails` is `true` names verify's exit, and no item fails at exit 0. |
+| `overridable` | bool | `true` for a `gate_violation`, the one kind an `--override` can grant. An override still grants nothing while an item of a kind that refuses one is present (`unreadable_name`, `unread_file`, `ratchet_regression`, `new_failure`), and stderr says why. |
+| `dirty` | bool | `true` when the item's file has uncommitted edits or git does not track it; for a `new_failure`, when its test id names such a file. |
+| `rule` | string | The label of the item's rule, the words the pull-request comment prints for it. |
+
+| Kind | Its own fields | `exit_code` when it fails | `rule` |
+|---|---|---|---|
+| `unreadable_name` | `path`, each byte that is not UTF-8 as `\xNN`; `scope`, the scope that takes it; `reason`, the stderr sentence for that one file | 3 | `unreadable name` |
+| `gate_violation` | `path`, `long_name`, `start`, `ccn`, `cov`, `crap`, `remedy`, `key_name` | 6 | `complexity gate` |
+| `unread_file` | `path`, `reason`: the reader's refusal, naming the line and what to change | 6 | `complexity gate` |
+| `ratchet_regression` | `path`, `long_name` (the ratchet key), `recorded`, `fresh_crap` | 7 | `ratchet regressions` |
+| `new_failure` | `test`: the `classname::name` test id | 8 | `new test failures` |
+| `diff_uncovered` | `path`, `line`: a changed line no test ran | 9, only past `diff_uncovered_max` | `diff-coverage ceiling` |
+| `overridden` | the `gate_violation` fields | none: `fails` is `false` and `exit_code` is `null` | `override` |
+
+Items come in this table's order, which is the exit order, and inside a kind in the order
+that kind's own list gives them. `diff_uncovered` items appear whenever a changed line ran
+in no lane, with `fails` `false` while `diff_uncovered_max` is `null` or not passed.
+**`diff_uncovered` items stop at 50; `counts.diff_uncovered_count` does not.**
+
+`counts` holds the numbers beside the items. Each equals the top-level key of the same name.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `diff_uncovered_count` | int | Every changed line no test ran, where `findings` lists the first 50. |
+| `diff_uncovered_max` | int or null | The ceiling `diff_uncovered_count` is judged against (exit 9); `null` when the repo set none. |
+
+### A scoped file whose name is not UTF-8
+
+A tracked file a scope takes whose name git gives in bytes that are not UTF-8 stops verify
+before any lane runs: the gate cannot judge such a name, so nothing is measured and no run
+is stored. The exit is 3 and stderr carries the one line 0.8.1 printed, naming the first
+such file and counting the rest:
+
+```
+crapkit: src/caf\xe9.py is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name
+```
+
+`--json` prints a verify payload, not an error object. `ok` is `false`, `run_id` is `null`,
+`findings` holds one `unreadable_name` item per file with `exit_code` 3, and
+`counts.diff_uncovered_count` is 0. `unread_files` lists each file as `{path, reason,
+dirty}`, the item 0.8.1's error object carried, and every other per-kind list is empty.
+The other keys hold what verify knew before it stopped: the baseline, `commit` (HEAD),
+`tool_versions`, the marks it read and `untracked_in_scope`; `changed_files` is 0, since
+no diff was read.
+`--sarif` writes one `crapkit/unreadable-name` result per file, level `error`, on line 1,
+its `uri` percent-encoding the name's own bytes (`src/caf%E9.py`), and `--github` prints
+one `::error` annotation per file naming it `src/caf\xe9.py`. An `--override` grants
+nothing and says why on stderr. The fix is `git mv` to a UTF-8 name.
 
 ### Findings
 
@@ -928,7 +1015,7 @@ $ crapkit verify --json
 | `unread_files` | `{path, reason, dirty}`: a changed file no reader could read, so the gate judged none of its functions. `reason` is the reader's refusal, naming the line and what to change | 6 |
 | `ratchet_regressions` | `{path, long_name, recorded, fresh_crap, dirty}` | 7 |
 | `new_failures` | array of `classname::name` test ids | 8 |
-| `diff_uncovered_count` | int, and `diff_uncovered[]` of `{path, line}` | 9, only when `diff_uncovered_max` is set |
+| `diff_uncovered_count` | int, every changed line no test ran, and `diff_uncovered[]` of `{path, line}` | 9, only when `diff_uncovered_max` is set |
 | `diff_uncovered_max` | int, or `null` when the repo set none | none itself; it is the ceiling `diff_uncovered_count` is judged against, so a reader of exit 9 can name it |
 | `overridden` | gate-violation objects an `--override` granted | none; the run passes |
 | `forgiven_failures` | array of test ids the fresh run and the baseline both failed | none; the text form counts them on the OK line as `(N unchanged failures forgiven, first ID)` |
@@ -1571,8 +1658,9 @@ the working tree lacks, as every such name in a Git for Windows checkout is, is 
 uncommitted deletion). The refusals that add it: a file argument naming such a file on
 disk (`rescore`, `rescore --gate`, `brief`, `explain`, `mutate --files`, `claims
 release`, `ratchet move`), and a scan meeting such a name a scope takes (`inventory`,
-`coverage`, `verify`, `doctor`). The stderr line names the first file and counts the
-rest; `unread_files` lists every one:
+`coverage`, `doctor`). `verify` meeting one prints its own payload instead, a finding of
+kind `unreadable_name` ([verify](#a-scoped-file-whose-name-is-not-utf-8)). The stderr line
+names the first file and counts the rest; `unread_files` lists every one:
 
 ```json
 {"error": {"exit": 3, "kind": "config", "message": "src/caf\\xe9.py (and 1 more) is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name", "unread_files": [{"dirty": false, "path": "src/caf\\xe9.py", "reason": "its name is not UTF-8, and crapkit reads every path as UTF-8: rename it (git mv) to a UTF-8 name"}, {"dirty": true, "path": "src/o\\x92brien.py", "reason": "its name is not UTF-8, and crapkit reads every path as UTF-8: rename it (git mv) to a UTF-8 name"}]}, "schema": 1}

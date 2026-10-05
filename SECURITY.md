@@ -34,6 +34,22 @@ with the working directory and environment selected by the operation.
 crapkit also starts Git and internal process owners; the table below describes
 the commands a project config supplies.
 
+crapkit starts Git, and the other programs it runs on its own account (the
+`claude` that `doctor` asks for its version, and on Windows `taskkill`, taken
+from the system directory first), from an absolute PATH entry only. It never
+starts one from the working directory or through an empty or relative PATH
+entry, so a `git.exe` a repository holds is never run. `doctor` asks a launcher
+it found for its version from that launcher's own folder, with `cmd.exe`'s
+search of the current directory off, so an interpreter the launcher starts by
+name, such as npm's `node`, never comes from the repository either. The Python
+processes crapkit starts of itself (each MCP tool call, the rescore that
+`crapkit watch` runs, the process owner and the analysis workers) start with
+`-P` or with `PYTHONSAFEPATH=1` in their environment, so Python never puts
+their working directory first on `sys.path` and a `crapkit.py` or
+`json.py` a repository holds never runs in place of crapkit's own modules or the
+standard library. A configured command is yours, and it finds its programs the
+way its shell does.
+
 | What | When | What it runs |
 | --- | --- | --- |
 | Lane commands | `crapkit coverage` and `crapkit verify` | each lane's `command`, using its configured `cwd` and `env` |

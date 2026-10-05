@@ -1,6 +1,8 @@
 """Every command that refuses a file whose name is not UTF-8 lists it in its
 --json error object as `unread_files`, each item {path, reason, dirty}: the
-shape `rescore --gate --json` and `verify --json` list unread files in.
+shape `rescore --gate --json` and `verify --json` list unread files in. verify
+gives such a name a verdict instead, and its payload lists the name in that
+same `unread_files` beside its `unreadable_name` finding.
 
 The error object's items carried `path` and `reason` alone, so a wrapper that
 reads both surfaces met two shapes for one finding. `dirty` has verify's
@@ -56,10 +58,14 @@ def measured(repo, capsys):
 
 
 def _error(repo, capsys, *argv: str) -> tuple[int, dict, str]:
+    """The exit, the object that lists the refused names, and stderr. verify
+    meeting such a name prints its own payload, with no `error` key: it lists
+    the names in its top-level `unread_files`, in the same item shape."""
     command, *rest = argv
     code = main([command, "--json", "--repo", str(repo), *rest])
     out, err = capsys.readouterr()
-    return code, json.loads(out)["error"], err
+    printed = json.loads(out)
+    return code, printed["error"] if command != "verify" else printed, err
 
 
 # --- a file argument naming the file ------------------------------------------

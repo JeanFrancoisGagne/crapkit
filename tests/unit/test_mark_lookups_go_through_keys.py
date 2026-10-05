@@ -15,25 +15,20 @@ crapkit's modules give a collection that holds no marks. An unknown collection c
 new lookup fails here before anyone decides it is not one.
 
 The guard scans every module under src/crapkit but keys.py, the one module
-that owns the lookup. ALLOWED names the three pardon copies left outside keys,
-each with the ticket that deletes it. An entry whose function is gone from its
-file is inert: the guard neither fails on it nor asks for its removal, so the
-tickets that delete those functions leave this file alone.
+that owns the lookup. ALLOWED is empty: the three pardon copies it once
+excused (verifying._split_marked, scoring._unmarked_breaches and
+claude_hook._known_marks) are gone, and every gate adapter reads its marks
+through the gate module's pardon over a keys.MarkIndex.
 """
 from __future__ import annotations
 
 import ast
 from pathlib import Path
-import shutil
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "crapkit"
 OWNER = "keys.py"
 # (module under src/crapkit, top-level function) -> the ticket that deletes it.
-ALLOWED: dict[tuple[str, str], str] = {
-    ("cli/verifying.py", "_split_marked"): "gate-group-08",
-    ("cli/scoring.py", "_unmarked_breaches"): "gate-group-07",
-    ("cli/claude_hook.py", "_known_marks"): "gate-group-09",
-}
+ALLOWED: dict[tuple[str, str], str] = {}
 # Collections that hold no RatchetEntry rows: scored rows, and the
 # TightenRefusal rows `ratchet.unstable_marks` returns.
 SCORED_NAMES = frozenset({"rows", "fresh", "scored", "baseline_scored", "refusals"})
@@ -197,37 +192,15 @@ def test_every_mark_lookup_goes_through_keys():
     assert found == [], f"modules look marks up past keys.MarkIndex: {found}"
 
 
-def test_the_allowlist_holds_the_three_pardon_copies_and_who_deletes_them():
-    assert ALLOWED == {
-        ("cli/verifying.py", "_split_marked"): "gate-group-08",
-        ("cli/scoring.py", "_unmarked_breaches"): "gate-group-07",
-        ("cli/claude_hook.py", "_known_marks"): "gate-group-09",
-    }
-    assert all((SRC / module).is_file() for module, _ in ALLOWED)
+def test_the_allowlist_is_empty():
+    """No pardon copy is left outside keys and the gate module to excuse."""
+    assert ALLOWED == {}
 
 
-def _without(source: str, function: str) -> str:
-    """`source` with the top-level `function` cut out."""
-    node = next(n for n in ast.parse(source).body if getattr(n, "name", None) == function)
-    lines = source.splitlines(keepends=True)
-    return "".join(lines[:node.lineno - 1] + lines[node.end_lineno:])
-
-
-def test_an_allowlist_entry_whose_function_is_gone_is_inert(tmp_path):
-    copy = tmp_path / "crapkit"
-    shutil.copytree(SRC, copy, ignore=shutil.ignore_patterns("__pycache__"))
-    listed = copy / "cli" / "verifying.py"
-    text = listed.read_text(encoding="utf-8")
-    listed.write_text(_without(text, "_split_marked"), encoding="utf-8")
-
-    assert "def _split_marked" not in listed.read_text(encoding="utf-8")
-    assert scan(copy) == [], "a deleted pardon copy leaves the guard green"
-
-
-def test_the_allowlist_excuses_only_its_own_file():
+def test_an_allowlist_excuses_only_its_own_file():
     seeded = "def _split_marked(entries):\n    return {(e.path, e.long_name) for e in entries}\n"
 
-    assert violations(seeded, _allowed_in("cli/verifying.py")) == []
+    assert violations(seeded, frozenset({"_split_marked"})) == []
     assert violations(seeded, _allowed_in("cli/queue.py")) == [
         "_split_marked:2: builds its own (path, long_name) mark index"]
 

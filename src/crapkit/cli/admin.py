@@ -24,6 +24,7 @@ from ..invocation import _self, quoted_path, shell_arg
 from ..lane_command import (LaunchSpec, expand_launchers, first_word, install_python, launch_spec,
                             pytest_head, pytest_python, python_token, shell_segments)
 from ..named import first_few
+from ..programs import find, search_path
 from ..repopath import typed_path
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
@@ -50,10 +51,8 @@ def _python_name() -> str:
     On Windows `python3` resolves only through the same WindowsApps alias that
     supplies `python`, so where the first name is missing the second is missing
     too, and writing it names an interpreter this very machine cannot run."""
-    import shutil
-
     for name in ("python", "python3", "py"):
-        if shutil.which(name):
+        if find(name):
             return name
     return "python3"
 
@@ -164,10 +163,8 @@ def _bare_python() -> str:
     `python3` there. A machine where only another name resolves (`py` on
     Windows, `python` alone on POSIX) keeps that name, so the config still
     runs on the machine that wrote it."""
-    import shutil
-
     token = python_token()
-    return token if shutil.which(expand_launchers(token)) else _python_name()
+    return token if find(expand_launchers(token)) else _python_name()
 
 
 def _present_markers(root: Path) -> frozenset[str]:
@@ -2256,11 +2253,28 @@ def _probed_cli_version(executable: str) -> str | None:
     from ..repotext import lenient
 
     try:
-        done = subprocess.run([executable, "--version"], capture_output=True,
-                              timeout=_PROBE_TIMEOUT_SECONDS)
+        done = _asked_version(executable)
     except (OSError, subprocess.SubprocessError):
         return None
     return _declared_version(lenient(done.stdout or done.stderr)) if done.returncode == 0 else None
+
+
+# Windows' own spelling is case-blind; os.environ keeps its keys upper-case there,
+# so this spelling replaces the caller's rather than sitting beside it.
+_NO_CWD_SEARCH = {"NODEFAULTCURRENTDIRECTORYINEXEPATH": "1"}
+
+
+def _asked_version(executable: str):
+    """`executable --version`, run from the executable's own folder with cmd.exe's
+    search of its current directory off. A launcher may start its interpreter by
+    bare name: npm's shim for a JS bin runs `node` through cmd.exe, which looks
+    in its current directory first, and a `#!/usr/bin/env node` script has env
+    read an empty PATH entry as that directory. Run from where crapkit stood, a
+    `node.bat` planted in the repo answered doctor's probe."""
+    import subprocess
+
+    return subprocess.run([executable, "--version"], capture_output=True, timeout=_PROBE_TIMEOUT_SECONDS,
+                          cwd=os.path.dirname(executable), env={**os.environ, **_NO_CWD_SEARCH})
 
 
 def _declared_version(answer: str) -> str | None:
@@ -2272,12 +2286,14 @@ def _declared_version(answer: str) -> str | None:
 
 
 def _path_launchers() -> list[str]:
-    """Every crapkit launcher on this PATH, in order, less any environment a
-    one-command runner (uvx, `uv run --with`, `pipx run`) built, which that
-    runner put on doctor's PATH and nothing else on the machine inherits."""
+    """Every crapkit launcher on this PATH's absolute entries, in order, less
+    any environment a one-command runner (uvx, `uv run --with`, `pipx run`)
+    built, which that runner put on doctor's PATH and nothing else on the
+    machine inherits. A relative entry names the working directory, and a
+    launcher found there is a planted file doctor must neither name nor run."""
     from ..launchers import path_launchers
 
-    return path_launchers(os.environ.get("PATH", ""))
+    return path_launchers(os.pathsep.join(search_path()))
 
 
 @lru_cache(maxsize=None)
@@ -2400,19 +2416,18 @@ def _name_found_root(found: _Found, looked_in: str) -> None:
 
 @lru_cache(maxsize=None)
 def _claude_code_version() -> tuple[str, str] | None:
-    """The `claude` on PATH and what its `--version` printed, or None when
-    PATH holds none or it cannot answer. Memoized: one machine fact."""
-    import shutil
+    """The `claude` on PATH's absolute entries and what its `--version`
+    printed, or None when they hold none or it cannot answer. Memoized: one
+    machine fact."""
     import subprocess
 
     from ..repotext import lenient
 
-    executable = shutil.which("claude")
+    executable = find("claude")
     if executable is None:
         return None
     try:
-        done = subprocess.run([executable, "--version"], capture_output=True,
-                              timeout=_PROBE_TIMEOUT_SECONDS)
+        done = _asked_version(executable)
     except (OSError, subprocess.SubprocessError):
         return None
     return executable, lenient(done.stdout).strip()
@@ -2597,8 +2612,12 @@ def _watch_rescore(root: Path, moved: list[str]) -> None:
         return
     # flush: watch output exists to be tailed live; a block-buffered pipe sits silent
     print(f"--- changed: {', '.join(moved)}", flush=True)
-    # a subprocess so a half-saved syntax error can never kill the watcher
-    run_owned([sys.executable, "-m", "crapkit", "rescore", *present, "--repo", str(root)])
+    # a subprocess so a half-saved syntax error can never kill the watcher.
+    # PYTHONSAFEPATH=1: `-m` puts this working directory, the watched repo's
+    # root, first on sys.path, where a crapkit.py ran in place of crapkit. A
+    # rescore starts no configured command, so the variable reaches none.
+    run_owned([sys.executable, "-m", "crapkit", "rescore", *present, "--repo", str(root)],
+              env={**os.environ, "PYTHONSAFEPATH": "1"})
 
 
 def _watched_files(root: Path, cfg) -> list[str]:

@@ -3,8 +3,8 @@
 Each kind was named at about twelve sites in six modules (the exit order, the
 dirty split, the override's refusal and grant, the text printers, the JSON
 lists and the SARIF builders), and 0.8.1's unread file missed three of them.
-Now every one of those sites loops over the rows, so a new kind is one row and
-the detector that fills its field. These tests hold each row to what verify
+Now every one of those sites loops over the rows, `verify --json`'s findings
+list included, so a new kind is one row and the detector that fills its field. These tests hold each row to what verify
 printed, exited and wrote before the table, and the locality test at the end
 adds a row to a copy of the table and finds it at every site with no other
 edit.
@@ -75,6 +75,15 @@ def test_the_table_lists_every_kind_in_exit_order():
     assert [r.exit for r in FINDING_KINDS] == [3, 6, 6, 7, 8, 9, None]
     assert [r.fails for r in FINDING_KINDS] == [True] * 6 + [False]
     assert [r.field for r in FINDING_KINDS] == [KINDS[k][0] for k in ORDER]
+
+
+def test_each_row_labels_its_findings_items_with_its_rule():
+    """The label the Action's comment prints for each kind's items; the two
+    kinds of exit 6 share the complexity gate's."""
+    assert [r.rule for r in FINDING_KINDS] == [
+        "unreadable name", "complexity gate", "complexity gate", "ratchet regressions",
+        "new test failures", "diff-coverage ceiling", "override"]
+    assert [r.cap for r in FINDING_KINDS] == [None] * 5 + [50, None]
 
 
 def test_every_row_names_a_verdict_field_and_the_verdict_names_no_kind_twice():
@@ -289,6 +298,8 @@ def _result(rule: str, level: str, text: str, path: str, line: int) -> dict:
 
 
 SARIF = {
+    "unreadable_name": [_result("crapkit/unreadable-name", "error", CLAIMED.removeprefix("crapkit: "),
+                                "src/caf%E9.py", 1)],
     "gate_violation": [_result("crapkit/gate", "error",
                                "f( x ): CRAP 84.0 (ccn 9, cov 50%) -> decompose", "src/a.py", 3)],
     "unread_file": [_result("crapkit/unread", "error",
@@ -303,8 +314,9 @@ SARIF = {
 
 @pytest.mark.parametrize("kind", ORDER)
 def test_each_kind_s_sarif_rule_and_level_are_the_ones_verify_wrote(kind):
-    """new_failure and overridden write no result, and neither does
-    unreadable_name until verify renders the name as a verdict."""
+    """new_failure and overridden write no result. unreadable_name writes its
+    own since verify renders the name as a verdict: its uri percent-encodes
+    the name's own bytes, and its message is universe's sentence."""
     assert verify.sarif_results(holding(kind)) == SARIF.get(kind, [])
 
 
@@ -403,13 +415,15 @@ PROBE = FindingKind(
     refusal=Refusal(place=9, noun="probe", first=str, escape="drop the probe"),
     dirty=lambda verdict, entries: [entry.endswith("!") for entry in entries],
     text=verify.each(_probe_line), stream="stdout", json_key="probes", json=list,
-    sarif=Sarif("crapkit/probe", "note", lambda entry: (entry, 1), lambda entry: "a probe"))
+    sarif=Sarif("crapkit/probe", "note", lambda entry: (entry, 1), lambda entry: "a probe"),
+    rule="probe rule", item=lambda entry: {"probe": entry})
 
 
 def test_a_new_row_reaches_every_site_with_no_other_edit(monkeypatch, tmp_path, capsys):
     """A test-only kind on a copy of the table, reading a field no row reads:
     the exit code, the settled ok, the dirty split, the printer, SARIF and the
-    annotation, the override refusal and the JSON key all find it."""
+    annotation, the override refusal, the JSON key and the findings list all
+    find it."""
     monkeypatch.setattr(verify, "FINDING_KINDS", (*FINDING_KINDS, PROBE))
     verdict = verify.settle_verdict(Verdict.passing()._replace(retried_passes=("p.py", "q.py!")))
 
@@ -432,6 +446,9 @@ def test_a_new_row_reaches_every_site_with_no_other_edit(monkeypatch, tmp_path, 
                                        {}, [], None, 0)
     assert payload["probes"] == ["p.py", "q.py!"]
     assert (payload["committed_findings"], payload["dirty_findings"]) == (1, 1)
+    common = {"kind": "probe", "fails": True, "exit_code": 4, "overridable": False, "rule": "probe rule"}
+    assert payload["findings"] == [{**common, "dirty": False, "probe": "p.py"},
+                                   {**common, "dirty": True, "probe": "q.py!"}]
 
 
 def test_the_per_kind_sites_are_gone():

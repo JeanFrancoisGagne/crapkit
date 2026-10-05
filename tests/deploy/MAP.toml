@@ -152,6 +152,17 @@ modules = ["tests/deploy/test_cursor_adapter_cells.py"]
 [packets.gate-group-06]
 modules = ["tests/deploy/test_claimed_name_cells.py"]
 
+[packets.gate-group-10]
+modules = ["tests/deploy/test_claimed_name_cells.py"]
+
+[packets.gate-group-07]
+modules = ["tests/deploy/test_claimed_name_cells.py"]
+[packets.gate-group-08]
+modules = ["tests/deploy/test_claimed_name_hook_cells.py"]
+
+[packets.gate-group-09]
+modules = ["tests/deploy/test_claimed_name_cells.py"]
+
 # --- every-harness rows -----------------------------------------------------------
 # What a nightly run takes of each row: "all" its cells on all 17 harnesses,
 # "core" on the 3 core-image ones. The header says how a row's tests name it.
@@ -164,6 +175,8 @@ mission-9-06 = { nightly = "all" }
 protocol-2-step-08 = { nightly = "all" }
 schema-2-15 = { nightly = "all" }
 gate-group-06 = { nightly = "core" }
+gate-group-10 = { nightly = "core" }
+gate-group-07 = { nightly = "core" }
 lanes-visible-04 = { nightly = "core" }
 lanes-visible-05 = { nightly = "core" }
 lanes-visible-08 = { nightly = "core" }
@@ -505,6 +518,82 @@ lin-up-claimed-name-junie = { packet = "gate-group-06", cadence = "nightly", os 
 lin-up-claimed-name-omp = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
 lin-up-claimed-name-opencode = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
 lin-up-claimed-name-vscode-test-electron = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+# gate-group-10: the class U claimed-name cells running verify --json, one per pinned harness, fresh and upgrade
+lin-claimed-name-json-aider = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-amp = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-claude-agent-sdk = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-claude-agent-sdk-py = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-claude-code = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-claimed-name-json-cline = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-codex = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-claimed-name-json-continue = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-copilot-cli = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-crush = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-cursor-agent = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-claimed-name-json-gemini-cli = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-goose = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-junie = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-omp = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-opencode = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-vscode-test-electron = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-aider = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-amp = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-claude-agent-sdk = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-claude-agent-sdk-py = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-claude-code = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-up-claimed-name-json-cline = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-codex = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-up-claimed-name-json-continue = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-copilot-cli = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-crush = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-cursor-agent = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-up-claimed-name-json-gemini-cli = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-goose = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-junie = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-omp = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-opencode = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-vscode-test-electron = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+# gate-group-07: the class U claimed-name cells running rescore --gate --json and check_gate, one per pinned harness, fresh and upgrade
+lin-claimed-name-gate-aider = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-amp = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-claude-agent-sdk = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-claude-agent-sdk-py = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-claude-code = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-claimed-name-gate-cline = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-codex = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-claimed-name-gate-continue = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-copilot-cli = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-crush = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-cursor-agent = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-claimed-name-gate-gemini-cli = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-goose = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-junie = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-omp = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-opencode = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-vscode-test-electron = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-aider = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-amp = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-claude-agent-sdk = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-claude-agent-sdk-py = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-claude-code = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-up-claimed-name-gate-cline = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-codex = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-up-claimed-name-gate-continue = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-copilot-cli = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-crush = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-cursor-agent = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-up-claimed-name-gate-gemini-cli = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-goose = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-junie = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-omp = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-opencode = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-vscode-test-electron = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+# gate-group-08: the class U claimed-name cells committing through the hook, fresh and upgrade
+lin-claimed-name-hook = { packet = "gate-group-08", cadence = "nightly", os = "linux", image = "core" }
+lin-up-claimed-name-hook = { packet = "gate-group-08", cadence = "nightly", os = "linux", image = "core" }
+# gate-group-09: the class U claimed-name cells driving claude-hook, fresh and upgrade
+lin-claimed-name-claude-hook = { packet = "gate-group-09", cadence = "nightly", os = "linux", image = "core" }
+lin-up-claimed-name-claude-hook = { packet = "gate-group-09", cadence = "nightly", os = "linux", image = "core" }
 
 # --- what blocks a cell or a job -------------------------------------------------
 # Each is work outside this packet (the kit, a cell no packet writes yet) or a

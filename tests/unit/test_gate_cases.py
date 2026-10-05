@@ -419,7 +419,7 @@ VERIFY_CONFIG = '[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src
 
 
 def _verify_stop(monkeypatch, tmp_path, tracked: list[str], dirty: set[str]):
-    """verify's claimed-name stop over `tracked`, ready to run, and the list it
+    """verify's claimed-name check over `tracked`, ready to run, and the list it
     fills with the changes it hands the gate."""
     from crapkit import gitio
     from crapkit.cli import verifying
@@ -433,33 +433,36 @@ def _verify_stop(monkeypatch, tmp_path, tracked: list[str], dirty: set[str]):
 
     monkeypatch.setattr(gitio, "ls_files", lambda root: tracked)
     monkeypatch.setattr(gate, "judge", spy)
-    return handed, lambda: verifying._stop_on_claimed_names(tmp_path, load_config_text(VERIFY_CONFIG), dirty)
+    return handed, lambda: verifying._claimed_names(tmp_path, load_config_text(VERIFY_CONFIG), dirty)
 
 
 def test_verify_hands_each_claimed_name_to_the_gate_whole_and_stops_on_its_finding(monkeypatch, tmp_path):
-    from crapkit.errors import UNREAD_NAME_REASON, UnreadableNameError
+    """The gate's unreadable-name findings are what verify's verdict at the
+    stop holds: one findings item each, and the sentence naming the first."""
+    from crapkit import verify
 
     tracked = ["src/app.py", "src/o\udc92brien.py", "docs/caf\udce9.md", "src/caf\udce9.py"]
     handed, stop = _verify_stop(monkeypatch, tmp_path, tracked, {"src/o\udc92brien.py"})
 
-    with pytest.raises(UnreadableNameError) as refused:
-        stop()
+    names = stop()
 
     assert handed == [(
         gate.ChangedFile("src/caf\udce9.py", gate.WHOLE, gate.UnreadableName("src/caf\udce9.py", "src")),
         gate.ChangedFile("src/o\udc92brien.py", gate.WHOLE, gate.UnreadableName("src/o\udc92brien.py", "src", True)))]
-    assert str(refused.value) == ("src/caf\\xe9.py (and 1 more) is in scope 'src', but git names it in bytes "
-                                  "that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes "
-                                  "is refused, not left out, so no gate passes it unread: rename it (git mv) to a "
-                                  "UTF-8 name")
-    assert refused.value.json_fields() == {"unread_files": [
-        {"path": "src/caf\\xe9.py", "reason": UNREAD_NAME_REASON, "dirty": False},
-        {"path": "src/o\\x92brien.py", "reason": UNREAD_NAME_REASON, "dirty": True}]}
+    assert names == (gate.UnreadableName("src/caf\udce9.py", "src"),
+                     gate.UnreadableName("src/o\udc92brien.py", "src", True))
+    verdict = verify.settle_verdict(verify.Verdict.passing()._replace(claimed_names=names))
+    assert verify.exit_code(verdict) == 3 and verdict.ok is False
+    assert verify.text_lines(verdict, "stderr") == [
+        "crapkit: src/caf\\xe9.py (and 1 more) is in scope 'src', but git names it in bytes that are not UTF-8 "
+        "and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes "
+        "it unread: rename it (git mv) to a UTF-8 name"]
+    assert [(item["path"], item["dirty"]) for item in verify.finding_items(verdict)] == [
+        ("src/caf\\xe9.py", False), ("src/o\\x92brien.py", True)]
 
 
 def test_verify_asks_the_gate_nothing_when_no_scope_takes_an_unreadable_name(monkeypatch, tmp_path):
     handed, stop = _verify_stop(monkeypatch, tmp_path, ["src/app.py", "docs/caf\udce9.md"], set())
 
-    stop()
-
+    assert stop() == ()
     assert handed == []
