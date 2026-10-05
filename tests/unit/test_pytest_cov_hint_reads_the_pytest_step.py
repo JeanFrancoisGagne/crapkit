@@ -36,7 +36,7 @@ def test_the_hint_binds_the_install_to_the_python_running_pytest(tmp_path, monke
     from crapkit import launchers
     monkeypatch.setattr(launchers, "_uv_made", lambda python: False)
 
-    assert "the environment `python` runs in (`python -m pip install pytest-cov`)" in \
+    assert "the environment `python` runs in (`python -P -m pip install pytest-cov`)" in \
         _hint(tmp_path, command)
 
 
