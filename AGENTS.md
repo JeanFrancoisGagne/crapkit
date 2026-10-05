@@ -974,11 +974,18 @@ else, usually later, usually as a plausible wrong number.
   gate refuses the rest; the section below says what a refusal means.
 - **Register a new command once, in the parser.** Import helpers directly from their
   owning family module. Keep `crapkit.cli.main` as the public process entry point.
-- **Change what a metric measures and bump `ANALYSIS_VERSION` in `analyze.py`.** The
+- **Change what a metric measures and raise the number of each language or coverage
+  reader the change moves, and `ANALYSIS_VERSION` by one, in the same change.** The
+  numbers live in `ANALYSIS_VERSIONS` in `analyze.py`, one per language, and
+  `READER_VERSIONS` in `coverage_format.py`, one per coverage reader; `ANALYSIS_VERSION`
+  is their revision. A new language enters at 13 (`FIRST_ANALYSIS_VERSION`) and a new
+  reader at 1 (`FIRST_READER_VERSION`), and neither raises a number. The analysis cache
+  keys each file on its language's number, so a Go fix re-reads the Go files alone. The
   ratchet stamps every marks file with the version that produced it, and `verify` refuses
   to weigh fresh scores against marks another version signed. 0.4.5 bumped it to 8,
-  because shell blocks now nest. Without the bump nothing refuses, and 40k marks are
-  quietly compared against numbers they never described. Then re-measure `GOLDEN_RECORDS`
+  because shell blocks now nest. Without the raise nothing refuses, and 40k marks are
+  quietly compared against numbers they never described. Update the pinned literal in
+  `tests/unit/test_analysis_versions.py`, then re-measure `GOLDEN_RECORDS`
   in `tests/unit/test_analysis_cache_identity.py` on every Python the CI runs and set
   `GOLDEN_ANALYSIS_VERSION` to the new version; a test fails until you do. Declare the
   change too: `python tools/accuracy/change_control.py declare` appends the
