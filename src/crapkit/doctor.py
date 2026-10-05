@@ -842,7 +842,7 @@ def stale_copy(*, where: str, version: str | None, source: str, source_version: 
 
 def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,
                      protocols: tuple[str, ...] | None, supported: str, harness: str = "claude",
-                     cli_upgrade: str = "python -m pip install --upgrade crapkit",
+                     cli_upgrade: str = "python -P -m pip install --upgrade crapkit",
                      scopes: tuple[InstallScope, ...] = USER_SCOPE,
                      in_place: InPlace | None = None,
                      manifest_fault: str = "missing") -> list[str]:

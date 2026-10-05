@@ -1347,7 +1347,7 @@ plugin's repair is Claude Code's update pair, or for a plugin under `~/.codex` (
 `codex plugin marketplace add` line at the CLI's release tag, then `codex plugin add
 crapkit@crapkit`. The CLI's repair is the upgrade for the installer that owns the launcher:
 `uv tool upgrade crapkit`, `pipx upgrade crapkit`, `uv pip install --python <that python>
---upgrade crapkit` in a venv uv made, else `<that python> -m pip install --upgrade crapkit`.
+--upgrade crapkit` in a venv uv made, else `<that python> -P -m pip install --upgrade crapkit`.
 Two plain releases order; a pre-release or a local build names both repairs:
 
 ```

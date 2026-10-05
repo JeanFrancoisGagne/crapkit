@@ -36,7 +36,7 @@ class _Git:
 
 
 @pytest.mark.parametrize("uv_made, install", [
-    (False, "python -m pip install pytest-cov"),
+    (False, "python -P -m pip install pytest-cov"),
     (True, "uv pip install --python python pytest-cov"),
 ], ids=["pip-venv", "uv-venv"])
 def test_the_pytest_cov_note_is_ascii(monkeypatch, uv_made, install):
