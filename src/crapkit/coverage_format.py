@@ -76,6 +76,13 @@ class CoverageFormat(Protocol):
 
 _FORMATS = {"istanbul": coverage_istanbul, "coveragepy": coverage_py}
 
+# One version per key of _FORMATS. A change that moves what a reader reads
+# raises its number and analyze.ANALYSIS_VERSION by one in the same change; a
+# new reader enters at FIRST_READER_VERSION and raises nothing. Literals:
+# tools/accuracy reads them with ast.literal_eval.
+FIRST_READER_VERSION = 1
+READER_VERSIONS = {"istanbul": 1, "coveragepy": 1}
+
 
 def lane_format(lane: Lane) -> CoverageFormat:
     """The adapter for this lane's `parser`, or the refusal an unknown one earns.
