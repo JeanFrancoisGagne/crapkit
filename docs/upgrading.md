@@ -70,6 +70,17 @@ and `git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge
 for the driver ([Development](../README.md#development)); run the driver's line again in
 each clone. A `python` older than 3.11 has no `-P`, so a hook that reaches its `python`
 line stops there with `Unknown option: -P` and exit 2.
+
+The pip lines crapkit prints, the pytest-cov, coverage.py and lizard installs and
+`doctor`'s upgrade and reinstall of the CLI, now read `<python> -P -m pip install`, so a
+`pip.py` at the repository root no longer runs in place of pip when you paste one there. A
+wrapper that matches `python -m pip install` in crapkit's output finds
+`python -P -m pip install` there. The Action installs crapkit with
+`python -P -m pip install -e`, since it runs pip in your checkout. An Action
+`python-version` older than 3.11 still fails at the install step, as it did on 0.8.1,
+where pip said `requires a different Python` and exited 1. The step now prints
+`crapkit needs Python 3.11 or newer, and python-version installed Python 3.10.21: set python-version to 3.11 or newer`
+for a 3.10.21, then Python's `Unknown option: -P`, and exits 2.
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->
