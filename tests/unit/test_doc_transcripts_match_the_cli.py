@@ -88,6 +88,91 @@ def test_each_doctor_report_closes_on_the_verdict_its_findings_print(page):
         assert report[-1] == _verdict_of(report), (page, report[-2:])
 
 
+# --- the runner line doctor prints for each lane ---------------------------------
+#
+# doctor names each lane's runner on a line of its own. The two checks above
+# read a report's first line and its verdict only, so a page could drop every
+# runner line and stay green.
+
+RUNNER_LINE = re.compile(r"(ok  |note) lane '[^']*': (runs |runner unknown)")
+_TOML_BLOCK = re.compile(r"^```toml\n(.*?)^```", re.M | re.S)
+
+
+def _printed(findings, capsys) -> list[str]:
+    """The lines doctor prints for these findings, less the closing verdict."""
+    from crapkit.cli.admin import _print_findings
+
+    _print_findings(findings)
+    return capsys.readouterr().out.splitlines()[:-1]
+
+
+def _lane_reports(lines: list[str]) -> list[tuple[int, list[str]]]:
+    """(line index, output) for each `$ crapkit doctor` report that names a lane."""
+    found = [(i, _output_under(lines[i + 1:])) for i, line in enumerate(lines)
+             if line.strip() == "$ crapkit doctor"]
+    return [(i, report) for i, report in found
+            if any(line.startswith(FINDINGS) and (" lane '" in line or "lane(s) declared" in line)
+                   for line in report)]
+
+
+def _config_above(lines: list[str], at: int):
+    """The last toml block above line `at` that declares a lane, the config the
+    report under it reads, loaded with a scope for each name its lanes claim
+    and it does not declare: the lanes page opens on a lone [[lane]]."""
+    import tomllib
+
+    from crapkit.config import load_config_text
+
+    *_, body = [block for block in _TOML_BLOCK.findall("\n".join(lines[:at]) + "\n")
+                if re.search(r"^\[\[lane\]\]$", block, re.M)]
+    raw = tomllib.loads(body)
+    declared = {scope["name"] for scope in raw.get("scope", ())}
+    missing = sorted({name for lane in raw["lane"] for name in lane["scopes"]} - declared)
+    scopes = "".join(f'[[scope]]\nname = "{name}"\npaths = ["{name}"]\nlanguages = ["python"]\n'
+                     for name in missing)
+    return load_config_text(scopes + body)
+
+
+def test_every_doctor_report_that_lists_lanes_prints_each_lane_s_runner_line(capsys):
+    """README's quickstart and the lanes page show doctor over the lane the
+    page declares above the report. Each report carries the runner lines doctor
+    prints for that config, no more and no fewer."""
+    from crapkit.cli.admin import NO_PACKAGES, _doctor_runners
+
+    checked = []
+    for page in DOCTOR_PAGES:
+        lines = _page(page).splitlines()
+        for at, report in _lane_reports(lines):
+            expected = _printed(_doctor_runners(_config_above(lines, at), NO_PACKAGES), capsys)
+            checked.append((f"{page}:{at + 1}", [line for line in report if RUNNER_LINE.match(line)],
+                            expected))
+
+    assert len(checked) >= 3, "the reports stopped being found, so nothing is checked"
+    assert [row for row in checked if row[1] != row[2]] == []
+
+
+def test_the_runner_section_shows_the_line_doctor_prints_for_each_place_it_reads(capsys):
+    """One lane per place a runner is read from: the command, the package.json
+    script it runs, devDependencies, and nowhere."""
+    from crapkit.cli.admin import PackageMap, _doctor_runners
+    from crapkit.config import Config
+    from crapkit.scaffold import npm_package
+
+    shapes = [("py", "python -m pytest --cov", None),
+              ("js", "npm run test -- --coverage", {"scripts": {"test": "vitest run"}}),
+              ("js", "make cov", {"devDependencies": {"vitest": "^2.0.0"}}),
+              ("js", "npm run cov", None)]
+    text = _page("docs/lanes.md")
+    section = text[text.index("## How crapkit reads a lane's runner"):]
+    block = section[section.index("```\n") + 4:]
+    printed = [line for name, command, package in shapes
+               for line in _printed(_doctor_runners(
+                   Config(lanes=(Lane(name, command, "cov.json", "istanbul", ("src",)),)),
+                   PackageMap({"": npm_package(package)} if package else {}, {})), capsys)]
+
+    assert block[:block.index("```")].splitlines() == printed
+
+
 def test_the_quickstarts_verify_ok_lines_carry_the_ratchet_tail_their_steps_write():
     """Step 6 (Python) and step 7 (TypeScript) repay the one seeded mark, so
     the tighten drops it and the OK line asks for the `git add`."""
