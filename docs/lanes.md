@@ -192,6 +192,7 @@ ok   lane 'py': runs pytest (named in its command)
 ok   lane 'js': runs vitest (named in package.json script "test")
 ok   lane 'js': runs vitest (package.json devDependencies; the command names no runner)
 note lane 'js': runner unknown (npm run cov names none crapkit knows); runner-specific hints and refusals are off for it
+note lane 'both': runner unknown (it runs more than one: pytest, vitest); runner-specific hints are off for it; the refusals still read each segment of its command by the runner that segment names
 ```
 
 `doctor --json` carries the same answer as each lane's `toolchain`
@@ -226,11 +227,20 @@ deno, `cargo llvm-cov`, `go test` and c8. Three places are read, in this order:
 `make`, `just`, `tox` and `nox` run recipes crapkit does not read, so the command stops
 there and only the script and devDependencies steps can answer. A lane that names two
 runners, in two segments or in its command and its script, gets no runner, and its line
-says which two.
+says which two. Lane 'both' in the last line above runs
+`python -m pytest --cov && npx vitest run --coverage`.
 
-"runner unknown" is not a failure, and doctor's exit code does not change. It means the
-hints and refusals that key on one runner skip that lane. Naming the runner in the command
-turns them back on:
+"runner unknown" is not a failure, and doctor's exit code does not change. The hints that
+need one runner for the whole lane skip it: doctor's pytest-cov probe does not run, and the
+missing-`results_artifact` WARN gives a generic hint in place of the runner's junit flags.
+The refusals work differently. Each one reads every segment of the command on its own and
+judges it by the runner that segment names: the vitest file-filter refusal reads a segment
+that names vitest, and the [full-suite rule](#the-full-suite-rule) and the
+[container guard](#containers) read one that names pytest. A lane whose command names no
+runner draws none of them. A lane that names two keeps every refusal its segments draw:
+lane 'both' is refused in a container, and refused at load once its pytest segment gets a
+positional or its vitest segment a file filter. Naming the runner in the command turns the
+hints and refusals back on:
 `npx vitest run --coverage` in place of `npm run cov`. A package.json crapkit cannot read
 (not UTF-8, UTF-16, or not one JSON object) is one WARN naming the file, and each lane under
 it is read from its command alone.
