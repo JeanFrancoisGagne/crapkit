@@ -8,7 +8,9 @@ from 9.7 to 19.8 s: two verifies on a copy after each scripted step, and ten
 read commands around the prune. A serial WSL Ubuntu run of the same tree,
 taken while a Windows nightly loaded the host, took 80.3 s; its path layouts
 took 6.8 s against 6 declared, and every other check stayed under its value.
-The packet's push share is 120 seconds (the plan's time budget).
+The packet's push share is 120 seconds (the plan's time budget); the gate
+rule check added in 0.9.0 takes 1 more, so the checks declare 121, and the
+push total stays inside the kit's 504 s budget.
 Parametrized checks keep a few cases on push and run the rest nightly
 (verdict_model/cadence.py), and the random run-history machine runs nightly
 with `process` settings.
@@ -48,4 +50,6 @@ CHECKS = [
      "pytest": [_VM + "test_doctor_lanes.py"]},
     {"name": "push cadence helper", "seconds": 1,
      "pytest": [_VM + "test_cadence.py"]},
+    {"name": "gate rules sit in a calc and under a floor", "seconds": 1,
+     "pytest": [_VM + "test_gate_rules_are_calcs.py"]},
 ]
