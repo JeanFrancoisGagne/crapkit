@@ -884,7 +884,8 @@ Shared rules belong to these modules:
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
 | `lane_command.py` | how a lane's command reads and how its child starts. `shell_words` and `shell_segments` read the line the way the shell that runs it reads it; `command_steps` also reads the script of a `bash -c` or `sh -c` step with sh's rules and marks one sh cannot split; `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike; `child_environment` builds every lane, flake-retest and mutation child's environment; `expand_launchers` reads the launcher token (`{python}`, `{python:DIR}`) for this OS, and config calls it once as it builds the Lane |
-| `toolchain.py` | which runner a lane runs and what that runner needs. `TOOLCHAINS` holds one `Toolchain` row per runner, keyed by its name: the words that spell it in a command, the devDependency that names it, and the command, report flags, junit reporter and scoped-tests template init writes for it. Init reads every runner fact from here; it imports the standard library only, never a cli module |
+| `toolchain.py` | which runner a lane runs and what that runner needs. `TOOLCHAINS` holds one `Toolchain` row per runner, keyed by its name: the words that spell it in a command, the devDependency that names it, and the command, report flags, junit reporter, junit hint and scoped-tests template init writes for it. These are the runner facts: init, the runner refusals, the container guard and doctor's runner probes read them for the runner a command spells (`infer`, `step_runner`, `command_spells`), never off a lane's `parser`. It imports the standard library only, never a cli module |
+| `coverage_format.py` | which adapter reads a lane's artifact, looked up once from its `parser` (`lane_format`), and the producer facts that hold whatever runner starts the producer: `data_file` (where the lane's data file lands, for doctor's shared data-file finding), `SHARD_GLOB` and `COMBINE_RECIPE` (the shards a killed parallel run leaves and the commands that combine them, for the missing-artifact refusal) and `DROPPINGS` (what a run leaves in the tree, for init's .gitignore). A format without one leaves it empty. No other module compares parser strings, and `tests/unit/test_parser_strings_live_in_one_module.py` fails on one that does |
 | `repopath.py` | which file git names by a path that did not come from git. One entry per source: `typed` and `typed_path` for a path a person or agent typed (arguments, `--repo`, writer flags, hook payloads), `declared` for one crapkit.toml holds, `Reported` for one a runner wrote, `fragment` for a piece to match. `place` is the one placing rule for an absolute path: the root-relative path, or the `Unplaced` reason (`ANOTHER_TREE`, `UNOPENABLE`); `inside` answers it as the path or None, and `Reported.unplaced` records each key the reported entry left unplaced with its reason |
 | `lane_results.py` | which run's record of a lane's test results a comparison reads. `read_results` parses a lane's record into `LaneResults`, where a lane with no junit this run has no count and no failure list (None), never 0 tests or no failures, and a list a verify older than 0.8.0 stored is not trusted; a comparison reads the run it compares against, else the newest run behind it that recorded one, else says it cannot compare. verify's baseline and coverage's `suite_drops` both walk it. No other module reads `failures`, `tests_total` or `tests_skipped` off a lane record, and `tests/unit/test_lane_results.py` fails on one that does |
 | `marks_history.py` | what the marks file held in the past: the history `ratchet report` and `brief` read mark ages off, followed back through every `git mv` of the marks file, and the newest committed marks verify judges a missing or emptied marks file against. A git read under it that fails raises `GitError`; none answers an empty history |
@@ -973,11 +974,18 @@ else, usually later, usually as a plausible wrong number.
   gate refuses the rest; the section below says what a refusal means.
 - **Register a new command once, in the parser.** Import helpers directly from their
   owning family module. Keep `crapkit.cli.main` as the public process entry point.
-- **Change what a metric measures and bump `ANALYSIS_VERSION` in `analyze.py`.** The
+- **Change what a metric measures and raise the number of each language or coverage
+  reader the change moves, and `ANALYSIS_VERSION` by one, in the same change.** The
+  numbers live in `ANALYSIS_VERSIONS` in `analyze.py`, one per language, and
+  `READER_VERSIONS` in `coverage_format.py`, one per coverage reader; `ANALYSIS_VERSION`
+  is their revision. A new language enters at 13 (`FIRST_ANALYSIS_VERSION`) and a new
+  reader at 1 (`FIRST_READER_VERSION`), and neither raises a number. The analysis cache
+  keys each file on its language's number, so a Go fix re-reads the Go files alone. The
   ratchet stamps every marks file with the version that produced it, and `verify` refuses
   to weigh fresh scores against marks another version signed. 0.4.5 bumped it to 8,
-  because shell blocks now nest. Without the bump nothing refuses, and 40k marks are
-  quietly compared against numbers they never described. Then re-measure `GOLDEN_RECORDS`
+  because shell blocks now nest. Without the raise nothing refuses, and 40k marks are
+  quietly compared against numbers they never described. Update the pinned literal in
+  `tests/unit/test_analysis_versions.py`, then re-measure `GOLDEN_RECORDS`
   in `tests/unit/test_analysis_cache_identity.py` on every Python the CI runs and set
   `GOLDEN_ANALYSIS_VERSION` to the new version; a test fails until you do. Declare the
   change too: `python tools/accuracy/change_control.py declare` appends the

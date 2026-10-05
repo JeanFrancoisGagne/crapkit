@@ -11,7 +11,7 @@ This module is also the istanbul adapter (coverage_format looks it up from a
 lane's `parser`): it reads the artifact through covstream's framing, keys each
 file by rebasing it under the checkout root, records each key it could not
 rebase with the placing step's reason, and owns the advice a wrong-tree refusal
-gives an istanbul lane. Attribution itself stays independent of file I/O and
+gives an istanbul lane; it has no producer facts. Attribution itself stays independent of file I/O and
 JSON framing.
 """
 from __future__ import annotations
@@ -489,6 +489,16 @@ ABSOLUTE_FIX = ("The reader rebases every measured path that resolves under this
                 "machine rather than reusing a report written somewhere else")
 UNMEASURED_READING = "or the suite measured a part of the tree these scopes do not name"
 TAKES_PATH_PREFIX = False
+# No producer facts: crapkit knows of no data file, shard or dropping an
+# istanbul producer leaves outside its report, so each one is empty.
+SHARD_GLOB = None
+COMBINE_RECIPE = None
+DROPPINGS = ()
+
+
+def data_file(lane: Lane) -> None:
+    """No data file a second lane could collide on."""
+    return None
 
 
 def read(lane: Lane, root: Path, artifact: Path, *,

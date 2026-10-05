@@ -115,11 +115,15 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # edited file through it (gate-group-09), and 3,772 once programs answered
 # where crapkit finds the programs it starts (gate-group-15). The two lines
 # met at 3,839, and 3,840 once the analysis pool started its workers under
-# PYTHONSAFEPATH (gate-group-17).
+# PYTHONSAFEPATH (gate-group-17). 090/integration then reached 3,810 once the
+# runner refusals and hints read the spelled runner (m1-foundations-09), and
+# the second sync met at 3,846.
 # A src change that adds or drops a def moves it on purpose: recount with
-# py_ast_oracle.functions and change it in the same commit. 3,846 once the
-# runner refusals and hints read the spelled runner (m1-foundations-09).
-SRC_DEFS = 3846
+# py_ast_oracle.functions and change it in the same commit. 090/m1-foundations
+# reached 3,813 once the producer facts read the coverage format adapter
+# (m1-foundations-10), and the third sync met at 3,849. 090/metric-stamp reached
+# 3,850 with analyze.analysis_version_of (metric-stamp-02).
+SRC_DEFS = 3850
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
