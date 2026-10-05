@@ -1,10 +1,10 @@
-"""Nothing outside verify's builder reads the eight keys 0.8.1's verify --json
-listed its findings under.
+"""Nothing reads or documents the eight keys 0.8.1's verify --json listed its
+findings under.
 
 0.9.0 lists every finding once under `findings` and the numbers beside them
-under `counts`, and still prints the 0.8.1 per-kind keys beside them until a
-later release drops them. A reader left on one of those keys breaks on that
-drop, so this scan finds every one that is left.
+under `counts`, and verify --json no longer prints the 0.8.1 per-kind keys. A
+reader left on one of those keys reads nothing, so this scan finds every one
+that is left.
 
 Python under src/ and tests/: every read of an old key fails unless one of
 the exemptions below holds. A read is `x[key]`, `x.get(key)` or `x.pop(key)`,
@@ -25,20 +25,17 @@ they read as those. The exemptions:
 - it runs only when the payload has no `findings`: a reader that also serves a
   crapkit before 0.9.0, which the accuracy suite's retro replays run, names the
   old key in that branch alone, so dropping the keys changes nothing it reads;
-- its file is the builder, or a test that pins the builder's 0.8.1 lists
-  until the builder drops them (BUILDER).
+- its file builds payloads the 0.8.1 way on purpose (BUILDER).
 
-Markdown under docs/: every mention of the three names no 0.9.0 field reuses
-fails. The other five also name a findings kind, a `counts` key, the gate
+Markdown under docs/, README.md, AGENTS.md and the plugin's skills: every
+mention of the three names no 0.9.0 field reuses fails. The other five also name a findings kind, a `counts` key, the gate
 block's and the error object's list, or the crapkit.toml key, so a mention of
 one fails only where the sentence uses it as a list of verify's: "listed under
 `overridden`", "`unread_files` lists", "`diff_uncovered` truncates", "verify's
 `unread_files`". A mention the words just before give to the error object
 ("the error object lists it in `unread_files`") is that object's. Dated records
-(upgrading.md, releases/, specs/, architecture/) keep theirs, and so do
-docs/agent-json.md's verify example, a real payload, its table of the 0.8.1
-keys, which leave with the keys, and its Errors section, whose `unread_files` is
-the error object's.
+(upgrading.md, releases/, specs/, architecture/) keep theirs, and so does
+docs/agent-json.md's Errors section, whose `unread_files` is the error object's.
 """
 from __future__ import annotations
 
@@ -62,9 +59,6 @@ OTHER_READS = frozenset({("main", "diff_uncovered_max"), ("rule", "diff_uncovere
                          ("gate_rule", "diff_uncovered_max")})
 
 BUILDER = frozenset({
-    "src/crapkit/verify.py", "src/crapkit/cli/verifying.py", "src/crapkit/agent_fields.py",
-    "tests/unit/test_finding_kinds.py", "tests/unit/test_verify_findings_list.py",
-    "tests/unit/test_agent_fields.py",
     # Builds payloads the 0.8.1 way to show the Action's comment reads none of these keys.
     "tests/unit/test_action_contract.py",
 })
@@ -363,8 +357,6 @@ def i(printed, refusal=None):
 # --- docs ------------------------------------------------------------------------------
 
 _GONE = re.compile(r"\b(" + "|".join(GONE) + r")\b")
-_EXAMPLE_KEY = re.compile(r'^  "(' + "|".join(sorted(OLD_KEYS)) + r')": ')
-_TABLE_ROW = re.compile(r"^\| `(" + "|".join(sorted(OLD_KEYS)) + r")` \|")
 
 # The five old keys a 0.9.0 field reuses, and the wording that uses one as a
 # list of verify's. Words run across a line break, as wrapped prose does.
@@ -387,15 +379,6 @@ def _section(lines: list[str], heading: str) -> range:
     start = lines.index(heading)
     end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
     return range(start, end)
-
-
-def _declares(path: str, lines: list[str]) -> set[int]:
-    """The lines of docs/agent-json.md's verify section that state an old key
-    itself: a top-level key of the example payload, or a row of the 0.8.1 key table."""
-    if path != "docs/agent-json.md":
-        return set()
-    return {i for i in _section(lines, "## `verify`")
-            if _EXAMPLE_KEY.match(lines[i]) or _TABLE_ROW.match(lines[i])}
 
 
 def _error_object_lines(path: str, lines: list[str]) -> set[int]:
@@ -421,28 +404,43 @@ def gone_key_mentions(path: str, text: str) -> list[tuple[int, str]]:
     lines = text.split("\n")
     gone = {i for i, line in enumerate(lines) if _GONE.search(line)}
     shared = _shared_key_lines(text) - _error_object_lines(path, lines)
-    return [(i + 1, lines[i]) for i in sorted((gone | shared) - _declares(path, lines))]
+    return [(i + 1, lines[i]) for i in sorted(gone | shared)]
+
+
+def _pages() -> list[str]:
+    """Every page a reader of verify --json is sent to, dated records aside:
+    docs/, README.md, AGENTS.md and the plugin's skills."""
+    pages = [*(ROOT / "docs").rglob("*.md"), ROOT / "README.md", ROOT / "AGENTS.md",
+             *(ROOT / "plugin" / "skills").rglob("*.md")]
+    found = sorted(page.relative_to(ROOT).as_posix() for page in pages)
+    return [rel for rel in found if not rel.startswith(DATED)]
+
+
+def test_the_scan_reads_readme_agents_and_the_skills_beside_docs():
+    pages = _pages()
+
+    assert {"README.md", "AGENTS.md", "plugin/skills/crapkit-recover/SKILL.md",
+            "docs/agent-json.md"} <= set(pages)
+    assert not [page for page in pages if page.startswith(DATED)]
 
 
 def test_no_page_outside_the_dated_records_names_a_gone_verify_key():
     hits = {}
-    for page in sorted((ROOT / "docs").rglob("*.md")):
-        rel = page.relative_to(ROOT).as_posix()
-        if not rel.startswith(DATED):
-            mentions = gone_key_mentions(rel, page.read_text(encoding="utf-8"))
-            if mentions:
-                hits[rel] = mentions
+    for rel in _pages():
+        mentions = gone_key_mentions(rel, (ROOT / rel).read_text(encoding="utf-8"))
+        if mentions:
+            hits[rel] = mentions
     assert hits == {}, hits
 
 
-def test_the_docs_scan_keeps_the_verify_declaration_and_nothing_else():
+def test_the_docs_scan_flags_the_verify_example_and_table_too():
+    """The verify example and the 0.8.1 key table left with the keys, so an
+    old key there fails like one anywhere else."""
     page = "\n".join(["## `verify`", "```json", "{", '  "new_failures": [],', "}", "```",
                       "| `gate_violations` | x | 6 |", "a `gate_violations` entry", "## `coverage`",
                       '  "new_failures": [],'])
 
-    assert gone_key_mentions("docs/agent-json.md", page) == [
-        (8, "a `gate_violations` entry"), (10, '  "new_failures": [],')]
-    assert len(gone_key_mentions("docs/lanes.md", page)) == 4
+    assert [line for line, _ in gone_key_mentions("docs/agent-json.md", page)] == [4, 7, 8, 10]
 
 
 def test_the_docs_scan_flags_a_shared_name_used_as_a_verify_key():

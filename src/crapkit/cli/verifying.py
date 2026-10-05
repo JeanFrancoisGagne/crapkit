@@ -730,10 +730,9 @@ def _verify_result(verdict, run_id: int | None, baseline: dict, commit: str, ran
     says how much of the tree the ratchet is not holding.
 
     `findings` lists every finding once, each kind's row giving its common
-    fields, and `counts` the numbers beside them; the 0.8.1 per-kind keys
-    print beside them until every reader has moved. `dirty` flags the
-    uncovered lines in files with uncommitted edits."""
-    from ..verify import finding_items, json_lists
+    fields, and `counts` the numbers beside them; no kind has a key of its
+    own. `dirty` flags the uncovered lines in files with uncommitted edits."""
+    from ..verify import finding_items
 
     return {
         "ok": verdict.ok,
@@ -743,13 +742,10 @@ def _verify_result(verdict, run_id: int | None, baseline: dict, commit: str, ran
         "commit": commit,
         "changed_files": len(ranges),
         "changed_paths": sorted(ranges),
-        **json_lists(verdict, uncovered),
         "findings": finding_items(verdict, uncovered, dirty),
         "counts": {"diff_uncovered_count": len(uncovered), "diff_uncovered_max": diff_uncovered_max},
         "forgiven_failures": list(verdict.forgiven_failures),
         "retried_passes": list(verdict.retried_passes),
-        "diff_uncovered_count": len(uncovered),
-        "diff_uncovered_max": diff_uncovered_max,
         "unmarked_over_target": unmarked_over_target,
         **_verify_attribution(verdict),
     }
@@ -818,8 +814,8 @@ def _receipt(tool_versions: dict, saved, judged: _JudgedMarks,
     marks verify judged against (`ratchet_source` "tree", or "committed" with
     the commit that held them and their digest), and the tighten's counts, null
     when this run's tighten wrote nothing (a failed run, --no-tighten, nothing
-    to move). An override's grant is its own write and is listed under
-    `overridden`, not counted here."""
+    to move). An override's grant is its own write and is an `overridden`
+    findings item, not counted here."""
     return {"tool_versions": tool_versions, "ratchet_sha256": saved.sha256,
             "ratchet_source": "committed" if judged.commit else "tree",
             "ratchet_source_commit": judged.commit,
@@ -966,13 +962,12 @@ def _stopped(args, root: Path, cfg, names: tuple, stop: _Stop) -> int:
 def _stop_payload(verdict, cfg, stop: _Stop) -> dict:
     """Every key a verify payload prints, each the value verify knew at the
     stop: no diff was read and nothing was measured, so run_id is null and the
-    lists and counts a run fills are empty. `unread_files` lists each name in
-    the item 0.8.1's error object listed it in, {path, reason, dirty}."""
+    lists and counts a run fills are empty; each name is an unreadable_name
+    item in `findings`."""
     return {**_verify_result(verdict, None, stop.baseline, stop.commit, {}, [], cfg.diff_uncovered_max, 0),
             **_receipt(_tool_versions(), stop.saved, stop.judged, None),
             "lanes_without_results": [], "lanes_without_baseline_results": [],
-            "unreadable_names": [], "untracked_in_scope": stop.untracked,
-            "unread_files": _claimed_unread(verdict.claimed_names)}
+            "unreadable_names": [], "untracked_in_scope": stop.untracked}
 
 
 def _tool_versions() -> dict:
@@ -982,13 +977,6 @@ def _tool_versions() -> dict:
 
     lizard, *_ = _analysis_tools()
     return {"crapkit": __version__, "lizard": lizard.version, "analysis_version": str(ANALYSIS_VERSION)}
-
-
-def _claimed_unread(names) -> list[dict]:
-    from ..errors import UNREAD_NAME_REASON
-    from ..gitpaths import shown
-
-    return [{"path": shown(name.path), "reason": UNREAD_NAME_REASON, "dirty": name.dirty} for name in names]
 
 
 def _refuse_failed_lanes(run) -> None:

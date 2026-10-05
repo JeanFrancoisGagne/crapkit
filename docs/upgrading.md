@@ -81,6 +81,28 @@ wrapper that matches `python -m pip install` in crapkit's output finds
 where pip said `requires a different Python` and exited 1. The step now prints
 `crapkit needs Python 3.11 or newer, and python-version installed Python 3.10.21: set python-version to 3.11 or newer`
 for a 3.10.21, then Python's `Unknown option: -P`, and exits 2.
+
+### verify --json drops the 0.8.1 per-kind keys
+
+`verify --json` no longer prints the eight keys 0.8.1 listed its findings and their
+counts under. Every value they held is in `findings`, one item per finding, or in
+`counts` ([The findings list](agent-json.md#the-findings-list)). A wrapper reads each
+old key's value from the place on its row:
+
+| 0.8.1 key | Where its value is in 0.9.0 |
+|---|---|
+| `gate_violations` | `findings` items of kind `gate_violation` |
+| `ratchet_regressions` | `findings` items of kind `ratchet_regression` |
+| `overridden` | `findings` items of kind `overridden`, with `fails` false and `exit_code` null |
+| `new_failures` | `findings` items of kind `new_failure`, each test id in field `test` |
+| `diff_uncovered` | `findings` items of kind `diff_uncovered`, at most 50 |
+| `unread_files` | `findings` items of kind `unread_file`; a file a scope takes whose name is not UTF-8 is an item of kind `unreadable_name`, where 0.8.1 printed an error object whose `unread_files` listed it |
+| `diff_uncovered_count` | `counts.diff_uncovered_count` |
+| `diff_uncovered_max` | `counts.diff_uncovered_max` |
+
+Each item carries the entry's own fields and its `dirty` flag, as the old list's entry
+did. `rescore --gate --json` and the `check_gate` tool keep `gate.breaches` and
+`gate.unread_files`, and the `--json` error object keeps its `unread_files`.
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->
