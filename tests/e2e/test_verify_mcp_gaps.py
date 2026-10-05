@@ -422,7 +422,8 @@ def test_a_lane_artifact_missing_on_disk_drops_out_of_diff_coverage(wiping_repo:
 
     res = run_cli(wiping_repo, "verify", "--json")
     assert res.returncode == 0, res.stdout + res.stderr
-    assert json.loads(res.stdout)["diff_uncovered"] == [{"path": "srcb/mod_b.py", "line": 4}]
+    assert [{"path": item["path"], "line": item["line"]} for item in json.loads(res.stdout)["findings"]
+            if item["kind"] == "diff_uncovered"] == [{"path": "srcb/mod_b.py", "line": 4}]
     assert "warning: 1 changed line(s) have no coverage" in res.stderr
     assert "uncovered srcb/mod_b.py:4" in res.stderr
     assert "srca/mod_a.py" not in res.stderr, "the wiped lane is skipped, never guessed at"
