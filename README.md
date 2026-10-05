@@ -280,12 +280,12 @@ $ crapkit --version
 crapkit 0.8.1
 ```
 
-`python -m crapkit` works identically to the console script and is what to use from a
+`python -P -m crapkit` works identically to the console script and is what to use from a
 source checkout. A next step crapkit prints names `crapkit` when PATH finds this
 installation's console script, and otherwise the interpreter running it, spelled with
-forward slashes (`C:/venv/Scripts/python.exe -m crapkit coverage`) so Git Bash, cmd.exe
+forward slashes (`C:/venv/Scripts/python.exe -P -m crapkit coverage`) so Git Bash, cmd.exe
 and PowerShell all run it as printed. A segment that holds a space is quoted on its own
-(`C:/"Program Files"/Python312/python.exe -m crapkit coverage`), so the line never opens
+(`C:/"Program Files"/Python312/python.exe -P -m crapkit coverage`), so the line never opens
 with a quote and runs in PowerShell too. One case loses cmd.exe: a venv's `python.exe` in
 a spaced directory with no 8.3 short name, where you put the whole path in double quotes
 by hand ([docs/adr/0003](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/adr/0003-a-pasted-command-never-opens-with-a-quote.md)).
@@ -657,17 +657,17 @@ that owns a staged file and names paths from the top (`packages/api/app/m.py`). 
 that stages nothing under any `crapkit.toml`, a docs-only commit or any commit in a repo
 armed before `crapkit init`, passes with one note on stderr. To pin the gate to one root
 instead, end each `hook-precommit` line of the hook below with `--repo packages/api`,
-as in `exec python -m crapkit hook-precommit --repo packages/api`, and Route 3 adds
+as in `exec python -P -m crapkit hook-precommit --repo packages/api`, and Route 3 adds
 `args: [--repo, packages/api]` under `id: crapkit-gate`. Route 4's `crapkit verify` takes
 `--repo packages/api`.
 
 Route 1 and Route 2 write this hook body. It runs the first of three that the hook's
 PATH offers: the `crapkit` command a pipx, uv tool or venv install puts there, then
-`uvx crapkit`, then `python -m crapkit`:
+`uvx crapkit`, then `python -P -m crapkit`, whose `-P` keeps the repo root off `sys.path`:
 
     command -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit
     command -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit
-    exec python -m crapkit hook-precommit
+    exec python -P -m crapkit hook-precommit
 
 The uvx line is what gates a machine that runs crapkit only through `uvx`. It runs the
 release uv fetched first, or the newest one when uv has none, which need not be the
@@ -680,13 +680,13 @@ Route 3's framework writes a hook of its own that runs `crapkit hook-precommit` 
 environment it installs crapkit into, and Route 4 gates in CI with no hook.
 
 Git hands the hook the PATH of whatever ran `git commit`. A terminal with your venv
-activated passes the venv on; an IDE or GUI client you did not start from that terminal
-does not. When that PATH reaches no `crapkit` command, no `uvx` and no `python` that
-imports crapkit, git refuses every commit. With no `python` at all, as on a Debian,
-Ubuntu or macOS that has only `python3`, the hook exits 127 with
-`exec: python: not found`. With a `python` that does not import crapkit, such as a system
-python, it exits 1 with `No module named crapkit`. Spell the path out for that client:
-`exec /path/to/venv/bin/crapkit hook-precommit`, or `Scripts/crapkit.exe` on Windows.
+activated passes the venv on; an IDE or GUI client you did not start from it does not.
+When that PATH reaches no `crapkit` command, no `uvx` and no `python` that imports
+crapkit, git refuses every commit. With no `python`, as on a Debian, Ubuntu or macOS that
+has only `python3`, the hook exits 127 with `exec: python: not found`. A `python` that
+does not import crapkit, such as a system python, exits 1 with `No module named crapkit`.
+A `python` older than 3.11 exits 2 with `Unknown option: -P`. Spell the path out for that
+client: `exec /path/to/venv/bin/crapkit hook-precommit`, or `Scripts/crapkit.exe` on Windows.
 
 **Run `git config core.hooksPath` before you pick a route.** When it prints a directory,
 set globally or by husky, lefthook or another hook manager, git runs hooks from there
@@ -704,7 +704,7 @@ cat > "$hook" <<'EOF'
 #!/bin/sh
 command -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit
 command -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit
-exec python -m crapkit hook-precommit
+exec python -P -m crapkit hook-precommit
 EOF
 chmod +x "$hook"
 ```
@@ -771,7 +771,7 @@ cat > githooks/pre-commit <<'EOF'
 #!/bin/sh
 command -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit
 command -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit
-exec python -m crapkit hook-precommit
+exec python -P -m crapkit hook-precommit
 EOF
 chmod +x githooks/pre-commit
 printf 'githooks/pre-commit text eol=lf\n' >> .gitattributes
@@ -786,7 +786,7 @@ commit goes through ungated. From PowerShell, the same route:
 
 ```powershell
 New-Item -ItemType Directory -Force githooks | Out-Null
-Set-Content -Path githooks/pre-commit -Encoding ascii -NoNewline -Value "#!/bin/sh`ncommand -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit`ncommand -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit`nexec python -m crapkit hook-precommit`n"
+Set-Content -Path githooks/pre-commit -Encoding ascii -NoNewline -Value "#!/bin/sh`ncommand -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit`ncommand -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit`nexec python -P -m crapkit hook-precommit`n"
 Add-Content -Path .gitattributes -Encoding ascii -Value 'githooks/pre-commit text eol=lf'
 git add .gitattributes githooks/pre-commit
 git update-index --chmod=+x githooks/pre-commit
@@ -1980,7 +1980,7 @@ with no debt.
 ```
 pip install -e ".[dev,accuracy-push]"
 git config core.hooksPath git-hooks
-git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"
 python tools/testing/run.py
 ```
 

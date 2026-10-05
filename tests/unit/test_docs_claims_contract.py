@@ -353,7 +353,7 @@ def test_the_gate_section_says_a_set_hooks_path_moves_every_hook():
 # tool install, whose interpreter is not the one on PATH.
 HOOK_BODY = ("command -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit",
              "command -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit",
-             "exec python -m crapkit hook-precommit")
+             "exec python -P -m crapkit hook-precommit")
 FENCE_NAMES = {"sh": "sh", "powershell": "PowerShell", "yaml": "YAML"}
 
 
@@ -456,11 +456,11 @@ def test_the_gate_section_names_the_order_the_hook_tries():
     gate = " ".join(_section(_doc("README.md"), "## The gate").split())
 
     assert "the `crapkit` command" in gate
-    assert "then `uvx crapkit`, then `python -m crapkit`" in gate
+    assert "then `uvx crapkit`, then `python -P -m crapkit`" in gate
 
 
 # What each line of the hook body runs, as the prose names it.
-BODY_LAUNCHERS = {"crapkit hook-precommit": "`crapkit`", "uvx crapkit": "`uvx`", "python -m crapkit": "`python`"}
+BODY_LAUNCHERS = {"crapkit hook-precommit": "`crapkit`", "uvx crapkit": "`uvx`", "python -P -m crapkit": "`python`"}
 
 
 def test_every_line_of_the_hook_body_has_a_launcher_the_prose_names():
