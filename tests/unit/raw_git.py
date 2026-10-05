@@ -55,7 +55,10 @@ def commit(root: Path, *, author: bytes = b"a", committer: bytes = b"c",
     changes = [b"M 100644 inline " + path + b"\ndata %d\n" % len(body) + body + b"\n"
                for path, body in (files if files is not None else {b"a.py": SOURCE}).items()]
     changes += [b"D " + path + b"\n" for path in deletes]
-    git(root, "fast-import", "--quiet", stdin=b"".join([
+    # Git for Windows 2.55 refuses a fast-import path NTFS cannot hold, a line
+    # break or a CR among them ("invalid path"), unless core.protectNTFS is off.
+    # A history made on Linux holds such names; a checkout on Windows still refuses them.
+    git(root, "-c", "core.protectNTFS=false", "fast-import", "--quiet", stdin=b"".join([
         _header(author, committer, stamp, encoding),
         b"data %d\n" % len(message), message, b"\n", parent, *changes, b"\n"]))
     return git(root, "rev-parse", "refs/heads/main").decode().strip()
