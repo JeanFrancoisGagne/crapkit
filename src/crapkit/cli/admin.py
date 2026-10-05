@@ -1020,6 +1020,12 @@ def _lane_toolchain(lane, packages: PackageMap):
 _READ_FROM = {"command": "named in its command",
               "script": 'named in package.json script "{script}"',
               "package.json": "package.json devDependencies; the command names no runner"}
+# What "runner unknown" turns off. Config load and the container rule judge each
+# segment of the command by the runner that segment names, so a lane that names
+# two runners keeps its refusals and loses only the hints that need one runner.
+_NONE_OFF = "runner-specific hints and refusals are off for it"
+_TWO_OFF = ("runner-specific hints are off for it; the refusals still read each segment of its "
+            "command by the runner that segment names")
 
 
 def _runner_line(lane, found) -> Finding:
@@ -1028,8 +1034,8 @@ def _runner_line(lane, found) -> Finding:
     if found.name:
         where = _READ_FROM[found.source].format(script=found.script)
         return Finding("ok", f"lane {lane.name!r}: runs {found.name} ({where})")
-    return Finding("note", f"lane {lane.name!r}: runner unknown ({_unknown_runner(lane, found)}); "
-                           "runner-specific hints and refusals are off for it")
+    off = _TWO_OFF if found.words else _NONE_OFF
+    return Finding("note", f"lane {lane.name!r}: runner unknown ({_unknown_runner(lane, found)}); {off}")
 
 
 def _unknown_runner(lane, found) -> str:

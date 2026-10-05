@@ -455,10 +455,51 @@ def _runner_lines(*lanes: Lane, packages: admin.PackageMap = admin.NO_PACKAGES) 
               "runner-specific hints and refusals are off for it")),
     (_js(command="npx vitest run && npx jest"), {},
      ("note", "lane 'js': runner unknown (it runs more than one: vitest, jest); "
-              "runner-specific hints and refusals are off for it")),
+              "runner-specific hints are off for it; the refusals still read each segment of "
+              "its command by the runner that segment names")),
 ], ids=["command", "script", "devdependencies", "unknown", "two-runners"])
 def test_doctor_prints_one_runner_line_per_lane(lane, packages, line):
     assert _runner_lines(lane, packages=_map(packages)) == [line]
+
+
+def test_a_two_runner_lanes_line_says_what_its_refusals_do(repo, monkeypatch, capsys):
+    """`python -m pytest --cov && npx vitest run --coverage` names two runners,
+    so doctor names no runner for the lane. Its line said the refusals were
+    off for it, beside doctor's own WARN that `crapkit coverage` refuses the
+    lane in a container, and config load refused a pytest positional or a
+    vitest file filter added to it: each refusal reads the segment that names
+    its runner. Only the hints that need one runner for the lane skip it."""
+    from crapkit.config import load_config_text
+    from crapkit.errors import ConfigError
+
+    two = "python -m pytest --cov && npx vitest run --coverage"
+    unit = 'name = "unit"\ncommand = "python -c pass"\n'
+    text = (repo / "crapkit.toml").read_text(encoding="utf-8")
+
+    def refused_at_load(command: str) -> bool:
+        try:
+            load_config_text(text.replace(unit, f'name = "unit"\ncommand = "{command}"\n'))
+        except ConfigError:
+            return True
+        return False
+
+    (repo / "crapkit.toml").write_text(text.replace(unit, f'name = "unit"\ncommand = "{two}"\n'),
+                                       encoding="utf-8")
+    monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "1")
+    main(["doctor", "--repo", str(repo)])
+    out = capsys.readouterr().out.splitlines()
+
+    (line,) = [printed for printed in out if printed.startswith("note lane 'unit': runner unknown")]
+    refusals = {"container": any(printed.startswith("WARN lane 'unit' runs pytest and this is a "
+                                                    "container") for printed in out),
+                "narrowing": refused_at_load(two.replace("pytest --cov", "pytest tests/unit --cov")),
+                "file filter": refused_at_load(f"{two} src/a.test.ts")}
+    assert refusals == {"container": True, "narrowing": True, "file filter": True}
+    assert "refusals are off" not in line, line
+    assert line == ("note lane 'unit': runner unknown (it runs more than one: pytest, vitest); "
+                    "runner-specific hints are off for it; the refusals still read each segment "
+                    "of its command by the runner that segment names")
+    assert not [printed for printed in out if "pytest-cov" in printed], "no probe: a hint"
 
 
 def test_every_lane_gets_its_line_in_declared_order():
