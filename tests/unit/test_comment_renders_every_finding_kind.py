@@ -59,15 +59,11 @@ def holding(field: str, entries: list) -> Verdict:
 
 
 def payload(verdict: Verdict, run_id: int | None = 3) -> dict:
-    """verify --json for the verdict, with every 0.8.1 per-kind key dropped,
-    the payload once those keys are gone. A breached ceiling of 0 makes each
+    """verify --json for the verdict. A breached ceiling of 0 makes each
     uncovered line fail."""
     lines = [(line.path, line.line) for line in verdict.uncovered_violations]
-    printed = json.loads(json.dumps(verifying._verify_result(
+    return json.loads(json.dumps(verifying._verify_result(
         verdict, run_id, BASELINE, "b" * 40, {"src/m.py": [(1, 20)]}, lines, 0 if lines else None, 0)))
-    for key in [row.json_key for row in FINDING_KINDS] + ["diff_uncovered_count", "diff_uncovered_max"]:
-        printed.pop(key, None)
-    return printed
 
 
 def rendered(verdict: Verdict, run_id: int | None = 3) -> list[str]:

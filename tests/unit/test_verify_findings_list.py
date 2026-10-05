@@ -5,9 +5,9 @@ takes whose name is not UTF-8 stopped verify with an error object instead of a
 verdict. Now each finding is one item: the fields every item carries (kind,
 fails, exit_code, overridable, dirty and the rule label the Action's comment
 prints) from its kind's row in verify.FINDING_KINDS, then the kind's own
-fields. The old keys print beside them until every reader has moved. The
-claimed-name stop prints the same payload, holding the one kind no lane has to
-run for, and still exits 3 with the 0.8.1 stderr line.
+fields. The eight 0.8.1 keys are gone: every value they held is in `findings`
+or `counts`. The claimed-name stop prints the same payload, holding the one
+kind no lane has to run for, and still exits 3 with the 0.8.1 stderr line.
 """
 from __future__ import annotations
 
@@ -167,27 +167,21 @@ def _own(item: dict) -> dict:
     return {key: value for key, value in item.items() if key not in COMMON}
 
 
-def _old(entry) -> dict:
-    """An entry of a 0.8.1 per-kind list, as its findings item carries it."""
-    if isinstance(entry, str):
-        return {"test": entry}
-    return {key: value for key, value in entry.items() if key != "dirty"}
-
-
 def test_items_follow_the_exit_order_of_their_kinds():
     listed = items(holding(*reversed(ORDER), dirty=True))
 
     assert [item["kind"] for item in listed] == [kind for kind in ORDER for _ in range(2)]
 
 
-@pytest.mark.parametrize("kind", [kind for kind in ORDER if row(kind).json_key])
-def test_inside_a_kind_items_keep_the_order_of_its_old_list(kind):
+@pytest.mark.parametrize("kind", ORDER)
+def test_inside_a_kind_items_keep_the_order_the_verdict_holds(kind):
     verdict = holding(kind, dirty=True)
     field = KINDS[kind][0]
-    verdict = verdict._replace(**{field: list(reversed(getattr(verdict, field)))})
-    printed = payload(verdict)
+    held = list(reversed(getattr(verdict, field)))
+    printed = payload(verdict._replace(**{field: held}))
 
-    assert [_own(item) for item in printed["findings"]] == [_old(e) for e in printed[row(kind).json_key]]
+    assert [item["dirty"] for item in printed["findings"]] == [True, False]
+    assert [_own(item) for item in printed["findings"]] == [_own(row(kind).item(e)) for e in held]
 
 
 def test_claimed_names_keep_the_order_the_gate_gave_them():
@@ -211,7 +205,6 @@ def test_51_uncovered_lines_list_50_items_and_count_51():
 
     assert [item["line"] for item in _uncovered(printed)] == list(range(1, 51))
     assert printed["counts"] == {"diff_uncovered_count": 51, "diff_uncovered_max": None}
-    assert (printed["diff_uncovered_count"], len(printed["diff_uncovered"])) == (51, 50)
 
 
 def test_with_no_ceiling_each_uncovered_line_fails_nothing():
@@ -244,6 +237,61 @@ def test_no_uncovered_line_lists_no_item_and_counts_0():
     printed = payload(Verdict.passing(), [])
 
     assert (printed["findings"], printed["counts"]["diff_uncovered_count"]) == ([], 0)
+
+
+# --- the eight 0.8.1 keys are gone -----------------------------------------------------
+
+OLD_KEYS = frozenset({"gate_violations", "ratchet_regressions", "overridden", "new_failures",
+                      "diff_uncovered", "unread_files", "diff_uncovered_count", "diff_uncovered_max"})
+
+
+def _every_kind() -> dict:
+    """verify --json over a verdict holding a clean and a dirty entry of every
+    kind, 51 uncovered lines past a ceiling of 10, as it reaches stdout."""
+    held = holding(*(kind for kind in ORDER if kind != "diff_uncovered"), dirty=True)
+    verdict = verify.with_diff_coverage(held, FIFTY_ONE, 10, {"src/a.py"})
+    return payload(verdict, FIFTY_ONE, 10, {"src/a.py"})
+
+
+def _as_listed(item: dict) -> dict | str:
+    """A findings item as the 0.8.1 list of its kind held the entry."""
+    if item["kind"] == "new_failure":
+        return item["test"]
+    if item["kind"] == "diff_uncovered":
+        return {"path": item["path"], "line": item["line"]}
+    return {**_own(item), "dirty": item["dirty"]}
+
+
+def _listed(printed: dict, kind: str) -> list:
+    return [_as_listed(item) for item in printed["findings"] if item["kind"] == kind]
+
+
+def test_a_payload_with_every_kind_prints_no_old_key_and_findings_and_counts_carry_their_values():
+    """Each 0.8.1 key's value, written out by hand from the entries the verdict
+    holds, is the findings items of its kind or the counts key of its name."""
+    gates = [{**GATE_FIELDS, "dirty": False}, {**GATE_FIELDS, "start": 30, "dirty": True}]
+    old = {
+        "gate_violations": gates,
+        "unread_files": [{"path": "src/b.ts", "reason": "src/b.ts:12: arrow refused", "dirty": False},
+                         {"path": "src/c.ts", "reason": "src/b.ts:12: arrow refused", "dirty": True}],
+        "ratchet_regressions": [{"path": "lib/m.py", "long_name": "g( y )", "recorded": 4.0,
+                                 "fresh_crap": 9.0, "dirty": False},
+                                {"path": "lib/n.py", "long_name": "g( y )", "recorded": 4.0,
+                                 "fresh_crap": 9.0, "dirty": True}],
+        "new_failures": ["tests/t.py::test_a", "tests/u.py::test_b"],
+        "diff_uncovered": [{"path": "src/a.py", "line": line} for line in range(1, 51)],
+        "overridden": gates,
+    }
+    kinds = {"gate_violations": "gate_violation", "unread_files": "unread_file",
+             "ratchet_regressions": "ratchet_regression", "new_failures": "new_failure",
+             "diff_uncovered": "diff_uncovered", "overridden": "overridden"}
+
+    printed = _every_kind()
+
+    assert sorted(OLD_KEYS & set(printed)) == []
+    assert {key: _listed(printed, kind) for key, kind in kinds.items()} == old
+    assert printed["counts"] == {"diff_uncovered_count": 51, "diff_uncovered_max": 10}
+    assert sorted({item["kind"] for item in printed["findings"]}) == sorted(ORDER)
 
 
 # --- the hand exit table and the model (acc-verdict-model) -------------------------
@@ -287,8 +335,6 @@ def test_the_model_lists_lines_under_no_ceiling_and_a_grant_after_the_failing_it
 
 NAMED = "src/caf\udce9.ts"
 SHOWN = "src/caf\\xe9.ts"
-REASON = ("its name is not UTF-8, and crapkit reads every path as UTF-8: "
-          "rename it (git mv) to a UTF-8 name")
 
 
 def _stage(root: Path, *names: bytes) -> None:
@@ -347,21 +393,12 @@ def test_the_stop_prints_a_verify_payload_holding_one_unreadable_name_item(measu
                                     "overridable": False, "dirty": True, "rule": "unreadable name",
                                     "path": SHOWN, "scope": "src", "reason": _sentence(NAMED)}]
     assert (printed["ok"], printed["run_id"], printed["baseline_run"]) == (False, None, 1)
-    assert printed["unread_files"] == [{"path": SHOWN, "reason": REASON, "dirty": True}]
+    assert sorted(OLD_KEYS & set(printed)) == []
     assert printed["counts"] == {"diff_uncovered_count": 0, "diff_uncovered_max": None}
+    assert (printed["changed_files"], printed["changed_paths"]) == (0, [])
     assert printed["commit"] == git(measured, "rev-parse", "HEAD").strip()
     assert (printed["committed_findings"], printed["dirty_findings"]) == (0, 1)
     assert "error" not in printed
-
-
-def test_every_old_per_kind_list_but_unread_files_is_empty_at_the_stop(measured, capsys):
-    _stage(measured, b"src/caf\xe9.ts")
-
-    printed = json.loads(_stopped(measured, capsys, "--json")[1])
-
-    old = [r.json_key for r in FINDING_KINDS if r.json_key and r.json_key != "unread_files"]
-    assert {key: printed[key] for key in old} == dict.fromkeys(old, [])
-    assert (printed["diff_uncovered_count"], printed["changed_files"], printed["changed_paths"]) == (0, 0, [])
 
 
 def test_the_stop_prints_every_key_a_verdict_prints(measured, capsys):
