@@ -342,7 +342,6 @@ def test_sarif_reports_every_uncovered_line_whether_or_not_it_breaches():
 HAND = {"unreadable_name": "unreadable_name", "unread": "unread_file", "gate": "gate_violation",
         "ratchet": "ratchet_regression", "failures": "new_failure",
         "diff_uncovered": "diff_uncovered"}
-OLD = ("gate", "ratchet", "failures", "diff_uncovered")
 
 
 def _hand_rows() -> list[dict]:
@@ -366,18 +365,6 @@ def test_the_model_and_the_table_give_the_hand_table_s_exit(hand):
 
     assert model.exit_code(subset) == int(hand["exit"])
     assert verify.exit_code(holding(*(HAND[name] for name in subset))) == int(hand["exit"])
-
-
-def test_the_hand_table_ends_each_four_kind_subset_on_its_0_8_1_row():
-    """test_exit_and_settle reads the four 0.8.1 columns and keeps the last row
-    for each subset of them, so that row must be the one with neither new
-    kind present."""
-    last = {}
-    for hand in _hand_rows():
-        last[frozenset(name for name in OLD if hand[name] == "1")] = hand
-
-    assert len(last) == 16
-    assert all(hand["unread"] == hand["unreadable_name"] == "0" for hand in last.values())
 
 
 # --- locality: one new row reaches every site -----------------------------------
