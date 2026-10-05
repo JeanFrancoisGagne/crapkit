@@ -997,8 +997,8 @@ crapkit: src/caf\xe9.py is in scope 'src', but git names it in bytes that are no
 
 `--json` prints a verify payload, not an error object. `ok` is `false`, `run_id` is `null`,
 `findings` holds one `unreadable_name` item per file with `exit_code` 3, and
-`counts.diff_uncovered_count` is 0. `unread_files` lists each file as `{path, reason,
-dirty}`, the item 0.8.1's error object carried, and every other per-kind list is empty.
+`counts.diff_uncovered_count` is 0. Each item gives the file's `path`, `scope` and `reason`
+beside the six fields every item carries, and no item of another kind is listed.
 The other keys hold what verify knew before it stopped: the baseline, `commit` (HEAD),
 `tool_versions`, the marks it read and `untracked_in_scope`; `changed_files` is 0, since
 no diff was read.
@@ -1021,18 +1021,18 @@ nothing and says why on stderr. The fix is `git mv` to a UTF-8 name.
 | `forgiven_failures` | array of test ids the fresh run and the baseline both failed | none; the text form counts them on the OK line as `(N unchanged failures forgiven, first ID)` |
 | `retried_passes` | array of new failures that passed their [flake retry](lanes.md#flake-retest) | none; the text form names them on the OK line as `(N new failures passed on rerun, first ID)` |
 | `lanes_without_results` | array of lane names that declare no `results_artifact`, so they recorded no test results this run and nothing checked their tests for new failures. A lane that declares one and whose junit `--reuse-artifacts` cannot read is not listed: verify exits 5 naming the lane and the junit, and stores no run | none; stderr names a lane with no `results_artifact` whose command exited nonzero (`warning: lane 'x' exited 1 and declares no results_artifact ...`) |
-| `lanes_without_baseline_results` | array of lane names holding a new failure that no trusted run at or behind the baseline recorded a failure list for, so the failure may predate the change | none itself; those failures are in `new_failures` and still fire exit 8, and stderr names each lane |
+| `lanes_without_baseline_results` | array of lane names holding a new failure that no trusted run at or behind the baseline recorded a failure list for, so the failure may predate the change | none itself; those failures are `new_failure` items and still fire exit 8, and stderr names each lane |
 | `unmarked_over_target` | int: functions over their ceiling that carry no ratchet mark, the standing debt neither the gate (touched functions only) nor the ratchet check (marks only) guards | none; the text form prints one `warning: N function(s) over the ceiling carry no ratchet mark ...` line on stderr when it is not zero, naming the first three as path and function and `ratchet seed` as the fix |
 
 `key_name` on a gate violation is the ratchet key: the `long_name` when one function in
 the file holds that name, and `long_name#2` for the second function holding it. It is the
 string to look up in `crapkit-ratchet.tsv`, and `long_name` alone is not, whenever a file
-gives one name to several functions. `ratchet_regressions` carries the key in `long_name`
-already, because the entry it reports comes from the marks file. It lists the largest rise
-first, and rises equal at 4 places in path order. `gate_violations` lists the highest `crap`
-first, and scores equal at 4 places by path, then start line.
+gives one name to several functions. A `ratchet_regression` item carries the key in `long_name`
+already, because the entry it reports comes from the marks file. Those items list the largest
+rise first, and rises equal at 4 places in path order. `gate_violation` items list the highest
+`crap` first, and scores equal at 4 places by path, then start line.
 
-**`diff_uncovered` truncates at 50 entries; `diff_uncovered_count` does not.** Above 50 the
+**`diff_uncovered` items stop at 50; `counts.diff_uncovered_count` does not.** Above 50 the
 two disagree on purpose. Trust the count.
 
 `verify` reports the first of 6, 7, 8, 9 that fires, in that order.
@@ -1043,9 +1043,9 @@ included. A lane with failures that passed their flake retry also names those id
 never forgives them: the baseline did not count them as failing.
 
 Since 0.4.5 the gate pardons a touched function whose fresh CRAP sits at or under its ratchet
-mark, the rule `rescore --gate` already applied (#29). So a `gate_violations` entry on a
-marked function means the edit pushed it past the mark, and one payload can carry that entry
-and a `ratchet_regressions` entry for the same function. Exit 6 is the verdict there. Exit 7
+mark, the rule `rescore --gate` already applied (#29). So a `gate_violation` item on a
+marked function means the edit pushed it past the mark, and one payload can carry that item
+and a `ratchet_regression` item for the same function. Exit 6 is the verdict there. Exit 7
 is for a mark that rose in a function the diff never touched. Both rules are stated once in
 [ratchet.md](ratchet.md#the-commit-gate-skips-marked-functions).
 
@@ -1081,7 +1081,7 @@ A verdict measures the working tree, so a concurrent session's uncommitted edits
 | `dirty` (on each finding) | The finding's file has uncommitted tracked edits. |
 | `committed_findings` | Gate, ratchet, test-failure and breached diff-coverage findings whose file is clean. |
 | `dirty_findings` | Findings whose file is not. |
-| `dirty_failures` | The subset of `new_failures` whose test id names a file with uncommitted edits. The id's file part is matched in each spelling a runner writes: the repo-path form, the same path with backslashes (`web\src\app.test.ts`, as bun's `file` and jest-junit's `{filepath}` write it on Windows), a leading `./` (`./web/src/app.test.ts`, from a runner handed that argument), an absolute path that resolves inside the checkout (jest-junit's `{filepath}` in its absolute form), and pytest's dotted-module form. The id itself keeps the runner's spelling. |
+| `dirty_failures` | The test ids of the `new_failure` items whose id names a file with uncommitted edits. The id's file part is matched in each spelling a runner writes: the repo-path form, the same path with backslashes (`web\src\app.test.ts`, as bun's `file` and jest-junit's `{filepath}` write it on Windows), a leading `./` (`./web/src/app.test.ts`, from a runner handed that argument), an absolute path that resolves inside the checkout (jest-junit's `{filepath}` in its absolute form), and pytest's dotted-module form. The id itself keeps the runner's spelling. |
 
 CI should treat any non-zero finding count as a failure. A local pre-push check can
 reasonably look at `committed_findings` alone.
@@ -1095,7 +1095,7 @@ reasonably look at `committed_findings` alone.
 | `ratchet_source` | Which marks verify judged against: `"tree"`, the ratchet file as read, or `"committed"`, when that file is missing or blank and verify judged against the newest marks committed since the baseline. |
 | `ratchet_source_commit` | The commit whose marks verify judged against when `ratchet_source` is `"committed"`; `null` for `"tree"`. |
 | `ratchet_source_sha256` | Digest of the marks verify judged against: equal to `ratchet_sha256` for `"tree"`, the committed file's digest for `"committed"`, `null` when there were no marks at all. Pin it to prove which marks a verdict was measured against. |
-| `ratchet_changes` | `{"dropped": N, "tightened": M}` when this run's tighten rewrote the marks file: `dropped` counts marks whose function is now at or under its ceiling, `tightened` marks that fell. **`null` when the tighten wrote nothing**: a failed run, `--no-tighten`, no marks file, or nothing to move. An override's grant is its own write to the marks file and is listed under `overridden`, not counted here. The text form prints the same two counts on the OK line with the `git add` to run (`restamped` in place of the counts when the only change was the stamp line, `N marks granted` after an override). |
+| `ratchet_changes` | `{"dropped": N, "tightened": M}` when this run's tighten rewrote the marks file: `dropped` counts marks whose function is now at or under its ceiling, `tightened` marks that fell. **`null` when the tighten wrote nothing**: a failed run, `--no-tighten`, no marks file, or nothing to move. An override's grant is its own write to the marks file and is an `overridden` item in `findings`, not counted here. The text form prints the same two counts on the OK line with the `git add` to run (`restamped` in place of the counts when the only change was the stamp line, `N marks granted` after an override). |
 
 ---
 
@@ -1552,7 +1552,7 @@ name, so `anchor_ts`, every age and every repayment count across the rename, and
 | `runs prune --json` | `{"pruned_runs": 6, "kept_runs": 4, "freed_bytes": 0}`. |
 | `trend --json` | `{"runs": [{run_id, commit, created_at, functions, over_target, crap_load, avg, by_scope}], "target": 6}`, trusted runs only. Reads and fills the `run_rollup` cache; see below. |
 | `overrides --json` | `{"overrides": [{run_id, commit, created_at, path, function, crap, reason}]}`. |
-| `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, occurrence, ccn, cov, flag, crap, remedy, stale_coverage, unmeasured}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. `unmeasured: true` marks a row no measurement stands behind: the baseline run holds no row it joins by name (a function added or renamed since that run), or its flag is `no-lane` or `cc-only`. Such a row keeps `cov` 0.0, `flag` `untested` for an added or renamed function, and the `crap` and `remedy` those give; the table prints `-` for its cov and ends the line with `(coverage not measured)`. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path], "unread_files": [{path, reason, dirty}]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark pardons (a mark pardons only while the function's crap is at or under it), `unread_files` the changed files no reader could read, whose functions were never judged, in the name and shape verify's `unread_files` has (`dirty` is always true here: the gate judges the working tree's changes since HEAD), `ok` is `breaches == [] and unread_files == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
+| `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, occurrence, ccn, cov, flag, crap, remedy, stale_coverage, unmeasured}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. `unmeasured: true` marks a row no measurement stands behind: the baseline run holds no row it joins by name (a function added or renamed since that run), or its flag is `no-lane` or `cc-only`. Such a row keeps `cov` 0.0, `flag` `untested` for an added or renamed function, and the `crap` and `remedy` those give; the table prints `-` for its cov and ends the line with `(coverage not measured)`. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path], "unread_files": [{path, reason, dirty}]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark pardons (a mark pardons only while the function's crap is at or under it), `unread_files` the changed files no reader could read, whose functions were never judged, in the shape of verify's `unread_file` items (`dirty` is always true here: the gate judges the working tree's changes since HEAD), `ok` is `breaches == [] and unread_files == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
 | `duplication --json` | `{"run_id", "pairs": [{similarity, contained, functions: [{path, long_name, start, end, nloc}, ...]}]}`. Containment scoring: shared shingles over the smaller function. Each function is shingled from its own lines: a nested function's lines past its first line are its own, not the enclosing function's, so a factory never pairs through its closure and one with fewer than `--min-lines` lines of its own pairs with nothing. A pair whose two spans nest in one file is dropped, not ranked: nobody can deduplicate a factory from its own closure. `contained` is therefore `false` on every pair here, and it is emitted so pairs and `duplication_twins` read as one shape. |
 | `coupling --json` | `{"window_months", "pairs": [{files: [a, b], support, confidence}]}`. `support` is shared commits, `confidence` is the max-direction ratio. Pairs come highest `support` x `confidence` first, taken over the 4-place `confidence` shown, and pairs that tie come in path order. It reads raw `git log`, so any path in the history can appear, not only scoped source. Ranked pairs are cached; see below. |
 | `mutate --json` | `{"mutants", "killed", "survived", "timed_out", "no_verdict", "survivors": [{path, line, op, original, mutated}], "outside_corpus": [path]}`. `mutants` is the count **after** `--max-mutants`; the truncation warning goes to stderr only. `timed_out` counts the mutants whose suite ran out of time: they stay detected, so `killed` includes them. `no_verdict` counts the mutants whose suite collected no tests (pytest exit 5): no test judged them, and they stay inside `killed` too, as in 0.8.0, so `killed` + `survived` is `mutants`. JSON schema 2 leaves them out of `killed` and the rate; schema 1 keeps the field's meaning. `outside_corpus` lists the diff's paths (or `--files`' paths) the scored corpus does not hold, a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims, sorted; they grew no mutants, and a run with `mutants` 0 and a non-empty `outside_corpus` never started the suite. Every worker uses a kept worktree, including one; see [mutation worktrees](configuration.md#mutation-worktrees). |

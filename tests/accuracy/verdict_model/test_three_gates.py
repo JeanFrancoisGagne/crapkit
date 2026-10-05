@@ -116,11 +116,19 @@ def rescore(scenario: vw.Scenario, path: str) -> tuple[int, frozenset]:
     return result.code, frozenset((b["path"], b["key_name"]) for b in result.json()["gate"]["breaches"])
 
 
+def findings_of(payload: dict, kind: str) -> list[dict]:
+    """verify --json's findings items of one kind. A crapkit before 0.9.0,
+    which a retro replay runs, printed one list per kind instead."""
+    if "findings" not in payload:
+        return payload["gate_violations" if kind == "gate_violation" else "ratchet_regressions"]
+    return [item for item in payload["findings"] if item["kind"] == kind]
+
+
 def verify(scenario: vw.Scenario) -> tuple[int, frozenset, frozenset]:
     result = scenario.run("verify", "--json")
     payload = result.json()
-    gate = frozenset((v["path"], v["key_name"]) for v in payload["gate_violations"])
-    ratchet = frozenset((r["path"], r["long_name"]) for r in payload["ratchet_regressions"])
+    gate = frozenset((v["path"], v["key_name"]) for v in findings_of(payload, "gate_violation"))
+    ratchet = frozenset((r["path"], r["long_name"]) for r in findings_of(payload, "ratchet_regression"))
     return result.code, gate, ratchet
 
 
@@ -188,7 +196,7 @@ def test_verify_passes_an_edit_inside_a_marked_function_at_its_mark(seeded, tmp_
     scenario.set(world)
 
     result = scenario.run("verify", "--json")
-    gate = {v["long_name"] for v in result.json()["gate_violations"]}
+    gate = {v["long_name"] for v in findings_of(result.json(), "gate_violation")}
 
     assert expected(world).verify_gate == frozenset()
     assert (result.code, gate) == (0, set())
