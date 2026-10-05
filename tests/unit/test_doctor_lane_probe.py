@@ -383,7 +383,45 @@ def test_a_root_lane_that_runs_no_js_runner_still_gets_the_note(capsys):
 
     admin._print_init_summary({"api": ("typescript",)}, (js,), packages)
 
-    assert "2 workspaces name a runner (api: jest, web: vitest)" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "2 workspaces name a runner (api: jest, web: vitest)" in out
+    assert "no js lane was written" not in out, "init wrote lane 'js'"
+
+
+def test_init_names_the_lane_it_wrote_when_the_root_script_only_runs_the_workspaces(tmp_path,
+                                                                                    capsys):
+    """The root's test script fans out (`npm test --workspaces`, web on
+    vitest, api on jest), so init writes the root lane over it, whose runner
+    nothing names. The note said "no js lane was written" one line under init's
+    own "detected 1 lane(s) ...: js", and sent the reader to a commented js
+    template init had not written."""
+    from cli_inproc_repo import git
+
+    root = tmp_path / "repo"
+    files = {"package.json": {"private": True, "workspaces": ["web", "api"],
+                              "scripts": {"test": "npm test --workspaces"}},
+             "web/package.json": {"scripts": {"test": "vitest run"},
+                                  "devDependencies": {"vitest": "^2.0.0"}},
+             "api/package.json": {"scripts": {"test": "jest"},
+                                  "devDependencies": {"jest": "^29.0.0", "jest-junit": "^16.0.0"}},
+             "web/src/a.ts": "export const f = (a: number) => (a ? 1 : 2);\n",
+             "api/src/b.ts": "export const g = (a: number) => (a ? 2 : 1);\n"}
+    for rel, body in files.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(body if isinstance(body, str) else json.dumps(body), encoding="utf-8")
+    git(root, "init", "-q")
+    commit_all(root, "fixture")
+
+    assert main(["init", "--repo", str(root)]) == 0
+    out = capsys.readouterr().out.splitlines()
+
+    assert '\ncommand = "npm run test -- --coverage"\n' in (root / "crapkit.toml").read_text(
+        encoding="utf-8")
+    assert out[1].startswith("detected 1 lane(s) from this repo's own files: js - "), out
+    assert out[2] == ("2 workspaces name a runner (api: jest, web: vitest) and the root names none, "
+                      "so the runner of lane 'js' is unknown (npm run test -- --coverage names none "
+                      "crapkit knows): replace it with one [[lane]] per workspace, each with its own "
+                      "cwd and artifact"), out
 
 
 # --- the runner each lane runs ----------------------------------------------------
