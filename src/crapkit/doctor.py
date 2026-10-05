@@ -815,7 +815,7 @@ def stale_copy(*, where: str, version: str | None, source: str, source_version: 
 
 def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,
                      protocols: tuple[str, ...] | None, supported: str, harness: str = "claude",
-                     cli_upgrade: str = "python -m pip install --upgrade crapkit",
+                     cli_upgrade: str = "python -P -m pip install --upgrade crapkit",
                      scopes: tuple[InstallScope, ...] = USER_SCOPE,
                      in_place: InPlace | None = None,
                      manifest_fault: str = "missing") -> list[str]:
@@ -850,7 +850,7 @@ def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_w
 # environment and the files.
 
 _CONTAINER_LANE = (
-    "lane {name!r} runs a coverage.py suite and this is a container ({marker}): "
+    "lane {name!r} runs pytest and this is a container ({marker}): "
     "`crapkit coverage` refuses it with exit 5; if the container is sized for the suite, "
     "set container_ok = true on the lane (docs/lanes.md#containers)"
 )

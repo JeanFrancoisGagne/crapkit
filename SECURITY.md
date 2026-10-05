@@ -47,8 +47,20 @@ processes crapkit starts of itself (each MCP tool call, the rescore that
 `-P` or with `PYTHONSAFEPATH=1` in their environment, so Python never puts
 their working directory first on `sys.path` and a `crapkit.py` or
 `json.py` a repository holds never runs in place of crapkit's own modules or the
-standard library. A configured command is yours, and it finds its programs the
-way its shell does.
+standard library. The lines the docs give a reader, a git hook or a merge driver
+to run in a repository's root, and the next step crapkit prints when no `crapkit`
+command is on PATH, spell `python -P -m crapkit` for the same reason. A hook or
+merge driver copied from an earlier page runs `python -m crapkit`, which runs a
+`crapkit.py` at the repository's root in place of crapkit: add `-P` to it.
+`python -m pip` reads `sys.path` the same way, so the pip lines crapkit prints
+(the pytest-cov, coverage.py and lizard installs, and `doctor`'s upgrade and
+reinstall of the CLI) spell `<python> -P -m pip install`, and the Action installs
+crapkit with `python -P -m pip install` in the consumer's checkout: a `pip.py` at
+the repository's root never runs in place of pip. The install, upgrade and
+removal lines in the README, the handbook and the upgrade guide keep
+`python -m pip`: crapkit neither prints nor runs them, and the page sets no
+directory to run them in. A configured command is yours, and it finds its
+programs the way its shell does.
 
 | What | When | What it runs |
 | --- | --- | --- |

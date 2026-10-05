@@ -220,6 +220,7 @@ paths_to_mutate = [
     "src/crapkit/digest.py",
     "src/crapkit/doctor.py",
     "src/crapkit/dup.py",
+    "src/crapkit/gate.py",
     "src/crapkit/gitio.py",
     "src/crapkit/hook.py",
     "src/crapkit/invariants.py",

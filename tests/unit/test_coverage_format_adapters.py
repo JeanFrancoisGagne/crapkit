@@ -49,8 +49,8 @@ def test_each_parser_names_its_own_adapter_module():
 
 def test_an_unknown_parser_is_refused_by_the_one_lookup():
     with pytest.raises(ToolError) as raised:
-        coverage_format.lane_format(_lane("cobertura"))
-    assert str(raised.value) == "lane 'l': parser 'cobertura' not implemented yet"
+        coverage_format.lane_format(_lane("no-such-format"))
+    assert str(raised.value) == "lane 'l': parser 'no-such-format' not implemented yet"
 
 
 def test_the_istanbul_adapter_reads_coverage_dead_lines_and_digest_in_one_walk(tmp_path):

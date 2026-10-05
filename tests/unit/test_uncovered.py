@@ -82,7 +82,7 @@ def _unknown_parser_lane(tmp_path):
 
     (tmp_path / "cov.xml").write_text("<coverage/>", encoding="utf-8")
     return SimpleNamespace(lanes=[Lane(name="py", command="", artifact="cov.xml",
-                                       parser="cobertura", scopes=("core",))])
+                                       parser="no-such-format", scopes=("core",))])
 
 
 def test_an_unknown_parser_raises_instead_of_reading_it_as_coveragepy(tmp_path):
@@ -91,7 +91,7 @@ def test_an_unknown_parser_raises_instead_of_reading_it_as_coveragepy(tmp_path):
 
     with pytest.raises(ToolError) as exc:
         missing_by_path(tmp_path, _unknown_parser_lane(tmp_path))
-    assert str(exc.value) == "lane 'py': parser 'cobertura' not implemented yet"
+    assert str(exc.value) == "lane 'py': parser 'no-such-format' not implemented yet"
 
 
 def test_the_two_dispatches_word_the_same_refusal_the_same_way(tmp_path):

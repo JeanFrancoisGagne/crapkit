@@ -14,7 +14,7 @@ import re
 import hang_guard
 
 ROOT = Path(__file__).resolve().parents[2]
-DRIVER = 'git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"'
+DRIVER = 'git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"'
 
 
 def test_the_marks_file_names_crapkit_s_merge_driver():

@@ -697,7 +697,7 @@ That note names the interpreter word it probed and the path that word resolves t
 and its install command is bound to the same word:
 
 ```
-note: lane 'py' names `python`, which resolves here to /home/dev/venvbare/bin/python and cannot import pytest_cov - run `python -m pip install pytest-cov` in the environment the suite runs in (pip install "crapkit[py]" when that is crapkit's own environment), then `crapkit coverage`
+note: lane 'py' names `python`, which resolves here to /home/dev/venvbare/bin/python and cannot import pytest_cov - run `python -P -m pip install pytest-cov` in the environment the suite runs in (pip install "crapkit[py]" when that is crapkit's own environment), then `crapkit coverage`
 ```
 
 A machine has more than one python, and the note used to say only "this python". Where the
@@ -706,7 +706,7 @@ move: repoint the lane instead.
 
 A lane that names its python by path, such as the `.venv\Scripts\python.exe` init writes
 for a repo's venv on Windows, gets an install command that names the file the path
-resolves to, `C:/work/app/.venv/Scripts/python.exe -m pip install pytest-cov`. The word as
+resolves to, `C:/work/app/.venv/Scripts/python.exe -P -m pip install pytest-cov`. The word as
 the lane spells it runs only from the lane's directory, and Git Bash reads its
 backslashes as escapes. Forward slashes run in cmd.exe, PowerShell and Git Bash, and a
 directory name that needs quoting is quoted on its own, as in a next step
@@ -718,7 +718,7 @@ active venv. Before 0.4.12 it read `pip install pytest-cov` and named no environ
 so a reader whose lane ran its own venv installed the package where it changed nothing. The
 refusal binds the install to an interpreter under the same condition the probe uses: the
 step that runs pytest starts with a python. So `python -m pytest --cov` and
-`cd web && python -m pytest --cov` earn `python -m pip install pytest-cov`, while
+`cd web && python -m pytest --cov` earn `python -P -m pip install pytest-cov`, while
 `uv run pytest --cov` and `coverage run -m pytest --cov=pylib` name the environment and stop
 there. Neither `uv`
 nor `coverage` has a `-m pip install`, and a reader who runs one gets a second, unrelated
@@ -928,7 +928,7 @@ crapkit scores from, only since 7.13.1 and `crapkit coverage` refuses that lane'
 with exit 5:
 
 ```
-FAIL lane 'py' runs coverage 7.4.4 (/home/you/ledger/.venv/bin/python), which writes no function start lines, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.13.1); install 7.13.1 or later there with `/home/you/ledger/.venv/bin/python -m pip install "coverage>=7.13.1"` and raise any pin that holds it lower
+FAIL lane 'py' runs coverage 7.4.4 (/home/you/ledger/.venv/bin/python), which writes no function start lines, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.13.1); install 7.13.1 or later there with `/home/you/ledger/.venv/bin/python -P -m pip install "coverage>=7.13.1"` and raise any pin that holds it lower
 ```
 
 It does check that the manager itself is installed here, because the lockfile is the
@@ -1275,7 +1275,7 @@ refuses. It prints one WARN per lane whose command names pytest and that has no
 `container_ok`, naming the trigger it found:
 
 ```
-WARN lane 'py' runs a coverage.py suite and this is a container (/.dockerenv exists): `crapkit coverage` refuses it with exit 5; if the container is sized for the suite, set container_ok = true on the lane (docs/lanes.md#containers)
+WARN lane 'py' runs pytest and this is a container (/.dockerenv exists): `crapkit coverage` refuses it with exit 5; if the container is sized for the suite, set container_ok = true on the lane (docs/lanes.md#containers)
 doctor: no problems found, 1 warning above
 ```
 
@@ -1638,7 +1638,7 @@ Rules that keep this from hiding real failures:
 - Only lanes that declare `retest_command` retest. Lanes without one keep every failure.
   A test that several lanes failed drops out only when each of those lanes reran it and
   it passed.
-- A test only drops out of `new_failures` when the rerun's own results artifact says it
+- A test only stops being a `new_failure` item when the rerun's own results artifact says it
   passed. The lane's report moves aside while the retest runs, so a report at the path
   afterwards is the retest's, even one written inside the old report's time tick. No
   artifact (the lane's report goes back), a crash, or a timeout during the retest keeps

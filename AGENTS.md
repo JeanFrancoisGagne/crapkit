@@ -12,7 +12,7 @@ Two audiences, two sections. Read the one that matches the repo you are in:
   itself.
 
 Every command below runs as `crapkit <sub>` (console script) or
-`python -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
+`python -P -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
 nearest `crapkit.toml` at or above the working directory
 (docs/adr/0002-configuration-is-found-upward-nearest-wins.md), except `claude-hook`, which
 reads its root from the hook payload on stdin. A leading `~` in PATH is your home directory
@@ -713,7 +713,7 @@ run. The store fills missing per-run rollups when `trend` or `report` asks for t
     pip install -e ".[dev,accuracy-push]"
     npm ci --prefix tools/accuracy/node/push
     git config core.hooksPath git-hooks
-    git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+    git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"
 
 The driver line makes git merge `crapkit-ratchet.tsv` through `crapkit ratchet merge`,
 so a land or a worktree merge combines the marks instead of leaving a conflict for a
@@ -884,7 +884,7 @@ Shared rules belong to these modules:
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
 | `lane_command.py` | how a lane's command reads and how its child starts. `shell_words` and `shell_segments` read the line the way the shell that runs it reads it; `command_steps` also reads the script of a `bash -c` or `sh -c` step with sh's rules and marks one sh cannot split; `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike; `child_environment` builds every lane, flake-retest and mutation child's environment; `expand_launchers` reads the launcher token (`{python}`, `{python:DIR}`) for this OS, and config calls it once as it builds the Lane |
-| `toolchain.py` | which runner a lane runs and what that runner needs. `TOOLCHAINS` holds one `Toolchain` row per runner, keyed by its name: the words that spell it in a command, the devDependency that names it, and the command, report flags, junit reporter, junit hint and scoped-tests template init writes for it. These are the runner facts: init, the runner refusals, the container guard and doctor's runner probes read them for the runner a command spells (`infer`, `step_runner`, `command_spells`), never off a lane's `parser`. It imports the standard library only, never a cli module |
+| `toolchain.py` | which runner a lane runs and what that runner needs. `TOOLCHAINS` holds one `Toolchain` row per runner, keyed by its name: the words that spell it in a command, the devDependency that names it, and the command, report flags, junit reporter, junit hint and scoped-tests template init writes for it. These are the runner facts: init, the runner refusals, the container guard and doctor's runner probes read them for the runner a command spells (`infer`, `step_runner`, `command_spells`), never off a lane's `parser`. At module scope it imports the standard library only: config and lane_command import it at module scope, so its readers import `config.SHELL_IS_CMD`, lane_command's tokenizer and `is_python` where they are called. It never imports a cli module |
 | `coverage_format.py` | which adapter reads a lane's artifact, looked up once from its `parser` (`lane_format`), and the producer facts that hold whatever runner starts the producer: `data_file` (where the lane's data file lands, for doctor's shared data-file finding), `SHARD_GLOB` and `COMBINE_RECIPE` (the shards a killed parallel run leaves and the commands that combine them, for the missing-artifact refusal) and `DROPPINGS` (what a run leaves in the tree, for init's .gitignore). A format without one leaves it empty. No other module compares parser strings, and `tests/unit/test_parser_strings_live_in_one_module.py` fails on one that does |
 | `repopath.py` | which file git names by a path that did not come from git. One entry per source: `typed` and `typed_path` for a path a person or agent typed (arguments, `--repo`, writer flags, hook payloads), `declared` for one crapkit.toml holds, `Reported` for one a runner wrote, `fragment` for a piece to match. `place` is the one placing rule for an absolute path: the root-relative path, or the `Unplaced` reason (`ANOTHER_TREE`, `UNOPENABLE`); `inside` answers it as the path or None, and `Reported.unplaced` records each key the reported entry left unplaced with its reason |
 | `lane_results.py` | which run's record of a lane's test results a comparison reads. `read_results` parses a lane's record into `LaneResults`, where a lane with no junit this run has no count and no failure list (None), never 0 tests or no failures, and a list a verify older than 0.8.0 stored is not trusted; a comparison reads the run it compares against, else the newest run behind it that recorded one, else says it cannot compare. verify's baseline and coverage's `suite_drops` both walk it. No other module reads `failures`, `tests_total` or `tests_skipped` off a lane record, and `tests/unit/test_lane_results.py` fails on one that does |
@@ -1016,7 +1016,7 @@ that fails on the parent commit. A bug fix lands with the test that reproduces i
 
 Every function you add or edit must sit at or under its scope's `target` in this repo's
 own `crapkit.toml`: 6 for `src` and `tools`, 5 for `tools/accuracy`. The pre-commit hook
-runs `python -m crapkit hook-precommit` over the staged blobs:
+runs `python -P -m crapkit hook-precommit` over the staged blobs:
 
     crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
       ccn   7  calc/report.py:39  tally( rows , low , high , invert , label , pad , strict )
@@ -1072,7 +1072,7 @@ fails, not a reader.
 
 `crapkit.toml` and `crapkit-ratchet.tsv` at the repo root are live.
 
-    python -m crapkit coverage
-    python -m crapkit verify
+    python -P -m crapkit coverage
+    python -P -m crapkit verify
 
 must stay green on your branch.
