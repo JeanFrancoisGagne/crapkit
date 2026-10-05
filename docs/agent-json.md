@@ -874,9 +874,6 @@ ceiling appended to `src/app.ts` and not yet committed, so `commit` is the basel
   "commit": "8c780bb18da329dfe039b55d14faa5a6dc9fcb50",
   "committed_findings": 0,
   "counts": {"diff_uncovered_count": 0, "diff_uncovered_max": null},
-  "diff_uncovered": [],
-  "diff_uncovered_count": 0,
-  "diff_uncovered_max": null,
   "dirty_failures": [],
   "dirty_findings": 1,
   "findings": [
@@ -898,26 +895,10 @@ ceiling appended to `src/app.ts` and not yet committed, so `commit` is the basel
     }
   ],
   "forgiven_failures": [],
-  "gate_violations": [
-    {
-      "ccn": 8,
-      "cov": 0.0,
-      "crap": 72.0,
-      "dirty": true,
-      "key_name": "knotty ( n )",
-      "long_name": "knotty ( n )",
-      "path": "src/app.ts",
-      "remedy": "decompose",
-      "start": 21
-    }
-  ],
   "lanes_without_baseline_results": [],
   "lanes_without_results": ["unit"],
-  "new_failures": [],
   "ok": false,
-  "overridden": [],
   "ratchet_changes": null,
-  "ratchet_regressions": [],
   "ratchet_sha256": null,
   "ratchet_source": "tree",
   "ratchet_source_commit": null,
@@ -927,7 +908,6 @@ ceiling appended to `src/app.ts` and not yet committed, so `commit` is the basel
   "schema": 1,
   "tool_versions": {"analysis_version": "13", "crapkit": "<version>", "lizard": "1.24.0"},
   "unmarked_over_target": 1,
-  "unread_files": [],
   "unreadable_names": [],
   "untracked_in_scope": []
 }
@@ -949,9 +929,9 @@ ceiling appended to `src/app.ts` and not yet committed, so `commit` is the basel
 ### The findings list
 
 `findings` (since 0.9.0) lists every finding once, one item each. Every item carries the six
-fields below, then the fields of its kind. The 0.8.1 per-kind keys under
-[Findings](#findings) still print beside it, holding the same entries, until a later release
-drops them: read `findings` and `counts`.
+fields below, then the fields of its kind. A kind has no key of its own: 0.9.0 dropped the
+0.8.1 per-kind keys, and [Upgrading to 0.9.0](upgrading.md#verify---json-drops-the-081-per-kind-keys)
+maps each one to its place in `findings` or `counts`.
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -973,11 +953,12 @@ drops them: read `findings` and `counts`.
 | `overridden` | the `gate_violation` fields | none: `fails` is `false` and `exit_code` is `null` | `override` |
 
 Items come in this table's order, which is the exit order, and inside a kind in the order
-that kind's own list gives them. `diff_uncovered` items appear whenever a changed line ran
-in no lane, with `fails` `false` while `diff_uncovered_max` is `null` or not passed.
+the verdict holds them ([below](#other-verdict-keys)). `diff_uncovered` items appear
+whenever a changed line ran in no lane, with `fails` `false` while `diff_uncovered_max` is
+`null` or not passed.
 **`diff_uncovered` items stop at 50; `counts.diff_uncovered_count` does not.**
 
-`counts` holds the numbers beside the items. Each equals the top-level key of the same name.
+`counts` holds the numbers beside the items.
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -1007,17 +988,10 @@ its `uri` percent-encoding the name's own bytes (`src/caf%E9.py`), and `--github
 one `::error` annotation per file naming it `src/caf\xe9.py`. An `--override` grants
 nothing and says why on stderr. The fix is `git mv` to a UTF-8 name.
 
-### Findings
+### Other verdict keys
 
 | Key | Shape | Fires exit |
 |---|---|---|
-| `gate_violations` | `{path, long_name, start, ccn, cov, crap, remedy, dirty, key_name}` | 6 |
-| `unread_files` | `{path, reason, dirty}`: a changed file no reader could read, so the gate judged none of its functions. `reason` is the reader's refusal, naming the line and what to change | 6 |
-| `ratchet_regressions` | `{path, long_name, recorded, fresh_crap, dirty}` | 7 |
-| `new_failures` | array of `classname::name` test ids | 8 |
-| `diff_uncovered_count` | int, every changed line no test ran, and `diff_uncovered[]` of `{path, line}` | 9, only when `diff_uncovered_max` is set |
-| `diff_uncovered_max` | int, or `null` when the repo set none | none itself; it is the ceiling `diff_uncovered_count` is judged against, so a reader of exit 9 can name it |
-| `overridden` | gate-violation objects an `--override` granted | none; the run passes |
 | `forgiven_failures` | array of test ids the fresh run and the baseline both failed | none; the text form counts them on the OK line as `(N unchanged failures forgiven, first ID)` |
 | `retried_passes` | array of new failures that passed their [flake retry](lanes.md#flake-retest) | none; the text form names them on the OK line as `(N new failures passed on rerun, first ID)` |
 | `lanes_without_results` | array of lane names that declare no `results_artifact`, so they recorded no test results this run and nothing checked their tests for new failures. A lane that declares one and whose junit `--reuse-artifacts` cannot read is not listed: verify exits 5 naming the lane and the junit, and stores no run | none; stderr names a lane with no `results_artifact` whose command exited nonzero (`warning: lane 'x' exited 1 and declares no results_artifact ...`) |

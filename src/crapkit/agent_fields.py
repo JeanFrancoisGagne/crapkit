@@ -110,7 +110,6 @@ _ADDED = (
                "or asks for none. cov 0.0 is then a stand-in"),
     *_unread_fields("rescore --gate --json", "gate.unread_files",
                     "always true here: the gate judges the working tree's changes since HEAD"),
-    *_unread_fields("verify --json", "unread_files", _UNREAD_DIRTY),
     *_unread_fields(ERROR_OBJECT, "error.unread_files", _UNREAD_DIRTY, _REFUSED_NAMES),
     AgentField("verify --json", "lanes_without_results", ("array",),
                "lanes that declare no results_artifact, so nothing checked their tests for new "
@@ -1600,22 +1599,17 @@ _COVERAGE = {
         "additionalProperties": {"type": "integer", "description": "the ceiling"}}}
 
 _FINDING_PATH = {"type": "string", "description": "repo-relative path"}
-_FINDING_DIRTY = {"type": "boolean",
-                  "description": "true when the finding's file has uncommitted tracked edits"}
-_GATE_VIOLATION = {
-    "type": "object", "description": "one changed function over its ceiling no mark pardons",
-    "properties": {
-        "path": _FINDING_PATH,
-        "long_name": {"type": "string", "description": "the function's long name"},
-        "start": {"type": "integer", "description": "first line"},
-        "ccn": {"type": "integer", "description": "the complexity the gate judged"},
-        "cov": {"type": "number", "description": "coverage this run measured, 0.0 to 1.0"},
-        "crap": {"type": "number", "description": "the score"},
-        "remedy": _REMEDY,
-        "dirty": _FINDING_DIRTY,
-        "key_name": {"type": "string",
-                     "description": ("the ratchet key: long_name, or long_name#2 for the second "
-                                     "function the file gives that name")}}}
+# A gate_violation's own fields, which an overridden item carries too.
+_GATE_FIELDS = {
+    "long_name": {"type": "string", "description": "the function's long name"},
+    "start": {"type": "integer", "description": "first line"},
+    "ccn": {"type": "integer", "description": "the complexity the gate judged"},
+    "cov": {"type": "number", "description": "coverage this run measured, 0.0 to 1.0"},
+    "crap": {"type": "number", "description": "the score"},
+    "remedy": _REMEDY,
+    "key_name": {"type": "string",
+                 "description": ("the ratchet key: long_name, or long_name#2 for the second "
+                                 "function the file gives that name")}}
 
 # Each kind's own fields on a findings item, beside the six every item carries.
 _FINDING_FIELDS = {
@@ -1628,8 +1622,7 @@ _FINDING_FIELDS = {
                "description": ("unread_file: the reader's refusal, naming the line and what to "
                                "change; unreadable_name: the sentence naming the file, its scope "
                                "and the git mv rename to a UTF-8 name")},
-    **{key: _GATE_VIOLATION["properties"][key]
-       for key in ("long_name", "start", "ccn", "cov", "crap", "remedy", "key_name")},
+    **_GATE_FIELDS,
     "recorded": {"type": "number", "description": "ratchet_regression: the mark"},
     "fresh_crap": {"type": "number",
                    "description": "ratchet_regression: the score this run measured"},
@@ -1665,37 +1658,10 @@ _VERIFY = {
     "commit": {"type": "string", "description": "the commit the verified tree is at"},
     "changed_files": _count("files in the diff being judged"),
     "changed_paths": _added_strings("verify --json", "changed_paths"),
-    "gate_violations": {"type": "array", "items": _GATE_VIOLATION,
-                        "description": "changed functions over their ceiling (exit 6)"},
-    "unread_files": _unread_files_schema("verify --json", "unread_files"),
-    "ratchet_regressions": {
-        "type": "array", "description": "marks the fresh score rose past (exit 7)",
-        "items": {
-            "type": "object", "description": "one mark a function's score rose past",
-            "properties": {
-                "path": _FINDING_PATH,
-                "long_name": {"type": "string",
-                              "description": "the function's ratchet key, as the marks file "
-                                             "holds it"},
-                "recorded": {"type": "number", "description": "the mark"},
-                "fresh_crap": {"type": "number", "description": "the score this run measured"},
-                "dirty": _FINDING_DIRTY}}},
-    "new_failures": _strings("test ids that fail now and passed in the baseline (exit 8)"),
     "dirty_failures": _strings("the new failures whose test id names a file with uncommitted "
                                "edits"),
     "forgiven_failures": _strings("test ids the fresh run and the baseline both failed"),
     "retried_passes": _strings("new failures that passed their flake retry"),
-    "overridden": {"type": "array", "items": _GATE_VIOLATION,
-                   "description": "gate violations an --override exempted"},
-    "diff_uncovered_count": _count("changed lines no test ran"),
-    "diff_uncovered": {
-        "type": "array", "description": "the first 50 of those lines",
-        "items": {"type": "object", "description": "one changed line no test ran",
-                  "properties": {"path": _FINDING_PATH,
-                                 "line": {"type": "integer", "description": "the line"}}}},
-    "diff_uncovered_max": {"type": ("integer", "null"),
-                           "description": ("the ceiling diff_uncovered_count is judged against "
-                                           "(exit 9); null when the repo set none")},
     "unmarked_over_target": _count("functions over their ceiling that carry no ratchet mark"),
     "committed_findings": _count("findings whose file is clean"),
     "dirty_findings": _count("findings whose file has uncommitted edits"),

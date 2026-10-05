@@ -118,8 +118,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # PYTHONSAFEPATH (gate-group-17).
 # A src change that adds or drops a def moves it on purpose: recount with
 # py_ast_oracle.functions and change it in the same commit. 3,846 once the
-# runner refusals and hints read the spelled runner (m1-foundations-09).
-SRC_DEFS = 3846
+# runner refusals and hints read the spelled runner (m1-foundations-09), and
+# 3,842 once verify --json dropped the 0.8.1 per-kind keys (gate-group-13).
+SRC_DEFS = 3842
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
