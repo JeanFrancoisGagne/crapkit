@@ -12,7 +12,7 @@ Two audiences, two sections. Read the one that matches the repo you are in:
   itself.
 
 Every command below runs as `crapkit <sub>` (console script) or
-`python -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
+`python -P -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
 nearest `crapkit.toml` at or above the working directory
 (docs/adr/0002-configuration-is-found-upward-nearest-wins.md), except `claude-hook`, which
 reads its root from the hook payload on stdin. A leading `~` in PATH is your home directory
@@ -713,7 +713,7 @@ run. The store fills missing per-run rollups when `trend` or `report` asks for t
     pip install -e ".[dev,accuracy-push]"
     npm ci --prefix tools/accuracy/node/push
     git config core.hooksPath git-hooks
-    git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+    git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"
 
 The driver line makes git merge `crapkit-ratchet.tsv` through `crapkit ratchet merge`,
 so a land or a worktree merge combines the marks instead of leaving a conflict for a
@@ -1016,7 +1016,7 @@ that fails on the parent commit. A bug fix lands with the test that reproduces i
 
 Every function you add or edit must sit at or under its scope's `target` in this repo's
 own `crapkit.toml`: 6 for `src` and `tools`, 5 for `tools/accuracy`. The pre-commit hook
-runs `python -m crapkit hook-precommit` over the staged blobs:
+runs `python -P -m crapkit hook-precommit` over the staged blobs:
 
     crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
       ccn   7  calc/report.py:39  tally( rows , low , high , invert , label , pad , strict )
@@ -1072,7 +1072,7 @@ fails, not a reader.
 
 `crapkit.toml` and `crapkit-ratchet.tsv` at the repo root are live.
 
-    python -m crapkit coverage
-    python -m crapkit verify
+    python -P -m crapkit coverage
+    python -P -m crapkit verify
 
 must stay green on your branch.

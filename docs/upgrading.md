@@ -58,6 +58,18 @@ A wrapper that read verify's exit 3 as "no verdict" now gets a verify payload on
 `reason`, and `run_id` null, since no lane ran. The exit code and the stderr line are
 unchanged, and the fix is still `git mv` to a UTF-8 name
 ([verify](agent-json.md#a-scoped-file-whose-name-is-not-utf-8)).
+
+Add `-P` by hand to a git hook that ends in `exec python -m crapkit hook-precommit`, in
+`.git/hooks/pre-commit` or a committed hooks directory, and to the merge driver set with
+`git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"`:
+upgrading the package rewrites neither. Git runs both from the repository root, and
+`python -m` puts that directory first on `sys.path`, so a `crapkit.py` placed there runs in
+place of crapkit. The lines README now prints are
+`exec python -P -m crapkit hook-precommit` for the hook ([the gate](../README.md#the-gate))
+and `git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"`
+for the driver ([Development](../README.md#development)); run the driver's line again in
+each clone. A `python` older than 3.11 has no `-P`, so a hook that reaches its `python`
+line stops there with `Unknown option: -P` and exit 2.
 <!-- /0.9.0:gate-group -->
 
 <!-- 0.9.0:m1-foundations -->
