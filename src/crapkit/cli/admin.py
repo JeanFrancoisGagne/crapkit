@@ -283,34 +283,42 @@ def _unrouted_workspaces_note(written: tuple, package_json) -> str | None:
     if len(named) < 2 or any(_js_runner(runner) for _, runner in found):
         return None
     listed = ", ".join(f"{directory}: {runner}" for directory, runner in named)
-    return (f"{len(named)} workspaces name a runner ({listed}) and the root names none, so "
-            f"{_in_their_place(found)}, each with its own cwd and artifact")
+    return (f"{len(named)} workspaces name a runner ({listed}) and the root's devDependencies "
+            f"name none, so {_in_their_place(found)}, each with its own cwd and artifact")
 
 
 def _js_runner(found) -> bool:
     """Does toolchain.infer name a runner a package.json can name (vitest,
-    jest)? devDependencies count: the note's own claim, that the root names
-    none, is a devDependencies fact, so a root lane whose runner only
-    devDependencies name answers it."""
+    jest)? devDependencies count: the note's own claim, that the root's
+    devDependencies name none, is a devDependencies fact, so a root lane whose
+    runner only devDependencies name answers it."""
     from ..toolchain import TOOLCHAINS
 
     return found.name is not None and TOOLCHAINS[found.name].dev_dependency is not None
 
 
 def _in_their_place(found: list) -> str:
-    """What init wrote in place of the workspace lanes. A root test script
-    that only fans out to the workspaces gets the root js lane, whose runner
-    nothing names; saying no js lane was written then contradicted init's own
-    `detected ... lane(s)` line one line up. The one shape this misreads: a
-    root script that names a single non-JS runner, such as pytest, reads as
-    no js lane."""
-    unknown = [(lane, runner) for lane, runner in found if runner.name is None]
-    if not unknown:
+    """What init wrote in place of the workspace lanes: the root js lane, whose
+    command names no runner. Its runner is unknown when the root test script
+    only fans out to the workspaces, and a non-JS one when that script names
+    one, such as pytest. Either way the note names the lane in doctor's words:
+    saying no js lane was written contradicted init's own `detected ...
+    lane(s)` line one line up, and doctor's runner line for that lane. A lane
+    whose command names its runner, init's py lane, is not in their place."""
+    unnamed = [(lane, runner) for lane, runner in found if runner.source != "command"]
+    if not unnamed:
         return ("no js lane was written: declare one [[lane]] per workspace from the "
                 "commented template")
-    lane, runner = unknown[0]
-    return (f"the runner of lane {lane.name!r} is unknown ({_unknown_runner(lane, runner)}): "
-            "replace it with one [[lane]] per workspace")
+    lane, runner = unnamed[0]
+    return f"{_lane_runs(lane, runner)}: replace it with one [[lane]] per workspace"
+
+
+def _lane_runs(lane, runner) -> str:
+    """What doctor's runner line says the lane runs, in init's note."""
+    if runner.name is None:
+        return f"the runner of lane {lane.name!r} is unknown ({_unknown_runner(lane, runner)})"
+    where = _READ_FROM[runner.source].format(script=runner.script)
+    return f"lane {lane.name!r} runs {runner.name} ({where})"
 
 
 def _print_init_summary(scopes: dict, lanes: tuple, package_json=None) -> None:
@@ -1020,6 +1028,12 @@ def _lane_toolchain(lane, packages: PackageMap):
 _READ_FROM = {"command": "named in its command",
               "script": 'named in package.json script "{script}"',
               "package.json": "package.json devDependencies; the command names no runner"}
+# What "runner unknown" turns off. Config load and the container rule judge each
+# segment of the command by the runner that segment names, so a lane that names
+# two runners keeps its refusals and loses only the hints that need one runner.
+_NONE_OFF = "runner-specific hints and refusals are off for it"
+_TWO_OFF = ("runner-specific hints are off for it; the refusals still read each segment of its "
+            "command by the runner that segment names")
 
 
 def _runner_line(lane, found) -> Finding:
@@ -1028,8 +1042,8 @@ def _runner_line(lane, found) -> Finding:
     if found.name:
         where = _READ_FROM[found.source].format(script=found.script)
         return Finding("ok", f"lane {lane.name!r}: runs {found.name} ({where})")
-    return Finding("note", f"lane {lane.name!r}: runner unknown ({_unknown_runner(lane, found)}); "
-                           "runner-specific hints and refusals are off for it")
+    off = _TWO_OFF if found.words else _NONE_OFF
+    return Finding("note", f"lane {lane.name!r}: runner unknown ({_unknown_runner(lane, found)}); {off}")
 
 
 def _unknown_runner(lane, found) -> str:

@@ -164,7 +164,7 @@ def test_every_doctor_report_that_lists_lanes_prints_each_lane_s_runner_line(cap
 
 def test_the_runner_section_shows_the_line_doctor_prints_for_each_place_it_reads(capsys):
     """One lane per place a runner is read from: the command, the package.json
-    script it runs, devDependencies, and nowhere."""
+    script it runs, devDependencies, and nowhere; then a lane naming two."""
     from crapkit.cli.admin import PackageMap, _doctor_runners
     from crapkit.config import Config
     from crapkit.scaffold import npm_package
@@ -172,7 +172,8 @@ def test_the_runner_section_shows_the_line_doctor_prints_for_each_place_it_reads
     shapes = [("py", "python -m pytest --cov", None),
               ("js", "npm run test -- --coverage", {"scripts": {"test": "vitest run"}}),
               ("js", "make cov", {"devDependencies": {"vitest": "^2.0.0"}}),
-              ("js", "npm run cov", None)]
+              ("js", "npm run cov", None),
+              ("both", "python -m pytest --cov && npx vitest run --coverage", None)]
     text = _page("docs/lanes.md")
     section = text[text.index("## How crapkit reads a lane's runner"):]
     block = section[section.index("```\n") + 4:]
