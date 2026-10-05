@@ -1638,7 +1638,7 @@ Rules that keep this from hiding real failures:
 - Only lanes that declare `retest_command` retest. Lanes without one keep every failure.
   A test that several lanes failed drops out only when each of those lanes reran it and
   it passed.
-- A test only drops out of `new_failures` when the rerun's own results artifact says it
+- A test only stops being a `new_failure` item when the rerun's own results artifact says it
   passed. The lane's report moves aside while the retest runs, so a report at the path
   afterwards is the retest's, even one written inside the old report's time tick. No
   artifact (the lane's report goes back), a crash, or a timeout during the retest keeps

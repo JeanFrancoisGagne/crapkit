@@ -21,8 +21,9 @@ from accuracy.verdict_model import verdict_world as vw
 
 HERE = Path(__file__).resolve().parent
 FINDINGS = ("gate", "ratchet", "failures", "diff_uncovered")
-JSON_KEYS = {"gate": "gate_violations", "ratchet": "ratchet_regressions",
-             "failures": "new_failures", "diff_uncovered": "diff_uncovered"}
+# The findings item kind each finding lists under in verify --json.
+KINDS = {"gate": "gate_violation", "ratchet": "ratchet_regression", "failures": "new_failure",
+         "diff_uncovered": "diff_uncovered"}
 
 BASE = (vw.World(config_extra="diff_uncovered_max = 0")
         .with_fn("app", vw.Fn("gated", 1, 2)).with_fn("app", vw.Fn("steady", 2, 4))
@@ -85,6 +86,17 @@ def _expected_counts(subset: frozenset) -> tuple[int, int]:
     return committed, dirty
 
 
+def _kinds(payload: dict) -> set[str]:
+    """The kinds verify --json lists a finding of. A crapkit before 0.9.0,
+    which a retro replay runs, printed one list per kind instead of `findings`."""
+    if "findings" not in payload:
+        lists = {"gate_violation": payload["gate_violations"],
+                 "ratchet_regression": payload["ratchet_regressions"],
+                 "new_failure": payload["new_failures"], "diff_uncovered": payload["diff_uncovered"]}
+        return {kind for kind, entries in lists.items() if entries}
+    return {item["kind"] for item in payload["findings"]}
+
+
 def _unmarked(world: vw.World) -> int:
     rows = [model.Row(vw.FILES[scope], fn.long_name, start, fn.crap)
             for scope in vw.FILES for fn, start, _ in vw.source(world.functions[scope])[1]]
@@ -104,7 +116,7 @@ def test_exit_json_and_stored_run_name_one_verdict(seeded, subset, tmp_path):
     verdict = result.json()
 
     assert result.code == TABLE[subset]
-    assert {name for name in FINDINGS if verdict[JSON_KEYS[name]]} == set(subset)
+    assert {name for name in FINDINGS if KINDS[name] in _kinds(verdict)} == set(subset)
     assert verdict["ok"] is (not subset)
     assert scenario.runs()[-1]["kind"] == "verify"
     assert scenario.runs()[-1]["verdict_ok"] == (0 if subset else 1)
