@@ -1115,3 +1115,269 @@ def test_the_independent_pairing_model_equals_moves(tmp_path, build):
 
     assert found == _model_moves(tmp_path)
     assert found, "each history moves at least one mark"
+
+
+# --- a large marks file, edited one commit at a time -----------------------------
+# Consecutive revisions of a large marks file share almost every row. Each
+# history here starts from 400 marks, about 12 KB, and edits them one commit at
+# a time, at the start, the middle and the end of the file. Every revision must
+# read as the whole file reads (RatchetFile.committed, then read_ratchet, the
+# first mark under a key answering), and its events must name exactly what the
+# commit changed, wherever the edit falls.
+
+BIG = 400
+BIG_EPOCH = 1_750_000_000
+
+
+def big_key(n: int, name: str = "f") -> tuple[str, str]:
+    return (f"src/p{n // 10:02d}.py", f"{name}{n:03d}( a )")
+
+
+def big_row(n: int, crap: str = "", name: str = "f") -> bytes:
+    path, key_name = big_key(n, name)
+    return f"{path}\t{key_name}\t{crap or f'{30 + n}.0000'}\n".encode()
+
+
+BIG_ROWS = [big_row(n) for n in range(BIG)]
+
+
+def big_text(rows_: list[bytes]) -> bytes:
+    return HEADER + b"".join(rows_)
+
+
+def _row_at(offset: int) -> int:
+    """The row of BIG_ROWS that holds `offset` of big_text(BIG_ROWS)."""
+    ends = [len(big_text(BIG_ROWS[:n + 1])) for n in range(BIG)]
+    return next(n for n, end in enumerate(ends) if end > offset)
+
+
+# The rows that open and close the file, and the rows that hold its 4 KB and
+# 8 KB offsets.
+EDGES = sorted({0, 1, _row_at(4096), _row_at(4096) + 1, _row_at(8192), BIG - 2, BIG - 1})
+
+
+def _big_history(root: Path, revisions: list[bytes | None]) -> Path:
+    """One commit per revision, a day apart from BIG_EPOCH, all written by one
+    `git fast-import`. None deletes the marks file."""
+    repository(root)
+    stream = []
+    for day, data in enumerate(revisions):
+        stamp = b"%d +0000" % (BIG_EPOCH + day * DAY)
+        change = (b"D %s\n" % MARKS.encode() if data is None
+                  else b"M 100644 inline %s\ndata %d\n%s\n" % (MARKS.encode(), len(data), data))
+        stream += [b"commit refs/heads/main\n", b"author a <a@example.test> %s\n" % stamp,
+                   b"committer c <c@example.test> %s\n" % stamp, b"data 4\nedit\n", change, b"\n"]
+    subprocess.run(["git", "fast-import", "--quiet"], cwd=root, input=b"".join(stream),
+                   capture_output=True, check=True)
+    return root
+
+
+def _whole_read(root: Path, data: bytes | None) -> dict | None:
+    """One revision read whole: the marks a reader that skips nothing gives."""
+    held = None if data is None else RatchetFile.committed(root / MARKS, data)
+    return None if held is None or held.blank else crap_by_key(read_ratchet(held.text)[0])
+
+
+def _read_after_the_base(root: Path, revisions: list[bytes | None]) -> list[tuple]:
+    """The history read back: each revision equals the whole read of its
+    bytes and diffs the one before it. Answers the events after the base,
+    each dated by its revision's index."""
+    read = marks_history(_big_history(root, revisions), MARKS)
+    whole = [_whole_read(root, data) for data in revisions]
+    assert [revision.marks for revision in read] == whole
+    assert [revision.before for revision in read] == [None, *whole[:-1]]
+    return [((ts - BIG_EPOCH) // DAY, *rest) for ts, *rest in mark_events(read) if ts > BIG_EPOCH]
+
+
+def _edited(at: int, *new: bytes) -> list[bytes]:
+    """The 400 rows with row `at` replaced by `new` (none: deleted)."""
+    return BIG_ROWS[:at] + list(new) + BIG_ROWS[at + 1:]
+
+
+@pytest.mark.parametrize("at", EDGES)
+def test_a_changed_value_updates_that_one_mark(tmp_path, at):
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS),
+                                             big_text(_edited(at, big_row(at, "9.5000")))])
+
+    assert events == [(1, big_key(at), "updated", 9.5)]
+
+
+@pytest.mark.parametrize("at", EDGES)
+def test_a_key_moved_to_a_new_name_enters_the_new_key_and_repays_the_old(tmp_path, at):
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS),
+                                             big_text(_edited(at, big_row(at, name="g")))])
+
+    assert events == [(1, big_key(at, "g"), "added", 30.0 + at),
+                      (1, big_key(at), "dropped", 30.0 + at)]
+
+
+@pytest.mark.parametrize("at", EDGES)
+def test_a_duplicate_key_reads_its_first_mark(tmp_path, at):
+    """A second row under a key changes nothing while the first row stays
+    first; a duplicate written before it wins, and the mark goes only with
+    the last row under the key."""
+    later = _edited(at, BIG_ROWS[at], big_row(at, "99.0000"))
+    earlier = _edited(at, big_row(at, "5.0000"), BIG_ROWS[at])
+    only_earlier = _edited(at, big_row(at, "5.0000"))
+
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS), big_text(later),
+                                             big_text(BIG_ROWS), big_text(earlier),
+                                             big_text(only_earlier), big_text(_edited(at))])
+
+    assert events == [(1, None, "observed", 0.0), (2, None, "observed", 0.0),
+                      (3, big_key(at), "updated", 5.0), (4, None, "observed", 0.0),
+                      (5, big_key(at), "dropped", 5.0)]
+
+
+@pytest.mark.parametrize("at", [0, _row_at(4096), BIG - 1])
+def test_a_row_listed_twice_reads_as_one_mark(tmp_path, at):
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS),
+                                             big_text(_edited(at, BIG_ROWS[at], BIG_ROWS[at])),
+                                             big_text(BIG_ROWS)])
+
+    assert events == [(1, None, "observed", 0.0), (2, None, "observed", 0.0)]
+
+
+@pytest.mark.parametrize("gone", [
+    pytest.param(b"", id="empty"),
+    pytest.param(b"\xef\xbb\xbf\n\n", id="byte-order-mark-and-blank-lines"),
+    pytest.param(HEADER, id="header-only"),
+    pytest.param(None, id="deleted"),
+])
+def test_a_revision_with_no_marks_repays_every_mark_and_the_next_enters_them_again(tmp_path,
+                                                                                  gone):
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS), gone, big_text(BIG_ROWS)])
+
+    every = sorted(big_key(n) for n in range(BIG))
+    crap = {big_key(n): 30.0 + n for n in range(BIG)}
+    assert events == ([(1, k, "dropped", crap[k]) for k in every]
+                      + [(2, k, "added", crap[k]) for k in every])
+
+
+@pytest.mark.parametrize("at", [0, _row_at(4096), BIG - 1])
+def test_a_crap_that_is_not_finite_holds_no_mark(tmp_path, at):
+    """read_ratchet refuses nan and inf (ratchet._finite_mark), so no revision
+    holds a mark that does not equal itself: the row reads as no mark."""
+    texts = [big_text(_edited(at, big_row(at, crap))) for crap in ("nan", "inf", "-inf", "1e999")]
+
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS), *texts,
+                                             big_text(_edited(at, big_row(at, "31.0000")))])
+
+    assert events == [(1, big_key(at), "dropped", 30.0 + at), (2, None, "observed", 0.0),
+                      (3, None, "observed", 0.0), (4, None, "observed", 0.0),
+                      (5, big_key(at), "added", 31.0)]
+
+
+def test_runs_of_rows_added_and_removed_enter_and_repay_each_mark(tmp_path):
+    added = [big_row(n, name="h") for n in range(50, 110)]
+    grown = BIG_ROWS[:56] + added + BIG_ROWS[56:]
+    shrunk = grown[:150] + grown[250:]
+
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS), big_text(grown),
+                                             big_text(shrunk)])
+
+    assert events == ([(1, big_key(n, "h"), "added", 30.0 + n) for n in range(50, 110)]
+                      + [(2, big_key(n), "dropped", 30.0 + n) for n in range(90, 190)])
+
+
+def test_the_last_row_reads_with_or_without_a_closing_newline(tmp_path):
+    last = BIG - 1
+    changed = big_text(_edited(last, big_row(last, "7.0000")))
+
+    events = _read_after_the_base(tmp_path, [
+        big_text(BIG_ROWS)[:-1], changed[:-1], changed,
+        big_text(_edited(last, big_row(last, "7.5000")))[:-1], big_text(BIG_ROWS)])
+
+    assert events == [(1, big_key(last), "updated", 7.0), (2, None, "observed", 0.0),
+                      (3, big_key(last), "updated", 7.5),
+                      (4, big_key(last), "updated", 30.0 + last)]
+
+
+def test_line_endings_a_stamp_and_row_order_change_no_mark(tmp_path):
+    crlf_row = _edited(_row_at(4096), BIG_ROWS[_row_at(4096)].replace(b"\n", b"\r\n"))
+    restamped = big_text(BIG_ROWS).replace(b"analysis=11", b"analysis=12")
+
+    events = _read_after_the_base(tmp_path, [
+        big_text(BIG_ROWS), big_text(crlf_row), big_text(BIG_ROWS).replace(b"\n", b"\r\n"),
+        restamped, big_text(BIG_ROWS[::-1]), big_text(_edited(3, big_row(3, "1.0000")))])
+
+    assert events == [(day, None, "observed", 0.0) for day in range(1, 5)] + [
+        (5, big_key(3), "updated", 1.0)]
+
+
+def _random_edit(rng, rows_: list[bytes], serial: int) -> list[bytes]:
+    """One random edit of `rows_`: a value, a run of rows added or removed, a
+    key renamed, a signature changed (a move keys.pair_moves pairs), a
+    duplicate before or after its key, a row repeated, two rows swapped, CRLF
+    on one row, or a crap that is not finite."""
+    at = rng.randrange(len(rows_))
+    row, head, tail = rows_[at], rows_[:at], rows_[at + 1:]
+    keyed = row.rsplit(b"\t", 1)[0]
+    edits = [
+        lambda: [*head, keyed + b"\t%d.0000\n" % rng.randrange(1, 900), *tail],
+        lambda: [*head, *(big_row(serial + i, name="n") for i in range(rng.randrange(1, 9))),
+                 row, *tail],
+        lambda: head + rows_[at + rng.randrange(1, 9):],
+        lambda: [*head, row.replace(b"\tf", b"\tm", 1), *tail],
+        lambda: [*head, row.replace(b"( a )", b"( a , b )", 1), *tail],
+        lambda: [*head, keyed + b"\t4.0000\n", row, *tail],
+        lambda: [*head, row, keyed + b"\t4.0000\n", *tail],
+        lambda: [*head, row, row, *tail],
+        lambda: [*head, *rows_[at:at + 2][::-1], *rows_[at + 2:]],
+        lambda: [*head, row.replace(b"\n", b"\r\n"), *tail],
+        lambda: [*head, keyed + b"\tnan\n", *tail],
+    ]
+    return rng.choice(edits)()
+
+
+def _random_revisions(seed: int, count: int) -> list[bytes | None]:
+    """`count` revisions of the 400 rows, each a random edit away from the
+    last; now and then the closing newline goes, the file is emptied or
+    deleted, or the 400 rows come back. An edit that lists a key twice lasts
+    one revision, so most revisions follow one that lists each key once."""
+    import random
+
+    rng = random.Random(seed)
+    current, revisions = list(BIG_ROWS), [big_text(BIG_ROWS)]
+    while len(revisions) < count:
+        pick = rng.randrange(12)
+        if pick < 10 and current:
+            edited = _random_edit(rng, current, BIG + 10 * len(revisions))
+            data = big_text(edited)[:-1] if pick == 0 else big_text(edited)
+            keyed = {tuple(row.split(b"\t")[:2]) for row in edited}
+            current = edited if len(keyed) == len(edited) else current
+        elif pick == 10:
+            data = rng.choice([b"", None])
+        else:
+            current = list(BIG_ROWS)
+            data = big_text(current)
+        if data != revisions[-1]:
+            revisions.append(data)
+    return revisions
+
+
+@pytest.mark.parametrize("seed", [4033, 4034, 4035])
+def test_a_long_random_history_reads_every_revision_whole(tmp_path, seed):
+    """Every revision equals the whole read of its bytes, and its events and
+    moves are the ones a diff of every key the two revisions hold gives."""
+    revisions = _random_revisions(seed, 60)
+    read = marks_history(_big_history(tmp_path, revisions), MARKS)
+
+    assert len(read) == 60
+    assert [revision.marks for revision in read] == [_whole_read(tmp_path, d) for d in revisions]
+    every_key = [MarksRevision(r.commit, r.time, r.marks, r.before) for r in read]
+    assert mark_events(read) == mark_events(every_key)
+    assert [(m.commit, m.old_key, m.new_key) for m in moves(tmp_path, None, MARKS)] == (
+        _every_key_moves(read))
+
+
+def _every_key_moves(read: list[MarksRevision]) -> list[tuple]:
+    """keys.pair_moves over every key each revision dropped and added."""
+    found = []
+    for revision in read:
+        before, after = revision.before or {}, revision.marks or {}
+        dropped, added = before.keys() - after.keys(), after.keys() - before.keys()
+        for path in sorted({key[0] for key in dropped | added}):
+            found += [(revision.commit, *pair)
+                      for pair in keys.pair_moves(path, dropped, added).pairs]
+    return found

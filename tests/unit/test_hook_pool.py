@@ -16,7 +16,9 @@ import pytest
 
 from crapkit import _analysis_pool
 from crapkit.config import load_config_text
+from crapkit.gate import judge
 from crapkit.hook import gate_staged
+from crapkit.keys import MarkIndex
 
 CONFIG = """[crapkit]
 target = 6
@@ -75,19 +77,24 @@ def staged_repo(tmp_path: Path, files: int) -> Path:
 
 
 def gate(repo: Path):
+    """The gate's findings on the staged rows, no mark read."""
     cfg = load_config_text((repo / "crapkit.toml").read_text(encoding="utf-8"))
-    return gate_staged(repo, cfg)
+    return judge(gate_staged(repo, cfg).changes, cfg.ceiling_of, lambda: MarkIndex(()))
 
 
 def test_fifteen_staged_files_are_analyzed_without_a_pool(tmp_path, counted_pool):
     repo = staged_repo(tmp_path, 15)
 
-    assert gate(repo).violations == []
+    found = gate(repo)
+
+    assert (found.over_ceiling, found.judged) == ((), 15)
     assert counted_pool == [], "15 files is still cheaper serially than one pool spawn"
 
 
 def test_sixteen_staged_files_pay_for_the_pool(tmp_path, counted_pool):
     repo = staged_repo(tmp_path, 16)
 
-    assert gate(repo).violations == []
+    found = gate(repo)
+
+    assert (found.over_ceiling, found.judged) == ((), 16)
     assert counted_pool == [8], "at the crossover the pool runs, capped at _HOOK_MAX_WORKERS"

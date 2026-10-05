@@ -2,10 +2,20 @@
 
 definitions.tsv gives every field its definition, the README anchor or outside
 source it comes from, and the phrases each place must carry: README.md,
-CONTEXT.md, docs/agent-json.md, the MCP output schemas and the SARIF rules. A
-place that drops a phrase fails here with the field and the phrase named. "-"
-says the place defines no such field; if one appears there, the row has to say
-what it must carry.
+CONTEXT.md, docs/agent-json.md, the MCP output schemas, the agent JSON field
+declaration (src/crapkit/agent_fields.py) and the SARIF rules. A place that
+drops a phrase fails here with the field and the phrase named. "-" says the
+place defines no such field; if one appears there, the row has to say what it
+must carry.
+
+A field nested in a payload is named by its declaration's key, such as
+`findings[].kind` or `counts.diff_uncovered_count`, and each page names it by
+its last segment, `kind`, the way its tables do. Those rows are verify --json's
+findings items and counts. No MCP tool serves verify's payload, so their
+`mcp` cell is "-" and the declaration column checks the declaration itself; a
+field an MCP tool serves is checked once, through the live session. In
+agent-json.md such a field is read under its payload's `##` heading only,
+since `kind` and `dirty` name other fields elsewhere on the page.
 
 Three definition rulings of the accuracy plan are pinned by name as well:
 - D9: every coverage definition names both fallbacks, statements and then
@@ -17,7 +27,8 @@ Three definition rulings of the accuracy plan are pinned by name as well:
   exact makespan.
 
 Nothing here imports crapkit: the MCP schemas come from a live `crapkit mcp`
-session, and sarif.py, doctor.py and errors.py are read as syntax trees.
+session, and sarif.py, doctor.py, errors.py and agent_fields.py are read as
+syntax trees.
 """
 import ast
 from fractions import Fraction
@@ -31,9 +42,21 @@ import pytest
 from accuracy.definitions import doc_places
 from accuracy.kit import drive, rulings, tiers
 
-FIELDS = ("cov", "crap", "flag", "remedy", "nesting", "nloc", "params", "target")
+FIELDS = ("cov", "crap", "flag", "remedy", "nesting", "nloc", "params", "target",
+          "findings[].kind", "findings[].fails", "findings[].exit_code", "findings[].overridable",
+          "findings[].dirty", "findings[].rule", "counts.diff_uncovered_count",
+          "counts.diff_uncovered_max")
 ROWS = {row["field"]: row for row in doc_places.rows()}
 AGENT_JSON = "docs/agent-json.md"
+DECLARATION = "src/crapkit/agent_fields.py"
+# The fields an MCP tool serves; the declaration of the others is read from its source.
+MCP_FIELDS = tuple(field for field in FIELDS if ROWS.get(field, {}).get("mcp") != "-")
+DECLARED = tuple(field for field in FIELDS if field not in MCP_FIELDS)
+
+
+def _name(field: str) -> str:
+    """What a page calls the field: its key's last segment, `kind` for `findings[].kind`."""
+    return field.rsplit(".", 1)[-1]
 
 
 def test_the_table_holds_one_row_per_field():
@@ -73,7 +96,7 @@ def test_readme_states_each_definition(field):
     row = ROWS[field]
     wanted = doc_places.phrases(row["readme"])
     if row["readme_section"] == "-":
-        assert (wanted, doc_places.readme_defines(field)) == ([], [])
+        assert (wanted, doc_places.readme_defines(_name(field))) == ([], [])
         return
     text = doc_places.readme_text(row["readme_section"])
 
@@ -85,7 +108,7 @@ def test_context_states_each_definition(field):
     row = ROWS[field]
     glossary = doc_places.terms(doc_places.read("CONTEXT.md"))
     if row["context_term"] == "-":
-        assert (doc_places.phrases(row["context"]), glossary.get(field, "")) == ([], "")
+        assert (doc_places.phrases(row["context"]), glossary.get(_name(field), "")) == ([], "")
         return
 
     assert doc_places.missing(glossary[row["context_term"].lower()],
@@ -94,9 +117,38 @@ def test_context_states_each_definition(field):
 
 # --- docs/agent-json.md -----------------------------------------------------------------
 
+_FENCE = re.compile(r"^\s*(```|~~~)")
+_PAYLOAD_HEADING = re.compile(r"^##\s+(.+?)\s*$")
+
+
+def page_part(text: str, title: str) -> str:
+    """The lines under the page's `## title` heading, its own subsections
+    included, up to the next `##` heading. A `#` line inside a code fence is
+    code, never a heading."""
+    found, inside, fenced = [], False, False
+    for line in text.splitlines():
+        heading = None if fenced else _PAYLOAD_HEADING.match(line)
+        fenced ^= bool(_FENCE.match(line))
+        if heading:
+            inside = heading.group(1).replace("`", "") == title
+        elif inside:
+            found.append(line)
+    return "\n".join(found)
+
+
+def _agent_json_rows(field: str) -> list[str]:
+    """The rows naming the field: anywhere on the page, or for a field whose
+    declaration is read from its source, under its payload's heading only
+    (`verify --json` under `## verify`)."""
+    page = doc_places.read(AGENT_JSON)
+    if field in DECLARED:
+        page = "\n".join(page_part(page, payload.removesuffix(" --json")) for payload, _ in _declared(field))
+    return doc_places.table_rows(page, _name(field))
+
+
 @pytest.mark.parametrize("field", FIELDS)
 def test_agent_json_states_each_definition_in_every_row(field):
-    table = doc_places.table_rows(doc_places.read(AGENT_JSON), field)
+    table = _agent_json_rows(field)
     wanted = doc_places.phrases(ROWS[field]["agent_json"])
 
     assert table, f"{AGENT_JSON} has no table row for `{field}`"
@@ -121,7 +173,7 @@ def test_the_mcp_session_lists_twelve_tools_with_output_schemas(mcp_tools):
 
 
 @pytest.mark.process
-@pytest.mark.parametrize("field", FIELDS)
+@pytest.mark.parametrize("field", MCP_FIELDS)
 def test_every_mcp_property_states_each_definition(mcp_tools, field):
     found = doc_places.schema_descriptions(mcp_tools, field)
     wanted = doc_places.phrases(ROWS[field]["mcp"])
@@ -131,6 +183,77 @@ def test_every_mcp_property_states_each_definition(mcp_tools, field):
             if doc_places.missing(text, wanted)] == []
 
 
+# --- the agent JSON field declaration ------------------------------------------------------
+
+def _literal(node: ast.AST) -> str:
+    return node.value if isinstance(node, ast.Constant) else ast.unparse(node)
+
+
+def _is_declaration(node: ast.AST) -> bool:
+    """An `AgentField(payload, key, types, description)` call."""
+    return (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "AgentField"
+            and len(node.args) == 4)
+
+
+def declarations(source: str, key: str) -> list[tuple[str, str]]:
+    """(payload, description) of each AgentField the source declares under
+    `key`, as written: a description held in a name reads as that name."""
+    calls = [node for node in ast.walk(ast.parse(source)) if _is_declaration(node)]
+    return [(_literal(call.args[0]), _literal(call.args[3])) for call in calls
+            if _literal(call.args[1]) == key]
+
+
+def mcp_payloads(source: str) -> set[str]:
+    """The payloads MCP_TOOLS gives a tool: the ones an MCP session serves."""
+    tree = ast.parse(source)
+    assign = next(node for node in tree.body if isinstance(node, ast.Assign)
+                  and [getattr(target, "id", "") for target in node.targets] == ["MCP_TOOLS"])
+    return set(ast.literal_eval(assign.value))
+
+
+def _declared(field: str) -> list[tuple[str, str]]:
+    return declarations(doc_places.read(DECLARATION), field)
+
+
+def test_each_row_reads_the_declaration_in_one_place():
+    """Through a live MCP session when a tool serves the field, else from the
+    declaration's source: one of the two cells is "-", never both."""
+    both = {field: (row["mcp"], row["declaration"]) for field, row in ROWS.items()}
+
+    assert {field: cells for field, cells in both.items() if cells.count("-") != 1} == {}
+
+
+@pytest.mark.parametrize("field", DECLARED)
+def test_the_declaration_states_each_definition(field):
+    declared = _declared(field)
+    wanted = doc_places.phrases(ROWS[field]["declaration"])
+
+    assert declared, f"{DECLARATION} declares no `{field}`"
+    assert [payload for payload, _ in declared
+            if payload in mcp_payloads(doc_places.read(DECLARATION))] == []
+    assert [(payload, text, doc_places.missing(text, wanted)) for payload, text in declared
+            if doc_places.missing(text, wanted)] == []
+
+
+def test_the_declaration_readers_read_what_agent_fields_writes():
+    source = ('MCP_TOOLS = {"brief --json": "get_function_brief"}\n'
+              'X = (AgentField("verify --json", "counts.n", ("integer",), "every one " "counted"),\n'
+              '     AgentField("brief --json", "n", ("integer",), _TEXT),\n'
+              '     AgentField("brief --json", "counts.n", ("integer",)))\n')
+
+    assert declarations(source, "counts.n") == [("verify --json", "every one counted")]
+    assert declarations(source, "n") == [("brief --json", "_TEXT")]
+    assert mcp_payloads(source) == {"brief --json"}
+
+
+def test_a_page_part_runs_to_the_next_payload_heading():
+    page = "## `a`\nx\n### sub\n| `kind` | y |\n```\n## not a heading\n```\n## `b`\n| `kind` | z |\n"
+
+    assert page_part(page, "a") == "x\n### sub\n| `kind` | y |\n```\n## not a heading\n```"
+    assert doc_places.table_rows(page_part(page, "b"), "kind") == ["| `kind` | z |"]
+    assert page_part(page, "c") == ""
+
+
 # --- SARIF --------------------------------------------------------------------------------
 
 @pytest.mark.parametrize("field", FIELDS)
@@ -138,7 +261,7 @@ def test_sarif_rules_and_messages_state_each_definition(field):
     texts = doc_places.sarif_texts()
     wanted = doc_places.phrases(ROWS[field]["sarif"])
     if not wanted:
-        assert doc_places.names_word(texts, field) == []
+        assert doc_places.names_word(texts, _name(field)) == []
         return
 
     assert doc_places.missing("\n".join(texts), wanted) == []

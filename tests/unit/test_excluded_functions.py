@@ -7,8 +7,7 @@ its remedy can only be ok or decompose. Scored at cov 0 it read
 crap = ccn^2 + ccn with add-tests advice no test could satisfy.
 """
 from crapkit.cli.scoring import _bucket_text, _flag_counts
-from crapkit.coverage_istanbul import FnCoverage
-from crapkit.score import overlay_stale_coverage, score_rows
+from crapkit.score import FnCoverage, overlay_stale_coverage, score_rows
 from crapkit.snapshot import InventoryRow
 
 LANE = {"s"}

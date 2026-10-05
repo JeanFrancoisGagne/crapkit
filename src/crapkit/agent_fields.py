@@ -110,7 +110,6 @@ _ADDED = (
                "or asks for none. cov 0.0 is then a stand-in"),
     *_unread_fields("rescore --gate --json", "gate.unread_files",
                     "always true here: the gate judges the working tree's changes since HEAD"),
-    *_unread_fields("verify --json", "unread_files", _UNREAD_DIRTY),
     *_unread_fields(ERROR_OBJECT, "error.unread_files", _UNREAD_DIRTY, _REFUSED_NAMES),
     AgentField("verify --json", "lanes_without_results", ("array",),
                "lanes that declare no results_artifact, so nothing checked their tests for new "
@@ -132,6 +131,40 @@ _ADDED = (
                "for tree"),
     AgentField("verify --json", "ratchet_source_sha256", ("string", "null"),
                "digest of the marks verify judged against; null when there were no marks"),
+    AgentField("verify --json", "findings", ("array",),
+               "every finding once: the kinds in exit order (unreadable_name, gate_violation, "
+               "unread_file, ratchet_regression, new_failure, diff_uncovered, overridden), each "
+               "kind's items in the order its own list gives them; diff_uncovered lists at most "
+               "50, and counts.diff_uncovered_count counts them all"),
+    AgentField("verify --json", "findings[].kind", ("string",),
+               "unreadable_name, gate_violation, unread_file, ratchet_regression, new_failure, "
+               "diff_uncovered or overridden; the fields beside the common six are the kind's own"),
+    AgentField("verify --json", "findings[].fails", ("boolean",),
+               "true when this item fails the verdict: its kind fires an exit code and the "
+               "verdict holds it; a diff_uncovered item fails only past diff_uncovered_max, and "
+               "an overridden one never does"),
+    AgentField("verify --json", "findings[].exit_code", ("integer", "null"),
+               "the exit code the item fires when it fails: 3 unreadable_name, 6 gate_violation "
+               "and unread_file, 7 ratchet_regression, 8 new_failure, 9 diff_uncovered; null when "
+               "fails is false. The first failing item's exit_code is verify's exit"),
+    AgentField("verify --json", "findings[].overridable", ("boolean",),
+               "true for a gate_violation, the one kind an --override can grant; an override "
+               "still grants nothing while an item of a kind that refuses one is present "
+               "(unreadable_name, unread_file, ratchet_regression, new_failure)"),
+    AgentField("verify --json", "findings[].dirty", ("boolean",),
+               "true when the item's file has uncommitted edits or git does not track it; for a "
+               "new_failure, when its test id names such a file"),
+    AgentField("verify --json", "findings[].rule", ("string",),
+               "the label of the item's rule: complexity gate (gate_violation, unread_file), "
+               "ratchet regressions, new test failures, diff-coverage ceiling, unreadable name or "
+               "override"),
+    AgentField("verify --json", "counts", ("object",),
+               "the numbers beside findings, which its items do not carry"),
+    AgentField("verify --json", "counts.diff_uncovered_count", ("integer",),
+               "changed lines no test ran, every one, where findings lists the first 50"),
+    AgentField("verify --json", "counts.diff_uncovered_max", ("integer", "null"),
+               "the ceiling diff_uncovered_count is judged against (exit 9); null when the repo "
+               "set none"),
     AgentField("coverage --json", "empty_scopes", ("object",),
                _EMPTY_SCOPES),
     AgentField("inventory --json", "empty_scopes", ("object",),
@@ -160,6 +193,18 @@ _ADDED = (
                "why --reuse-artifacts will not score the lane's artifact on disk: the lane's "
                "last attempt wrote no artifact and the file predates it, or "
                ".crapkit/artifacts.json cannot be read; null when reuse would score it"),
+    AgentField("doctor --json", "lanes[].toolchain", ("object",),
+               "the runner the lane runs and where crapkit read it, from the lane's command, "
+               "else the package.json script it runs, else devDependencies; no config key "
+               "names it"),
+    AgentField("doctor --json", "lanes[].toolchain.name", ("string", "null"),
+               "the runner: pytest, vitest, jest, bun, deno, cargo llvm-cov, go test or c8; "
+               "null when crapkit knows none the lane runs, or the lane runs two"),
+    AgentField("doctor --json", "lanes[].toolchain.source", ("string", "null"),
+               "where crapkit read the runner: command (the lane's command names it), script "
+               "(the package.json script the command runs names it) or package.json (only "
+               "devDependencies name it, so no runner check keys on it); null when name is "
+               "null"),
 )
 
 
@@ -1155,7 +1200,12 @@ _DOCTOR = {
                 "refusal": schema_of("doctor --json", "lanes[].refusal"),
                 "seconds": {
                     "type": ("number", "null"),
-                    "description": "how long the lane took last time, null when it never ran"}}}}}
+                    "description": "how long the lane took last time, null when it never ran"},
+                "toolchain": {
+                    **schema_of("doctor --json", "lanes[].toolchain"),
+                    "properties": {
+                        "name": schema_of("doctor --json", "lanes[].toolchain.name"),
+                        "source": schema_of("doctor --json", "lanes[].toolchain.source")}}}}}}
 
 
 _COUPLING = {
@@ -1549,65 +1599,69 @@ _COVERAGE = {
         "additionalProperties": {"type": "integer", "description": "the ceiling"}}}
 
 _FINDING_PATH = {"type": "string", "description": "repo-relative path"}
-_FINDING_DIRTY = {"type": "boolean",
-                  "description": "true when the finding's file has uncommitted tracked edits"}
-_GATE_VIOLATION = {
-    "type": "object", "description": "one changed function over its ceiling no mark pardons",
+# A gate_violation's own fields, which an overridden item carries too.
+_GATE_FIELDS = {
+    "long_name": {"type": "string", "description": "the function's long name"},
+    "start": {"type": "integer", "description": "first line"},
+    "ccn": {"type": "integer", "description": "the complexity the gate judged"},
+    "cov": {"type": "number", "description": "coverage this run measured, 0.0 to 1.0"},
+    "crap": {"type": "number", "description": "the score"},
+    "remedy": _REMEDY,
+    "key_name": {"type": "string",
+                 "description": ("the ratchet key: long_name, or long_name#2 for the second "
+                                 "function the file gives that name")}}
+
+# Each kind's own fields on a findings item, beside the six every item carries.
+_FINDING_FIELDS = {
+    "path": {"type": "string",
+             "description": ("repo-relative path of the item's file, each byte that is not UTF-8 "
+                             "spelled \\xNN; every kind but new_failure")},
+    "scope": {"type": "string",
+              "description": "unreadable_name: the declared scope that takes the file"},
+    "reason": {"type": "string",
+               "description": ("unread_file: the reader's refusal, naming the line and what to "
+                               "change; unreadable_name: the sentence naming the file, its scope "
+                               "and the git mv rename to a UTF-8 name")},
+    **_GATE_FIELDS,
+    "recorded": {"type": "number", "description": "ratchet_regression: the mark"},
+    "fresh_crap": {"type": "number",
+                   "description": "ratchet_regression: the score this run measured"},
+    "test": {"type": "string",
+             "description": "new_failure: the test id that fails now and passed in the baseline"},
+    "line": {"type": "integer", "description": "diff_uncovered: the changed line no test ran"}}
+_FINDING = {
+    "type": "object",
+    "description": ("one finding: kind, fails, exit_code, overridable, dirty and rule, then its "
+                    "kind's own fields (gate_violation and overridden: path, long_name, start, "
+                    "ccn, cov, crap, remedy, key_name; unread_file: path, reason; "
+                    "ratchet_regression: path, long_name, recorded, fresh_crap; new_failure: "
+                    "test; diff_uncovered: path, line; unreadable_name: path, scope, reason)"),
     "properties": {
-        "path": _FINDING_PATH,
-        "long_name": {"type": "string", "description": "the function's long name"},
-        "start": {"type": "integer", "description": "first line"},
-        "ccn": {"type": "integer", "description": "the complexity the gate judged"},
-        "cov": {"type": "number", "description": "coverage this run measured, 0.0 to 1.0"},
-        "crap": {"type": "number", "description": "the score"},
-        "remedy": _REMEDY,
-        "dirty": _FINDING_DIRTY,
-        "key_name": {"type": "string",
-                     "description": ("the ratchet key: long_name, or long_name#2 for the second "
-                                     "function the file gives that name")}}}
+        **{key: schema_of("verify --json", f"findings[].{key}")
+           for key in ("kind", "fails", "exit_code", "overridable", "dirty", "rule")},
+        **_FINDING_FIELDS}}
 
 _VERIFY = {
     "schema": _SCHEMA,
     "ok": {"type": "boolean",
            "description": ("the verdict after allowed overrides and flake retests; it agrees "
                            "with the stored run and the exit code")},
-    "run_id": {"type": "integer", "description": "the run this verify wrote"},
+    "run_id": {"type": ("integer", "null"),
+               "description": ("the run this verify wrote; null when it stopped before any lane "
+                               "ran, on a file a scope takes whose name is not UTF-8")},
+    "findings": {**schema_of("verify --json", "findings"), "items": _FINDING},
+    "counts": {**schema_of("verify --json", "counts"), "properties": {
+        key: schema_of("verify --json", f"counts.{key}")
+        for key in ("diff_uncovered_count", "diff_uncovered_max")}},
     "baseline_run": {"type": "integer", "description": "the run it was measured against"},
     "baseline_commit": {"type": "string", "description": "that run's commit, full sha"},
     "commit": {"type": "string", "description": "the commit the verified tree is at"},
     "changed_files": _count("files in the diff being judged"),
     "changed_paths": _added_strings("verify --json", "changed_paths"),
-    "gate_violations": {"type": "array", "items": _GATE_VIOLATION,
-                        "description": "changed functions over their ceiling (exit 6)"},
-    "unread_files": _unread_files_schema("verify --json", "unread_files"),
-    "ratchet_regressions": {
-        "type": "array", "description": "marks the fresh score rose past (exit 7)",
-        "items": {
-            "type": "object", "description": "one mark a function's score rose past",
-            "properties": {
-                "path": _FINDING_PATH,
-                "long_name": {"type": "string",
-                              "description": "the function's ratchet key, as the marks file "
-                                             "holds it"},
-                "recorded": {"type": "number", "description": "the mark"},
-                "fresh_crap": {"type": "number", "description": "the score this run measured"},
-                "dirty": _FINDING_DIRTY}}},
-    "new_failures": _strings("test ids that fail now and passed in the baseline (exit 8)"),
     "dirty_failures": _strings("the new failures whose test id names a file with uncommitted "
                                "edits"),
     "forgiven_failures": _strings("test ids the fresh run and the baseline both failed"),
     "retried_passes": _strings("new failures that passed their flake retry"),
-    "overridden": {"type": "array", "items": _GATE_VIOLATION,
-                   "description": "gate violations an --override exempted"},
-    "diff_uncovered_count": _count("changed lines no test ran"),
-    "diff_uncovered": {
-        "type": "array", "description": "the first 50 of those lines",
-        "items": {"type": "object", "description": "one changed line no test ran",
-                  "properties": {"path": _FINDING_PATH,
-                                 "line": {"type": "integer", "description": "the line"}}}},
-    "diff_uncovered_max": {"type": ("integer", "null"),
-                           "description": ("the ceiling diff_uncovered_count is judged against "
-                                           "(exit 9); null when the repo set none")},
     "unmarked_over_target": _count("functions over their ceiling that carry no ratchet mark"),
     "committed_findings": _count("findings whose file is clean"),
     "dirty_findings": _count("findings whose file has uncommitted edits"),

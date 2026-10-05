@@ -2,7 +2,7 @@
 
 doc: README.md:28-31 sha256=d1cf4bd000bc592b220e5b4d2998ba9de806fbbbb80dd95bd94124e5aa86ffdd
 doc: README.md:1308-1343 sha256=2e527433bace53113884e042e6c4c4f2a594f280e94b683f9916b8ed46894db7
-doc: docs/lanes.md:299-310 sha256=ca69219a6a30caf1a2f2c671db2939c861363d709add27ca24c963aa581fcec6
+doc: docs/lanes.md:354-365 sha256=ca69219a6a30caf1a2f2c671db2939c861363d709add27ca24c963aa581fcec6
 
 The inputs are the corpus's crapkit.toml (scopes, lanes, ceilings), the
 counts table the recorded artifacts give (oracles/corpus_counts.py), and each

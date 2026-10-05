@@ -47,10 +47,14 @@ def _python(producer: str) -> bool:
 
 
 def _walked(producer: str, scenario: str) -> dict:
+    """The dead lines the scoring walk hands the fold: each file's
+    FileEvidence.missed_lines, read as a set."""
     artifact = RECORDED / producer / f"{scenario}.json"
     if _python(producer):
-        return COVERAGE_PY.parse_coveragepy_both_file(artifact, path_prefix="")[1]
-    return ISTANBUL.parse_istanbul_both_file(artifact, repo_root="")[1]
+        evidence = COVERAGE_PY.parse_coveragepy_both_file(artifact, path_prefix="")[1]
+    else:
+        evidence = ISTANBUL.parse_istanbul_both_file(artifact, repo_root="")[1]
+    return {path: set(found.missed_lines) for path, found in evidence.items()}
 
 
 def _reread(producer: str, scenario: str) -> dict:

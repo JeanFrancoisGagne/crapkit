@@ -50,13 +50,18 @@ def measured_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _new_failures(stdout: str) -> list[str]:
+    """The test ids of verify --json's new_failure items."""
+    return [item["test"] for item in json.loads(stdout)["findings"] if item["kind"] == "new_failure"]
+
+
 def test_automatic_reuse_measures_a_changed_tracked_test_input(measured_repo):
     (measured_repo / "tests/state.txt").write_text("fail", encoding="utf-8")
     result = run_cli(measured_repo, "verify", "--reuse-unchanged", "--no-tighten", "--json")
     assert result.returncode == 8, result.stdout + result.stderr
     verdict = json.loads(result.stdout)
     assert verdict["ok"] is False
-    assert verdict["new_failures"] == ["tests.test_app::test_f"]
+    assert _new_failures(result.stdout) == ["tests.test_app::test_f"]
     assert (measured_repo / ".crapkit/counter.txt").read_text() == "2"
 
 
@@ -77,7 +82,7 @@ def test_automatic_reuse_accounts_for_the_runner_environment(measured_repo):
     result = run_cli(measured_repo, "verify", "--reuse-unchanged", "--no-tighten", "--json",
                      env_extra={"CRAPKIT_TEST_MEASUREMENT_RESULT": "fail"})
     assert result.returncode == 8, result.stdout + result.stderr
-    assert json.loads(result.stdout)["new_failures"] == ["tests.test_app::test_f"]
+    assert _new_failures(result.stdout) == ["tests.test_app::test_f"]
 
 
 def test_identical_clean_inputs_reuse_the_measured_bytes(measured_repo):
@@ -169,7 +174,7 @@ def test_nested_root_reuse_measures_changed_inputs_above_the_config(nested_repo,
     result = run_cli(nested_repo, "verify", "--reuse-unchanged", "--no-tighten", "--json")
 
     assert result.returncode == 8, result.stdout + result.stderr
-    assert json.loads(result.stdout)["new_failures"] == ["tests.test_app::test_f"]
+    assert _new_failures(result.stdout) == ["tests.test_app::test_f"]
     assert (nested_repo / ".crapkit/counter.txt").read_text() == "2"
 
 

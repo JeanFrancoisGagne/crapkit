@@ -11,6 +11,7 @@ code that prints it.
 """
 from __future__ import annotations
 
+import json
 import ntpath
 import re
 from pathlib import Path
@@ -374,15 +375,21 @@ def test_the_subdirectory_section_quotes_the_warning_that_names_the_path_prefix_
 def test_the_lanes_page_says_a_prefixed_or_root_lane_is_refused_another_tree(tmp_path, scope,
                                                                              prefix):
     """The reach test asks only the keys the runner wrote relative to this
-    checkout, so the glued `backend//other/checkout/a.py` reaches no scope."""
+    checkout, so another checkout's `/other/checkout/a.py`, which the reader
+    records unplaced, reaches no scope however path_prefix reads."""
     section = _prose(_section("docs/lanes.md", "### In-tree paths that miss every scope"))
     upgrade = _prose(_section("docs/upgrading.md", "## Config paths that 0.8.1 reads on every OS"))
     lane = config.Lane(name="py", command="true", artifact="cov.json", parser="coveragepy",
                        scopes=("backend",), path_prefix=prefix)
-    glued = f"{prefix}/" * bool(prefix) + "/other/checkout/a.py"
+    region = {"start_line": 1, "executed_lines": [1], "missing_lines": [],
+              "summary": {"covered_lines": 1, "num_statements": 1,
+                          "num_branches": 0, "covered_branches": 0}}
+    report = {"meta": {"branch_coverage": True}, "files": {"/other/checkout/a.py": {
+        "missing_lines": [], "functions": {"f": region}}}}
+    (tmp_path / "cov.json").write_text(json.dumps(report), encoding="utf-8")
 
     with pytest.raises(ToolError, match="describes a different tree"):
-        lanes._judge_artifact_scope(lane, {glued: []}, {"backend": (scope,)}, tmp_path)
+        lanes.run_lane(tmp_path, lane, reuse_artifact=True, scope_paths={"backend": (scope,)})
     assert "it asks only the keys the runner wrote relative to this checkout" in section
     assert "`backend//other/checkout/a.py`, a path under a `backend` scope" in section
     assert "a root scope (`.`) claims any key" in section

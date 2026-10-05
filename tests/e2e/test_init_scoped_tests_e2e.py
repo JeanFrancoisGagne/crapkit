@@ -28,6 +28,14 @@ _APP_TS = "export function f(a: number) { return a ? 1 : 2; }\n"
 # The python init names: its launcher token (`{python}`, `{python:.venv}`),
 # or the one name that resolves on a machine where the token's does not.
 _LAUNCHER = r"(\{python(:[^\s{}]+)?\}|python3?|py|[^\s]+python(\.exe)?)"
+# doctor's runner line (toolchain.infer) names the lane too, so the tests
+# that read the lane's probe line leave it out.
+_RUNNER = "ok   lane 'py': runs pytest (named in its command)"
+
+
+def _probe_lines(stdout: str) -> list[str]:
+    """doctor's output lines, less the py lane's runner line."""
+    return [ln for ln in stdout.splitlines() if ln != _RUNNER]
 
 
 def _commit_all(repo: Path, message: str) -> None:
@@ -143,7 +151,7 @@ def test_doctor_names_the_interpreter_and_plugin_versions_the_lane_resolves_to(t
     res = run_cli(repo, "doctor")
 
     assert res.returncode == 0, res.stdout + res.stderr
-    (line,) = [ln for ln in res.stdout.splitlines() if ln.startswith("ok   lane 'py'")]
+    (line,) = [ln for ln in _probe_lines(res.stdout) if ln.startswith("ok   lane 'py'")]
     assert re.fullmatch(rf"ok   lane 'py': {_LAUNCHER} -> .+ \(pytest [\d.]+\S*, pytest-cov [\d.]+\S*, coverage [\d.]+\S*\)",
                         line), line
     assert "no problems found" in res.stdout
@@ -209,7 +217,8 @@ def test_doctor_notes_a_manager_headed_lane_it_does_not_probe(tmp_path: Path):
     res = run_cli(repo, "doctor", env_extra=_manager_shim(tmp_path, "uv"))
 
     assert res.returncode == 0, res.stdout + res.stderr
-    (line,) = [ln for ln in res.stdout.splitlines() if "lane 'py'" in ln]
+    assert _RUNNER in res.stdout.splitlines(), res.stdout
+    (line,) = [ln for ln in _probe_lines(res.stdout) if "lane 'py'" in ln]
     assert line.startswith("note lane 'py' runs pytest through `uv`"), line
     assert "not probed" in line
     assert "no problems found" in res.stdout
@@ -230,7 +239,7 @@ def test_doctor_warns_when_the_lane_runs_another_python_than_doctor(tmp_path: Pa
     res = run_cli(repo, "doctor")
 
     assert res.returncode == 0, res.stdout + res.stderr
-    (ok,) = [ln for ln in res.stdout.splitlines() if ln.startswith("ok   lane 'py'")]
+    (ok,) = [ln for ln in _probe_lines(res.stdout) if ln.startswith("ok   lane 'py'")]
     assert f"-> {resolved} (pytest " in ok, ok
     (warn,) = [ln for ln in res.stdout.splitlines() if ln.startswith("WARN lane 'py'")]
     assert warn.startswith(f"WARN lane 'py' runs {resolved}, not the python running this doctor"), warn

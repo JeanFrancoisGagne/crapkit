@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from crapkit.cli.parser import build_parser
+from crapkit.verify import FINDING_KINDS
 from hang_guard import HANG_SECONDS
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -478,6 +479,55 @@ def _builder():
     return module
 
 
+# The verify keys 0.8.1 printed one list or number per kind under. The comment
+# reads `findings` and `counts` instead, so it names none of these.
+OLD_KEYS = ("gate_violations", "unread_files", "ratchet_regressions", "new_failures",
+            "diff_uncovered", "diff_uncovered_count", "diff_uncovered_max", "overridden")
+
+
+def _own(entry) -> dict:
+    """An old list entry's fields as its findings item carries them."""
+    return {"test": entry} if isinstance(entry, str) else entry
+
+
+def _fails(row, payload: dict, entries: list) -> bool:
+    """A kind fails when it fires an exit and the payload holds it; an
+    uncovered line only past the ceiling."""
+    if row.exit is None or not entries:
+        return False
+    if row.exit != 9:
+        return True
+    ceiling = payload.get("diff_uncovered_max")
+    return ceiling is not None and payload.get("diff_uncovered_count", 0) > ceiling
+
+
+# Each kind's 0.8.1 list key, where it had one. The cases below are written
+# that way, and _as_findings turns them into findings items.
+OLD_KEY_OF = {"gate_violation": "gate_violations", "unread_file": "unread_files",
+              "ratchet_regression": "ratchet_regressions", "new_failure": "new_failures",
+              "diff_uncovered": "diff_uncovered", "overridden": "overridden"}
+
+
+def _items_of(row, payload: dict) -> list[dict]:
+    entries = payload.get(OLD_KEY_OF.get(row.kind)) or []
+    fails = _fails(row, payload, entries)
+    common = {"kind": row.kind, "fails": fails, "exit_code": row.exit if fails else None,
+              "overridable": row.granted, "dirty": False, "rule": row.rule}
+    return [{**common, **_own(entry)} for entry in entries]
+
+
+def _as_findings(payload: dict) -> dict:
+    """A payload written the 0.8.1 way, with one key per kind, as verify prints
+    it now: `findings` in verify.FINDING_KINDS's order and `counts`, and none of
+    the old keys. The cases below keep their 0.8.1 inputs, so each one shows
+    the comment it renders is the one it rendered from those lists."""
+    kept = {key: value for key, value in payload.items() if key not in OLD_KEYS}
+    counts = {"diff_uncovered_count": payload.get("diff_uncovered_count", 0),
+              "diff_uncovered_max": payload.get("diff_uncovered_max")}
+    findings = [item for row in FINDING_KINDS for item in _items_of(row, payload)]
+    return {**kept, "findings": findings, "counts": counts}
+
+
 def _worklist() -> dict:
     return {"active": [
         {"path": "calc/grade.py", "start": 67, "function": "curve( scores )",
@@ -560,9 +610,9 @@ def test_a_changed_file_with_no_ranked_function_says_so():
 
 
 def test_the_verdict_line_carries_the_exit_code_and_the_counts():
-    verify = {"ok": False, "run_id": 9, "baseline_run": 8, "changed_files": 1,
-              "gate_violations": [{"path": "calc/grade.py"}], "ratchet_regressions": [],
-              "new_failures": [], "diff_uncovered_count": 0}
+    verify = _as_findings({"ok": False, "run_id": 9, "baseline_run": 8, "changed_files": 1,
+                           "gate_violations": [{"path": "calc/grade.py"}], "ratchet_regressions": [],
+                           "new_failures": [], "diff_uncovered_count": 0})
 
     line = _builder().verdict_line(verify, 6)
 
@@ -950,10 +1000,14 @@ def test_the_comment_step_hands_the_builder_the_base_files():
     assert (args.base_sha, args.base_reason) == ("s", "r")
 
 
-def _passing_verify() -> dict:
+def _passing_old() -> dict:
     return {"ok": True, "run_id": 3, "baseline_run": 3, "changed_files": 0,
             "gate_violations": [], "ratchet_regressions": [], "new_failures": [],
             "diff_uncovered_count": 0}
+
+
+def _passing_verify() -> dict:
+    return _as_findings(_passing_old())
 
 
 def test_a_passing_verdict_with_no_base_run_says_it_judged_no_changed_function():
@@ -975,8 +1029,8 @@ def test_a_passing_verdict_with_a_base_run_still_passes():
 def test_a_failed_verdict_keeps_its_findings_whatever_the_base_reason():
     """The ratchet runs without a base, so exit 7 there is a finding and not a
     judgement of nothing."""
-    verify = {**_passing_verify(), "ok": False, "ratchet_regressions": [
-        {"path": "app/calc.py", "long_name": "f( )", "recorded": 10.0, "fresh_crap": 20.0}]}
+    verify = _as_findings({**_passing_old(), "ok": False, "ratchet_regressions": [
+        {"path": "app/calc.py", "long_name": "f( )", "recorded": 10.0, "fresh_crap": 20.0}]})
 
     line = _builder().verdict_line(verify, 7, base_reason="no base commit")
 
@@ -1177,10 +1231,11 @@ def test_the_readme_says_verify_is_skipped_when_coverage_fails():
 # exit 9 the ceiling and the uncovered lines were only in the job log.
 
 def _failing_verify(**over) -> dict:
+    """A failed verify, written as 0.8.1's per-kind lists and handed over as findings."""
     base = {"ok": False, "run_id": 3, "baseline_run": 1, "changed_files": 1,
             "gate_violations": [], "ratchet_regressions": [], "new_failures": [],
             "diff_uncovered": [], "diff_uncovered_count": 0, "diff_uncovered_max": None}
-    return {**base, **over}
+    return _as_findings({**base, **over})
 
 
 def _violation() -> dict:
@@ -1188,13 +1243,91 @@ def _violation() -> dict:
             "ccn": 8, "cov": 0.1, "crap": 54.656, "remedy": "decompose"}
 
 
+def _lines(count: int) -> list[dict]:
+    return [{"path": "app/calc.py", "line": 35 + n} for n in range(count)]
+
+
 def test_the_verdict_names_the_rule_each_exit_code_stands_for():
+    """Each label is the `rule` of the first item that fails with the exit."""
     line = _builder().verdict_line
+    regression = {"path": "app/calc.py", "long_name": "f( )", "recorded": 1.0, "fresh_crap": 2.0}
 
     assert "exit 6: complexity gate" in line(_failing_verify(gate_violations=[_violation()]), 6)
-    assert "exit 7: ratchet regressions" in line(_failing_verify(), 7)
-    assert "exit 8: new test failures" in line(_failing_verify(), 8)
-    assert "exit 9: diff-coverage ceiling 3" in line(_failing_verify(diff_uncovered_max=3), 9)
+    assert "exit 7: ratchet regressions" in line(_failing_verify(ratchet_regressions=[regression]), 7)
+    assert "exit 8: new test failures" in line(_failing_verify(new_failures=["t::c0"]), 8)
+    assert "exit 9: diff-coverage ceiling 3" in line(_failing_verify(
+        diff_uncovered=_lines(4), diff_uncovered_count=4, diff_uncovered_max=3), 9)
+
+
+def test_an_exit_no_failing_item_stands_for_reads_the_code_alone():
+    """The label comes from an item, so no item names none: the comment holds
+    no table of exit codes to fall back on."""
+    assert _builder().verdict_line(_failing_verify(), 7).startswith("**verify failed, exit 7.** Run 3 ")
+
+
+def test_lines_under_the_ceiling_label_no_exit():
+    """An uncovered line fails only past diff_uncovered_max: at or under it the
+    lines are listed and the exit (here the gate's) keeps its own label."""
+    verify = _failing_verify(gate_violations=[_violation()], diff_uncovered=_lines(3),
+                             diff_uncovered_count=3, diff_uncovered_max=3)
+
+    assert _builder().verdict_line(verify, 6).splitlines()[0] == "**verify failed, exit 6: complexity gate.**"
+
+
+def _scanned_key_reads(source: str) -> set[tuple[str, str]]:
+    """(receiver, key) for every `x.get("key")` and `x["key"]` in source."""
+    import ast
+
+    reads = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+            key, receiver = node.args[0] if node.args else None, node.func.value
+        elif isinstance(node, ast.Subscript):
+            key, receiver = node.slice, node.value
+        else:
+            continue
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            reads.add((ast.unparse(receiver), key.value))
+    return reads
+
+
+# The two places an old key's name is still read, each off its own object: the
+# counts verify prints beside findings, and the error object's refused names.
+_ALLOWED_READS = {("_counts(verify)", "diff_uncovered_count"), ("_counts(verify)", "diff_uncovered_max"),
+                  ("error", "unread_files")}
+
+# The old keys no 0.9.0 name reuses, so comment.py holds none of them as text.
+# The read scan sees only a constant key, and a tuple of names read through a
+# loop variable would pass it.
+_GONE_KEYS = {"gate_violations", "ratchet_regressions", "new_failures"}
+
+
+def _named_gone_keys(source: str) -> set[str]:
+    """Every gone key that appears in source as a string constant."""
+    import ast
+
+    return {node.value for node in ast.walk(ast.parse(source))
+            if isinstance(node, ast.Constant) and node.value in _GONE_KEYS}
+
+
+def test_the_comment_reads_no_old_per_kind_key_off_the_verify_payload():
+    """Every finding reaches the comment as a findings item, so a read of an old
+    key would see a list 0.9.0 stops printing and render nothing for it."""
+    source = BUILDER.read_text(encoding="utf-8")
+    reads = _scanned_key_reads(source)
+
+    old = {(receiver, key) for receiver, key in reads if key in OLD_KEYS}
+    assert old == _ALLOWED_READS, sorted(old - _ALLOWED_READS)
+    assert not _named_gone_keys(source), sorted(_named_gone_keys(source))
+
+
+def test_the_scan_catches_a_read_of_an_old_key():
+    planted = 'def f(verify):\n    return verify.get("gate_violations", []) + verify["overridden"]\n'
+    looped = ('LISTS = ("gate_violations", "ratchet_regressions", "overridden")\n'
+              'def f(verify):\n    return [verify.get(key) for key in LISTS]\n')
+
+    assert _scanned_key_reads(planted) == {("verify", "gate_violations"), ("verify", "overridden")}
+    assert _named_gone_keys(looped) == {"gate_violations", "ratchet_regressions"}
 
 
 def test_the_verdict_prints_one_bullet_per_gate_violation():
@@ -1401,11 +1534,15 @@ def test_rows_named_by_a_finding_come_first_and_survive_the_cap():
 
 
 def test_the_findings_name_the_rows_the_table_lists_first():
+    """Every item that carries a path and a long_name: an unread file and an
+    uncovered line name a file only."""
     verify = _failing_verify(
         gate_violations=[_violation()],
+        unread_files=[{"path": "src/a.ts", "reason": "arrow refused"}],
         ratchet_regressions=[{"path": "app/calc.py", "long_name": "legacy_router( a , b , c , d , e )",
                               "recorded": 72.0, "fresh_crap": 80.5}],
-        overridden=[{"path": "app/other.py", "long_name": "f( )"}])
+        overridden=[{"path": "app/other.py", "long_name": "f( )"}],
+        diff_uncovered=_lines(1), diff_uncovered_count=1)
 
     assert _builder().named_by_findings(verify) == {
         ("app/calc.py", "route( a , b , c , d )"),
@@ -1443,10 +1580,84 @@ def _documented_verify_keys() -> set[str]:
 def test_the_recorded_verify_payload_carries_every_key_verify_prints():
     """The README fence renders this payload. One recorded before verify gained
     `changed_paths` rendered the counts line with no file names, so the page
-    showed a comment no current release writes."""
+    showed a comment no current release writes. The old per-kind keys are left
+    out: the comment reads `findings` and `counts` in their place."""
     recorded = set(json.loads((FIXTURES / "verify.json").read_text(encoding="utf-8")))
+    wanted = _documented_verify_keys() - set(OLD_KEYS)
 
-    assert _documented_verify_keys() <= recorded, sorted(_documented_verify_keys() - recorded)
+    assert wanted <= recorded, sorted(wanted - recorded)
+    assert {"findings", "counts"} <= recorded
+    assert not recorded & set(OLD_KEYS), sorted(recorded & set(OLD_KEYS))
+
+
+def _recorded_verify() -> dict:
+    return json.loads((FIXTURES / "verify.json").read_text(encoding="utf-8"))
+
+
+def test_the_recorded_findings_name_the_function_the_old_lists_named():
+    """0.8.1's gate_violations, ratchet_regressions and overridden lists named
+    route() alone in this payload; the findings name the same pair."""
+    assert _builder().named_by_findings(_recorded_verify()) == {("app/calc.py", "route( a , b , c , d )")}
+
+
+# --- the counts line, checked three ways ----------------------------------------------
+
+# Check 1, by hand: the items of each kind a findings list holds (and counts'
+# diff_uncovered_count), and the counts line the comment closes with.
+_KINDS_TO_COUNTS = [
+    ({}, 0, "0 gate violations, 0 ratchet regressions, 0 new test failures, 0 uncovered changed lines"),
+    ({"gate_violation": 1}, 0,
+     "1 gate violation, 0 ratchet regressions, 0 new test failures, 0 uncovered changed lines"),
+    ({"gate_violation": 2, "unread_file": 1}, 0,
+     "3 gate violations (1 unread file), 0 ratchet regressions, 0 new test failures, "
+     "0 uncovered changed lines"),
+    ({"ratchet_regression": 2, "new_failure": 1}, 0,
+     "0 gate violations, 2 ratchet regressions, 1 new test failure, 0 uncovered changed lines"),
+    ({"diff_uncovered": 2}, 60,
+     "0 gate violations, 0 ratchet regressions, 0 new test failures, 60 uncovered changed lines"),
+    ({"unreadable_name": 2}, 0,
+     "2 unreadable names, 0 gate violations, 0 ratchet regressions, 0 new test failures, "
+     "0 uncovered changed lines"),
+    ({"overridden": 3, "new_failure": 1}, 0,
+     "0 gate violations, 0 ratchet regressions, 1 new test failure, 0 uncovered changed lines"),
+]
+
+
+def _kinds_payload(kinds: dict, uncovered: int) -> dict:
+    items = [{"kind": kind, "path": f"src/{kind}{n}.py", "long_name": f"f{n}( )", "test": f"t::{n}",
+              "line": n} for kind, count in kinds.items() for n in range(count)]
+    return {"ok": False, "run_id": 3, "baseline_run": 1, "changed_files": 1, "findings": items,
+            "counts": {"diff_uncovered_count": uncovered, "diff_uncovered_max": None}}
+
+
+@pytest.mark.parametrize("kinds, uncovered, counted", _KINDS_TO_COUNTS,
+                         ids=["+".join(kinds) or "none" for kinds, _, _ in _KINDS_TO_COUNTS])
+def test_the_counts_line_counts_the_items_of_each_kind(kinds, uncovered, counted):
+    counts = _builder().verdict_line(_kinds_payload(kinds, uncovered), 6).splitlines()[-1]
+
+    assert counts.endswith(f"Run 3 against baseline 1, 1 changed file: {counted}."), counts
+
+
+def _counted(count: int, noun: str) -> str:
+    return f"{count} {noun}" + ("" if count == 1 else "s")
+
+
+def test_the_recorded_counts_are_the_lengths_of_its_findings_per_kind():
+    """Check 2: the fence's counts line, rebuilt here from len() per kind over
+    the payload's findings, with no line of comment.py."""
+    verify = _recorded_verify()
+    per_kind = {}
+    for item in verify["findings"]:
+        per_kind[item["kind"]] = per_kind.get(item["kind"], 0) + 1
+    gate = per_kind.get("gate_violation", 0) + per_kind.get("unread_file", 0)
+    expected = ", ".join([_counted(gate, "gate violation"),
+                          _counted(per_kind.get("ratchet_regression", 0), "ratchet regression"),
+                          _counted(per_kind.get("new_failure", 0), "new test failure"),
+                          _counted(verify["counts"]["diff_uncovered_count"], "uncovered changed line")])
+    fence = _readme_section().split("```markdown\n", 1)[1].split("```", 1)[0]
+
+    assert per_kind == {"gate_violation": 1, "diff_uncovered": 11}
+    assert f"Run 3 against baseline 1, 1 changed file (`app/calc.py`): {expected}.\n" in fence
 
 
 def test_the_readme_fence_names_the_file_behind_verify_s_count():

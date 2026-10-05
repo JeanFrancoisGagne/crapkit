@@ -1,6 +1,6 @@
 """The spelling every next-step and refusal uses for crapkit itself.
 
-README tells a reader working from a source checkout to run `python -m crapkit`,
+README tells a reader working from a source checkout to run `python -P -m crapkit`,
 and the pre-commit hook it documents spells the same form with an absolute
 interpreter path because git runs hooks outside the activated venv. Neither of
 those environments puts a `crapkit` on PATH. Both used to be answered with "run
@@ -92,8 +92,8 @@ def _named_file(spelled: str) -> str:
 def test_no_console_script_on_path_names_the_interpreter_that_is_running(off_path):
     """Not bare `python`: the reader may have no activated venv (the hook case),
     and the interpreter running this process is the one crapkit is installed in."""
-    assert _self().endswith(" -m crapkit")
-    assert os.path.samefile(_named_file(_self().removesuffix(" -m crapkit")), sys.executable)
+    assert _self().endswith(" -P -m crapkit")
+    assert os.path.samefile(_named_file(_self().removesuffix(" -P -m crapkit")), sys.executable)
 
 
 def test_a_console_script_of_another_environment_is_not_named(tmp_path, monkeypatch):
@@ -105,7 +105,7 @@ def test_a_console_script_of_another_environment_is_not_named(tmp_path, monkeypa
     monkeypatch.setenv("PATH", str(elsewhere))
     monkeypatch.chdir(tmp_path)
 
-    assert _self().endswith(" -m crapkit")
+    assert _self().endswith(" -P -m crapkit")
 
 
 @pytest.mark.skipif(os.name == "nt", reason="pipx and uv tool link console scripts on POSIX only")
@@ -152,7 +152,7 @@ def test_a_copied_console_script_of_another_interpreter_is_not_named(tmp_path, m
     bytes differ from this install's launcher."""
     _copied_launcher(tmp_path, monkeypatch, TOOL_LAUNCHER.replace(b"tools", b"other"))
 
-    assert _self().endswith(" -m crapkit")
+    assert _self().endswith(" -P -m crapkit")
 
 
 def test_the_scripts_dirs_hold_this_interpreters_own_environment():
@@ -167,13 +167,13 @@ def test_the_scripts_dirs_hold_this_interpreters_own_environment():
 def test_the_module_form_on_windows_holds_no_backslash(off_path, monkeypatch):
     monkeypatch.setattr(sys, "executable", r"C:\venv\Scripts\python.exe")
 
-    assert _self() == "C:/venv/Scripts/python.exe -m crapkit"
+    assert _self() == "C:/venv/Scripts/python.exe -P -m crapkit"
 
 
 def test_an_interpreter_path_without_a_space_is_left_bare(off_path, monkeypatch):
     monkeypatch.setattr(sys, "executable", "/usr/bin/python3")
 
-    assert _self() == "/usr/bin/python3 -m crapkit"
+    assert _self() == "/usr/bin/python3 -P -m crapkit"
 
 
 def test_a_uvx_run_names_uvx(as_uvx):
@@ -205,7 +205,7 @@ def test_a_cached_run_uv_did_not_start_names_its_interpreter(tmp_path, monkeypat
     run_from(env, monkeypatch)
     monkeypatch.setattr(sys, "executable", "/cache/pipx/0ef8/bin/python")
 
-    assert _self() == "/cache/pipx/0ef8/bin/python -m crapkit"
+    assert _self() == "/cache/pipx/0ef8/bin/python -P -m crapkit"
 
 
 def test_an_installed_tool_under_uv_names_the_console_script(tmp_path, monkeypatch):
@@ -294,13 +294,13 @@ def test_a_posix_argument_is_quoted_the_way_sh_reads_it(posix):
 def test_a_windows_module_run_names_the_interpreter_with_forward_slashes(windows, monkeypatch):
     monkeypatch.setattr(sys, "executable", r"C:\proj\app\.venv\Scripts\python.exe")
 
-    assert invocation._module_form() == "C:/proj/app/.venv/Scripts/python.exe -m crapkit"
+    assert invocation._module_form() == "C:/proj/app/.venv/Scripts/python.exe -P -m crapkit"
 
 
 def test_a_posix_module_run_names_the_interpreter_bare(posix, monkeypatch):
     monkeypatch.setattr(sys, "executable", "/usr/bin/python3")
 
-    assert invocation._module_form() == "/usr/bin/python3 -m crapkit"
+    assert invocation._module_form() == "/usr/bin/python3 -P -m crapkit"
 
 
 # --- a spaced Windows interpreter: the same file, spelled without the space ---
@@ -329,7 +329,7 @@ def test_an_interpreter_reached_through_a_spaced_link_is_named_by_its_target(tmp
     link = _junction(tmp_path / "with space" / "venv", target)
     monkeypatch.setattr(sys, "executable", str(link / "Scripts" / "python.exe"))
     try:
-        word = _self().removesuffix(" -m crapkit")
+        word = _self().removesuffix(" -P -m crapkit")
         named = _named_file(word)
     finally:
         os.rmdir(link)
@@ -350,7 +350,7 @@ def test_a_spaced_interpreter_with_no_other_spelling_keeps_its_quoted_segments(t
     python.write_bytes(b"")
     monkeypatch.setattr(sys, "executable", str(python))
 
-    word = _self().removesuffix(" -m crapkit")
+    word = _self().removesuffix(" -P -m crapkit")
 
     quoted_alone = word.endswith('/"with space"/python.exe') and not word.startswith('"')
     assert " " not in word or quoted_alone, word

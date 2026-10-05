@@ -309,6 +309,11 @@ def test_one_failing_lane_does_not_abort_the_others(mini_repo: Path):
     assert "bad" not in s["lanes"]
 
 
+def _found(payload: dict, kind: str) -> list[dict]:
+    """verify --json's findings items of one kind."""
+    return [item for item in payload["findings"] if item["kind"] == kind]
+
+
 def test_verify_gate_blocks_then_override_grants_with_full_audit(mini_repo: Path):
     assert run_cli(mini_repo, "coverage", "--json").returncode == 0, "baseline"
     (mini_repo / "src" / "extra.ts").write_text(HIGH_CC_FN, encoding="utf-8")
@@ -318,12 +323,12 @@ def test_verify_gate_blocks_then_override_grants_with_full_audit(mini_repo: Path
     assert blocked.returncode == 6, (blocked.returncode, blocked.stdout, blocked.stderr)
     verdict = json.loads(blocked.stdout)
     assert verdict["ok"] is False
-    assert verdict["gate_violations"][0]["long_name"].startswith("tangled")
+    assert _found(verdict, "gate_violation")[0]["long_name"].startswith("tangled")
 
     granted = run_cli(mini_repo, "verify", "--json", "--override", "2am hotfix")
     assert granted.returncode == 0, (granted.returncode, granted.stdout, granted.stderr)
     g = json.loads(granted.stdout)
-    assert g["ok"] is True and g["overridden"], g
+    assert g["ok"] is True and _found(g, "overridden"), g
     assert "OVERRIDE (2am hotfix)" in (mini_repo / "alert.log").read_text(encoding="utf-8")
     ratchet = (mini_repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8")
     assert "tangled" in ratchet, "the debt is diff-visible in the committed ratchet"
@@ -336,7 +341,7 @@ def test_verify_catches_new_test_failures_vs_baseline(mini_repo: Path):
     res = run_cli(mini_repo, "verify", "--json")
     assert res.returncode == 8, (res.returncode, res.stdout, res.stderr)
     verdict = json.loads(res.stdout)
-    assert any("test_fresh_regression" in f for f in verdict["new_failures"])
+    assert any("test_fresh_regression" in f["test"] for f in _found(verdict, "new_failure"))
 
 
 def test_verify_clean_change_passes_and_tightens_nothing(mini_repo: Path):
@@ -553,7 +558,7 @@ def test_hook_passes_what_verify_then_fails_the_designed_split(mini_repo: Path):
     ver = run_cli(mini_repo, "verify", "--json")
     assert ver.returncode == 6, "cov 0 at cc 5 is crap 30: the sufficient condition fails"
     v = json.loads(ver.stdout)
-    assert any("fiveDeep" in g["long_name"] for g in v["gate_violations"])
+    assert any("fiveDeep" in g["long_name"] for g in _found(v, "gate_violation"))
 
 
 def test_verify_refuses_a_rewritten_baseline_commit(mini_repo: Path):
@@ -575,7 +580,7 @@ def test_renamed_file_functions_still_face_the_gate(mini_repo: Path):
     res = run_cli(mini_repo, "verify", "--json")
     assert res.returncode == 6, "a pure rename is still a touch; the gate follows the function"
     v = json.loads(res.stdout)
-    assert any(g["path"] == "src/renamed.ts" for g in v["gate_violations"])
+    assert any(g["path"] == "src/renamed.ts" for g in _found(v, "gate_violation"))
 
 
 def test_passing_verify_advances_the_trend_through_the_cli(mini_repo: Path):
@@ -619,7 +624,7 @@ def test_lane_subset_run_never_becomes_the_verify_baseline(mini_repo: Path):
     out = json.loads(ver.stdout)
     assert out["baseline_run"] == 1, \
         "the --lane subset run must be skipped: its missing lanes would turn every pre-existing failure into a phantom NEW one"
-    assert out["new_failures"] == []
+    assert _found(out, "new_failure") == []
 
 
 def test_invalid_toml_exits_3_not_1(mini_repo: Path):

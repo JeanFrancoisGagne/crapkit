@@ -29,8 +29,8 @@ def mark_events(revisions: list) -> list[tuple]:
     key.
     """
     return [event for revision in revisions
-            for event in _commit_events(revision.time,
-                                        *_delta(revision.before or {}, revision.marks or {}))]
+            for event in _commit_events(revision.time, *_delta(
+                revision.before or {}, revision.marks or {}, revision.changed))]
 
 
 def held_event(revisions: list) -> list[tuple]:
@@ -41,12 +41,19 @@ def held_event(revisions: list) -> list[tuple]:
     return [] if newest is None else [(revisions[-1].time, None, "held", newest)]
 
 
-def _delta(before: dict, after: dict) -> tuple[dict, dict]:
+def _delta(before: dict, after: dict, keys: frozenset | None) -> tuple[dict, dict]:
     """The marks one revision added and removed against the marks it found,
-    keyed; a changed value is in both."""
-    added = {key: crap for key, crap in after.items() if before.get(key) != crap}
-    removed = {key: crap for key, crap in before.items() if after.get(key) != crap}
-    return added, removed
+    keyed; a changed value is in both. `keys` is MarksRevision.changed: when
+    the reader narrowed it, every other key holds one mark in both, so a large
+    file costs the keys a revision changed."""
+    return _left(after, before, keys), _left(before, after, keys)
+
+
+def _left(side: dict, other: dict, keys: frozenset | None) -> dict:
+    """The marks `side` holds that `other` does not hold at that value, among
+    `keys`, or among every key `side` holds when `keys` is None."""
+    held = side if keys is None else {key: side[key] for key in keys & side.keys()}
+    return {key: crap for key, crap in held.items() if other.get(key) != crap}
 
 
 def _commit_events(ts: int, added: dict, removed: dict) -> list[tuple]:

@@ -7,7 +7,11 @@
    "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
    "name": "py",
    "refusal": null,
-   "seconds": "<seconds>"
+   "seconds": "<seconds>",
+   "toolchain": {
+    "name": null,
+    "source": null
+   }
   },
   {
    "artifact": ".crapkit/cov/ts.json",
@@ -15,7 +19,11 @@
    "commit": "7d3c8e5207600c12307119cb006a526b8e16e039",
    "name": "ts",
    "refusal": null,
-   "seconds": "<seconds>"
+   "seconds": "<seconds>",
+   "toolchain": {
+    "name": null,
+    "source": null
+   }
   }
  ],
  "newest_run": {
@@ -39,7 +47,7 @@
   "python": "<python>"
  },
  "warnings": [
-  "lane 'ts' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add a junit reporter (vitest: --reporter=default --reporter=junit --outputFile=.crapkit/cov/ts/junit.xml; jest: jest-junit) and a results_artifact naming its file",
+  "lane 'ts' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it; add the runner's junit reporter to the command and a results_artifact naming the file it writes",
   "scope 'py' has a lane but no [crapkit.scoped_tests] template - `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add py = \"<test command>\" under [crapkit.scoped_tests]",
   "scope 'ts' has a lane but no [crapkit.scoped_tests] template - `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add ts = \"<test command>\" under [crapkit.scoped_tests]"
  ]

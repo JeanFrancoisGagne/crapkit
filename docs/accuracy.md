@@ -238,7 +238,7 @@ faster. Under Git Bash, set `MSYS_NO_PATHCONV=1` before `-e VAR=/path`.
 
 Mutation testing runs in the accuracy image, since mutmut forks and runs on Linux
 only. Both runs mutate the calculation modules a `suite_strength/mutation/floors.tsv`
-group names (the core and readers groups today, 18 modules), since the floors
+group names (the core, readers and gate groups today, 19 modules), since the floors
 are the only reader of their verdicts; the other calculation modules held
 22,008 of the 31,691 mutants of the weekly run at c3fa1d42, and no gate read
 them. One shard of the weekly run, and the run over all of them under a cap:
@@ -304,8 +304,9 @@ A new image, or any other change to the key, starts from no receipt. The
 `diff` cap is 78 minutes: the nightly run of 2026-10-01 spent 47.6 minutes
 before its first mutant (mutmut's stats pass 32.1, its clean pass 14.8), and
 the cap leaves 30 minutes of judging on top. A run that judges every function
-of the 18 modules (9,627 mutants) needs hours more than that and reports
-`incomplete`; mutmut judges the mutants whose tests are cheapest first.
+of the 19 modules (9,627 mutants in the 18 of 2026-10-01, 118 in gate.py)
+needs hours more than that and reports `incomplete`; mutmut judges the
+mutants whose tests are cheapest first.
 
 `--cold` carries nothing and compares what it judges with what would have
 carried. A difference fails the run, and the receipts older than it carry

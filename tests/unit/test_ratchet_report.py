@@ -30,6 +30,18 @@ def test_mark_events_reads_adds_and_drops_between_revisions():
                       (1000 + 10 * DAY, B, "dropped", 30.0)]
 
 
+def test_a_revision_names_each_key_it_changed_and_no_other():
+    """A changed value is an update at its new value, a key moved to a new
+    name enters that name and repays the old one, and a key both revisions
+    hold at one value is no event."""
+    moved = ("src/b.ts", "g2( )")
+    events = mark_events(_history((1000, {A: 50.0, B: 30.0, C: 40.0}),
+                                  (2000, {C: 40.0, moved: 30.0, A: 20.0})))
+
+    assert events[3:] == [(2000, A, "updated", 20.0), (2000, moved, "added", 30.0),
+                          (2000, B, "dropped", 30.0)]
+
+
 def test_a_tightened_mark_is_not_an_add_or_drop():
     report = report_from_events(mark_events(_history((1000, {A: 50.0}), (2000, {A: 20.0}))))
     assert report["open"] == 1

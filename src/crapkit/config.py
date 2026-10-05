@@ -24,6 +24,7 @@ from . import lane_command
 from .lane_command import Step, command_steps, shell_segments, shell_words  # noqa: F401
 from .repopath import Refused, declared, disk_spelling, file_separators
 from .repotext import plain_utf8
+from .toolchain import step_runner
 
 # `cpp` is the whole C family, C included: lizard resolves every one of its
 # suffixes to a single CLikeReader, so a `c` label beside this one could never
@@ -33,9 +34,9 @@ SUPPORTED_LANGUAGES = frozenset(enum_values("scope", "languages"))
 SUPPORTED_PARSERS = frozenset(enum_values("lane", "parser"))
 DEFAULT_TARGET = 6
 
-# Only what a vitest command line can carry: this tuple guards istanbul lane
-# commands against a positional file filter, and no .swift or .go path appears
-# in one.
+# Only what a vitest command line can carry: this tuple guards a step that
+# spells vitest against a positional file filter, and no .swift or .go path
+# appears in one.
 _SOURCE_SUFFIXES = (".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs", ".cjs", ".py")
 
 
@@ -126,13 +127,11 @@ def _flag_value_positions(tokens: list[str]) -> set[int]:
             if tok.startswith("-") and _consumes_next(tok, tokens[i + 1])}
 
 
-def _tokens_after_pytest(tokens: list[str]) -> list[str]:
-    """What pytest itself parses: everything past the `pytest` token, or nothing
-    when the word only appears inside another token (`tox -e pytest-lane`)."""
-    for i, tok in enumerate(tokens):
-        if tok.endswith("pytest"):
-            return tokens[i + 1:]
-    return []
+def _after_runner(tokens: list[str], word: str) -> list[str]:
+    """What the runner itself parses: every token past the word that spells it
+    (toolchain.step_runner's), so a script path or a wrapper in front of the
+    runner is never read as the runner's argument."""
+    return tokens[tokens.index(word) + 1:]
 
 
 def _narrowing_arguments(tokens: list[str]) -> list[str]:
@@ -270,19 +269,11 @@ def _outside_testpaths(positionals: list[str], lane_dir: Path | None) -> list[st
     return [tok for tok in positionals if _as_testpath(tok, lane_dir) not in declared]
 
 
-def _validate_coveragepy_command(name: str, command: str, lane_dir: Path | None = None) -> None:
-    # Subset coverage under a suite with cross-file pollution is run-order-dependent;
-    # a full-suite lane refuses positional narrowing. Scoped suites opt out with
-    # full_suite = false, an explicit and reviewable decision. Every chained
-    # step is read, a `bash -c` payload's included: a second pytest run
-    # narrows just as much as the first.
-    for step in command_steps(command).steps:
-        _refuse_pytest_narrowing(name, step, lane_dir)
-
-
-def _refuse_pytest_narrowing(name: str, step: Step, lane_dir: Path | None = None) -> None:
-    """One command's argv. A segment that runs no pytest has nothing to narrow,
-    and a positional equal to a configured testpaths entry narrows nothing.
+def _refuse_pytest_narrowing(name: str, step: Step, word: str, lane_dir: Path | None = None) -> None:
+    """One step that spells pytest, `word` the token that spells it. Subset
+    coverage under a suite with cross-file pollution is run-order-dependent, so
+    a full-suite lane refuses positional narrowing. A positional equal to a
+    configured testpaths entry narrows nothing.
 
     Two exits, not one. A scoped suite opts out with `full_suite = false`. A
     suite that cannot collect all its testpaths in one process has no full-suite
@@ -290,7 +281,7 @@ def _refuse_pytest_narrowing(name: str, step: Step, lane_dir: Path | None = None
     leaves its other testpaths unmeasured with nothing saying so, which is why
     the message names the multi-lane pattern rather than only the flag.
     """
-    positionals = _narrowing_arguments(_tokens_after_pytest(list(step.words)))
+    positionals = _narrowing_arguments(_after_runner(list(step.words), word))
     for tok in _outside_testpaths(positionals, lane_dir):
         raise ConfigError(
             f"lane {name!r}: positional argument '{tok}' narrows a full-suite coverage run; "
@@ -304,10 +295,12 @@ def _asks_for_coverage(tokens: list[str]) -> bool:
     return any(t == "--coverage" or t.startswith("--coverage") for t in tokens)
 
 
-def _first_filter_position(tokens: list[str]) -> int:
-    # Only tokens after the test runner's `run` subcommand can be positional file
-    # filters; the runner script path itself (node scripts/run-vitest.mjs ...) is not.
-    return tokens.index("run") + 1 if "run" in tokens else 0
+def _vitest_arguments(tokens: list[str], word: str) -> list[str]:
+    """What vitest reads as its own arguments: the tokens past the word that
+    spells it (`vitest`, or the script that spells it under the script-stem
+    rule), and past a `run` subcommand right behind that word."""
+    after = _after_runner(tokens, word)
+    return after[1:] if after[:1] == ["run"] else after
 
 
 # vitest options that read the NEXT token as their value. A source path after one
@@ -333,25 +326,19 @@ def _is_file_filter(tok: str, preceding: str) -> bool:
     return tok.endswith(_SOURCE_SUFFIXES)
 
 
-def _validate_istanbul_command(name: str, command: str) -> None:
-    # The measured vitest trap: any file filter passed beside --coverage silently
-    # narrows the coverage include set. A lane command is fixed configuration, so
-    # the combination is a config error, not a runtime surprise. Each chained
-    # step is its own argv: a script path in a post-run step is that step's,
-    # and a vitest run after `npm run build`, or inside `sh -c`, is still a
-    # vitest run.
-    for step in command_steps(command).steps:
-        _refuse_istanbul_filter(name, list(step.words))
-
-
-def _refuse_istanbul_filter(name: str, tokens: list[str]) -> None:
-    """One command's argv. A segment that asks for no coverage narrows none."""
+def _refuse_vitest_filter(name: str, tokens: list[str], word: str) -> None:
+    """One step that spells vitest, `word` the token that spells it. The
+    measured vitest trap: any file filter passed beside --coverage silently
+    narrows the coverage include set. A lane command is fixed configuration, so
+    the combination is a config error, not a runtime surprise. A step that asks
+    for no coverage narrows none."""
     if not _asks_for_coverage(tokens):
         return
-    for i in range(_first_filter_position(tokens), len(tokens)):
-        if _is_file_filter(tokens[i], tokens[i - 1]):
+    arguments = _vitest_arguments(tokens, word)
+    for preceding, tok in zip(["", *arguments], arguments):
+        if _is_file_filter(tok, preceding):
             raise ConfigError(
-                f"lane {name!r}: file filter '{tokens[i]}' combined with --coverage silently narrows "
+                f"lane {name!r}: file filter '{tok}' combined with --coverage silently narrows "
                 f"the coverage include set; drop the filter or use a dedicated config")
 
 
@@ -515,12 +502,26 @@ def _expanded(command: str) -> str:
     return lane_command.expand_launchers(command)
 
 
-def _validate_lane_command(parser: str, full_suite: bool, name: str, command: str,
+def _validate_lane_command(full_suite: bool, name: str, command: str,
                            lane_dir: Path | None = None) -> None:
-    if parser == "istanbul":
-        _validate_istanbul_command(name, command)
-    if parser == "coveragepy" and full_suite:
-        _validate_coveragepy_command(name, command, lane_dir)
+    """Each step is judged by the runner its own words spell, whatever the
+    lane's parser: a coverage.py lane running vitest gets the file-filter
+    refusal, and a wrapped command (`npm test`, `make cov`) names no runner and gets neither.
+    Every chained step is read, a `bash -c` payload's included: a vitest run
+    after `npm run build` is still a vitest run, and a second pytest run
+    narrows just as much as the first."""
+    for step in command_steps(command).steps:
+        _judge_step(full_suite, name, step, lane_dir)
+
+
+def _judge_step(full_suite: bool, name: str, step: Step, lane_dir: Path | None) -> None:
+    spelled = step_runner(step.words, step.cmd)
+    if spelled is None:
+        return
+    if spelled.name == "vitest":
+        _refuse_vitest_filter(name, list(step.words), spelled.word)
+    if spelled.name == "pytest" and full_suite:
+        _refuse_pytest_narrowing(name, step, spelled.word, lane_dir)
 
 
 def _lane_dir(root: str | os.PathLike | None, cwd: str) -> Path | None:
@@ -589,8 +590,7 @@ def _parse_lane(row: dict, scope_names: set, root: str | os.PathLike | None = No
     full_suite = row.get("full_suite", True)
     cwd = _path("lane.cwd", row.get("cwd", ""))
     command = _expanded(row["command"])
-    _validate_lane_command(parser, full_suite, row.get("name", "?"), command,
-                           _lane_dir(root, cwd))
+    _validate_lane_command(full_suite, row.get("name", "?"), command, _lane_dir(root, cwd))
     return Lane(name=row["name"], command=command,
                 artifact=_lane_output(row.get("name"), "artifact", row["artifact"]),
                 parser=parser, scopes=lane_scopes,

@@ -119,6 +119,14 @@ def test_lane_failures_and_counts_match_junitparser(clean, tmp_path, name):
         (expected.failed, expected.total, expected.skipped)
 
 
+def new_failures(payload: dict) -> list[str]:
+    """The test ids of verify --json's new_failure items. A crapkit before
+    0.9.0, which a retro replay runs, listed them under `new_failures`."""
+    if "findings" not in payload:
+        return payload["new_failures"]
+    return [item["test"] for item in payload["findings"] if item["kind"] == "new_failure"]
+
+
 @pytest.mark.nightly
 @pytest.mark.process
 @pytest.mark.parametrize("name", MIXED)
@@ -129,7 +137,7 @@ def test_new_failures_are_the_report_s_failures(clean, tmp_path, name):
     result = scenario.run("verify", "--json")
 
     assert result.code == 8, result.stderr
-    assert frozenset(result.json()["new_failures"]) == junitparser_reading(RECORDED / name).failed
+    assert frozenset(new_failures(result.json())) == junitparser_reading(RECORDED / name).failed
 
 
 @pytest.mark.process

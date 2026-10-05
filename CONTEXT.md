@@ -17,6 +17,10 @@ _Avoid_: target (that is the configuration key that sets a ceiling, not the conc
 **Coverage**:
 The share of a function's branches the suite ran, read from the artifact; never measured by crapkit itself. A function with no branches falls back to the share of its statements that ran, and one with no statements to invoked-or-not: 1 if the suite called it, 0 if not. Python's `and` and `or` add to complexity, but coverage.py records no branch arc for them, so a short-circuit the suite never took leaves the share unchanged.
 
+**Coverage evidence**:
+The line and branch hits an artifact reports without function records, which score attributes to inventory spans, each line and branch to the innermost span holding it. A span that owns evidence reads branch coverage when it owns a branch and statement coverage otherwise, never invoked-or-not.
+_Avoid_: line coverage (the share of a function's lines that ran is one number read from the evidence, not the evidence)
+
 **Unmeasured**:
 A row no measurement stands behind: its scope has no lane (`no-lane`) or asks for none (`cc-only`), or rescore finds no row in the run for a function added or renamed since. It scores at coverage 0.0 all the same; payloads carry `unmeasured: true` beside that stand-in, and text says `not measured`.
 _Avoid_: untested (an untested function was measured, and no test reached it)
@@ -43,6 +47,10 @@ A named set of path prefixes and languages that shares one ceiling and one set o
 
 **Lane**:
 One configured test command that writes one coverage artifact for the scopes it lists.
+
+**Toolchain**:
+The runner a lane's command runs, read from the command, else from the package.json script it runs, else from devDependencies. No config key names it. Only the first two are spelled in what runs, so only they turn on runner-specific hints and refusals; doctor prints all three, and "runner unknown" when none names one.
+_Avoid_: parser (that is how crapkit reads the lane's artifact)
 
 **Lane log**:
 The file a lane's output streams to, `.crapkit/lane-<name>.log`, kept as the command wrote it, colour included. A refusal quotes its tail as plain text.
@@ -136,7 +144,7 @@ A new test failure that passed its flake retry. It fails no verdict, the OK line
 _Avoid_: flaky failure, forgiven failure
 
 **Gate**:
-The rule that a new or changed function may not exceed its ceiling; enforced by the pre-commit hook, `verify` and the Action.
+The rule that a new or changed function may not exceed its ceiling. One gate module holds it, with the touch, pardon, unread-file and unreadable-name rules, and four gate adapters call it, each mapping its findings to its own exits and lines: the pre-commit hook (`hook-precommit`), `rescore --gate` with the `check_gate` MCP tool over it, `verify` (which the Action runs) and `claude-hook`.
 
 **Advisory**:
 What `claude-hook` prints after an agent's edit lands: exit 2 and stderr naming each changed function over its ceiling, or naming a changed file it could not judge because no reader could read it or git could not report the change. It blocks nothing. After a `Bash` event it judges each file's bytes once per session.

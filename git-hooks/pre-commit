@@ -18,18 +18,22 @@
 # module the probe never imported, a missing analysis tool, a bad config) stops
 # it before a verdict: the commit is refused all the same, and the hook says the
 # gate stopped, not that it blocked the commit.
+#
+# Every python here runs with -P. git runs the hook from the checkout's root,
+# and without -P, -c and -m put that directory first on sys.path, so a
+# crapkit.py or lizard.py a branch adds there would run in place of the gate.
 src="$(git rev-parse --show-toplevel)/src" || exit 1
-if ! python -c "import lizard" 2>/dev/null; then
+if ! python -P -c "import lizard" 2>/dev/null; then
     echo "crapkit: NOT INSTALLED - the complexity gate cannot run; install with 'pip install -e .'" >&2
     exit 1
 fi
-if ! sep=$(python -c "import os, sys; sys.path.insert(0, sys.argv[1]); import crapkit; print(os.pathsep)" "$src"); then
+if ! sep=$(python -P -c "import os, sys; sys.path.insert(0, sys.argv[1]); import crapkit; print(os.pathsep)" "$src"); then
     echo "crapkit: $src/crapkit does not import, so the complexity gate cannot run; fix the error above" >&2
     exit 1
 fi
 PYTHONPATH="$src${PYTHONPATH:+$sep$PYTHONPATH}"
 export PYTHONPATH
-python -m crapkit hook-precommit
+python -P -m crapkit hook-precommit
 code=$?
 if [ "$code" -eq 6 ]; then
     echo "crapkit: commit blocked by the complexity gate."

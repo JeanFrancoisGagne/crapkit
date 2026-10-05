@@ -90,8 +90,8 @@ def test_verify_json_reports_diff_uncovered(flaky_repo: Path):
     res = run_cli(flaky_repo, "verify", "--json")
     assert res.returncode == 0, res.stdout + res.stderr
     out = json.loads(res.stdout)
-    assert out["diff_uncovered_count"] == 0  # the fixture artifact has no statementMap
-    assert out["diff_uncovered"] == []
+    assert out["counts"]["diff_uncovered_count"] == 0  # the fixture artifact has no statementMap
+    assert [item for item in out["findings"] if item["kind"] == "diff_uncovered"] == []
 
 
 def test_verify_warns_when_the_suite_shrinks_or_skips_more(flaky_repo: Path):

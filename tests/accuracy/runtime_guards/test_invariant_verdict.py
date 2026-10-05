@@ -305,7 +305,15 @@ def test_rg3_claude_hook_turns_a_stop_into_its_silent_exit(seed, tmp_path, monke
     driver = drive.Driver(root, date_now=seed.date_now)
     assert _hook_answer(driver, payload) == "exit 2", "the unpatched hook advises on wild"
     hook = importlib.import_module("crapkit.cli.claude_hook")
-    monkeypatch.setattr(hook, "_breaches", lambda records, ranges, ceiling: records)
+    gate = importlib.import_module("crapkit.gate")
+    handed = hook._change
+
+    def every_function_over(cfg, scope, rel, records, ranges):
+        """The whole file judged, every function at CRAP 99, each ccn as read."""
+        change = handed(cfg, scope, rel, records, None)
+        return change._replace(content=tuple(f._replace(bound=gate.CrapBound(99.0, 99.0)) for f in change.content))
+
+    monkeypatch.setattr(hook, "_change", every_function_over)
     rulings.pin_ruling("RG3", crapkit=_hook_answer(driver, payload), oracle="exit 5")
 
 

@@ -231,10 +231,11 @@
           },
           "full_suite": {
             "type": "boolean",
-            "description": "false permits positional narrowing in a pytest coverage command"
+            "description": "false permits positional narrowing in a command step that names pytest"
           },
           "container_ok": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "true lets a lane whose command names pytest run inside a container"
           },
           "results_artifact": {
             "type": "string",

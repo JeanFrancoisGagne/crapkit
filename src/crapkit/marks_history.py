@@ -57,11 +57,16 @@ class MarksRevision(NamedTuple):
     only blank lines. `before` is the same for the revision the commit
     changed. A merge changed nothing git shows, so its `before` is its own
     marks: `git log -p` prints no patch for a merge.
+
+    `changed` holds every key `before` and `marks` may differ on when the
+    reader narrowed them (_RevisionReader): any other key holds one mark in
+    both. None reads as every key either one holds.
     """
     commit: str
     time: int
     marks: dict | None
     before: dict | None
+    changed: frozenset | None = None
 
 
 class Move(NamedTuple):
@@ -83,9 +88,7 @@ def marks_history(root: Path, ratchet_file: str) -> list[MarksRevision]:
 def _revisions(root: Path, ratchet_file: str, rev_range: str | None) -> list[MarksRevision]:
     """marks_history over `rev_range`, BASE..HEAD; all of HEAD's history for None."""
     read = _RevisionReader(root / ratchet_file)
-    return [MarksRevision(revision.commit, revision.time, read.marks(revision.data),
-                          read.marks(revision.data if revision.merge else revision.before))
-            for revision in _walk(root, ratchet_file, rev_range)]
+    return [read.revision(revision) for revision in _walk(root, ratchet_file, rev_range)]
 
 
 def marks_at(root: Path, commit: str, ratchet_file: str) -> dict | None:
@@ -119,11 +122,28 @@ def _check_range(root: Path, rev_range: str) -> None:
 
 
 def _moved(revision: MarksRevision) -> list[Move]:
+    """Keys pair only within a path, so each path pairs only its own keys:
+    with every key handed to pair_moves once per path, moves over a history
+    whose first revision adds 40,303 marks across 37,000 paths took 438 s."""
     before, after = revision.before or {}, revision.marks or {}
-    dropped, added = before.keys() - after.keys(), after.keys() - before.keys()
+    dropped = _by_path(_only_in(before, after, revision.changed))
+    added = _by_path(_only_in(after, before, revision.changed))
     return [Move(revision.commit, revision.time, path, old, new)
-            for path in sorted({key[0] for key in dropped | added})
-            for old, new in pair_moves(path, dropped, added).pairs]
+            for path in sorted(dropped.keys() & added.keys())
+            for old, new in pair_moves(path, dropped[path], added[path]).pairs]
+
+
+def _only_in(side: dict, other: dict, keys: frozenset | None) -> set:
+    """The keys `side` holds and `other` does not: among `keys`, or among
+    every key `side` holds when `keys` is None (MarksRevision.changed)."""
+    return (side.keys() if keys is None else keys & side.keys()) - other.keys()
+
+
+def _by_path(keys) -> dict[str, list[Key]]:
+    grouped: dict[str, list[Key]] = {}
+    for key in keys:
+        grouped.setdefault(key[0], []).append(key)
+    return grouped
 
 
 def held_history(root: Path, ratchet_file: str) -> list[MarksRevision]:
@@ -200,32 +220,198 @@ def _renamed_from(root: Path, commit: str, path: str) -> str | None:
     return next((old for old, new in renames.items() if new == path), None)
 
 
+class _Read(NamedTuple):
+    """One revision as the reader read it. `text` and `marks` are None for no
+    file or one of only blank lines. `once` says the revision lists every key
+    once: only then can the next revision carry its marks. `changed` holds
+    the keys of the marks a carry took out or put in; None for a revision
+    read in full."""
+    data: bytes | None
+    text: str | None
+    marks: dict | None
+    once: bool
+    changed: frozenset | None
+
+
 class _RevisionReader:
-    """Revisions read into marks, each distinct revision once.
+    """Revisions read into marks, oldest first.
 
     A revision decodes whole through RatchetFile.committed, and its rows read
     by ratchet.read_ratchet's rule. read_ratchet reads each row on its own, so
-    a row that consecutive revisions share is read once: a history of a large
-    marks file changes a few rows per commit.
+    a row is read once however many revisions hold it.
+
+    A history of a large marks file changes a few rows per commit. A revision
+    read against the one it changed starts from that one's marks and reads
+    only the rows the two texts do not share (_changed_rows), so it costs the
+    rows it changed, not the rows the file holds: ratchet report took 3.1 s
+    on 40,303 marks in 200 revisions when each revision built its marks anew.
+    The first mark under a key answers, so a revision that lists a key twice,
+    or follows one that did, is read row by row in full, and so is one whose
+    base is not the revision read last.
     """
 
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._read: dict[bytes, dict | None] = {}
         self._rows = _Rows()
+        self._newest = _Read(None, None, None, True, None)
 
-    def marks(self, data: bytes | None) -> dict | None:
-        """key -> crap for one revision's bytes; None for no file or a blank one."""
-        if data not in self._read:
-            self._read[data] = self.held(_committed(self._path, data))
-        return self._read[data]
+    def revision(self, revision: FileRevision) -> MarksRevision:
+        """One commit's revision, read against the revision it changed."""
+        before = self._at(revision.data if revision.merge else revision.before)
+        after = before if revision.merge else self._after(before, revision.data)
+        self._newest = after
+        return MarksRevision(revision.commit, revision.time, after.marks, before.marks,
+                             frozenset() if after is before else after.changed)
 
     def held(self, held: RatchetFile | None) -> dict | None:
         """key -> crap for one revision as _committed read it; None for none."""
-        if held is None:
+        return self._whole(None, held).marks
+
+    def _at(self, data: bytes | None) -> _Read:
+        """The revision `data` holds: the one read last when it is that one,
+        else read in full."""
+        return self._newest if data == self._newest.data else self._whole(
+            data, _committed(self._path, data))
+
+    def _after(self, before: _Read, data: bytes | None) -> _Read:
+        """`data` read against `before`: carried from it when it can be, else
+        read in full."""
+        held = _committed(self._path, data)
+        return self._carried(before, data, held) or self._whole(data, held)
+
+    def _carried(self, before: _Read, data: bytes | None, held: RatchetFile | None) -> _Read | None:
+        """`held` read from `before`: the marks of the rows only `before`
+        holds go, those of the rows only `held` holds come. None when either
+        holds no text, `before` lists a key twice, the texts do not line up
+        again (_changed_rows), or a row that came lists a key already held."""
+        rows = _changed_rows(before.text, held.text) if _carries(before, held) else None
+        if rows is None:
             return None
-        marks = filter(None, map(self._rows.__getitem__, (held.text or "").split("\n")))
-        return dict(reversed(list(marks)))  # reversed: the first mark under a key wins
+        gone, came = map(self._marked, rows)
+        marks = _carry(before.marks, gone, came)
+        return None if marks is None else _Read(data, held.text, marks, True, _keys(gone + came))
+
+    def _whole(self, data: bytes | None, held: RatchetFile | None) -> _Read:
+        """`data` read row by row in full, as _committed read it into `held`."""
+        if held is None:
+            return _Read(data, None, None, True, None)
+        marks = self._marked((held.text or "").split("\n"))
+        by_key = dict(reversed(marks))  # reversed: the first mark under a key wins
+        return _Read(data, held.text, by_key, len(by_key) == len(marks), None)
+
+    def _marked(self, rows: list[str]) -> list[tuple]:
+        """(key, crap) for each row that holds a mark, in order."""
+        return list(filter(None, map(self._rows.__getitem__, rows)))
+
+
+def _carries(before: _Read, held: RatchetFile | None) -> bool:
+    return held is not None and before.text is not None and before.once
+
+
+def _carry(marks: dict, gone: list[tuple], came: list[tuple]) -> dict | None:
+    """`marks` without the marks that went and with the marks that came. Each
+    key the marks list is listed once, so a mark that went names its key; a
+    mark that came under a key still held is a key listed twice, whose first
+    mark only a read in full knows: None."""
+    carried = marks.copy()
+    for key, _ in gone:
+        del carried[key]
+    for key, crap in came:
+        if key in carried:
+            return None
+        carried[key] = crap
+    return carried
+
+
+def _keys(marked: list[tuple]) -> frozenset:
+    return frozenset(key for key, _ in marked)
+
+
+# Characters two revisions are compared in while they agree, and the reach of
+# the search for the row where they agree again after a difference.
+_BLOCK = 4096
+# Rows of the older text tried, one after another, as the place the two agree again.
+_RESYNC = 8
+# A carry gives up once the texts differ in more than one stretch per this
+# many characters of the older text. On 40,303 marks a carry through one
+# stretch per 1,024 characters took 15 ms and a read in full 28 ms; through
+# one per 512 the carry took 29 ms.
+_CARRIED = 1024
+
+
+def _changed_rows(old: str, new: str) -> tuple[list[str], list[str]] | None:
+    """The rows only `old` holds and the rows only `new` holds, or None when,
+    past a difference, none of the next _RESYNC rows of `old` turns up in
+    `new` within _BLOCK characters, or when the texts differ in more than one
+    stretch per _CARRIED characters of `old`.
+
+    The stretches both texts hold are compared a block at a time and never
+    split into rows. A row both hold may still come back on both sides, which
+    carries its mark out and back in unchanged.
+    """
+    gone: list[str] = []
+    came: list[str] = []
+    i = j = 0
+    for _ in range(len(old) // _CARRIED + 1):
+        i, j = _agreed(old, new, i, j)
+        if i == len(old) or j == len(new):
+            return gone + old[i:].split("\n"), came + new[j:].split("\n")
+        found = _realigned(old, new, i, j)
+        if found is None:
+            return None
+        gone += old[i:found[0]].split("\n")
+        came += new[j:found[1]].split("\n")
+        i, j = found
+    return None
+
+
+def _agreed(old: str, new: str, i: int, j: int) -> tuple[int, int]:
+    """From the row starts (i, j), the row starts where `old` and `new` first
+    hold different rows, or the ends of both when they hold the same rest."""
+    while i + _BLOCK <= len(old) and new.startswith(old[i:i + _BLOCK], j):
+        i, j = i + _BLOCK, j + _BLOCK
+    rest, other = old[i:i + _BLOCK], new[j:j + _BLOCK]
+    if rest == other:  # shorter than a block: both end here
+        return len(old), len(new)
+    start = old.rfind("\n", 0, i + _shared(rest, other)) + 1
+    return start, start + j - i
+
+
+def _shared(a: str, b: str) -> int:
+    """How many characters `a` and `b`, two strings that differ, share before
+    they do. Bisected: a[:low] equals b[:low], a[:high] does not equal b[:high]."""
+    low, high = 0, min(len(a), len(b)) + 1
+    while high - low > 1:
+        mid = (low + high) // 2
+        low, high = (mid, high) if a[low:mid] == b[low:mid] else (low, mid)
+    return low
+
+
+def _realigned(old: str, new: str, i: int, j: int) -> tuple[int, int] | None:
+    """Past the differing rows at the row starts (i, j), the row starts where
+    `old` and `new` hold one row again: the first of the next _RESYNC rows of
+    `old` that `new` holds as a row within _BLOCK characters of j. The ends of
+    both when `old` runs out of rows that end in a newline first."""
+    p = i
+    for _ in range(_RESYNC):
+        end = old.find("\n", p) + 1
+        if not end:
+            return len(old), len(new)
+        q = _row_at(new, old[p:end], j)
+        if q is not None:
+            return p, q
+        p = end
+    return None
+
+
+def _row_at(text: str, row: str, start: int) -> int | None:
+    """Where `row`, its newline included, is a whole row of `text`, from the
+    row start `start` to _BLOCK characters past it; None when it is not."""
+    stop = start + _BLOCK + len(row)
+    at = text.find(row, start, stop)
+    while at > start and text[at - 1] != "\n":  # inside a longer row: look on
+        at = text.find(row, at + 1, stop)
+    return None if at < 0 else at
 
 
 class _Rows(dict):

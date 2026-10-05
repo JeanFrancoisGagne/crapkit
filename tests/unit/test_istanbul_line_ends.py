@@ -26,9 +26,11 @@ def _parse(tmp_path, file: str, source: str, record: dict):
     (tmp_path / file).write_bytes(source.encode("utf-8"))
     artifact = tmp_path / "coverage-final.json"
     artifact.write_text(json.dumps({str(tmp_path / file): record}), encoding="utf-8")
-    per_file, dead, _ = coverage_istanbul.parse_istanbul_both_file(artifact, repo_root=str(tmp_path))
+    per_file, evidence, _ = coverage_istanbul.parse_istanbul_both_file(artifact,
+                                                                      repo_root=str(tmp_path))
     missing = coverage_istanbul.parse_istanbul_missing_file(artifact, repo_root=str(tmp_path))
-    return per_file[file], dead[file], missing[file]
+    assert evidence[file].hit_lines is None
+    return per_file[file], set(evidence[file].missed_lines), missing[file]
 
 
 def _spans(rows):

@@ -36,7 +36,9 @@ why this rung diverges from the house exit-3 policy: a hook that exited 3 in
 every unmeasured repo could not be installed machine-wide at all.
 
 The hook never blocks and never says it did. PostToolUse runs after the write.
-`hook-precommit` stays the only enforcement point.
+`hook-precommit` stays the only enforcement point. Both are adapters of the
+gate module: this one hands it the edited file, each function bounded as the
+commit gate bounds a staged one, and words what it finds as advice.
 
 Two constraints shape the code rather than the contract:
 
@@ -59,6 +61,8 @@ import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
+
+from ..programs import require
 
 PROTOCOL = "1"
 
@@ -293,7 +297,8 @@ def _repo_top(cwd: Path) -> Path | None:
 
     if not cwd.is_dir():
         return None
-    res = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=cwd, capture_output=True)
+    res = subprocess.run(["git", "rev-parse", "--show-toplevel"], executable=require("git"), cwd=cwd,
+                         capture_output=True)
     top = escaped(res.stdout).strip()
     return Path(top) if res.returncode == 0 and top else None
 
@@ -330,7 +335,7 @@ def _porcelain(top: Path) -> str:
     from ..repotext import escaped
 
     res = subprocess.run(["git", "--no-optional-locks", "status", "--porcelain", "-z", "-uall"],
-                         cwd=top, capture_output=True)
+                         executable=require("git"), cwd=top, capture_output=True)
     return escaped(res.stdout) if res.returncode == 0 else ""
 
 
@@ -394,15 +399,17 @@ def _sequencing(root: Path) -> bool:
 
 
 def _judge(root: Path, rel: str, memory: _Memory) -> list[str]:
-    """Rungs 6 to 9: scope, analysis, verdict, the advisory's lines, and the
-    session's record of the bytes the verdict read. A git failure records
-    nothing: its advisory says nothing about the bytes, and the next read may
-    get git's answer."""
-    from ..gitpaths import readable
+    """Rungs 6 to 9: scope, analysis, the gate's findings, the advisory's
+    lines, and the session's record of the bytes the verdict read. A name a
+    scope takes that git gives in bytes that are not UTF-8 goes to the gate
+    before anything is read. A git failure records nothing: its advisory says
+    nothing about the bytes, and the next read may get git's answer."""
+    from ..universe import claimed_unreadable
 
     cfg = _config(root)
-    if not readable(rel):
-        return _unreadable(cfg, rel)
+    claimed = claimed_unreadable([rel], cfg)
+    if claimed:
+        return _refused_name(cfg, *claimed[0])
     in_scope = _scoped(cfg, rel)
     if in_scope is None:
         return []
@@ -428,19 +435,26 @@ def _read(root: Path, rel: str) -> tuple:
         diff.close()
 
 
-def _unreadable(cfg, rel: str) -> list[str]:
-    """The advisory for a file a scope takes whose name git gives in bytes that
-    are not UTF-8. No function in it can be keyed, so none is judged, and the
-    commit gate refuses the file at exit 3; saying nothing here would
-    pass it unread. Advisory wording, as rung 9's: the edit landed. A name no
-    scope takes stays silent, like any unscoped edit."""
-    from ..gitpaths import shown
-    from ..universe import claiming_scope
+def _refused_name(cfg, path: str, scope: str) -> list[str]:
+    """The gate's finding on an edited file a scope takes whose name git gives
+    in bytes that are not UTF-8: refused before any function is judged, since
+    none in it can be keyed. The gate never asks for marks on a refusal."""
+    from ..gate import WHOLE, ChangedFile, UnreadableName, judge
+    from ..keys import MarkIndex
 
-    scope = claiming_scope(rel, cfg)
-    if scope is None:
-        return []
-    return [f"crapkit advisory: {shown(rel)} is in scope {scope!r}, but git names it in bytes "
+    result = judge([ChangedFile(path, WHOLE, UnreadableName(path, scope))], cfg.ceiling_of,
+                   lambda: MarkIndex(()))
+    return _worded(path, result, None)
+
+
+def _claimed_lines(name) -> list[str]:
+    """The advisory for the gate's unreadable_name finding. The commit gate
+    refuses the file at exit 3; saying nothing here would pass it unread.
+    Advisory wording, as rung 9's: the edit landed. A name no scope takes
+    never reaches the gate, and stays silent like any unscoped edit."""
+    from ..gitpaths import shown
+
+    return [f"crapkit advisory: {shown(name.path)} is in scope {name.scope!r}, but git names it in bytes "
             "that are not UTF-8 and crapkit reads every path as UTF-8, so no function in it was "
             "judged (the edit landed; nothing was blocked)",
             "the commit gate refuses such a file (exit 3); rename it to a UTF-8 name"]
@@ -576,8 +590,8 @@ def _git_said(exc, root: Path) -> str:
 def _head_resolves(root: Path) -> bool:
     """Whether `git rev-parse --verify --quiet HEAD` names a commit. Asked only
     after the diff failed, so it costs nothing on the ordinary path."""
-    return subprocess.run(["git", "rev-parse", "--verify", "--quiet", "HEAD"], cwd=root,
-                          capture_output=True).returncode == 0
+    return subprocess.run(["git", "rev-parse", "--verify", "--quiet", "HEAD"], executable=require("git"),
+                          cwd=root, capture_output=True).returncode == 0
 
 
 def _listed(root: Path, rel: str) -> list | None | _Unknown:
@@ -587,38 +601,75 @@ def _listed(root: Path, rel: str) -> list | None | _Unknown:
     untracked from unchanged. Literal, so `[id].py` never matches `i.py`."""
     from ..repotext import lenient
 
-    listed = subprocess.run(["git", "--literal-pathspecs", "ls-files", "--", rel], cwd=root,
-                            capture_output=True)
+    listed = subprocess.run(["git", "--literal-pathspecs", "ls-files", "--", rel], executable=require("git"),
+                            cwd=root, capture_output=True)
     if listed.returncode != 0:
         return _Unknown(f"git ls-files -- {rel}: {lenient(listed.stderr).strip()}")
     return [] if listed.stdout.strip() else None
 
 
 def _answer(root: Path, cfg, in_scope: dict, rel: str, records: list, ranges) -> list[str]:
-    """Rungs 8 and 9: an edit judged nowhere says why; the rest get the verdict."""
-    unjudged = _unjudged(rel, records, ranges)
-    if unjudged:
-        return unjudged
-    breaches, ceiling = _verdict(cfg, in_scope, rel, records, ranges)
-    _check_advisory(breaches, ceiling, in_scope, cfg)
-    return _report(root, cfg, rel, breaches, ceiling, records)
+    """Rungs 8 and 9: a change set git could not report says so, since nothing
+    can be judged without it; every other edit goes to the gate module, every
+    breach it finds is held to its ceiling, and its findings become the
+    advisory."""
+    from ..gate import judge
 
-
-def _unjudged(rel: str, records: list, ranges) -> list[str]:
-    """The advisory for an edit no function of which could be judged, or [].
-
-    A git failure first: without the change set nothing can be judged. Then a
-    file no reader could read, when the edit changed it: zero records read as
-    zero breaches, so every function in it passed unjudged. A file left as HEAD
-    has it stays silent, as the commit gate never judges an untouched file.
-    """
     if isinstance(ranges, _Unknown):
         return _unjudged_lines(f"git could not report what changed in {rel}", ranges.reason,
                                _GIT_NEXT)
+    scope = _scope_name(in_scope)
+    change = _change(cfg, scope, rel, records, ranges)
+    result = judge([change], cfg.ceiling_of, lambda: _marks_for(root / cfg.ratchet_file, rel, records))
+    ceiling = cfg.ceiling_of(scope)
+    _check_advisory(_records_of(result, ("over_ceiling", *_CARRIED)), ceiling, in_scope, cfg)
+    return _worded(rel, result, ceiling)
+
+
+def _scope_name(in_scope: dict) -> str:
+    """The one scope that takes the edited file."""
+    return next(scope for scope, paths in in_scope.items() if paths)
+
+
+def _change(cfg, scope: str, rel: str, records: list, ranges):
+    """The edited file as the gate reads it: the spans the edit changed, all
+    of an untracked file (`WHOLE`, since git diff cannot see it), and its
+    functions bounded as the commit gate bounds a staged one, or why no reader
+    could read it. An unread file the edit left as HEAD has it carries no
+    span, and the gate stays silent on it, as the commit gate never judges an
+    untouched file."""
+    from ..gate import WHOLE, ChangedFile, Unread
+    from ..hook import gate_functions
+
+    spans = WHOLE if ranges is None else ranges
     reason = getattr(records, "reason", None)
-    if reason is not None and ranges != []:
-        return _unread_advisory(rel, reason)
-    return []
+    if reason is not None:
+        return ChangedFile(rel, spans, Unread(rel, reason))
+    return ChangedFile(rel, spans, gate_functions(records, scope, cfg))
+
+
+def _worded(rel: str, result, ceiling: int | None) -> list[str]:
+    """The advisory for the gate's findings on one edited file, the first kind
+    present deciding: a claimed name, an unread file, then the functions over
+    `ceiling` no mark carries, worst first. [] when there is nothing to say;
+    `_deliver` decides where the lines go."""
+    if result.unreadable_name:
+        return _claimed_lines(result.unreadable_name[0])
+    if result.unread:
+        return _unread_advisory(rel, result.unread[0].reason)
+    unmarked = sorted(_records_of(result, ("over_ceiling",)), key=lambda rec: (-rec.ccn, rec.start))
+    return _advisory_lines(rel, unmarked, ceiling) if unmarked else []
+
+
+# The gate's findings a ratchet mark carries. A working-tree file has no
+# coverage, so its CRAP is a range: the advisory, like the commit gate, passes
+# any marked breach and leaves the number to `verify`.
+_CARRIED = ("pardoned", "marked_rise", "unproven")
+
+
+def _records_of(result, kinds: tuple) -> list:
+    """The function records behind the gate's breaches of `kinds`."""
+    return [breach.function.record for kind in kinds for breach in getattr(result, kind)]
 
 
 def _unread_advisory(rel: str, reason: str) -> list[str]:
@@ -641,65 +692,10 @@ def _unjudged_lines(what: str, reason: str, next_step: str) -> list[str]:
             "(the edit landed; nothing was blocked)", f"  {reason}", next_step]
 
 
-def _verdict(cfg, in_scope: dict, rel: str, records: list, ranges) -> tuple[list, int]:
-    """The breaching functions and the ceiling they broke.
-
-    `file_ceilings` is the commit gate's own map, so a mid-session advisory and
-    the commit's verdict cannot disagree about which number applies.
-    """
-    from ..hook import file_ceilings
-
-    ceiling = file_ceilings(cfg, in_scope, [rel])[rel]
-    return _breaches(records, ranges, ceiling), ceiling
-
-
-def _breaches(records: list, ranges, ceiling: int) -> list:
-    """Functions over the ceiling this edit is answerable for, worst first."""
-    over = [rec for rec in records if rec.ccn > ceiling]
-    return sorted(_answerable(over, ranges), key=lambda rec: (-rec.ccn, rec.start))
-
-
-def _answerable(over: list, ranges) -> list:
-    """Of the over-ceiling functions, the ones this edit has to answer for.
-
-    Judging the whole file instead of the changed ranges would flag every legacy
-    function in it, so on any repo with seeded debt the advisory fires on every
-    edit and says nothing. `ranges` None inverts that: the file is untracked, git
-    diff can see none of it, and every function in it counts.
-    """
-    from ..hook import _touches
-
-    if ranges is None:
-        return over
-    return [rec for rec in over if _touches(rec, ranges)]
-
-
-def _keys(records: list) -> dict:
-    """The file's ratchet keys, built from every record rather than the breaching
-    ones: the ordinal counts same-named functions in file order."""
-    from ..keys import key_names
-
-    return key_names(records)
-
-
-def _report(root: Path, cfg, rel: str, breaches: list, ceiling: int, records: list) -> list[str]:
-    """Rung 9: the advisory for the breaches no ratchet mark covers, or [] when
-    every one is marked. `_deliver` decides where the lines go."""
-    from ..keys import key_of
-
-    keys = _keys(records)
-    marked = _marks_for(root / cfg.ratchet_file, rel, records)
-    unmarked = [rec for rec in breaches if key_of(keys, rec)[1] not in marked]
-    return _advisory_lines(rel, unmarked, ceiling) if unmarked else []
-
-
-def _marks_for(marks_path: Path, rel: str, records=()) -> set[str]:
-    """The ratchet KEY names one file carries marks for, `#N` ordinals included.
-
-    Existence, not the numeric high-water rule `verify` applies: crap needs
-    coverage, coverage needs the store, and the store stays closed. A mark is a
-    recorded decision to carry that function as it stands, so without this the
-    advisory nags about debt the repo already signed for on every edit.
+def _marks_for(marks_path: Path, rel: str, records=()):
+    """The marks one file carries, as the `keys.MarkIndex` the gate's pardon
+    reads, `#N` ordinals included. The gate asks for it only when a judged
+    function is over its ceiling.
 
     Parse only this file's lines and the format comments. Whole-repo entry
     construction costs 35 ms for 40,303 marks and answers no extra question.
@@ -707,12 +703,13 @@ def _marks_for(marks_path: Path, rel: str, records=()) -> set[str]:
     shares, so a UTF-16 save keeps its marks and a cp1252 byte costs only the
     mark whose name held it.
     """
+    from ..keys import MarkIndex
     from ..repotext import marks_text
 
     if not marks_path.is_file():
-        return set()
-    text = marks_text(marks_path.read_bytes())
-    return _known_marks(_file_lines(text, rel), records)
+        return MarkIndex(())
+    text = _file_lines(marks_text(marks_path.read_bytes()), rel)
+    return MarkIndex(_proved_entries(text, records))
 
 
 def _file_lines(text: str, rel: str) -> str:
@@ -745,15 +742,17 @@ def _names(line: str, rel: str) -> bool:
         return False
 
 
-def _known_marks(text: str, records) -> set[str]:
-    """Unproved key identity grants no advisory exemption and writes nothing."""
+def _proved_entries(text: str, records) -> list:
+    """The mark entries of `text`, or none when the marks file cannot prove
+    its key identity: an unproved key grants no advisory exemption and
+    writes nothing."""
     from ..ratchet import checked_key_version, read_ratchet
 
     try:
         checked_key_version(text, records)
     except ValueError:
-        return set()
-    return {entry.long_name for entry in read_ratchet(text)[0]}
+        return []
+    return read_ratchet(text)[0]
 
 
 def _advisory_lines(rel: str, breaches: list, ceiling: int) -> list[str]:

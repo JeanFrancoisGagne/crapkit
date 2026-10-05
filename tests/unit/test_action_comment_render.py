@@ -58,17 +58,20 @@ def test_a_failed_coverage_names_what_it_can(coverage, reason):
 
 
 def test_a_failed_verify_with_no_findings_listed_reads_zero_of_each():
+    """No item fails with the exit, so the phrase has no label to name, and no
+    run_id means no run was measured."""
     assert builder().verdict_line({"ok": False}, 6) == (
-        "**verify failed, exit 6: complexity gate.** Run None against the baseline file at ?, "
-        "0 changed files: 0 gate violations, 0 ratchet regressions, 0 new test failures, "
-        "0 uncovered changed lines.")
+        "**verify failed, exit 6.** Nothing was measured against the baseline file at ?: "
+        "0 gate violations, 0 ratchet regressions, 0 new test failures, 0 uncovered changed lines.")
 
 
 def test_a_finding_s_missing_fields_read_as_dashes_and_the_cut_counts_what_it_hid():
     verify = {"ok": False, "run_id": 4, "baseline_run": 3, "changed_files": 1,
-              "gate_violations": [{"path": "a.py", "start": 2, "long_name": "f( )", "ccn": 9,
-                                   "cov": 0.8, "remedy": "decompose"}],
-              "diff_uncovered": [{"path": "a.py", "line": 3}], "diff_uncovered_count": 2}
+              "findings": [{"kind": "gate_violation", "exit_code": 6, "rule": "complexity gate",
+                            "path": "a.py", "start": 2, "long_name": "f( )", "ccn": 9, "cov": 0.8,
+                            "remedy": "decompose"},
+                           {"kind": "diff_uncovered", "path": "a.py", "line": 3}],
+              "counts": {"diff_uncovered_count": 2}}
 
     assert builder().verdict_line(verify, 6).splitlines() == [
         "**verify failed, exit 6: complexity gate.**", "",

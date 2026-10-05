@@ -345,7 +345,7 @@ def test_a_lane_refused_before_its_first_attempt_records_nothing(tmp_path, monke
     `--reuse-artifacts` is the documented way through it: a refusal that made
     no attempt must not close that door."""
     monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "1")
-    lane = Lane(name="py", command=WRITES_NOTHING, artifact="py.json", parser="coveragepy",
+    lane = Lane(name="py", command="python -m pytest --cov", artifact="py.json", parser="coveragepy",
                 scopes=())
     _plant(tmp_path, "py.json", BEFORE)
     refusal = _failed_attempt(tmp_path, lane)

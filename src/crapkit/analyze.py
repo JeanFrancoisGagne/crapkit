@@ -35,6 +35,7 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
 from .cache import partition_by_cache, updated_cache
 from .errors import InternalCheckError, ToolError
 from .invariants import check_record
+from .languages import LANGUAGE_EXTENSIONS
 from .repotext import source_chars, unmarked_utf16
 from .lizardcognitive import LizardExtension as _Cognitive
 from .merge import FunctionRecord, UnanalyzableFile
@@ -76,9 +77,21 @@ _register_line_comments()
 
 _POOL_THRESHOLD = 16
 
-# Bump whenever analysis semantics change (merge rules, extension set, record
-# extraction): the fingerprint must invalidate cached records produced by older
-# logic even when file content and tool versions are identical.
+# From 0.9.0 the analysis numbers live in two tables: ANALYSIS_VERSIONS below,
+# one per language, and coverage_format.READER_VERSIONS, one per coverage
+# reader. A change that moves what crapkit reads (merge rules, extension set,
+# record extraction, a coverage reader) raises the number of each language or
+# reader it moves, and ANALYSIS_VERSION, the tables' revision, by one, in the
+# same change. A new language enters at FIRST_ANALYSIS_VERSION and a new reader
+# at FIRST_READER_VERSION, and neither raises anything: no existing function's
+# score moves. The analysis cache keys each file on its own language's number,
+# so a raise of the go number re-reads the Go files and serves the rest. All
+# three are literals: tools/accuracy/change_control.py reads them with
+# ast.literal_eval and imports no crapkit.
+#
+# Through 0.8.1 the single number below was the whole rule, and its history
+# follows. Version 13, 0.8.1's one bump, carries N22's coveragepy reader change:
+# a coverage.py function region starts at the start_line the report writes.
 ANALYSIS_VERSION = 13  # 0.8.1's one bump from 11; 12 was an unreleased step. The
 #                       nesting column reads crapkit's cognitive pass in every
 #                       language, and that pass charges each language's own structures,
@@ -151,6 +164,26 @@ ANALYSIS_VERSION = 13  # 0.8.1's one bump from 11; 12 was an unreleased step. Th
 #                          admitted, a C++ rvalue reference is no longer a
 #                          cognitive condition, and source bytes decode utf-8
 #                          then cp1252 instead of by machine locale
+
+FIRST_ANALYSIS_VERSION = 13
+# One number per key of languages.LANGUAGE_EXTENSIONS (tests/unit/test_analysis_versions.py
+# holds the two equal and pins the values).
+ANALYSIS_VERSIONS = {
+    "typescript": 13,
+    "tsx": 13,
+    "javascript": 13,
+    "python": 13,
+    "swift": 13,
+    "go": 13,
+    "rust": 13,
+    "shell": 13,
+    "cpp": 13,
+    "objectivec": 13,
+    "vue": 13,
+    "java": 13,
+    "zig": 13,
+    "powershell": 13,
+}
 
 # The tokens the modified rule reacts to: lizard's three, Go's `select`, and the
 # `=>` of a Zig switch prong. Membership is checked before anything else runs,
@@ -809,7 +842,12 @@ def content_hash(path: Path) -> str:
 
 
 def fingerprint() -> str:
-    """cache=9: a UTF-16 file with no byte-order mark is an unread file, where a
+    """cache=10: each entry's key names the analysis number of its file's
+    language, and the fingerprint names no analysis number, so a raise of one
+    language's number re-reads that language's files alone, and a new crapkit
+    version still drops every record. A cache=9 entry was keyed under the one
+    ANALYSIS_VERSION.
+    cache=9: a UTF-16 file with no byte-order mark is an unread file, where a
     cache=8 record holds it as no function and a warm run would keep it silent.
     cache=8: a byte cp1252 leaves undefined reads as a letter, where a cache=7
     record read U+FFFD and split the identifier holding it. cache=7: a UTF-16
@@ -818,14 +856,28 @@ def fingerprint() -> str:
     at its own closing backtick, which a cache=5 record's reader did not do;
     cache=5 added inline_body."""
     from . import __version__
-    return f"crapkit={__version__};analysis={ANALYSIS_VERSION};lizard={lizard.version};cache=9"
+    return f"crapkit={__version__};lizard={lizard.version};cache=10"
+
+
+def analysis_version_of(rel_path: str) -> tuple[tuple[str, int], ...]:
+    """The (language, number) pair of every language that claims the path's
+    suffix, sorted: one pair as a rule, none for a suffix no language claims.
+    The suffix folds case, as lizard's reader pick and a scope's match do."""
+    lowered = rel_path.lower()
+    return tuple(sorted((language, ANALYSIS_VERSIONS[language])
+                        for language, suffixes in LANGUAGE_EXTENSIONS.items()
+                        if lowered.endswith(suffixes)))
 
 
 def _analysis_key(path: str, digest: str) -> str:
-    """Bytes are reusable only under the same reader and extension chain."""
+    """Bytes are reusable only under the same reader, extension chain and
+    analysis number of each language that claims the path."""
     reader = lizard.get_reader_for(path) or lizard.get_reader_for("fallback.c")
     chain = int(_extensions_for(path) is _PREPROCESSED_EXTENSIONS)
-    return f"{reader.__module__}.{reader.__qualname__}:{chain}:{int(uses_type_syntax(path))}:{digest}"
+    numbers = ",".join(f"{language}-analysis={number}"
+                       for language, number in analysis_version_of(path))
+    return (f"{reader.__module__}.{reader.__qualname__}:{chain}:{int(uses_type_syntax(path))}:"
+            f"{numbers}:{digest}")
 
 
 _CACHED_TYPES = (str, str) + (int,) * (len(FunctionRecord._fields) - 2)

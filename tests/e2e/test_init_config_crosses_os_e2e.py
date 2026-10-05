@@ -160,7 +160,9 @@ def test_doctor_names_the_launcher_the_token_reads_as(tmp_path, dependency_venv)
     res = run_cli(repo, "doctor")
 
     assert res.returncode == 0, res.stdout
-    (line,) = [ln for ln in res.stdout.splitlines() if ln.startswith("ok   lane 'py':")]
+    # doctor's runner line also starts `ok   lane 'py':`; the probe line names the launcher.
+    runner = "ok   lane 'py': runs pytest (named in its command)"
+    (line,) = [ln for ln in res.stdout.splitlines() if ln.startswith("ok   lane 'py':") and ln != runner]
     assert line.startswith(f"ok   lane 'py': {_VENV_LAUNCHER} -> "), line
     assert "{python" not in res.stdout
 

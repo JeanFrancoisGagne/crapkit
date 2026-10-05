@@ -121,7 +121,7 @@ def test_verify_fails_the_probe_and_the_action_counts_it(staged):
 
     payload = json.loads(res.stdout)
     assert res.returncode == 6, res.stdout + res.stderr
-    assert [u["path"] for u in payload["unread_files"]] == ["src/a.ts"]
+    assert [u["path"] for u in payload["findings"] if u["kind"] == "unread_file"] == ["src/a.ts"]
     counts = comment_module().verdict_line(payload, res.returncode).splitlines()[-1]
     # big is in the file no reader could read, so no function of it was scored:
     # the one gate finding is the file.
@@ -159,7 +159,7 @@ def test_verify_override_refuses_the_probe_and_writes_no_mark(staged):
     res = run_cli(staged, "verify", "--override", "ship it", "--json", env_extra=NO_REASON)
 
     assert res.returncode == 6, res.stdout + res.stderr
-    assert json.loads(res.stdout)["overridden"] == []
+    assert [f for f in json.loads(res.stdout)["findings"] if f["kind"] == "overridden"] == []
     assert "override refused: 1 unread file (src/a.ts: " in res.stderr, res.stderr
     assert not (staged / MARKS).exists()
 

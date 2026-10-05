@@ -65,7 +65,7 @@ def test_a_protocol_this_cli_does_not_answer_is_named_in_either_form(tmp_path, c
     assert code == 1
     assert lines == [f"crapkit doctor: the plugin at {tmp_path / 'p'} asks for hook protocol 99; "
                      "this crapkit answers 1, so `claude-hook` exits 0 silent on every edit. The CLI "
-                     "is behind; upgrade it with `python -m pip install --upgrade crapkit`."]
+                     "is behind; upgrade it with `python -P -m pip install --upgrade crapkit`."]
 
 
 @pytest.mark.parametrize("command", ["crapkit claude-hook --protocol=99",
