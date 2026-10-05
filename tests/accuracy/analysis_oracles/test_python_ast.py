@@ -126,8 +126,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # marks revision carried the marks of the one it changed (gate-group-04a), and
 # 3,862 once verify --json dropped the 0.8.1 per-kind keys (gate-group-13). The
 # repair that names the js lane init wrote in its workspace note
-# (m1-foundations-09) added one.
-SRC_DEFS = 3863
+# (m1-foundations-09) added one, and the typed ratchet.MetricStamp and its
+# members (metric-stamp-01) added six.
+SRC_DEFS = 3869
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
