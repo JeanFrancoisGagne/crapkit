@@ -662,12 +662,12 @@ scopes           = ["src"]</code></pre>
 <pre><code>command = "python -m pytest -m 'not slow' --cov=app --cov-report=json:.crapkit/cov/slow/coverage.json"
 
 $ crapkit doctor
-crapkit: lane 'slow': positional argument 'slow'' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)</code></pre>
+crapkit: lane 'slow': positional argument 'slow'' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes); a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact</code></pre>
 <p>A chained command is read one argv per <code>&amp;&amp;</code>, <code>||</code>, <code>&amp;</code> or <code>|</code>, blank beside the operator or not, and every segment that runs the runner is checked. A second, narrower run after the operator is still a narrowed coverage run:</p>
 <pre><code>command = "python -m pytest --cov=app --cov-report=json:.crapkit/cov/slow/coverage.json --junitxml=.crapkit/cov/slow/junit.xml &amp;&amp; python -m pytest tests/smoke --cov=app --cov-report=json:.crapkit/cov/slow/coverage.json"
 
 $ crapkit doctor
-crapkit: lane 'slow': positional argument 'tests/smoke' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately</code></pre>
+crapkit: lane 'slow': positional argument 'tests/smoke' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately; a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact</code></pre>
 <p>Redirections (<code>&gt; nul</code>, <code>2&gt;&amp;1</code>) belong to the shell and are never positionals, an empty quoted argument stays empty instead of shifting the next path onto the flag, and words break on space, tab and line endings only, so a non-breaking space pasted out of a wiki no longer splits a value. <code>doctor</code> reads a lane the same way, which is how it knows a quoted interpreter path is one word and that the runner after <code>&amp;&amp;</code> is a runner. It also probes each distinct runner once instead of once per lane, and FAILs a lane whose first word will not start rather than calling the repo clean.</p>
 <p>The results-file WARN reads like this, hint included:</p>
 <pre><code>$ crapkit doctor
