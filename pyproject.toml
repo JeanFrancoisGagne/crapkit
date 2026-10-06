@@ -43,13 +43,15 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 # lizard 1.24.0 is the PyPI release cut from the exact commit crapkit was built
-# against (tag 1.24.0 == 308b1c3e); earlier releases lack the TSX handling.
-# The cap keeps a new lizard from moving a score unannounced: its readers decide
-# every ccn crapkit stores. Lifting it needs a row in
-# tests/accuracy/change_control/CHANGES.tsv, and the nightly lizard-edge job
-# scores the small corpus under the newest lizard so the move is known first.
+# and tested against (tag 1.24.0 == 308b1c3e); earlier releases lack the TSX
+# handling. Its readers decide every ccn crapkit stores, and a patch release can
+# move them: 1.24.1 changed the stock Rust reader's match-arm count and the name
+# the Python reader gives a generic def. So the pin is exact, and a new lizard is
+# adopted on purpose, with its golden and analysis-version moves and a row in
+# tests/accuracy/change_control/CHANGES.tsv. The nightly lizard-edge job scores
+# the small corpus under the newest lizard so the move is known first.
 dependencies = [
-    "lizard>=1.24.0,<1.25",
+    "lizard==1.24.0",
 ]
 
 [project.urls]
