@@ -4,8 +4,8 @@
 CRAP bound is what a blob can say with no coverage: at least ccn, at most the
 CRAP `score` gives it at coverage 0 under its scope's flag. cli/verifying
 judges the rows through `gate.judge` and maps each kind of finding to the
-hook's exit. In this slot a marked breach passes on the mark's existence,
-whatever its kind; mission-3-04 turns the marked_rise row below into a refusal.
+hook's exit: a marked rise refuses with exit 6 and a block of its own, before
+any grant; a pardoned or unproven breach passes and is counted on one line.
 
 `hook_split` is this module's helper for the older mark tests: it runs
 hand-built staged violations through the gate and the hook's mapping.
@@ -63,9 +63,17 @@ def staged_function(rec: FunctionRecord, scope: str = "src") -> gate.Function:
 
 
 def hook_split(violations, entries, ceiling: int = 6) -> tuple[list, int]:
-    """(refused, how many a mark carries) for staged violations, each one
-    function of its file at ccn^2 + ccn untested, through the gate's pardon and
-    the hook's mapping. `entries` are the marks, keyed (path, key name)."""
+    """(refused for no mark, how many a mark carries) for staged violations;
+    `hook_refused` has the marked rises too."""
+    refused = hook_refused(violations, entries, ceiling)
+    return refused.violations, refused.carried
+
+
+def hook_refused(violations, entries, ceiling: int = 6):
+    """The hook's `_Refused` (violations no mark covers, marked rises, how many
+    a mark carries) for staged violations, each one function of its file at
+    ccn^2 + ccn untested, through the gate's pardon and the hook's mapping.
+    `entries` are the marks, keyed (path, key name)."""
     files: dict[str, list[gate.Function]] = {}
     for v in violations:
         rec = record(v.long_name, v.start, v.ccn, v.path)
@@ -145,29 +153,111 @@ def marked(mark: float | None) -> dict:
     return {} if mark is None else {(PATH, NAME): mark}
 
 
-CARRIED = "crapkit gate: 1 staged function(s) carry a ratchet mark and were not gated"
+COUNT_LINE = ("crapkit gate: {n} staged function(s) carry a ratchet mark and were not gated - "
+              "`crapkit verify` fails a mark that rises\n")
+CARRIED = COUNT_LINE.format(n=1)
+RISE_HEAD = "crapkit gate: 1 staged function(s) rose past their ratchet mark:"
+RISE_FIX = "bring each one's ccn back to its mark or under it (a mark only falls, so no commit raises it)."
 BREACH_KINDS = ("pardoned", "marked_rise", "unproven", "over_ceiling")
 
 # Each kind of breach: the mark that puts the (8, 72) function there, the
-# hook's exit with an override reason set, and whether the grant ran.
+# hook's exit with an override reason set, whether the grant ran and whether
+# the count line counts it.
 KINDS = [
-    pytest.param(80.0, "pardoned", 0, False, id="pardoned"),
-    # mission-3-04 turns this row into a refusal.
-    pytest.param(7.0, "marked_rise", 0, False, id="marked_rise"),
-    pytest.param(30.0, "unproven", 0, False, id="unproven"),
-    pytest.param(None, "over_ceiling", 0, True, id="over_ceiling-granted"),
+    pytest.param(80.0, "pardoned", 0, False, True, id="pardoned"),
+    pytest.param(7.0, "marked_rise", 6, False, False, id="marked_rise-refused"),
+    pytest.param(30.0, "unproven", 0, False, True, id="unproven"),
+    pytest.param(None, "over_ceiling", 0, True, False, id="over_ceiling-granted"),
 ]
 
 
-@pytest.mark.parametrize(("mark", "kind", "code", "granted"), KINDS)
-def test_each_breach_kind_maps_to_its_exit(hooked, mark, kind, code, granted):
+@pytest.mark.parametrize(("mark", "kind", "code", "granted", "counted"), KINDS)
+def test_each_breach_kind_maps_to_its_exit(hooked, mark, kind, code, granted, counted):
     result, _ = judged(breach(), marks=marked(mark))
     assert [bool(getattr(result, name)) for name in BREACH_KINDS] == [name == kind for name in BREACH_KINDS]
 
     got, out, err = hooked(breach(), marks=marked(mark))
 
     assert (got, bool(hooked.grants)) == (code, granted), out + err
-    assert (CARRIED in err) == (not granted), err
+    assert (err == CARRIED) == counted, err
+    assert (RISE_HEAD in out) == (kind == "marked_rise"), out
+
+
+def test_a_marked_rise_prints_its_own_block_on_stdout_in_ascii(hooked):
+    """The head line, one row with ccn, path:line, the handle and the mark at
+    4 places, then the fix: the mark only falls, so the ccn has to."""
+    code, out, err = hooked(breach(), marks=marked(7.3333), reason=False)
+
+    assert (code, err) == (6, "")
+    assert out == f"{RISE_HEAD}\n  ccn   8  {PATH}:1  {NAME}  mark 7.3333\n{RISE_FIX}\n"
+    assert out.isascii()
+
+
+def test_a_marked_rise_refuses_before_the_grant_a_breach_beside_it_would_get(hooked):
+    """The override signs for a breach no mark covers; it does not raise a
+    mark. With a marked rise staged nothing is granted, the unmarked block
+    prints first, and each block gets its fix line."""
+    other = record("fresh( a , b )", 20, 9)
+    rows = changed(PATH, staged_function(record()), staged_function(other))
+
+    code, out, _ = hooked(rows, marks=marked(7.0))
+
+    assert (code, hooked.grants) == (6, [])
+    assert out.splitlines() == [
+        "crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:",
+        f"  ccn   9  {PATH}:20  fresh( a , b )",
+        RISE_HEAD,
+        f"  ccn   8  {PATH}:1  {NAME}  mark 7.0000",
+        "decompose before committing (coverage cannot save a function above the target).",
+        RISE_FIX]
+
+
+def test_marked_rises_print_worst_ccn_first_each_under_its_handle(hooked):
+    twins = changed(PATH, staged_function(record(start=1)), staged_function(record(start=20, ccn=12)),
+                    staged_function(record("other( )", 40, 9)))
+    marks = {(PATH, NAME): 7.0, (PATH, f"{NAME}#2"): 7.5, (PATH, "other( )"): 8.0}
+
+    code, out, _ = hooked(twins, marks=marks, reason=False)
+
+    assert code == 6
+    assert [line for line in out.splitlines() if line.startswith("  ccn")] == [
+        f"  ccn  12  {PATH}:20  {NAME}#2  mark 7.5000",
+        f"  ccn   9  {PATH}:40  other( )  mark 8.0000",
+        f"  ccn   8  {PATH}:1  {NAME}  mark 7.0000"]
+
+
+def test_the_count_line_counts_only_pardoned_and_unproven_breaches(hooked):
+    """Four marked breaches: two pardoned, one unproven, one marked rise. The
+    count line keeps its words and says 3."""
+    rows = changed(PATH, *(staged_function(record(f"f{i}( )", 10 * i + 1)) for i in range(4)))
+    marks = {(PATH, "f0( )"): 80.0, (PATH, "f1( )"): 72.0, (PATH, "f2( )"): 30.0, (PATH, "f3( )"): 7.0}
+
+    code, out, err = hooked(rows, marks=marks, reason=False)
+
+    assert code == 6
+    assert err == COUNT_LINE.format(n=3)
+    assert [line for line in out.splitlines() if line.startswith("  ccn")] == [
+        f"  ccn   8  {PATH}:31  f3( )  mark 7.0000"]
+
+
+def test_a_marked_rise_outside_a_commit_refuses_the_tracked_function(hooked):
+    """With nothing staged and no commit running, the hook judges the tracked
+    files: a committed function past its mark refuses as a tracked one, with
+    no grant whatever the reason says."""
+    code, out, _ = hooked(breach(), marks=marked(7.0), whole=True)
+
+    assert (code, hooked.grants) == (6, [])
+    assert "crapkit gate: 1 tracked function(s) rose past their ratchet mark:" in out
+    assert out.endswith(RISE_FIX + "\n"), out
+
+
+def test_a_marked_rise_beside_an_unread_file_under_a_reason_prints_both(hooked):
+    """The unread file refuses the override first; the rise is named too."""
+    code, out, _ = hooked(unread("src/b.py", "src/b.py:2: refused"), breach(), marks=marked(7.0))
+
+    assert (code, hooked.grants) == (6, [])
+    assert "crapkit gate: 1 staged file(s) could not be read" in out, out
+    assert RISE_HEAD in out and "crapkit: override refused:" in out, out
 
 
 def test_a_function_over_its_ceiling_with_no_reason_exits_6(hooked):
@@ -280,7 +370,7 @@ def test_refused_rows_print_worst_ccn_first_and_marked_ones_are_counted():
     order = [Violation(PATH, "mild( n )", 1, 7), Violation(PATH, "legacy( n )", 20, 12),
              Violation(PATH, "worst( n )", 40, 20)]
 
-    refused, carried = hook_split(order, [RatchetEntry(PATH, "legacy( n )", 63.6)])
+    split = hook_refused(order, [RatchetEntry(PATH, "legacy( n )", 63.6)])
 
-    assert [v.long_name for v in refused] == ["worst( n )", "mild( n )"]
-    assert carried == 1
+    assert [v.long_name for v in split.violations] == ["worst( n )", "mild( n )"]
+    assert (split.rises, split.carried, split.paths) == ([], 1, {PATH})

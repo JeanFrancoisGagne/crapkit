@@ -146,6 +146,21 @@ refusal too.
 <!-- /0.9.0:m1-foundations -->
 
 <!-- 0.9.0:mission-3 -->
+`hook-precommit` exits 6 on a marked function whose staged ccn passed its mark, where
+0.8.1 passed any marked function. A staged blob has no coverage, but CRAP is never under
+ccn, so such a mark rose at any coverage, and `verify` would fail it later. A CI step that
+runs `hook-precommit --base` now exits 6 on that commit, sooner than `verify` did. The
+refusal names the function, its ccn and its mark:
+
+```
+crapkit gate: 1 staged function(s) rose past their ratchet mark:
+  ccn   8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+```
+
+Decompose the function until its ccn sits at or under the mark, or pass the commit with
+`CRAPKIT_OVERRIDE_REASON` set, which records the override and leaves the mark as it was
+([the commit gate](ratchet.md#the-commit-gate-skips-marked-functions)). A marked function
+whose ccn sits at or under its mark passes as before, counted on the stderr line.
 <!-- /0.9.0:mission-3 -->
 
 <!-- 0.9.0:metric-stamp -->

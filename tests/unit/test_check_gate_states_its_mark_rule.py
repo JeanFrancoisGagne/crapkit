@@ -69,7 +69,9 @@ def scored(repo, capsys):
 
 
 def test_a_function_past_its_mark_fails_check_gate_and_still_commits(scored, capsys):
-    """The contrast the description states, on one tree: mark 20, fresh crap 72."""
+    """The contrast the description states, on one tree: mark 20, fresh crap 72.
+    The hook sees ccn 8, at or under the mark, so coverage could still hold the
+    CRAP there: it refuses nothing."""
     add_knotty(scored)
     (scored / "crapkit-ratchet.tsv").write_text(
         "path\tlong_name\tcrap\nsrc/app.ts\tknotty ( n )\t20.0000\n",
@@ -79,9 +81,9 @@ def test_a_function_past_its_mark_fails_check_gate_and_still_commits(scored, cap
     gate = main(["rescore", "src/app.ts", "--gate", "--json", "--repo", str(scored)])
     verdict = json.loads(capsys.readouterr().out)["gate"]
     hook = main(["hook-precommit", "--repo", str(scored)])
-    hook_err = capsys.readouterr().err
+    hook_out = capsys.readouterr().out
 
     assert (gate, verdict["ok"]) == (6, False)
     assert [(b["function"], b["crap"]) for b in verdict["breaches"]] == [("knotty ( n )", 72.0)]
     assert hook == 0
-    assert "1 staged function(s) carry a ratchet mark and were not gated" in hook_err, hook_err
+    assert "rose past their ratchet mark" not in hook_out and "knotty" not in hook_out, hook_out

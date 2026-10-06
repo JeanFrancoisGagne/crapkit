@@ -2,15 +2,15 @@
 
 The commit gate judges staged blobs. A blob has no coverage, so a staged
 violation has no exact CRAP, only a range from ccn to its untested CRAP.
-`hook-precommit` judges it through the gate module, and in this slot passes
-every breach a mark covers (pardoned, marked rise or unproven) with one count
-line: the repo signed for this function, and a commit is not the moment to
-reopen that.
+`hook-precommit` judges it through the gate module and passes a marked breach
+while its ccn sits at or under the mark, with one count line: the CRAP may
+still sit under the mark, and only coverage can say. A ccn above the mark puts
+the CRAP above it at any coverage, so the hook refuses that marked rise.
 
 `rescore --gate` and `verify` both hold a scored row, so they keep the numeric
 rule: at or under the recorded mark it is carried debt, past it the mark rose
 and the verdict fails. Both judge through the gate module's pardon, and this
-file pins that the new hook rule did not leak into rescore's.
+file pins that the hook's range rule did not leak into rescore's.
 """
 import json
 
@@ -27,7 +27,7 @@ from crapkit.keys import MarkIndex
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
 
-from test_gate_hook_mapping import hook_split
+from test_gate_hook_mapping import hook_refused
 
 MARK = RatchetEntry("src/mod.py", "legacy( n )", 63.6)
 
@@ -41,32 +41,33 @@ def scored(path: str, name: str, ccn: int, crap: float) -> ScoredRow:
                      0.4, "measured", crap, "decompose")
 
 
-# --- the hook: a mark's existence ----------------------------------------------
+# --- the hook: ccn against the mark ---------------------------------------------
 
-def test_a_marked_function_leaves_the_gated_list():
-    gated, carried = hook_split([staged("src/mod.py", "legacy( n )")], [MARK])
+def test_a_marked_function_at_or_under_its_mark_leaves_the_gated_list():
+    split = hook_refused([staged("src/mod.py", "legacy( n )")], [MARK])
 
-    assert (gated, carried) == ([], 1)
+    assert (split.violations, split.rises, split.carried) == ([], [], 1)
 
 
 def test_an_unmarked_function_stays_gated():
-    gated, carried = hook_split([staged("src/mod.py", "fresh( n )")], [MARK])
+    split = hook_refused([staged("src/mod.py", "fresh( n )")], [MARK])
 
-    assert [v.long_name for v in gated] == ["fresh( n )"]
-    assert carried == 0
+    assert [v.long_name for v in split.violations] == ["fresh( n )"]
+    assert (split.rises, split.carried) == ([], 0)
 
 
 def test_the_same_name_in_another_file_is_another_function():
-    gated, carried = hook_split([staged("src/other.py", "legacy( n )")], [MARK])
+    split = hook_refused([staged("src/other.py", "legacy( n )")], [MARK])
 
-    assert [v.path for v in gated] == ["src/other.py"]
-    assert carried == 0
+    assert [v.path for v in split.violations] == ["src/other.py"]
+    assert split.carried == 0
 
 
 def test_no_marks_file_gates_everything():
-    gated, carried = hook_split([staged("src/mod.py", "legacy( n )")], [])
+    split = hook_refused([staged("src/mod.py", "legacy( n )")], [])
 
-    assert ([(v.path, v.long_name, v.ccn) for v in gated], carried) == ([("src/mod.py", "legacy( n )", 8)], 0)
+    assert [(v.path, v.long_name, v.ccn) for v in split.violations] == [("src/mod.py", "legacy( n )", 8)]
+    assert split.carried == 0
 
 
 def test_the_gated_order_survives_the_split():
@@ -75,19 +76,29 @@ def test_the_gated_order_survives_the_split():
              staged("src/mod.py", "legacy( n )", ccn=12, start=20),
              staged("src/mod.py", "mild( n )", ccn=7, start=40)]
 
-    gated, carried = hook_split(order, [MARK])
+    split = hook_refused(order, [MARK])
 
-    assert [v.long_name for v in gated] == ["worst( n )", "mild( n )"]
-    assert carried == 1
+    assert [v.long_name for v in split.violations] == ["worst( n )", "mild( n )"]
+    assert split.carried == 1
 
 
-@pytest.mark.parametrize("ccn", [7, 12, 40])
-def test_how_far_over_the_ceiling_it_sits_changes_nothing(ccn: int):
-    """A mark's existence is the whole rule in this slot: ccn 7 is pardoned by
-    the mark, ccn 12 and 40 straddle it (unproven), and all three pass."""
-    gated, carried = hook_split([staged("src/mod.py", "legacy( n )", ccn=ccn)], [MARK])
+@pytest.mark.parametrize("ccn", [7, 12, 40, 63])
+def test_a_ccn_at_or_under_the_mark_passes_however_far_over_the_ceiling(ccn: int):
+    """Under a mark of 63.6, ccn 7 is pardoned (its untested CRAP, 56, sits
+    under the mark), ccn 12, 40 and 63 straddle it (unproven), and all four
+    pass: coverage could still hold each at or under the mark."""
+    split = hook_refused([staged("src/mod.py", "legacy( n )", ccn=ccn)], [MARK])
 
-    assert (gated, carried) == ([], 1)
+    assert (split.violations, split.rises, split.carried) == ([], [], 1)
+
+
+@pytest.mark.parametrize("ccn", [64, 90])
+def test_a_ccn_above_the_mark_is_a_refused_rise(ccn: int):
+    """ccn 64 against 63.6: CRAP is never under ccn, so the mark rose."""
+    split = hook_refused([staged("src/mod.py", "legacy( n )", ccn=ccn)], [MARK])
+
+    assert [(b.key_name, b.mark, b.function.record.ccn) for b in split.rises] == [("legacy( n )", 63.6, ccn)]
+    assert (split.violations, split.carried) == ([], 0)
 
 
 # --- rescore and verify: still the numeric rule -------------------------------
