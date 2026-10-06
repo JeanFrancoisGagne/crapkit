@@ -126,10 +126,12 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # marks revision carried the marks of the one it changed (gate-group-04a), and
 # 3,862 once verify --json dropped the 0.8.1 per-kind keys (gate-group-13). The
 # repair that names the js lane init wrote in its workspace note
-# (m1-foundations-09) added one. 090/mission-3 reached 3,745 once gitio.blobs_at
-# read a set of paths' bytes at one revision (mission-3-01), and the sync met
-# at 3,871.
-SRC_DEFS = 3871
+# (m1-foundations-09) added one, the typed ratchet.MetricStamp and its members
+# (metric-stamp-01) added six, and the repair that names a runner the root test
+# script names in that note (m1-foundations-09) one more. 090/mission-3 reached
+# 3,745 once gitio.blobs_at read a set of paths' bytes at one revision
+# (mission-3-01), and the sync met at 3,878.
+SRC_DEFS = 3878
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
