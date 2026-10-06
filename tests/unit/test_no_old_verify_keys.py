@@ -9,12 +9,14 @@ that is left.
 Python under src/ and tests/: every read of an old key fails unless one of
 the exemptions below holds. A read is `x[key]`, `x.get(key)` or `x.pop(key)`,
 where the key is the old key's string, a section name it heads
-(`"gate_violations.crap"`), a lookup into a mapping whose values are old keys
-(`x[JSON_KEYS[name]]`), or a loop variable over a collection of them
-(`{k: x[k] for k in VERDICT_KEYS}`). A collection holds old keys when it holds
-one of the three no 0.9.0 field reuses, or old keys alone: the other five also
-name a findings kind, a counts key or a table column, so beside other strings
-they read as those. The exemptions:
+(`"gate_violations.crap"`, `f"gate_violations.{name}"`), a name bound to one
+(`KEY = "unread_files"`, or a parameter's default, `key="new_failures"`), a
+lookup into a mapping whose values are old keys (`x[JSON_KEYS[name]]`), or a
+loop variable over a collection of them (`{k: x[k] for k in VERDICT_KEYS}`). A
+collection holds old keys when it holds one of the three no 0.9.0 field
+reuses, or old keys alone: the other five also name a findings kind, a counts
+key or a table column, so beside other strings they read as those. The
+exemptions:
 
 - it is read off an object that is not the verify payload and shares the
   name: `counts`, rescore --gate's `gate` block (`gate.unread_files`), the
@@ -27,21 +29,36 @@ they read as those. The exemptions:
   old key in that branch alone, so dropping the keys changes nothing it reads;
 - its file builds payloads the 0.8.1 way on purpose (BUILDER).
 
+JSON: every old key a JSON object holds fails unless the key the object sits
+under names one of those other objects (`"counts": {...}`, `"gate": {...}`,
+`"error": {...}`, `"gate_rule": {...}`). The scan reads every file under
+tests/ but Python, so a verify payload a fixture or golden records, as a .json
+file or as a line of a text one, is read like code; records of runs an older
+crapkit made keep theirs (RECORDS). It reads the fenced examples on every page
+below the same way.
+
 Markdown under docs/, README.md, AGENTS.md and the plugin's skills: every
-mention of the three names no 0.9.0 field reuses fails. The other five also name a findings kind, a `counts` key, the gate
-block's and the error object's list, or the crapkit.toml key, so a mention of
-one fails only where the sentence uses it as a list of verify's: "listed under
-`overridden`", "`unread_files` lists", "`diff_uncovered` truncates", "verify's
-`unread_files`". A mention the words just before give to the error object
-("the error object lists it in `unread_files`") is that object's. Dated records
-(upgrading.md, releases/, specs/, architecture/) keep theirs, and so does
-docs/agent-json.md's Errors section, whose `unread_files` is the error object's.
+mention of the three names no 0.9.0 field reuses fails. The other five also
+name a findings kind, a `counts` key, the gate block's and the error object's
+list, or the crapkit.toml key, so a mention of one fails where the sentence
+uses it as a list of verify's: "listed under `overridden`", "`unread_files`
+lists", "`diff_uncovered` truncates", "verify's `unread_files`", "the
+`overridden` field". A mention the words just before give to the error object
+("the error object lists it in `unread_files`") is that object's. A table row
+that opens with one of the five fails too, unless its table is the findings
+kind table and the name a kind, or lists one of the other objects' keys, which
+the line just above the table or the nearest heading names first (`counts`,
+`gate_rule`, `[crapkit]`). Dated records (upgrading.md, releases/, specs/,
+architecture/) keep theirs, and so does docs/agent-json.md's Errors section,
+whose `unread_files` is the error object's.
 """
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 import re
+
+from crapkit.verify import FINDING_KINDS
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -53,10 +70,10 @@ GONE = ("gate_violations", "ratchet_regressions", "new_failures")
 
 # The objects that are not the verify payload and hold a key of the same name.
 # A variable counts as the `error` object only when every value bound to it was
-# read off `["error"]` (_Source.error_names), never by its name alone.
+# read off `["error"]` (_Source._holds_error), never by its name alone.
 OTHER_OWNERS = frozenset({"counts", "gate", "error", "json_fields"})
 OTHER_READS = frozenset({("main", "diff_uncovered_max"), ("rule", "diff_uncovered_max"),
-                         ("gate_rule", "diff_uncovered_max")})
+                         ("gate_rule", "diff_uncovered_max"), ("crapkit", "diff_uncovered_max")})
 
 BUILDER = frozenset({
     # Builds payloads the 0.8.1 way to show the Action's comment reads none of these keys.
@@ -64,6 +81,12 @@ BUILDER = frozenset({
 })
 
 DATED = ("docs/upgrading.md", "docs/releases/", "docs/specs/", "docs/architecture/")
+
+
+def another_objects(owner: str | None, key: str) -> bool:
+    """True when key, read off the object owner names, is that object's own
+    and not verify's."""
+    return owner in OTHER_OWNERS or (owner, key) in OTHER_READS
 
 
 # --- Python ---------------------------------------------------------------------------
@@ -106,6 +129,13 @@ def _held(nodes: list[ast.AST]) -> frozenset[str]:
     return old if old & set(GONE) or (strings and all(map(_old_in, strings))) else frozenset()
 
 
+def _f_section(key: ast.JoinedStr) -> str | None:
+    """The section an f-string opens with: `gate_violations` in f"gate_violations.{name}"."""
+    head = key.values[0] if key.values else None
+    text = head.value if isinstance(head, ast.Constant) else ""
+    return text.split(".")[0] if "." in text else None
+
+
 def _literal(value: ast.AST) -> tuple[list, list]:
     """(what a lookup into a literal collection yields, what a loop over it yields)."""
     if isinstance(value, ast.Call) and value.args:  # frozenset({...}), tuple([...])
@@ -118,25 +148,31 @@ def _literal(value: ast.AST) -> tuple[list, list]:
 
 
 def _assigned(tree: ast.AST) -> dict[int, ast.AST]:
-    """The value each plainly assigned name node takes, by the node's id."""
+    """The value each plainly assigned name node and each parameter with a
+    default takes, by the node's id."""
     values = {}
     for node in ast.walk(tree):
         if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             values.update({id(t): node.value for t in targets if isinstance(t, ast.Name)})
+        elif isinstance(node, ast.arguments):
+            positional = [*node.posonlyargs, *node.args]
+            defaulted = [*zip(positional[len(positional) - len(node.defaults):], node.defaults),
+                         *zip(node.kwonlyargs, node.kw_defaults)]
+            values.update({id(arg): default for arg, default in defaulted})
     return values
 
 
 def _bound_values(tree: ast.AST) -> dict[str, list]:
     """Each name's bound values; None where a binding has no single value (an
-    argument, a loop target, a name unpacked from a tuple)."""
+    argument with no default, a loop target, a name unpacked from a tuple)."""
     assigned = _assigned(tree)
     bound: dict[str, list] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
             bound.setdefault(node.id, []).append(assigned.get(id(node)))
         elif isinstance(node, ast.arg):
-            bound.setdefault(node.arg, []).append(None)
+            bound.setdefault(node.arg, []).append(assigned.get(id(node)))
     return bound
 
 
@@ -191,17 +227,24 @@ class _Source:
             above = self.parents.get(above)
 
     def old_keys(self, key: ast.AST) -> frozenset[str]:
-        """The old keys a key expression can hold: its own constant, a lookup
-        into a mapping whose values are old keys, or a loop variable over a
-        collection of them."""
+        """The old keys a key expression can hold: its own constant, the
+        section an f-string opens with, a lookup into a mapping whose values
+        are old keys, a loop variable over a collection of them, or any other
+        name bound to one."""
         if isinstance(key, ast.Constant):
             return _old_in(key.value)
+        if isinstance(key, ast.JoinedStr):
+            return _old_in(_f_section(key))
         if isinstance(key, ast.Subscript) and isinstance(key.value, ast.Name):
             return self.lookups.get(key.value.id, frozenset())
-        iterated = self._iterated(key) if isinstance(key, ast.Name) else None
+        if not isinstance(key, ast.Name):
+            return frozenset()
+        iterated = self._iterated(key)
+        if iterated is None:
+            return _strings(self._values(key))
         if isinstance(iterated, ast.Name):
             return self.items.get(iterated.id, frozenset())
-        return _held(_literal(iterated)[1]) if iterated is not None else frozenset()
+        return _held(_literal(iterated)[1])
 
     def _iterated(self, name: ast.Name) -> ast.AST | None:
         """What the nearest loop that binds name iterates over."""
@@ -220,18 +263,22 @@ class _Source:
             return node.func.attr
         return None
 
-    def _holds_error(self, name: ast.Name) -> bool:
-        """True when every value the name's scope binds to it was read off
-        `["error"]`; a name the function does not bind resolves in the module."""
+    def _values(self, name: ast.Name) -> list:
+        """Every value the name's scope binds to it; a name the function does
+        not bind resolves in the module."""
         scope = next((above for above in self._above(name) if isinstance(above, _SCOPES)), self.tree)
         if scope not in self._bound:
             self._bound[scope] = _bound_values(scope)
-        values = self._bound[scope].get(name.id) or self._bound[self.tree].get(name.id, [])
+        return self._bound[scope].get(name.id) or self._bound[self.tree].get(name.id, [])
+
+    def _holds_error(self, name: ast.Name) -> bool:
+        """True when every value bound to the name was read off `["error"]`."""
+        values = self._values(name)
         return bool(values) and all(map(_reads_error, values))
 
     def off_another_object(self, obj: ast.AST, keys: frozenset[str]) -> bool:
         owner = self.owner(obj)
-        return owner in OTHER_OWNERS or all((owner, key) in OTHER_READS for key in keys)
+        return all(another_objects(owner, key) for key in keys)
 
     def guarded(self, node: ast.AST) -> bool:
         return any(isinstance(above, ast.If) and _without_findings(above, node)
@@ -335,6 +382,28 @@ def f(verdict, unused):
     assert old_key_reads(source) == [(3, "verdict[unused]", "gate_violations.crap")]
 
 
+def test_a_name_bound_to_an_old_key_is_flagged():
+    """A module constant, a local and a parameter's default name the key as
+    surely as its string does, and an f-string opens a section like a literal
+    one; a parameter with no default, and the gate block's list, pass."""
+    source = '''
+NEW = "new_failures"
+KEY = "unread_files"
+def f(p, gate, key="ratchet_regressions", *, kw="overridden"):
+    local = "diff_uncovered_count"
+    a = p[NEW]
+    b = p.get(KEY)
+    c = p[key] + p[kw]
+    d = p[local] + gate[KEY]
+    return p[f"gate_violations.{key}"]
+def g(p, key):
+    return p[key]
+'''
+    assert old_key_reads(source) == [(6, "p", "NEW"), (7, "p", "KEY"), (8, "p", "key"),
+                                     (8, "p", "kw"), (9, "p", "local"),
+                                     (10, "p", "f'gate_violations.{key}'")]
+
+
 def test_error_passes_only_when_its_value_was_read_off_error():
     """A variable named error that holds verify's payload is the payload."""
     source = '''
@@ -354,6 +423,83 @@ def i(printed, refusal=None):
                                      (12, "refusal", "unread_files")]
 
 
+# --- JSON ------------------------------------------------------------------------------
+
+# Records of runs an older crapkit made: the retro ledgers keep the failure
+# each test printed at the commit before its fix, 0.8.x verify payloads among
+# them, so their old keys are evidence, not readers.
+RECORDS = ("tests/accuracy/suite_strength/retro/", "tests/accuracy/verdict_model/retro.tsv")
+
+# A JSON string, with the colon that makes it a key, or a bracket. A string
+# ends on its own line, so a stray quote in prose costs one line, not the file.
+_JSON_TOKEN = re.compile(r'"((?:[^"\\\n]|\\.)*)"(\s*:)?|[{}\[\]]')
+
+
+def old_json_keys(text: str) -> list[tuple[int, str | None, str]]:
+    """(line, the key its object sits under, the key) for each old key a JSON
+    object in text holds, unless that object is another one's. An object in an
+    array sits under the array's key; one at the top sits under None."""
+    found, owners, pending = [], [], None
+    for token in _JSON_TOKEN.finditer(text):
+        string, is_key, mark = token.group(1), token.group(2), token.group()
+        owner = owners[-1] if owners else None
+        if is_key and string in OLD_KEYS and not another_objects(owner, string):
+            found.append((text.count("\n", 0, token.start()) + 1, owner, string))
+        if mark in ("{", "["):
+            owners.append(owner if pending is None else pending)
+        elif mark in ("}", "]"):
+            owners = owners[:-1]
+        pending = string if is_key else None
+    return found
+
+
+def _fixture_files() -> list[Path]:
+    """Every file under tests/ but Python: fixtures, goldens and recorded runs."""
+    return sorted(path for path in (ROOT / "tests").rglob("*")
+                  if path.is_file() and path.suffix != ".py" and "__pycache__" not in path.parts)
+
+
+def _text(path: Path) -> str:
+    """The file's text; a bundle, an image or any other file not in UTF-8 holds none."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return ""
+
+
+def test_no_fixture_or_golden_under_tests_holds_an_old_verify_key():
+    hits = {}
+    for path in _fixture_files():
+        rel = path.relative_to(ROOT).as_posix()
+        keys = [] if rel.startswith(RECORDS) else old_json_keys(_text(path))
+        if keys:
+            hits[rel] = keys
+    assert hits == {}, hits
+
+
+def test_the_json_scan_flags_verify_s_old_keys_and_passes_the_other_objects():
+    """A golden pretty-printed or on one line of a text file reads alike; the
+    gate block's list, the error object's, counts and brief's ceiling pass."""
+    pretty = ('{\n "diff_uncovered_count": 3,\n "findings": [{"kind": "diff_uncovered"}],\n'
+              ' "overridden": []\n}')
+    line = ('verify --json\n{"counts": {"diff_uncovered_count": 0}, "gate": {"unread_files": []}, '
+            '"new_failures": [], "unread_files": []}\n')
+    others = ('{"error": {"unread_files": []}, "packets": [{"gate_rule": {"diff_uncovered_max": null}}],'
+              ' "verdicts": [{"gate_violations": [{"path": "a.py"}]}]}')
+
+    assert old_json_keys(pretty) == [(2, None, "diff_uncovered_count"), (4, None, "overridden")]
+    assert old_json_keys(line) == [(2, None, "new_failures"), (2, None, "unread_files")]
+    assert old_json_keys(others) == [(1, "verdicts", "gate_violations")]
+
+
+def test_the_fixture_scan_reads_the_verify_goldens_and_no_python():
+    files = {path.relative_to(ROOT).as_posix() for path in _fixture_files()}
+
+    assert {"tests/fixtures/action_comment/verify.json", "tests/goldens/machine_outputs/verify.txt",
+            "tests/accuracy/corpus_goldens/goldens/session/verify.json"} <= files
+    assert not [rel for rel in files if rel.endswith(".py")]
+
+
 # --- docs ------------------------------------------------------------------------------
 
 _GONE = re.compile(r"\b(" + "|".join(GONE) + r")\b")
@@ -366,10 +512,16 @@ _AS_KEY = re.compile("|".join((
     r"\bunder\s+" + _NAME,
     r"\b(?:listed|lists?(?:\s+\w+)?)\s+in\s+" + _NAME,
     r"\bverify's\s+" + _NAME,
-    _NAME + r"\s+(?:lists|holds|truncates|carries|key|list|array)\b",
+    _NAME + r"\s+(?:lists|holds|truncates|carries|key|list|array|field)\b",
     _NAME + r"\s+in\s+`--json`",
 )))
 _ERROR_OBJECT_BEFORE = re.compile(r"error object\s*$")
+
+# A table row that opens with one of the five, and what names a table's owner.
+_ROW = re.compile(r"^\|\s*" + _NAME + r"\s*\|")
+_KIND_TABLE = re.compile(r"^\|\s*Kind\s*\|")
+_FIRST_NAME = re.compile(r"`\[?(\w+)\]?`")
+KINDS = frozenset(row.kind for row in FINDING_KINDS)
 
 
 def _section(lines: list[str], heading: str) -> range:
@@ -398,12 +550,56 @@ def _shared_key_lines(text: str) -> set[int]:
     return lines
 
 
+def _example_key_lines(lines: list[str]) -> set[int]:
+    """The lines of a fenced example where a JSON object holds an old key of verify's."""
+    found, start = set(), None
+    for i, line in enumerate(lines):
+        if not line.lstrip().startswith("```"):
+            continue
+        if start is None:
+            start = i + 1
+            continue
+        found |= {start + at - 1 for at, _, _ in old_json_keys("\n".join(lines[start:i]))}
+        start = None
+    return found
+
+
+def _table_owner(lines: list[str], row: int) -> str | None:
+    """What a table lists: `kind` when its first column is Kind, else the
+    first name in backticks on the line just above it or, with none there, on
+    the nearest heading above."""
+    header = row
+    while header > 0 and lines[header - 1].startswith("|"):
+        header -= 1
+    if _KIND_TABLE.match(lines[header]):
+        return "kind"
+    above = [line for line in reversed(lines[:header]) if line.strip()]
+    heading = next((line for line in above if line.startswith("#")), "")
+    named = (_FIRST_NAME.search(line) for line in [*above[:1], heading])
+    return next((match.group(1) for match in named if match), None)
+
+
+def _table_key_lines(lines: list[str]) -> set[int]:
+    """The table rows that list one of the five shared names as a key of verify's."""
+    found = set()
+    for i, line in enumerate(lines):
+        match = _ROW.match(line)
+        if not match:
+            continue
+        name, owner = match.group(1), _table_owner(lines, i)
+        if not (owner == "kind" and name in KINDS or another_objects(owner, name)):
+            found.add(i)
+    return found
+
+
 def gone_key_mentions(path: str, text: str) -> list[tuple[int, str]]:
     """(line number, line) for each line naming a key no 0.9.0 field reuses, or
-    using one of the five shared names as a key of verify's."""
+    using one of the five shared names as a key of verify's: in a sentence, as
+    a key a JSON example's object holds, or as a table row."""
     lines = text.split("\n")
     gone = {i for i, line in enumerate(lines) if _GONE.search(line)}
-    shared = _shared_key_lines(text) - _error_object_lines(path, lines)
+    shared = _shared_key_lines(text) | _example_key_lines(lines) | _table_key_lines(lines)
+    shared -= _error_object_lines(path, lines)
     return [(i + 1, lines[i]) for i in sorted(gone | shared)]
 
 
@@ -454,9 +650,57 @@ def test_the_docs_scan_flags_a_shared_name_used_as_a_verify_key():
         "An `overridden` item in `findings`; `diff_uncovered` items stop at 50.",
         "`counts.diff_uncovered_count` does not, and `diff_uncovered_max` is the ceiling.",
         "the CLI's error object lists it in `unread_files`, with `gate.unread_files`.",
+        "verify --json prints the `diff_uncovered_count` field.",
     ])
 
-    assert [line for line, _ in gone_key_mentions("docs/ratchet.md", page)] == [2, 3, 4]
+    assert [line for line, _ in gone_key_mentions("docs/ratchet.md", page)] == [2, 3, 4, 8]
+
+
+def test_a_shared_name_as_a_verify_example_s_key_or_a_key_table_s_row_is_flagged():
+    """The five fail as a key a verify example holds and as a row of a table
+    of verify's keys. Under counts, the gate block or the error object, and in
+    the kind table (a kind's row), the counts, gate_rule and [crapkit] tables,
+    they pass."""
+    page = "\n".join([
+        "## `verify`",
+        "```json",
+        "{",
+        '  "counts": {"diff_uncovered_count": 3, "diff_uncovered_max": null},',
+        '  "diff_uncovered_count": 3,',
+        '  "gate": {"unread_files": []},',
+        '  "error": {"unread_files": []},',
+        '  "unread_files": []',
+        "}",
+        "```",
+        "| Key | Type | Fires exit |",
+        "|---|---|---|",
+        "| `unread_files` | list | 6 |",
+        "",
+        "| Kind | Its own fields | exit |",
+        "|---|---|---|",
+        "| `diff_uncovered` | `path`, `line` | 9 |",
+        "| `unread_files` | `path` | 6 |",
+        "",
+        "`counts` holds the numbers beside the items.",
+        "",
+        "| Key | Type | Meaning |",
+        "|---|---|---|",
+        "| `diff_uncovered_count` | int | every line no test ran |",
+        "### `gate_rule`: what the edit is judged by",
+        "",
+        "Three limits, in one object.",
+        "",
+        "| Key | Type | Meaning |",
+        "|---|---|---|",
+        "| `diff_uncovered_max` | int or null | the ceiling |",
+        "## `[crapkit]`",
+        "",
+        "| Key | Type | Default |",
+        "|---|---|---|",
+        "| `diff_uncovered_max` | int | absent |",
+    ])
+
+    assert [line for line, _ in gone_key_mentions("docs/agent-json.md", page)] == [5, 8, 13, 18]
 
 
 def test_agent_json_errors_section_lists_the_error_objects_unread_files():
