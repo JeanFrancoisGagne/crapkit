@@ -135,7 +135,8 @@ def test_the_dirty_set_is_the_one_from_before_the_lanes_ran(tmp_path, capsys):
     assert cmd_verify(verify_args(repo)) == 6
     payload = json.loads(capsys.readouterr().out)
 
-    assert [(v["path"], v["ccn"]) for v in payload["gate_violations"]] == [("src/debt.py", 8)]
+    assert [(v["path"], v["ccn"]) for v in payload["findings"]
+            if v["kind"] == "gate_violation"] == [("src/debt.py", 8)]
     assert payload["committed_findings"] == 1
     assert payload["dirty_findings"] == 0, "the lane dirtied that file AFTER the run started"
     assert git(repo, "status", "--porcelain", "--untracked-files=no"), "the lane really did edit it"

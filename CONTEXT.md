@@ -17,6 +17,10 @@ _Avoid_: target (that is the configuration key that sets a ceiling, not the conc
 **Coverage**:
 The share of a function's branches the suite ran, read from the artifact; never measured by crapkit itself. A function with no branches falls back to the share of its statements that ran, and one with no statements to invoked-or-not: 1 if the suite called it, 0 if not. Python's `and` and `or` add to complexity, but coverage.py records no branch arc for them, so a short-circuit the suite never took leaves the share unchanged.
 
+**Coverage evidence**:
+The line and branch hits an artifact reports without function records, which score attributes to inventory spans, each line and branch to the innermost span holding it. A span that owns evidence reads branch coverage when it owns a branch and statement coverage otherwise, never invoked-or-not.
+_Avoid_: line coverage (the share of a function's lines that ran is one number read from the evidence, not the evidence)
+
 **Unmeasured**:
 A row no measurement stands behind: its scope has no lane (`no-lane`) or asks for none (`cc-only`), or rescore finds no row in the run for a function added or renamed since. It scores at coverage 0.0 all the same; payloads carry `unmeasured: true` beside that stand-in, and text says `not measured`.
 _Avoid_: untested (an untested function was measured, and no test reached it)
@@ -43,6 +47,10 @@ A named set of path prefixes and languages that shares one ceiling and one set o
 
 **Lane**:
 One configured test command that writes one coverage artifact for the scopes it lists.
+
+**Toolchain**:
+The runner a lane's command runs, read from the command, else from the package.json script it runs, else from devDependencies. No config key names it. Only the first two are spelled in what runs, so only they turn on runner-specific hints and refusals; doctor prints all three, and "runner unknown" when none names one.
+_Avoid_: parser (that is how crapkit reads the lane's artifact)
 
 **Lane log**:
 The file a lane's output streams to, `.crapkit/lane-<name>.log`, kept as the command wrote it, colour included. A refusal quotes its tail as plain text.
@@ -77,7 +85,7 @@ A source file the analysis names on stderr and scores as zero functions, because
 _Avoid_: skipped file (nothing about it is silent)
 
 **Unreadable name**:
-A file name git gives in bytes that are not UTF-8, so no row, mark or cache can be keyed on it. git's listings hand it on as a value; the scope assignment judges it. When a scope takes the name, the command refuses with exit 3 and the `git mv` fix, and a `--json` error object lists it in `unread_files`, each item `{path, reason, dirty}` as in a gate verdict; `check_gate` returns that refusal as a verdict with `gate.ok` false. Any other tracked or staged one is left out, named once on stderr and listed in `unreadable_names`; a `rescore` argument no scope takes is left out with one stderr line, and `check_gate` judges it 0. `explain`, `brief` and `ratchet move` answer for the one file they are handed, so they refuse such a name whether a scope takes it or not. An untracked one is a change to the lanes that read it.
+A file name git gives in bytes that are not UTF-8, so no row, mark or cache can be keyed on it. git's listings hand it on as a value; the scope assignment judges it. When a scope takes the name, the command refuses with exit 3 and the `git mv` fix. Under `--json`, `verify` lists it as an `unreadable_name` item in `findings`, and any other command's error object lists it in `unread_files`, each item `{path, reason, dirty}` as `gate.unread_files` holds an unread file; `check_gate` returns that refusal as a verdict with `gate.ok` false and the name in `gate.unread_files`. Any other tracked or staged one is left out, named once on stderr and listed in `unreadable_names`; a `rescore` argument no scope takes is left out with one stderr line, and `check_gate` judges it 0. `explain`, `brief` and `ratchet move` answer for the one file they are handed, so they refuse such a name whether a scope takes it or not. An untracked one is a change to the lanes that read it. At a gate, a scope-taken one is the unreadable_name finding kind: exit 3, ahead of every other finding, and never granted by an override.
 _Avoid_: unanalyzable file (lizard read that one)
 
 ### Runs
@@ -113,6 +121,17 @@ _Avoid_: forced baseline, override baseline
 **Verdict**:
 The outcome of `verify`: the gate result, ratchet regressions and new test failures against the baseline. A lane whose declared junit `verify --reuse-artifacts` reused and could not read leaves no verdict: verify exits 5 and stores nothing.
 
+**Finding kind**:
+One row of verify's table of findings (`verify.FINDING_KINDS`): unreadable name, gate violation, unread file, ratchet regression, new failure, diff uncovered and overridden, in that order. A row gives the kind's exit code, whether it fails the verdict, whether an override may grant it, and its text line, its item in the `findings` list `verify --json` prints and its SARIF result; no kind has a `--json` key of its own. The first failing kind present sets verify's exit: 3, then 6, 7, 8 and 9; overridden is a report and fails nothing. Every printer, the dirty split and both override paths read the rows, so a new kind is one row and its detector.
+
+**Unread file**:
+The finding a gate makes for a changed Unanalyzable file: exit 6, after any gate violation, and never granted by an override, since no function in it was judged. The `UNREAD` line names it; `verify --json` lists it as an `unread_file` item in `findings`, and `rescore --gate --json` and `check_gate` list it in `gate.unread_files`.
+_Avoid_: unreadable (that word is the name's)
+
+**Unparsed junit**:
+A junit a lane declares as its `results_artifact` that `verify --reuse-artifacts` reused and could not parse, so no test in it was checked. verify exits 5 and stores nothing; running it without `--reuse-artifacts` writes the junit again.
+_Avoid_: unread file (that is a source file no reader could read)
+
 **Forgiven failure**:
 A test failure the fresh run and the baseline both have. It is not new, so it fails no verdict; the OK line counts it. When the baseline recorded no failure list for a lane, the newest trusted run at or behind it that did stands in for that lane.
 _Avoid_: known failure, ignored failure
@@ -125,7 +144,7 @@ A new test failure that passed its flake retry. It fails no verdict, the OK line
 _Avoid_: flaky failure, forgiven failure
 
 **Gate**:
-The rule that a new or changed function may not exceed its ceiling; enforced by the pre-commit hook, `verify` and the Action.
+The rule that a new or changed function may not exceed its ceiling. One gate module holds it, with the touch, pardon, unread-file and unreadable-name rules, and four gate adapters call it, each mapping its findings to its own exits and lines: the pre-commit hook (`hook-precommit`), `rescore --gate` with the `check_gate` MCP tool over it, `verify` (which the Action runs) and `claude-hook`.
 
 **Advisory**:
 What `claude-hook` prints after an agent's edit lands: exit 2 and stderr naming each changed function over its ceiling, or naming a changed file it could not judge because no reader could read it or git could not report the change. It blocks nothing. After a `Bash` event it judges each file's bytes once per session.
@@ -134,7 +153,7 @@ _Avoid_: gate, block (the edit is already on disk)
 ### Debt
 
 **Ratchet mark**:
-A committed record that one function is allowed to sit at a known CRAP; it may only tighten.
+A committed record that one function is allowed to sit at a known CRAP; it may only tighten. A carried mark is the mark `keys.resolve` gives an unmarked function when its old key left the file, exactly one mark that left shares its bare name, and no other unmarked function holds that name; twins and anonymous functions never carry, and no command acts on a carried mark yet.
 _Avoid_: exemption, baseline entry, whitelist
 
 **Metric stamp**:

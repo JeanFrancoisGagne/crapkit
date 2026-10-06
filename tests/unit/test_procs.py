@@ -293,7 +293,7 @@ def test_a_fast_lane_still_streams_its_output_into_the_log(tmp_path):
     long lane is supervised at all."""
     lane = _echoing_lane(tmp_path, "fast")
 
-    _, provenance, _ = run_lane(tmp_path, lane)
+    provenance = run_lane(tmp_path, lane).provenance
 
     assert provenance["exit_code"] == 0
     log = (tmp_path / ".crapkit" / "lane-fast.log")

@@ -58,8 +58,9 @@ def test_diff_refusal_survives_override_and_later_baseline_selection(tmp_path):
     result = json.loads(overridden.stdout)
     assert overridden.returncode == 9, overridden.stderr
     assert result["ok"] is False
-    assert len(result["overridden"]) == 1 and result["gate_violations"] == []
-    assert result["diff_uncovered_count"] == 13
+    kinds = [item["kind"] for item in result["findings"]]
+    assert (kinds.count("overridden"), kinds.count("gate_violation")) == (1, 0)
+    assert result["counts"]["diff_uncovered_count"] == 13
     assert result["dirty_findings"] == 13 and result["committed_findings"] == 0
     refused_id = result["run_id"]
     marks = (tmp_path / "crapkit-ratchet.tsv").read_bytes()

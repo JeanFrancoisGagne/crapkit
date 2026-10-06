@@ -6,56 +6,54 @@ NEWEST commit in the history, never the wall clock.
 """
 from __future__ import annotations
 
-from .records import record_lines
+from .keys import MarkIndex
 
 DAY = 86400
 
 
-def _mark_line(line: str) -> tuple | None:
-    """((path, long_name), crap) when a +/- patch line is a mark row; else None."""
-    body = line[1:]
-    if body.startswith(("++ ", "-- ")):
-        return None
-    from .ratchet import read_ratchet
-
-    entries, _ = read_ratchet(body)
-    return ((entries[0].path, entries[0].long_name), entries[0].crap) if entries else None
+def crap_by_key(entries) -> dict:
+    """A marks file's entries as key -> crap, the first mark under a key
+    answering, as `keys.MarkIndex` does for every other reader."""
+    index = MarkIndex(entries)
+    return {key: index.mark(key) for key in index.keys()}
 
 
-def _commit_delta(patch: str) -> tuple[dict, dict]:
-    """The marks one commit's patch added and removed, keyed."""
-    added: dict = {}
-    removed: dict = {}
-    for line in record_lines(patch):
-        if not line or line[0] not in "+-":
-            continue
-        mark = _mark_line(line)
-        if mark is None:
-            continue
-        (added if line[0] == "+" else removed)[mark[0]] = mark[1]
-    return added, removed
-
-
-def mark_events(patches: list[tuple]) -> list[tuple]:
+def mark_events(revisions: list) -> list[tuple]:
     """Committed additions, updates and repayments, plus the history clock.
 
-    Updating a value preserves the original entry date. A commit with no mark
-    change still advances the clock through an observed event with no key.
-    An entry (ts, patch, text) also carries the text that commit's own
-    revision of the marks file holds, read as one "held" event: the marks
-    open at that commit (marks_history.held_history says why).
+    `revisions` are the marks file's parsed revisions, oldest first
+    (marks_history.marks_history). Each one diffs the marks it found against
+    the marks it left: a key it adds enters, a changed value is an update that
+    keeps the entry date, and a key it removes is repaid. A revision with no
+    mark change still advances the clock through an observed event with no
+    key.
     """
-    return [event for ts, patch, *revision in patches
-            for event in _commit_events(ts, *_commit_delta(patch)) + _held_events(ts, revision)]
+    return [event for revision in revisions
+            for event in _commit_events(revision.time, *_delta(
+                revision.before or {}, revision.marks or {}, revision.changed))]
 
 
-def _held_events(ts: int, revision: list[str]) -> list[tuple]:
-    """A "held" event per revision text, its marks keyed (path, long_name) ->
-    crap. Each row reads as a patch line does, so the keys match the replay's."""
-    from .ratchet import read_ratchet
+def held_event(revisions: list) -> list[tuple]:
+    """The newest revision's marks as one "held" event, the committed marks;
+    [] when it holds none. A replay cannot give them: a merge shows no change,
+    so a mark a conflicted merge repaid replays as open."""
+    newest = revisions[-1].marks if revisions else None
+    return [] if newest is None else [(revisions[-1].time, None, "held", newest)]
 
-    return [(ts, None, "held", {(e.path, e.long_name): e.crap for e in read_ratchet(text)[0]})
-            for text in revision]
+
+def _delta(before: dict, after: dict, keys: frozenset | None) -> tuple[dict, dict]:
+    """The marks one revision added and removed against the marks it found,
+    keyed; a changed value is in both. `keys` is MarksRevision.changed: when
+    the reader narrowed it, every other key holds one mark in both, so a large
+    file costs the keys a revision changed."""
+    return _left(after, before, keys), _left(before, after, keys)
+
+
+def _left(side: dict, other: dict, keys: frozenset | None) -> dict:
+    """The marks `side` holds that `other` does not hold at that value, among
+    `keys`, or among every key `side` holds when `keys` is None."""
+    held = side if keys is None else {key: side[key] for key in keys & side.keys()}
+    return {key: crap for key, crap in held.items() if other.get(key) != crap}
 
 
 def _commit_events(ts: int, added: dict, removed: dict) -> list[tuple]:
@@ -124,8 +122,8 @@ def _open_marks(entered: dict, marks: dict, anchor: int) -> dict:
 
 def _committed(events: list[tuple], replayed: dict) -> dict:
     """The committed marks: the newest revision a "held" event read, else the
-    replay's own state. A replay cannot say which marks a merge kept, since
-    `git log -p` prints no patch for a merge."""
+    replay's own state. A replay cannot say which marks a merge kept, since a
+    merge shows no change."""
     return next((value for _, _, kind, value in reversed(events) if kind == "held"), replayed)
 
 

@@ -659,6 +659,11 @@ jobs:
           path: crapkit
           fetch-depth: 0
           ref: ${{ inputs.ref }}
+      # The container runs as root and the runner's uid owns the workspace, so git
+      # refuses the repository consumer.py makes there ("detected dubious ownership");
+      # actions/checkout trusts only the crapkit/ path it checked out.
+      - name: let git work in the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: build the consumer at the workspace root
         run: python crapkit/tools/deploy/consumer.py
       - id: action
@@ -693,8 +698,14 @@ jobs:
           python-version: "3.12"
       - name: check out the action as tagged v0.7.6
         run: git -C crapkit worktree add --detach ../crapkit-v0.7.6 v0.7.6
+      # Seeded by 0.7.6, as the act cell seeds it: the marks carry 0.7.6's stamp
+      # and crapkit.toml holds a lane command 0.7.6 can run.
       - name: build the consumer at the workspace root
-        run: python crapkit/tools/deploy/consumer.py
+        run: python crapkit/tools/deploy/consumer.py --seed-from ./crapkit-v0.7.6
+      # The README's Action recipe installs what the lanes run before the Action;
+      # consumer.py seeded in its own venv, so the runner's Python has no pytest.
+      - name: install what the consumer's py lane runs
+        run: python -m pip install pytest pytest-cov
       - id: old
         name: the action at v0.7.6 scores the consumer
         continue-on-error: true
@@ -732,6 +743,8 @@ jobs:
           python-version: "3.12"
       - name: build the consumer at the workspace root
         run: python crapkit/tools/deploy/consumer.py
+      - name: install what the consumer's py lane runs
+        run: python -m pip install pytest pytest-cov
       - id: action
         name: the action scores the consumer
         continue-on-error: true
@@ -767,6 +780,8 @@ jobs:
           python-version: "3.12"
       - name: build the consumer at the workspace root
         run: python crapkit/tools/deploy/consumer.py
+      - name: install what the consumer's py lane runs
+        run: python -m pip install pytest pytest-cov
       - id: action
         name: the published action scores the consumer
         continue-on-error: true

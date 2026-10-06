@@ -92,10 +92,44 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # the gate named the ceiling it judged, an override with no alert command was
 # refused first, and a deleted marks file read as the marks its history held,
 # 3,673 once the report read which marks a revision held off its own blob,
-# and 3,672 once lane_stamps dropped unreadable_stamps, which nothing called.
+# 3,672 once lane_stamps dropped unreadable_stamps, which nothing called, and
+# 3,679 once keys.py took the mark index (gate-group-01, 0.9.0); 3,703 once
+# verify.FINDING_KINDS took the per-kind sites (gate-group-05), 3,704 once
+# keys took the mark lookups (gate-group-02), 3,716 once gate.py took the
+# touch, ceiling and pardon rules verify judged by (gate-group-06), 3,714
+# once the marks history read whole revisions (gate-group-04a), and 3,728
+# once keys answered which mark judges a function and which keys pair as a
+# move (gate-group-03), and 3,737 once marks_history answered the marks a
+# commit held and the moves between revisions (gate-group-04). On
+# 090/integration it reached 3,740 once scaffold read its runner facts off the
+# toolchain table (m1-foundations-07), 3,745 once repopath's placing rule said
+# why it left a path unplaced (m1-foundations-03), 3,785 once toolchain.infer
+# read a lane's runner and doctor printed it (m1-foundations-08), 3,794 once
+# score joined coverage evidence to inventory spans (m1-foundations-05), and
+# 3,804 once covstream took HashingReader and the line reader (m1-readers-10).
+# On 090/gate-group it reached 3,750 once verify --json listed every finding
+# as one item and verify's claimed-name stop became a verdict (gate-group-10),
+# 3,755 once rescore --gate and check_gate judged through the gate module
+# (gate-group-07), 3,764 once hook-precommit judged its staged functions
+# through the gate module (gate-group-08), 3,763 once claude-hook judged the
+# edited file through it (gate-group-09), and 3,772 once programs answered
+# where crapkit finds the programs it starts (gate-group-15). The two lines
+# met at 3,839, and 3,840 once the analysis pool started its workers under
+# PYTHONSAFEPATH (gate-group-17). 090/integration then reached 3,810 once the
+# runner refusals and hints read the spelled runner (m1-foundations-09), and
+# the second sync met at 3,846.
 # A src change that adds or drops a def moves it on purpose: recount with
-# py_ast_oracle.functions and change it in the same commit.
-SRC_DEFS = 3672
+# py_ast_oracle.functions and change it in the same commit. 090/m1-foundations
+# reached 3,813 once the producer facts read the coverage format adapter
+# (m1-foundations-10), and the third sync met at 3,849. 090/metric-stamp reached
+# 3,850 with analyze.analysis_version_of (metric-stamp-02), and 3,866 once each
+# marks revision carried the marks of the one it changed (gate-group-04a), and
+# 3,862 once verify --json dropped the 0.8.1 per-kind keys (gate-group-13). The
+# repair that names the js lane init wrote in its workspace note
+# (m1-foundations-09) added one, the typed ratchet.MetricStamp and its members
+# (metric-stamp-01) added six, and the repair that names a runner the root test
+# script names in that note (m1-foundations-09) one more.
+SRC_DEFS = 3870
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

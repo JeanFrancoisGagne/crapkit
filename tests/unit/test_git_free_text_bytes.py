@@ -26,7 +26,7 @@ from crapkit.churn import parse_git_log_lines
 from crapkit.cli.parser import main
 from crapkit.cli.reports import _function_commits
 from crapkit.errors import GitError
-from crapkit.gitio import (config_value, file_log, merge_base, worktree_add, worktree_reset,
+from crapkit.gitio import (config_value, file_revisions, merge_base, worktree_add, worktree_reset,
                            worktree_root)
 from crapkit.marks_history import marks_history
 from crapkit.procs import own_processes, run_owned
@@ -245,13 +245,12 @@ def test_a_utf16_revision_keeps_each_marks_entry_date(tmp_path, revisions, ages,
 
 
 @pytest.mark.parametrize("revisions, reads", [
-    ([STAMPED + MARK, STAMPED + b"# caf\xe9\n" + MARK, (STAMPED + MARK).replace(b"\n", b"\r\n")], 0),
+    ([STAMPED + MARK, STAMPED + b"# caf\xe9\n" + MARK, (STAMPED + MARK).replace(b"\n", b"\r\n")], 1),
     ([_utf16(STAMPED + MARK), _utf16(STAMPED + MARK.replace(b"9.0", b"8.0")), STAMPED + MARK], 1),
 ], ids=["utf8-and-cp1252-history", "utf16-history"])
-def test_only_a_patch_holding_a_nul_costs_a_whole_revision_read(tmp_path, monkeypatch, revisions,
-                                                                reads):
-    """The -U0 stream stays the whole read for a history with no NUL in it,
-    and every whole revision a UTF-16 history needs comes from one process."""
+def test_every_history_reads_its_revisions_in_one_batch(tmp_path, monkeypatch, revisions, reads):
+    """Every revision is read whole, whatever its encoding, and every blob a
+    history names comes from one `cat-file --batch` process."""
     from crapkit import gitio
 
     root = repository(tmp_path)
@@ -261,7 +260,7 @@ def test_only_a_patch_holding_a_nul_costs_a_whole_revision_read(tmp_path, monkey
     real = gitio._batch_stream
     monkeypatch.setattr(gitio, "_batch_stream", lambda *args: calls.append(args) or real(*args))
 
-    file_log(root, MARKS)
+    file_revisions(root, MARKS)
 
     assert len(calls) == reads
 

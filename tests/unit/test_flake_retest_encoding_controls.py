@@ -45,4 +45,4 @@ def test_a_retest_report_in_a_utf8_form_clears_the_flake(counted, capsys, form):
 
     payload = json.loads(out)
     assert code == 0, out + err
-    assert (payload["new_failures"], payload["retried_passes"]) == ([], ["t::c1"])
+    assert ([f["test"] for f in payload["findings"] if f["kind"] == "new_failure"], payload["retried_passes"]) == ([], ["t::c1"])

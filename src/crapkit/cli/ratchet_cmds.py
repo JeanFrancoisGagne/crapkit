@@ -8,7 +8,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
@@ -16,6 +16,9 @@ from ..named import first_few
 from ..store import SnapshotStore, anywhere
 from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
                       _print_json, _ratchet_or_die, _repo_relative, _stand, behind_head)
+
+if TYPE_CHECKING:
+    from ..ratchet import MetricStamp
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -178,12 +181,12 @@ def _merge_stamp(texts: list[str]) -> None:
     ours, theirs = read_stamp(texts[1]), read_stamp(texts[2])
     if ours != theirs:
         raise ConfigError(
-            f"ratchet merge refused: ours is [{ours or 'unstamped'}] and theirs is "
-            f"[{theirs or 'unstamped'}] - marks from different metric versions cannot "
+            f"ratchet merge refused: ours is [{ours.render() or 'unstamped'}] and theirs is "
+            f"[{theirs.render() or 'unstamped'}] - marks from different metric versions cannot "
             f"merge; {_merge_remedy(ours, theirs)}")
 
 
-def _merge_remedy(ours: str, theirs: str) -> str:
+def _merge_remedy(ours: MetricStamp, theirs: MetricStamp) -> str:
     """Re-seed under the newer side's metric. "re-baseline one side" said neither
     which side nor under which crapkit, and a seed under the older release
     stamps its own older metric, so the next merge refused again."""
@@ -195,7 +198,7 @@ def _merge_remedy(ours: str, theirs: str) -> str:
         side, stamp = "ours", ours
     else:
         return coverage_then_seed("re-baseline one side")
-    return (f"{side} is newer, so with a crapkit that measures [{stamp}], "
+    return (f"{side} is newer, so with a crapkit that measures [{stamp.render()}], "
             f"{coverage_then_seed('re-baseline the merged marks')}")
 
 
@@ -473,37 +476,27 @@ def _working_marks(root: Path, ratchet_file: str) -> dict:
     """The marks on disk, keyed (path, key name) -> crap. Ages come from the
     file's git history, but which marks are OPEN is a question about now, and a
     seed prints "added 1" long before anybody commits the TSV."""
-    entries = _load_ratchet_or_die(root / ratchet_file, ratchet_file)
-    return {(e.path, e.long_name): e.crap for e in entries}
+    from ..ratchet_report import crap_by_key
+
+    return crap_by_key(_load_ratchet_or_die(root / ratchet_file, ratchet_file))
 
 
 def _report_basis(root: Path, ratchet_file: str) -> tuple[list, dict | None]:
-    """The history the report replays and the marks it reads as open.
+    """The revisions the report replays and the marks it reads as open.
 
     A marks file that is missing or holds only blank lines is not a repo that
     repaid every mark: the report reads the marks the newest commit that held
     any held as open (working None, the committed state), and the commit that
     deleted or emptied the file repays none (held_history). verify reads the
-    same marks only while its baseline run comes from before that commit."""
+    same marks only while its baseline run comes from before that commit.
+    Otherwise HEAD's revision is the committed state, so the report counts as
+    uncommitted only the marks the working tree and HEAD disagree on."""
     from ..marks_history import held_history, marks_history
     from ..ratchetfile import RatchetFile
 
     if RatchetFile.read(root / ratchet_file).blank:
         return held_history(root, ratchet_file), None
-    history = _with_head_revision(root, ratchet_file, marks_history(root, ratchet_file))
-    return history, _working_marks(root, ratchet_file)
-
-
-def _with_head_revision(root: Path, ratchet_file: str, history: list) -> list:
-    """The newest entry also carries the text HEAD's revision of the file holds,
-    read as a "held" event, so the report counts as uncommitted only the marks
-    the working tree and HEAD disagree on. The replay of the patches cannot
-    stand in for HEAD: `git log -p` prints no patch for a merge, and a mark a
-    conflicted merge repaid replays as open."""
-    from ..marks_history import head_revision
-
-    text = head_revision(root, ratchet_file) if history else None
-    return history if text is None else history[:-1] + [history[-1] + (text,)]
+    return marks_history(root, ratchet_file), _working_marks(root, ratchet_file)
 
 
 def _warn_marks_stand_in(root: Path, ratchet_file: str, report: dict, working) -> None:
@@ -571,12 +564,12 @@ def _warn_history(shallow: bool) -> None:
 
 def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
     from ..gitio import shallow_checkout
-    from ..ratchet_report import mark_events, report_from_events
+    from ..ratchet_report import held_event, mark_events, report_from_events
 
     shallow = shallow_checkout(root)
     _refuse_a_cut_history(cfg, enforce, shallow)
-    patches, working = _report_basis(root, cfg.ratchet_file)
-    report = report_from_events(mark_events(patches), working=working)
+    revisions, working = _report_basis(root, cfg.ratchet_file)
+    report = report_from_events(mark_events(revisions) + held_event(revisions), working=working)
     violations = _policy_findings(cfg, report, enforce)
     _warn_history(shallow)
     _warn_marks_stand_in(root, cfg.ratchet_file, report, working)
@@ -674,7 +667,8 @@ def _refuse_newer_marks(saved, work: _WorkRun, action: str) -> None:
     measured = run_stamp(work.run["tool_versions"])
     if newer_tools(recorded, measured):
         raise ConfigError(f"ratchet {action} refused: {saved.path.name} was recorded under "
-                          f"[{recorded}] and run {work.run['id']} under the older [{measured}]; "
+                          f"[{recorded.render()}] and run {work.run['id']} under the older "
+                          f"[{measured.render()}]; "
                           f"{_BACKWARDS[action]}; {_way_off(work.newer)}")
 
 
@@ -682,7 +676,8 @@ def _newer_than_install(saved, action: str, newer: list[str]) -> str:
     from ..ratchet import metric_version, upgrade_remedy
 
     return (f"ratchet {action} refused: {saved.path.name} was recorded under "
-            f"[{saved.metric_stamp}] and this crapkit measures [{metric_version()}] - "
+            f"[{saved.metric_stamp.render()}] and this crapkit measures "
+            f"[{metric_version().render()}] - "
             f"{upgrade_remedy(newer)}; {_BACKWARDS[action]}. A team going back to this release "
             f"on purpose restores the {saved.path.name} it last wrote from git history")
 
@@ -761,10 +756,11 @@ def _refuse_unkeyable_twins(name: str, work: _WorkRun, prior: list, entries: lis
 
 
 def _prune_first(name: str, work: _WorkRun, prior: list, fresh: list, twins: set) -> str:
+    from ..keys import mark_key
     from ..ratchet import unseen_marks
 
     run_id = work.run["id"]
-    unseen = [(entry.path, entry.long_name) for entry in unseen_marks(prior, fresh)]
+    unseen = [mark_key(entry) for entry in unseen_marks(prior, fresh)]
     flag = f" --baseline {run_id}" if work.named else ""
     return (f"{name}: {len(unseen)} mark(s) name functions run {run_id} does not hold, "
             f"first {_first_key(unseen)}, so the file keeps the start-only key format, which "
@@ -779,7 +775,7 @@ def _first_key(keys) -> str:
     return f"{path}: {key_name}"
 
 
-def _seed_metric(run: dict) -> str:
+def _seed_metric(run: dict) -> MetricStamp:
     """The stamp seed signs with: the metric its run was measured under.
 
     A run from before crapkit recorded one cannot vouch for any metric, and
@@ -803,8 +799,8 @@ def _metric_note(work: _WorkRun, action: str, *, created: bool) -> str:
     measured, running = run_stamp(run["tool_versions"]), metric_version()
     if measured == running:
         return ""
-    said = f"[{measured}]" if measured else "an unrecorded metric"
-    return (f"; run {run['id']} was measured under {said}, not this crapkit's [{running}]"
+    said = f"[{measured.render()}]" if measured else "an unrecorded metric"
+    return (f"; run {run['id']} was measured under {said}, not this crapkit's [{running.render()}]"
             f"{_stamp_consequence(work, action, created)}")
 
 

@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.9.0 — unreleased
+
+<!-- 0.9.0:gate-group -->
+- `verify --json` gains `findings`, one item per finding with `kind`, `fails`, `exit_code`, `overridable`, `dirty` and `rule`, and `counts` (`diff_uncovered_count`, `diff_uncovered_max`). A file a scope takes whose name is not UTF-8 is now a `findings` item of kind `unreadable_name` with `exit_code` 3, where 0.8.1 printed an error object, and `--sarif` reports it under `crapkit/unreadable-name` (accuracy change C48). [The findings list](docs/agent-json.md#the-findings-list)
+- The Action's comment reads verify's `findings` list and `counts`, and no 0.8.1 per-kind key. A file a scope takes whose name is not UTF-8 now gets a verdict, `**verify failed, exit 3: unreadable name.**`, with a `- unreadable name:` bullet that names the file as `\xNN`, its scope and the `git mv` rename to a UTF-8 name, where 0.8.1 said verify wrote no verdict. Each function an `--override` passed gets a `- overridden:` bullet, on a failing verdict and after the pass line, where 0.8.1 left it out. [What the comment looks like](README.md#what-the-comment-looks-like)
+- Security: crapkit starts git and the other programs it runs itself (the `claude` that doctor asks for its version, and `taskkill`, which it takes from the Windows system directory first) from PATH's absolute entries only, never from the working directory or an empty or relative PATH entry. doctor asks a launcher it found for its version from that launcher's own folder, with cmd.exe's search of the current directory off, so an interpreter the launcher starts by name, such as npm's `node`, never comes from the repo either. On Windows, a repo holding a planted `git.exe` at its root could make crapkit 0.8.1 and every earlier version run that file, whether a user, a pre-commit hook or the Claude Code hook started crapkit there. crapkit's own Python children, each MCP tool call, the rescore `crapkit watch` runs, the process owner and the analysis pool's workers, now start with `-P` or with `PYTHONSAFEPATH=1` in their environment, so none imports a module from its working directory. Through 0.8.1, Python put that directory first on `sys.path`: a `crapkit.py` at the root of the repo an MCP server served ran in place of crapkit on every tool call, which answered empty with `isError` false, and a `json.py` or `multiprocessing.py` in crapkit's working directory ran inside the process owner and the analysis workers. The git hook's last line and the merge driver that README, the handbook, AGENTS.md and CONTRIBUTING.md give, both of which git runs from the worktree root, and the next step crapkit prints when no `crapkit` command is on PATH now spell `python -P -m crapkit` (accuracy change C57). A hook, merge driver or pasted line copied from an earlier page runs `python -m crapkit`, so a `crapkit.py` at the repo root runs in place of crapkit there: add `-P` to it. A `python` older than 3.11 then stops the hook with `Unknown option: -P` and exit 2. The pip lines crapkit prints, the pytest-cov, coverage.py and lizard installs and doctor's upgrade and reinstall of the CLI, now spell `<python> -P -m pip install`: through 0.8.1 they spelled `<python> -m pip install`, so a `pip.py` at the repo root ran in place of pip when a reader pasted one there. The Action installs crapkit with `python -P -m pip install -e`, since it runs pip in the consumer's checkout.
+- Breaking: `verify --json` drops `gate_violations`, `ratchet_regressions`, `overridden`, `new_failures`, `diff_uncovered`, `unread_files`, `diff_uncovered_count` and `diff_uncovered_max`; read `findings` and `counts` (accuracy change C61). [Upgrading to 0.9.0](docs/upgrading.md#verify---json-drops-the-081-per-kind-keys) maps each old key to its place.
+<!-- /0.9.0:gate-group -->
+
+<!-- 0.9.0:m1-foundations -->
+- Library API: `FnCoverage` and `coverage_count` import from `crapkit.score`; `crapkit.coverage_istanbul` no longer exports them.
+- doctor names each lane's runner, read from its command, the package.json script it runs, or devDependencies, and `doctor --json` carries it as `lanes[].toolchain` (accuracy change C42). [How crapkit reads a lane's runner](docs/lanes.md#how-crapkit-reads-a-lanes-runner)
+- A lane that runs pytest as `pytest.exe` or `pytest.cmd` is read as running pytest, so doctor's pytest notes reach it.
+- Library API: `parse_istanbul_both_file` and `parse_coveragepy_both_file` return per-file `FileEvidence` as their second value.
+- Runner refusals and hints follow the runner a lane's command names, not its coverage format: the vitest file-filter, pytest narrowing and container refusals fire only on a command that names vitest or pytest, and doctor's junit hint follows the named runner. A wrapped command (`npm test`, `make cov`) gets neither; name the runner in the command to keep them. [Upgrading to 0.9.0](docs/upgrading.md#runner-refusals-and-hints-follow-the-runner-the-command-names)
+<!-- /0.9.0:m1-foundations -->
+
+<!-- 0.9.0:mission-3 -->
+<!-- /0.9.0:mission-3 -->
+
+<!-- 0.9.0:metric-stamp -->
+- The analysis version is now one number per language (`analyze.ANALYSIS_VERSIONS`, each starting at 13) and one per coverage reader (`coverage_format.READER_VERSIONS`, each starting at 1), and a change raises only the numbers it moves. The analysis cache keys each file on its language's number, so a change to one language's reader re-reads only that language's files. `ANALYSIS_VERSION` stays 13 and counts the tables' revisions, so the marks-file stamp and every JSON field read as in 0.8.1.
+<!-- /0.9.0:metric-stamp -->
+
+<!-- 0.9.0:mission-4 -->
+<!-- /0.9.0:mission-4 -->
+
+<!-- 0.9.0:m1-readers -->
+<!-- /0.9.0:m1-readers -->
+
+<!-- 0.9.0:m5-comment-fixture -->
+<!-- /0.9.0:m5-comment-fixture -->
+
+<!-- 0.9.0:mission-9 -->
+<!-- /0.9.0:mission-9 -->
+
+<!-- 0.9.0:mission-2 -->
+<!-- /0.9.0:mission-2 -->
+
+<!-- 0.9.0:lanes-visible -->
+<!-- /0.9.0:lanes-visible -->
+
+<!-- 0.9.0:schema-2 -->
+<!-- /0.9.0:schema-2 -->
+
+<!-- 0.9.0:criterion -->
+<!-- /0.9.0:criterion -->
+
+<!-- 0.9.0:m6-step-coverage -->
+<!-- /0.9.0:m6-step-coverage -->
+
+<!-- 0.9.0:release-bytes -->
+<!-- /0.9.0:release-bytes -->
+
+<!-- 0.9.0:protocol-2-step -->
+<!-- /0.9.0:protocol-2-step -->
+
+<!-- 0.9.0:hash-cost -->
+<!-- /0.9.0:hash-cost -->
+
 ## 0.8.1 — 2026-10-01
 
 0.8.1 fixes what two new test suites found in 0.8.0: one installs crapkit the way the

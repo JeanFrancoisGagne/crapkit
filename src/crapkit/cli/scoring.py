@@ -8,13 +8,16 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from .. import __version__
 from ..cache import merged_cache
-from ..errors import ConfigError, CrapkitError, GitError, ToolError
+from ..errors import UNREAD_NAME_REASON, ConfigError, CrapkitError, GitError, ToolError
+from ..gate import WHOLE, ChangedFile, CrapBound, Function, GateResult, Unread, UnreadableName, judge
+from ..gitpaths import shown
 from ..invariants import check_rows
 from ..gitio import GitFacts, ls_files
+from ..keys import MarkIndex
 from ..invocation import _self
 from ..repopath import typed_path
 from ..snapshot import build_inventory_rows, tsv_lines
@@ -26,6 +29,9 @@ from ._shared import (_analysis_tools, _command_root, _emit_findings, _file_size
                       _print_unread, _ratchet_entries, _refuse_unwritable_outputs,
                       _repo_out_path, _say_left_out, _scan, _scored_arguments, _stand,
                       _unreadable_json, _write_tsv)
+
+if TYPE_CHECKING:
+    from ..verify import GateViolation
 
 
 def _tracked_files(files_by_scope: dict) -> list[str]:
@@ -288,10 +294,13 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
     """Fold the outcomes back together in DECLARATION order, whatever order they
     finished in, and persist every stamp in one write: the fresh stamps of the
     lanes that succeeded, and the refusal each failed lane's error carries for
-    the artifact its attempt left unwritten."""
+    the artifact its attempt left unwritten. Each lane's FileEvidence joins
+    evidence_by_path as its own entry under the path: score_rows joins every
+    lane on its own and never unions their hits."""
     from ..lanes import refusal_stamp, write_stamps
 
     coverage_by_path: dict[str, list] = {}
+    evidence_by_path: dict[str, list] = {}
     provenance: dict[str, dict] = {}
     lane_errors: dict[str, str] = {}
     stamps: dict[str, dict] = {}
@@ -303,14 +312,22 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
             print(f"crapkit: lane {lane.name!r} FAILED: {error}", file=sys.stderr)
             stamps.update(refusal_stamp(root, lane, error))
             continue
-        for path, fns in outcome.coverage.items():
-            coverage_by_path.setdefault(path, []).extend(fns)
+        _gather(coverage_by_path, outcome, evidence_by_path)
         provenance[lane.name] = outcome.provenance
         stamps[lane.artifact] = outcome.stamp
         succeeded.append(lane)
     write_stamps(root, stamps)
     _refuse_all_failed(lanes, lane_errors, succeeded)
-    return coverage_by_path, provenance, lane_errors, succeeded
+    return coverage_by_path, provenance, lane_errors, succeeded, evidence_by_path
+
+
+def _gather(coverage_by_path: dict, outcome, evidence_by_path: dict) -> None:
+    """One lane's function records onto each path's list, and its evidence as
+    one more entry on each path's."""
+    for path, fns in outcome.coverage.items():
+        coverage_by_path.setdefault(path, []).extend(fns)
+    for path, evidence in outcome.evidence.items():
+        evidence_by_path.setdefault(path, []).append(evidence)
 
 
 def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | None = None,
@@ -385,7 +402,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
     sources = _content_record(root, rows)
     dead_lines = DeadLineFold()
 
-    coverage_by_path, provenance, lane_errors, succeeded = _run_lanes(
+    coverage_by_path, provenance, lane_errors, succeeded, evidence_by_path = _run_lanes(
         root, lanes, reuse_artifacts, cfg.scope_paths, reuse_unchanged,
         cfg.max_parallel_lanes, git, dead_lines)
 
@@ -396,7 +413,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
     scored = score_rows(rows, coverage_by_path, lane_scopes=lane_scopes, target=cfg.target,
                         scope_targets=cfg.scope_targets,
                         cc_only_scopes=cfg.coverage_optional_scopes,
-                        shared_spans=shared_spans)
+                        shared_spans=shared_spans, evidence_by_path=evidence_by_path)
     _note_shared_spans(shared_spans, cfg)
     return _ScoredRun(commit, scored, provenance, lane_errors, set(failure_ids(provenance)),
                       tool_versions, corpus, cache_hits, dead_lines, sources)
@@ -857,28 +874,6 @@ def _rescore_json(overlay, latest: dict, gate: dict | None = None,
     _print_json(payload)
 
 
-def _ceiling_breaches(rows, ceilings: dict[str, int], keys: dict | None = None) -> list:
-    """The pre-commit hook's policy over already-scored rows: ccn against the
-    file's ceiling, coverage ignored. Shaped as gate violations so verify's
-    printer serves this verdict too.
-
-    `keys` is the ratchet key map over the WHOLE file, because `rows` here is
-    the touched subset: counting ordinals over it would call an untouched
-    file's second twin the first and hand it the first's mark. Defaulted from
-    the rows for a caller holding nothing else, which is right for one function
-    per name and the only shape that arises.
-    """
-    from ..keys import key_names, key_of
-    from ..verify import GateViolation
-
-    names = key_names(rows) if keys is None else keys
-    breaches = [GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
-                              False, key_of(names, r)[1])
-                for r in rows if r.ccn > ceilings[r.path]]
-    breaches.sort(key=lambda v: (-v.ccn, v.path, v.start))
-    return breaches
-
-
 def _changed_since_head(root: Path) -> dict:
     """The spans the working tree changed against HEAD, index included, which is
     the set the pre-commit hook will see."""
@@ -888,34 +883,85 @@ def _changed_since_head(root: Path) -> dict:
     return worktree_ranges(diff_since(root, "HEAD"), root)
 
 
-def _gate_candidates(rows: list, ranges: dict, untracked: set[str]) -> list:
-    """The functions this commit could be about: the rows `ranges` touch, and
-    every row of an untracked file, which git diff cannot scope.
+# What `rescore --gate` exits on each kind of finding the gate module gives, in
+# precedence order. A name no reader can key is refused before anything is
+# judged (3); a breach or a changed file no reader could read fails the gate
+# (6). A breach whose mark sits between its fresh ccn and its stale CRAP is
+# unproven, and nothing pardons it. A pardoned breach is no finding.
+_GATE_EXITS = (("unreadable_name", 3), ("over_ceiling", 6), ("marked_rise", 6), ("unproven", 6),
+               ("unread", 6))
+# The exits check_gate answers as a verdict when they carry the gate payload.
+GATE_VERDICT_EXITS = tuple(sorted({code for _, code in _GATE_EXITS}))
 
-    Judging the whole file instead would flag every legacy function in it, so on
-    any repo with seeded debt the flag is red forever and says nothing.
-    """
-    from ..verify import touched_rows
 
-    return touched_rows(rows, ranges) + [r for r in rows if r.path in untracked]
+def gate_exit(result: GateResult) -> int:
+    """rescore --gate's exit on the gate's findings: the first kind present decides."""
+    return next((code for kind, code in _GATE_EXITS if getattr(result, kind)), 0)
 
 
-def _unmarked_breaches(breaches: list, entries: list) -> list:
-    """Breaches no ratchet mark already covers.
+def _gate_function(row) -> Function:
+    """A rescored row as the gate judges it. rescore knows the fresh ccn, which
+    no CRAP sits under, and the CRAP over the baseline's stale coverage: the
+    ceiling reads the ccn, and a mark pardons only at or above that CRAP."""
+    return Function(row.long_name, row.start, row.end, CrapBound(row.ccn, row.crap), row.scope,
+                    row.occurrence, row)
 
-    A mark is a recorded decision to carry a function as it stands. At or under
-    it the function is exactly the debt the repo signed up for; past it, verify's
-    ratchet check would fail too, so the gate says so early.
-    """
-    from ..keys import stated_key
-    from ..ratchet import mark_for
 
-    kept = []
-    for v in breaches:
-        mark = mark_for(entries, *stated_key(v))
-        if mark is None or round(v.crap, 4) > mark:
-            kept.append(v)
-    return kept
+def _gate_spans(path: str, ranges: dict, untracked: set[str]):
+    """What the change since HEAD touched in one file: all of an untracked
+    file, which git diff cannot scope, else the spans the diff gives. Judging
+    every file whole would flag every legacy function, so on a repo with
+    seeded debt the gate would be red forever."""
+    return WHOLE if path in untracked else ranges.get(path, ())
+
+
+def _unread_changes(unread: dict[str, str], ranges: dict, untracked: set[str]) -> list[ChangedFile]:
+    """Each rescored file no reader could read, taken whole when the change
+    touched it, which the gate refuses. Every file this gate judges is a
+    working-tree change, so each is dirty."""
+    changed = set(ranges) | untracked
+    return [ChangedFile(path, WHOLE if path in changed else (), Unread(path, why, True))
+            for path, why in sorted(unread.items())]
+
+
+def _gate_changes(overlay, ranges: dict, untracked: set[str], unread: dict[str, str]) -> list[ChangedFile]:
+    """The rescored files as the gate reads the change since HEAD, each with
+    every rescored function in it, so the gate keys a twin over its whole file."""
+    functions: dict[str, list[Function]] = {}
+    for row in overlay:
+        functions.setdefault(row.path, []).append(_gate_function(row))
+    read = [ChangedFile(path, _gate_spans(path, ranges, untracked), tuple(found))
+            for path, found in functions.items()]
+    return read + _unread_changes(unread, ranges, untracked)
+
+
+def _violation(breach) -> GateViolation:
+    from ..verify import GateViolation
+
+    r = breach.function.record
+    return GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy, False,
+                         breach.key_name)
+
+
+def _gate_breaches(result: GateResult, overlay) -> list[GateViolation]:
+    """The breaches the gate fails on as verify's printer reads them: worst ccn
+    first, then path and start, twins on one line in the overlay's order."""
+    place = {id(row): n for n, row in enumerate(overlay)}
+    found = sorted((*result.over_ceiling, *result.marked_rise, *result.unproven),
+                   key=lambda breach: place[id(breach.function.record)])
+    return sorted(map(_violation, found), key=lambda v: (-v.ccn, v.path, v.start))
+
+
+def _unreadable_item(name: UnreadableName) -> dict:
+    """A name no reader can key, as the item the CLI's error object lists it in."""
+    return {"path": shown(name.path), "reason": UNREAD_NAME_REASON, "dirty": name.dirty}
+
+
+def gate_unread_files(result: GateResult) -> list[dict]:
+    """`gate.unread_files`: verify's name and item shape, {path, reason, dirty},
+    for each name no reader can key and each changed file no reader could read."""
+    return [*map(_unreadable_item, result.unreadable_name),
+            *({"path": u.path, "reason": u.reason, "dirty": u.dirty} for u in result.unread)]
 
 
 def _untracked_of(root: Path, paths: set[str]) -> set[str]:
@@ -932,54 +978,36 @@ def _warn_untracked(untracked: set[str]) -> None:
               file=sys.stderr)
 
 
-class _GateVerdict(NamedTuple):
-    """The commit's verdict, hours before the commit: what was judged, against
-    which ceiling per file, the breaches no ratchet mark covers, the changed
-    files no reader could read, which it refuses because it judged nothing in
-    them, and the (path, start, long_name) of each row whose cov no measurement
-    stands behind."""
-    judged: int
-    ceilings: dict[str, int]
+class _RescoreGate(NamedTuple):
+    """The commit's verdict, hours before the commit: the gate module's
+    findings, the breaches it fails on, the ceiling each rescored file is
+    judged at, the untracked files it took whole, and the (path, start,
+    long_name) of each row whose cov no measurement stands behind."""
+    result: GateResult
     breaches: list
+    ceilings: dict[str, int]
     untracked: list[str]
-    unread: dict[str, str] = {}
     unmeasured: frozenset = frozenset()
-
-    @property
-    def ok(self) -> bool:
-        return not (self.breaches or self.unread)
-
-
-def _unpardoned_breaches(root: Path, cfg, overlay, touched: list) -> list:
-    """The touched breaches no ratchet mark pardons, reading the marks only
-    when there is a breach to pardon.
-
-    hook-precommit follows the same rule. On a large consumer repo the read
-    cost a clean gate several seconds, most of it proving legacy ratchet keys
-    against every stored run. The trade: a clean gate no longer reports a marks
-    file it cannot parse, and the next gate that breaches still does.
-    """
-    if not touched:
-        return []
-    return _unmarked_breaches(touched, _ratchet_entries(root, cfg, overlay) or [])
 
 
 def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int],
-                  unread: dict[str, str], unjoined: set = frozenset()) -> _GateVerdict:
+                  unread: dict[str, str], unjoined: set = frozenset()) -> _RescoreGate:
     """The verdict, once the rescored rows and the breaches meet their bounds
-    against the parsed config (`invariants.check_gate`)."""
+    against the parsed config (`invariants.check_gate`).
+
+    The gate reads the marks only when a touched function is over its ceiling,
+    as hook-precommit does. On a large consumer repo the read cost a clean gate
+    several seconds, most of it proving legacy ratchet keys against every
+    stored run. The trade: a clean gate no longer reports a marks file it
+    cannot parse, and the next gate that breaches still does."""
     from ..invariants import check_gate
-    from ..keys import key_names
 
     untracked = _untracked_of(root, {r.path for r in overlay} | set(unread))
-    ranges = _changed_since_head(root)
-    candidates = _gate_candidates(overlay, ranges, untracked)
-    touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
-    breaches = _unpardoned_breaches(root, cfg, overlay, touched)
+    changes = _gate_changes(overlay, _changed_since_head(root), untracked, unread)
+    result = judge(changes, cfg.ceiling_of, lambda: MarkIndex(_ratchet_entries(root, cfg, overlay) or []))
+    breaches = _gate_breaches(result, overlay)
     check_gate(overlay, breaches, cfg.ceiling_of)
-    changed = {path: unread[path] for path in unread if path in ranges or path in untracked}
-    return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked), changed,
-                        _unmeasured_keys(candidates, unjoined))
+    return _RescoreGate(result, breaches, ceilings, sorted(untracked), _unmeasured_keys(overlay, unjoined))
 
 
 def _unmeasured_keys(rows, unjoined: set) -> frozenset:
@@ -994,16 +1022,18 @@ def _breach_json(v, ceilings: dict[str, int]) -> dict:
             "ceiling": ceilings[v.path]}
 
 
-def _gate_json(verdict: _GateVerdict) -> dict:
-    """The `gate` block of `rescore --gate --json`: the fields a wrapper needs
-    to say which function, which rule, and whether the tree clears the gate.
-    `unread_files` has verify's name and shape; every file this gate judges is
-    a working-tree change, so each is dirty."""
-    return {"ok": verdict.ok, "judged": verdict.judged, "ceilings": verdict.ceilings,
-            "breaches": [_breach_json(v, verdict.ceilings) for v in verdict.breaches],
-            "untracked": verdict.untracked,
-            "unread_files": [{"path": path, "reason": why, "dirty": True}
-                             for path, why in sorted(verdict.unread.items())]}
+def gate_block(result: GateResult, ceilings: dict[str, int], breaches: list = (),
+               untracked: list = ()) -> dict:
+    """The `gate` block of `rescore --gate --json`, check_gate's verdict on a
+    name no reader can key included: the fields a wrapper needs to say which
+    function, which rule, and whether the tree clears the gate."""
+    return {"ok": gate_exit(result) == 0, "judged": result.judged, "ceilings": ceilings,
+            "breaches": [_breach_json(v, ceilings) for v in breaches],
+            "untracked": list(untracked), "unread_files": gate_unread_files(result)}
+
+
+def _gate_json(verdict: _RescoreGate) -> dict:
+    return gate_block(verdict.result, verdict.ceilings, verdict.breaches, verdict.untracked)
 
 
 def _gate_ceiling_label(ceilings: dict[str, int]) -> str:
@@ -1013,19 +1043,20 @@ def _gate_ceiling_label(ceilings: dict[str, int]) -> str:
     return f"ceiling {distinct[0]}" if len(distinct) == 1 else "their ceilings"
 
 
-def _report_gate(verdict: _GateVerdict, as_json: bool) -> int:
+def _report_gate(verdict: _RescoreGate, as_json: bool) -> int:
     """The verdict on stderr when it fails, so `--json` stdout stays one
     parseable object; one stdout line when it passes, so the exit code is
     not the only signal."""
     _warn_untracked(set(verdict.untracked))
-    if verdict.ok:
+    code = gate_exit(verdict.result)
+    if code == 0:
         if not as_json:
-            print(f"gate: {verdict.judged} changed function(s) judged, "
+            print(f"gate: {verdict.result.judged} changed function(s) judged, "
                   f"0 over {_gate_ceiling_label(verdict.ceilings)}")
         return 0
-    _print_unread(verdict.unread, "changed", file=sys.stderr)
+    _print_unread({u.path: u.reason for u in verdict.result.unread}, "changed", file=sys.stderr)
     _print_breaches(verdict.breaches, verdict.unmeasured)
-    return 6
+    return code
 
 
 def _print_breaches(breaches: list, unmeasured: frozenset = frozenset()) -> None:

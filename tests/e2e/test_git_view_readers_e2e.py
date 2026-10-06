@@ -218,7 +218,8 @@ def verify_route(tmp_path: Path, event: str) -> dict:
     act(repo, REL)
     res = run_cli(repo, "verify", "--no-tighten", "--json")
     assert res.returncode == 6, res.stdout + res.stderr
-    [finding] = [g for g in json.loads(res.stdout)["gate_violations"] if "route" in g["long_name"]]
+    [finding] = [g for g in json.loads(res.stdout)["findings"]
+                 if g["kind"] == "gate_violation" and "route" in g["long_name"]]
     return finding
 
 
@@ -247,7 +248,7 @@ def test_verify_counts_the_changed_file_once_when_another_is_touched_under_noref
     res = run_cli(repo, "verify", "--no-tighten", "--json")
     payload = json.loads(res.stdout)
     assert payload["changed_paths"] == [REL], payload
-    assert [g["dirty"] for g in payload["gate_violations"]] == [False], payload
+    assert [g["dirty"] for g in payload["findings"] if g["kind"] == "gate_violation"] == [False], payload
 
 
 # --- hook-precommit: the re-stage note ---------------------------------------------
@@ -414,7 +415,7 @@ def test_verify_gate_judges_the_functions_gits_diff_names(tmp_path: Path, how: s
     res = run_cli(repo, "verify", "--no-tighten", "--json")
 
     assert (res.returncode == 6) is refused, res.stdout + res.stderr
-    assert bool(json.loads(res.stdout)["gate_violations"]) is refused
+    assert any(g["kind"] == "gate_violation" for g in json.loads(res.stdout)["findings"]) is refused
 
 
 @pytest.mark.parametrize("how", ["content-change", LIMIT])

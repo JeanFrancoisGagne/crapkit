@@ -24,7 +24,7 @@ import pytest
 
 from crapkit import invariants as inv
 from crapkit.churn import FileChurn
-from crapkit.coverage_istanbul import FnCoverage
+from crapkit.score import FnCoverage
 from crapkit.errors import InternalCheckError, ToolError
 from crapkit.merge import FunctionRecord
 from crapkit.ratchet import RatchetEntry
@@ -549,7 +549,7 @@ def _crapkit_imports(path: Path) -> set[str]:
 def test_the_checks_import_nothing_that_calculates_what_they_guard():
     """A bound computed by the code it guards agrees with that code's bugs."""
     imported = _crapkit_imports(SRC / "invariants.py")
-    assert imported == {"errors"}
+    assert imported == {"errors", "keys"}
     assert not imported & {"score", "worklist", "digest", "verify", "churn"}
 
 
@@ -600,7 +600,7 @@ _SITES = [
     ("digest.py", "scope_rollup", "check_rollup"),
     ("packet.py", "rejudged", "check_rejudged"),
     ("packet.py", "budget", "check_budget"),
-    ("hook.py", "_touched_over_ceiling", "check_violations"),
+    ("cli/verifying.py", "_refused_violations", "check_violations"),
     ("cli/verifying.py", "cmd_verify", "check_verdict"),
     ("cli/verifying.py", "_settle_verify", "check_verdict"),
     ("cli/scoring.py", "_gate_verdict", "check_gate"),

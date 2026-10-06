@@ -49,6 +49,144 @@ release's version string until the next release, and pip keeps an installed crap
 whose version matches, so the install line alone leaves the old code in place;
 `--force-reinstall` replaces it and `--no-deps` leaves lizard as it is.
 
+## Upgrading to 0.9.0
+
+<!-- 0.9.0:gate-group -->
+A wrapper that read verify's exit 3 as "no verdict" now gets a verify payload on stdout under
+`--json` when the cause is a file a scope takes whose name is not UTF-8. Read
+`findings[].kind == "unreadable_name"`: one item per such file, with its `path`, `scope` and
+`reason`, and `run_id` null, since no lane ran. The exit code and the stderr line are
+unchanged, and the fix is still `git mv` to a UTF-8 name
+([verify](agent-json.md#a-scoped-file-whose-name-is-not-utf-8)).
+
+Add `-P` by hand to a git hook that ends in `exec python -m crapkit hook-precommit`, in
+`.git/hooks/pre-commit` or a committed hooks directory, and to the merge driver set with
+`git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"`:
+upgrading the package rewrites neither. Git runs both from the repository root, and
+`python -m` puts that directory first on `sys.path`, so a `crapkit.py` placed there runs in
+place of crapkit. The lines README now prints are
+`exec python -P -m crapkit hook-precommit` for the hook ([the gate](../README.md#the-gate))
+and `git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"`
+for the driver ([Development](../README.md#development)); run the driver's line again in
+each clone. A `python` older than 3.11 has no `-P`, so a hook that reaches its `python`
+line stops there with `Unknown option: -P` and exit 2.
+
+The pip lines crapkit prints, the pytest-cov, coverage.py and lizard installs and
+`doctor`'s upgrade and reinstall of the CLI, now read `<python> -P -m pip install`, so a
+`pip.py` at the repository root no longer runs in place of pip when you paste one there. A
+wrapper that matches `python -m pip install` in crapkit's output finds
+`python -P -m pip install` there. The Action installs crapkit with
+`python -P -m pip install -e`, since it runs pip in your checkout. An Action
+`python-version` older than 3.11 still fails at the install step, as it did on 0.8.1,
+where pip said `requires a different Python` and exited 1. The step now prints
+`crapkit needs Python 3.11 or newer, and python-version installed Python 3.10.21: set python-version to 3.11 or newer`
+for a 3.10.21, then Python's `Unknown option: -P`, and exits 2.
+
+### verify --json drops the 0.8.1 per-kind keys
+
+`verify --json` no longer prints the eight keys 0.8.1 listed its findings and their
+counts under. Every value they held is in `findings`, one item per finding, or in
+`counts` ([The findings list](agent-json.md#the-findings-list)). A wrapper reads each
+old key's value from the place on its row:
+
+| 0.8.1 key | Where its value is in 0.9.0 |
+|---|---|
+| `gate_violations` | `findings` items of kind `gate_violation` |
+| `ratchet_regressions` | `findings` items of kind `ratchet_regression` |
+| `overridden` | `findings` items of kind `overridden`, with `fails` false and `exit_code` null |
+| `new_failures` | `findings` items of kind `new_failure`, each test id in field `test` |
+| `diff_uncovered` | `findings` items of kind `diff_uncovered`, at most 50 |
+| `unread_files` | `findings` items of kind `unread_file`; a file a scope takes whose name is not UTF-8 is an item of kind `unreadable_name`, where 0.8.1 printed an error object whose `unread_files` listed it |
+| `diff_uncovered_count` | `counts.diff_uncovered_count` |
+| `diff_uncovered_max` | `counts.diff_uncovered_max` |
+
+Each item carries the entry's own fields and its `dirty` flag, as the old list's entry
+did. `rescore --gate --json` and the `check_gate` tool keep `gate.breaches` and
+`gate.unread_files`, and the `--json` error object keeps its `unread_files`.
+<!-- /0.9.0:gate-group -->
+
+<!-- 0.9.0:m1-foundations -->
+### Runner refusals and hints follow the runner the command names
+
+0.9.0 reads a lane's runner from what it runs, not from its `parser`
+([How crapkit reads a lane's runner](lanes.md#how-crapkit-reads-a-lanes-runner)), and each
+refusal and hint below now needs that runner written where it reads. A lane that runs
+its suite through a package.json script or a recipe loses the refusal and keeps running:
+a config 0.8.1 refused at load, such as an istanbul lane running
+`npm run test -- --coverage src/a.test.ts`, loads under 0.9.0.
+
+| Check | Fires on | To keep it |
+|---|---|---|
+| vitest file-filter refusal (exit 3 at load) | a command segment that names vitest, whatever the `parser` | `npx vitest run --coverage` in place of `npm run test -- --coverage` |
+| pytest narrowing refusal (exit 3 at load) | a command segment that names pytest, when `full_suite` is true | `python -m pytest` in place of `make cov` |
+| container refusal (exit 5 at coverage) and doctor's container WARN | a command that names pytest, without `container_ok = true` | `python -m pytest` in place of `make cov` |
+| doctor's pytest-cov probe | pytest with `--cov`, named in the command or in the package.json script it runs | `python -m pytest --cov` in the command or that script |
+| doctor's `results_artifact` hint | the named runner's junit flags; a lane that names no runner gets one generic line | name the runner in the command or that script |
+
+The three refusals read the command alone, because config load reads crapkit.toml and
+nothing else. A runner named only in package.json devDependencies turns on none of
+them. The narrowing refusal now also reads a pytest that an istanbul lane runs, so a
+positional there is refused unless the lane sets `full_suite = false`.
+
+A runner counts as named only when it heads its step or follows a wrapper that
+[step 1](lanes.md#how-crapkit-reads-a-lanes-runner) reads through (`npx`, `pnpm exec`,
+`uv run`, `python -m`, `env` and the rest of that list). Behind any other wrapper it loses
+the refusals as well, even when the command already writes `python -m pytest`: 0.8.1
+refused these at load and 0.9.0 loads them, and the pytest ones lose the container
+refusal too.
+
+| 0.8.1 refused | To keep the refusals |
+|---|---|
+| `timeout 600 python -m pytest tests/unit --cov` | drop `timeout`, set the lane's `timeout_seconds = 600` |
+| `timeout 600 npx vitest run --coverage src/a.ts` | drop `timeout`, set the lane's `timeout_seconds = 600` |
+| `nice -n 5 pytest tests/unit --cov` | drop `nice` so `pytest` heads the step |
+| `pipx run pytest tests/unit --cov` | install pytest where the suite runs and write `python -m pytest` |
+| `dotenv run pytest tests/unit --cov` | move the variables into the lane's `env` table |
+| `xvfb-run pytest tests/unit --cov` | none while `xvfb-run` stays; start the display outside the lane, or keep the wrapper and lose the refusals |
+<!-- /0.9.0:m1-foundations -->
+
+<!-- 0.9.0:mission-3 -->
+<!-- /0.9.0:mission-3 -->
+
+<!-- 0.9.0:metric-stamp -->
+<!-- /0.9.0:metric-stamp -->
+
+<!-- 0.9.0:mission-4 -->
+<!-- /0.9.0:mission-4 -->
+
+<!-- 0.9.0:m1-readers -->
+<!-- /0.9.0:m1-readers -->
+
+<!-- 0.9.0:m5-comment-fixture -->
+<!-- /0.9.0:m5-comment-fixture -->
+
+<!-- 0.9.0:mission-9 -->
+<!-- /0.9.0:mission-9 -->
+
+<!-- 0.9.0:mission-2 -->
+<!-- /0.9.0:mission-2 -->
+
+<!-- 0.9.0:lanes-visible -->
+<!-- /0.9.0:lanes-visible -->
+
+<!-- 0.9.0:schema-2 -->
+<!-- /0.9.0:schema-2 -->
+
+<!-- 0.9.0:criterion -->
+<!-- /0.9.0:criterion -->
+
+<!-- 0.9.0:m6-step-coverage -->
+<!-- /0.9.0:m6-step-coverage -->
+
+<!-- 0.9.0:release-bytes -->
+<!-- /0.9.0:release-bytes -->
+
+<!-- 0.9.0:protocol-2-step -->
+<!-- /0.9.0:protocol-2-step -->
+
+<!-- 0.9.0:hash-cost -->
+<!-- /0.9.0:hash-cost -->
+
 ## 0.8.0 to 0.8.1, in order
 
 Each step links the section that explains it.

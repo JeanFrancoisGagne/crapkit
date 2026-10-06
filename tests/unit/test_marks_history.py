@@ -2,31 +2,47 @@
 
 ratchet report and brief read mark ages off the file's commits, and verify
 judges a deleted or emptied marks file against the newest marks a commit since
-the baseline held. Three readers once had three paths into git for these. A
-marks file renamed with `git mv` keeps its history: the reader goes on from
-the old name.
+the baseline held. Every reader goes through one list of revisions, each read
+whole under the past-revision rule (RatchetFile.committed): no reader parses
+patch lines. A marks file renamed with `git mv` keeps its history: the reader
+goes on from the old name.
 
 The git reads under them answer a fact or raise GitError. `blob_at` answered
-None and `commits_touching` answered [] for any git failure, so a clone that
-did not hold the baseline read as a history that never held marks, and verify
-would judge against no marks at all. Every test here builds a real repo.
+None for any git failure, so a clone that did not hold the baseline read as a
+history that never held marks, and verify would judge against no marks at
+all. Every test here but one builds a real repo: the --raw line reader's
+feeds it bytes in the shape `git log --raw` prints.
 """
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
 import pytest
 
+import marks_history_repo as rekey
+import test_ratchet_report_counts_a_deleted_marks_file as deleted_file
+import test_ratchet_report_reads_a_merged_history as merged_history
+from cli_inproc_repo import add_knotty, commit_all, repo, seed_artifacts, template_repo  # noqa: F401
+from crapkit import gitio, keys
+from crapkit.cli import main
 from crapkit.errors import GitError
-from crapkit.gitio import blob_at, commits_touching
-from crapkit.marks_history import marks_history, newest_committed_marks
-from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
-from crapkit.ratchet_report import mark_events, report_from_events
+from crapkit.gitio import blob_at, file_revisions
+from crapkit.marks_history import (Move, MarksRevision, held_history, marks_at, marks_history,
+                                   moves, newest_committed_marks)
+from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version, read_ratchet
+from crapkit.ratchet_report import crap_by_key, held_event, mark_events, report_from_events
+from crapkit.ratchetfile import RatchetFile
+from crapkit.records import record_lines
+from crapkit.repotext import lenient, marks_text
+from raw_git import commit as raw_commit
+from raw_git import repository
 
 MARKS = "crapkit-ratchet.tsv"
 UNHELD = "0123456789abcdef0123456789abcdef01234567"
+DAY = 86400
 
 
 def git(root: Path, *args: str, date: str = "2026-01-01T12:00:00+00:00") -> str:
@@ -76,19 +92,102 @@ def test_blob_at_answers_the_bytes_or_none_for_a_commit_without_the_file(history
 
 @pytest.mark.parametrize("read", [
     pytest.param(lambda root: blob_at(root, UNHELD, MARKS), id="blob-at-a-commit-not-held"),
-    pytest.param(lambda root: commits_touching(root, f"{UNHELD}..HEAD", MARKS),
-                 id="commits-in-a-range-not-held"),
+    pytest.param(lambda root: file_revisions(root, MARKS, f"{UNHELD}..HEAD"),
+                 id="revisions-in-a-range-not-held"),
 ])
 def test_a_git_read_that_fails_raises_instead_of_answering_nothing(history, read):
     with pytest.raises(GitError, match=UNHELD[:12]):
         read(Path(history["root"]))
 
 
-def test_commits_touching_lists_the_range_newest_first(history):
+def test_file_revisions_lists_the_range_oldest_first_with_each_commits_bytes(history):
+    """The deleting commit holds no bytes, and each commit carries the bytes
+    its parent held: the revision it changed."""
     root = Path(history["root"])
 
-    assert commits_touching(root, f"{history['base']}..HEAD", MARKS) == [
-        history["gone"], history["newer"], history["first"]]
+    read = file_revisions(root, MARKS, f"{history['base']}..HEAD")
+
+    assert [r.commit for r in read] == [history["first"], history["newer"], history["gone"]]
+    assert [r.data for r in read] == [marks(12.0).encode(), marks(10.0).encode(), None]
+    assert [r.before for r in read] == [None, marks(12.0).encode(), marks(10.0).encode()]
+    assert [r.merge for r in read] == [False, False, False]
+    assert file_revisions(root, MARKS) == read, "no range is all of HEAD's history"
+
+
+@pytest.mark.parametrize("length", [1, 3, 7])
+def test_file_revisions_starts_two_processes_for_a_history_of_any_length(tmp_path, monkeypatch,
+                                                                         length):
+    """One `git log` with no patch text, one `git cat-file --batch` for every blob."""
+    git(tmp_path, "init", "-q", "-b", "main")
+    for day in range(length):
+        commit_file(tmp_path, MARKS, marks(30.0 - day), f"mark {day}",
+                    f"2026-01-{day + 1:02d}T12:00:00+00:00")
+    commit_file(tmp_path, MARKS, None, "delete", "2026-02-01T12:00:00+00:00")
+    started = []
+    real = subprocess.run
+    monkeypatch.setattr(gitio.subprocess, "run",
+                        lambda argv, *a, **k: started.append(argv) or real(argv, *a, **k))
+
+    read = file_revisions(tmp_path, MARKS)
+
+    assert len(read) == length + 1 and read[-1].data is None
+    assert len(started) == 2
+    assert "log" in started[0] and "-p" not in started[0]
+    assert started[1][1:] == ["cat-file", "--batch"]
+
+
+def test_a_history_a_depth_one_clone_does_not_hold_names_the_fetch(history, tmp_path):
+    shallow = tmp_path / "shallow"
+    git(tmp_path, "clone", "-q", "--depth", "1", Path(history["root"]).as_uri(), str(shallow))
+
+    with pytest.raises(GitError) as refused:
+        file_revisions(shallow, MARKS, f"{history['first']}..HEAD")
+
+    assert gitio.shallow_fix(shallow).endswith("git fetch --unshallow")
+    assert str(refused.value).endswith(gitio.shallow_fix(shallow))
+
+
+# --- one commit's --raw line: (before id, after id, merge) ---------------------
+# Each body is what `git log --format=%x00%at %H --raw --cc --no-abbrev` prints
+# after a commit's header: a blank line, then one colon per parent, each
+# parent's mode and the commit's, each parent's id and the commit's, one status
+# letter per parent, a tab and the path. A commit with no line prints nothing
+# after its header.
+
+BASE_ID = "6bbe25095a44fce5f1d5acdcd256cbf8ca9c3521"
+SIDE_ID = "7f02142b6e07146323e384ec63b9626c32f4e128"
+THIRD_ID = "5401050afc4da8e3c43fa0eb06e49744df5fa2af"
+OWN_ID = "4bf54318bda7623ed71315a7182163c6f8d6671a"
+ZERO_ID = "0" * 40
+OWN_SHA256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+
+
+def raw_line(modes: str, ids: list[str], status: str) -> bytes:
+    return f"\n{':' * len(status)}{modes} {' '.join(ids)} {status}\t{MARKS}\n".encode()
+
+
+@pytest.mark.parametrize(("body", "sides"), [
+    pytest.param(b"", (None, gitio._UNSHOWN, True), id="no-raw-line"),
+    pytest.param(raw_line("100644 100644", [BASE_ID, OWN_ID], "M"),
+                 (BASE_ID, OWN_ID, False), id="an-edit"),
+    pytest.param(raw_line("000000 100644", [ZERO_ID, OWN_ID], "A"),
+                 (None, OWN_ID, False), id="a-create"),
+    pytest.param(raw_line("100644 000000", [BASE_ID, ZERO_ID], "D"),
+                 (BASE_ID, None, False), id="a-delete"),
+    pytest.param(raw_line("100644 100644 100644", [BASE_ID, SIDE_ID, OWN_ID], "MM"),
+                 (None, OWN_ID, True), id="a-merge"),
+    pytest.param(raw_line("100644 100644 100644 100644", [BASE_ID, SIDE_ID, THIRD_ID, OWN_ID],
+                          "MMM"),
+                 (None, OWN_ID, True), id="an-octopus-merge"),
+    pytest.param(raw_line("100644 100644 000000", [BASE_ID, SIDE_ID, ZERO_ID], "DD"),
+                 (None, None, True), id="a-merge-that-deletes"),
+    pytest.param(raw_line("000000 100644", ["0" * 64, OWN_SHA256], "A"),
+                 (None, OWN_SHA256, False), id="a-sha-256-create"),
+])
+def test_one_commits_raw_line_names_the_ids_on_each_side(body, sides):
+    """A merge names no one parent as its before side. A commit the log lists
+    with no line keeps the after side _with_bytes reads as unchanged bytes."""
+    assert gitio._raw_sides(body) == sides
 
 
 # --- verify's stand-in: the newest committed marks since the baseline ----------
@@ -104,6 +203,15 @@ def test_no_revision_since_the_baseline_held_marks(history):
     root = Path(history["root"])
 
     assert newest_committed_marks(root, history["gone"], MARKS) is None
+
+
+def test_the_stand_in_reads_the_baseline_when_nothing_since_held_marks(history):
+    root = Path(history["root"])
+    git(root, "reset", "-q", "--hard", history["newer"])
+
+    commit, committed = newest_committed_marks(root, history["newer"], MARKS)
+
+    assert commit == history["newer"] and [e.crap for e in committed.entries] == [10.0]
 
 
 def test_a_baseline_the_clone_does_not_hold_is_named_not_read_as_no_marks(history):
@@ -127,8 +235,9 @@ def test_a_shallow_clone_that_lacks_the_baseline_names_the_fetch(history, tmp_pa
     with pytest.raises(GitError) as refused:
         newest_committed_marks(shallow, history["first"], MARKS)
 
-    assert str(refused.value).endswith("set fetch-depth: 0 on the checkout or run "
-                                       "git fetch --unshallow")
+    message = str(refused.value)
+    assert message.endswith("set fetch-depth: 0 on the checkout or run git fetch --unshallow")
+    assert message.count("--unshallow") == 1
 
 
 # --- the history ratchet report and brief read ----------------------------------
@@ -136,8 +245,10 @@ def test_a_shallow_clone_that_lacks_the_baseline_names_the_fetch(history, tmp_pa
 def test_the_history_starts_at_the_first_commit_that_touched_the_file(history):
     read = marks_history(Path(history["root"]), MARKS)
 
-    assert [ts for ts, _ in read] == sorted(ts for ts, _ in read)
-    assert len(read) == 3
+    assert [r.time for r in read] == sorted(r.time for r in read)
+    assert [r.commit for r in read] == [history["first"], history["newer"], history["gone"]]
+    assert [r.marks for r in read] == [{("src/a.py", "hot( n )"): 12.0},
+                                       {("src/a.py", "hot( n )"): 10.0}, None]
 
 
 def test_a_file_no_commit_touched_has_no_history(tmp_path):
@@ -147,12 +258,385 @@ def test_a_file_no_commit_touched_has_no_history(tmp_path):
     assert marks_history(tmp_path, MARKS) == []
 
 
+# --- one history, every way a past revision was saved --------------------------
+# One raw_git history: a UTF-8 revision, a cp1252 byte in one mark's name, a
+# PowerShell 5.1 UTF-16 LE resave (byte-order mark, CRLF) that also adds a
+# mark, a `git mv` of the marks file, a re-key commit, a commit that tightens
+# one value and repays one mark, and one that adds that mark again. Ages count
+# from the newest commit, 10 days ago.
+
+HEADER = b"# crapkit-analysis=11 lizard=1.24.0\n# crapkit-keys=1\npath\tlong_name\tcrap\n"
+OLD = "old-marks.tsv"
+CAFE = ("src/a.py", "caf�( n )")
+
+
+def rows(*marked: tuple[str, float]) -> bytes:
+    return HEADER + b"".join(b"src/a.py\t%s\t%.1f\n" % (name.encode("utf-8"), crap)
+                             for name, crap in marked)
+
+
+def key(name: str) -> tuple[str, str]:
+    return ("src/a.py", name)
+
+
+BASE = (("a( n )", 20.0), ("b( n )", 20.0), ("c( n )", 20.0))
+WITH_CAFE = rows(*BASE) + b"src/a.py\tcaf\xe9( n )\t5.0\n"
+UTF16 = b"\xff\xfe" + (WITH_CAFE.decode("utf-8", "replace")
+                       + "src/a.py\td( n )\t12.0\n").replace("\n", "\r\n").encode("utf-16-le")
+REKEYED = (("a( n )", 20.0), ("b( n )#2", 20.0), ("c( n )", 20.0), ("caf�( n )", 5.0),
+           ("d( n )", 12.0))
+TIGHTENED = tuple((name, 10.0 if name == "a( n )" else crap) for name, crap in REKEYED
+                  if name != "c( n )")
+
+
+@pytest.fixture()
+def saved_every_way(tmp_path: Path) -> Path:
+    root = repository(tmp_path / "every-way")
+    raw_commit(root, files={OLD.encode(): rows(*BASE)}, age_days=100)
+    raw_commit(root, files={OLD.encode(): WITH_CAFE}, age_days=80)
+    raw_commit(root, files={OLD.encode(): UTF16}, age_days=60)
+    raw_commit(root, files={MARKS.encode(): UTF16}, deletes=(OLD.encode(),), age_days=40)
+    raw_commit(root, files={MARKS.encode(): rows(*REKEYED)}, age_days=30)
+    raw_commit(root, files={MARKS.encode(): rows(*TIGHTENED)}, age_days=20)
+    raw_commit(root, files={MARKS.encode(): rows(*TIGHTENED, ("c( n )", 20.0))}, age_days=10)
+    return root
+
+
+def test_every_revision_parses_whole_and_nothing_refuses(saved_every_way):
+    read = marks_history(saved_every_way, MARKS)
+
+    assert len(read) == 7, "the history goes on through the git mv"
+    assert read[1].marks[CAFE] == 5.0, "the cp1252 byte reads as U+FFFD in that one name"
+    assert read[2].marks[key("d( n )")] == 12.0, "the UTF-16 revision parses"
+    assert read[2].before == read[1].marks
+    assert read[3].marks == read[3].before == read[2].marks, "the rename changes no mark"
+
+
+def test_every_mark_keeps_its_entry_date_and_every_repayment_counts(saved_every_way):
+    report = report_from_events(mark_events(marks_history(saved_every_way, MARKS)))
+
+    assert {row["long_name"]: row["age_days"] for row in report["oldest"]} == {
+        "a( n )": 90,          # entered on day 100, tightened on day 20: same entry date
+        CAFE[1]: 70,           # entered in the cp1252 revision
+        "d( n )": 50,          # entered in the UTF-16 revision
+        "b( n )#2": 20,        # the re-key enters the new key
+        "c( n )": 0,           # repaid on day 20, added again on day 10
+    }
+    assert report["dropped_total"] == 2, "b( n ) at the re-key, c( n ) on day 20"
+
+
+def test_the_events_say_what_each_revision_changed(saved_every_way):
+    events = mark_events(marks_history(saved_every_way, MARKS))
+
+    assert [(kind, k) for _, k, kind, _ in events] == [
+        ("added", key("a( n )")), ("added", key("b( n )")), ("added", key("c( n )")),
+        ("added", CAFE),
+        ("added", key("d( n )")),
+        ("observed", None),
+        ("added", key("b( n )#2")), ("dropped", key("b( n )")),
+        ("updated", key("a( n )")), ("dropped", key("c( n )")),
+        ("added", key("c( n )")),
+    ]
+
+
+def test_a_legacy_bare_twin_key_reads_as_twin_one_as_the_mark_index_does(saved_every_way):
+    """The first of a name keeps the bare key, so a mark written before the
+    ordinal is twin #1: the revision reads it as keys.MarkIndex does."""
+    read = marks_history(saved_every_way, MARKS)
+
+    assert read[4].marks == crap_by_key(read_ratchet(lenient(rows(*REKEYED)))[0])
+    assert {key("b( n )#2"), key("a( n )")} <= set(read[4].marks)
+
+
+def test_a_key_a_revision_lists_twice_reads_its_first_mark(tmp_path):
+    git(tmp_path, "init", "-q", "-b", "main")
+    (tmp_path / MARKS).write_bytes(rows(("a( n )", 9.0), ("a( n )", 30.0)))
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-q", "-m", "twice")
+
+    assert marks_history(tmp_path, MARKS)[0].marks == {key("a( n )"): 9.0}
+
+
+# --- check 3: the 0.8.1 tree's replay of patch lines, frozen for this slot -------
+# A frozen copy of the 0.8.1 tree's read: marks_history's `git log -p -U0` of
+# the file, its walk back through every `git mv` (_segment, _renamed_from,
+# _rename_patch), held_history and cli/ratchet_cmds' _with_head_revision, and
+# ratchet_report's mark_events over those patches. It calls no crapkit git
+# read. On every UTF-8 history the unit and e2e suites build, the new rule over
+# revisions gives the same events and the same report; the one place the rules
+# part is a resave that changes only line endings (C36).
+
+_FROZEN_HEADER = re.compile(rb"^\0(-?\d+) ([0-9a-f]+)\n", re.MULTILINE)
+
+
+def _frozen_git(root: Path, *args: str) -> bytes:
+    return subprocess.run(["git", "-c", "diff.relative=true", "-c", "log.showRoot=true",
+                           "--literal-pathspecs", *args], cwd=root, capture_output=True,
+                          check=True).stdout
+
+
+def _frozen_log(root: Path, rel: str, rev: str | None) -> list[tuple[int, str, str]]:
+    """0.8.1's gitio.file_log: (timestamp, commit, -U0 patch) per commit, oldest first."""
+    out = _frozen_git(root, "log", "--reverse", "--format=%x00%at %H", "-p", "-U0",
+                      "--no-renames", "--no-color", "--no-ext-diff", "--no-textconv", "--text",
+                      *([rev] if rev else []), "--", rel)
+    heads = list(_FROZEN_HEADER.finditer(out))
+    ends = [head.start() for head in heads[1:]] + [len(out)]
+    return [(int(head[1]), head[2].decode(), lenient(out[head.end():end]))
+            for head, end in zip(heads, ends)]
+
+
+def _frozen_renamed_from(root: Path, commit: str, path: str) -> str | None:
+    """0.8.1's _renamed_from over gitio.commit_renames: one commit's diff-tree -M."""
+    fields = lenient(_frozen_git(root, "diff-tree", "-r", "-M", "--relative", "--name-status",
+                                 "--no-commit-id", "-z", commit)).split("\0")
+    index = 0
+    while index < len(fields) and fields[index]:
+        status = fields[index]
+        if status[0] == "R" and fields[index + 2] == path:
+            return fields[index + 1]
+        index += 3 if status[0] in "RC" else 2
+    return None
+
+
+def _frozen_blob(root: Path, commit: str, path: str) -> bytes | None:
+    done = subprocess.run(["git", "cat-file", "blob", f"{commit}:{path}"], cwd=root,
+                          capture_output=True)
+    return done.stdout if done.returncode == 0 else None
+
+
+def _frozen_rename_patch(before: bytes, after: bytes) -> str:
+    """0.8.1's gitio.revisions_patch: the lines one revision holds and the other does not."""
+    old, new = (list(record_lines(marks_text(side))) for side in (before, after))
+    return "\n".join([f"-{line}" for line in old if line not in set(new)]
+                     + [f"+{line}" for line in new if line not in set(old)])
+
+
+def _frozen_history(root: Path, rel: str) -> list[tuple[int, tuple[str, str], str]]:
+    """0.8.1's marks_history._history: (timestamp, (commit, path), patch) per
+    commit, oldest first, back through every rename."""
+    entries: list = []
+    path, rev = rel, None
+    while path is not None:
+        log = _frozen_log(root, path, rev)
+        old = _frozen_renamed_from(root, log[0][1], path) if log else None
+        segment = [(ts, (commit, path), patch) for ts, commit, patch in log]
+        if old is not None:
+            ts, commit, _ = log[0]
+            segment[0] = (ts, (commit, path), _frozen_rename_patch(
+                _frozen_blob(root, f"{commit}^", old) or b"", _frozen_blob(root, commit, path) or b""))
+        entries[:0] = segment
+        path, rev = old, (f"{log[0][1]}^" if old is not None else None)
+    return entries
+
+
+def _frozen_patches(root: Path, rel: str) -> list[tuple[int, str]]:
+    """0.8.1's marks_history.marks_history."""
+    return [(ts, patch) for ts, _, patch in _frozen_history(root, rel)]
+
+
+def _frozen_held(root: Path, commit: str, path: str) -> str | None:
+    """0.8.1's marks_history._held: the text a revision holds, None when blank or missing."""
+    data = _frozen_blob(root, commit, path)
+    held = None if data is None else RatchetFile.committed(root / path, data)
+    return None if held is None or held.blank else held.text
+
+
+def _frozen_report_entries(root: Path, rel: str) -> list[tuple]:
+    """0.8.1's cli/ratchet_cmds._report_basis: held_history for a missing or
+    blank marks file, else the history with HEAD's text on its newest entry."""
+    history = _frozen_history(root, rel)
+    if not RatchetFile.read(root / rel).blank:
+        entries = [(ts, patch) for ts, _, patch in history]
+        text = _frozen_held(root, "HEAD", rel) if entries else None
+        return entries if text is None else entries[:-1] + [entries[-1] + (text,)]
+    held = [(index, _frozen_held(root, *history[index][1]))
+            for index in range(len(history) - 1, -1, -1)]
+    last, text = next(((index, text) for index, text in held if text is not None), (-1, None))
+    entries = [(ts, patch if index <= last else "") for index, (ts, _, patch) in enumerate(history)]
+    if text is not None:
+        entries[last] += (text,)
+    return entries
+
+
+def _frozen_row(line: str) -> tuple | None:
+    body = line[1:]
+    if body.startswith(("++ ", "-- ")):
+        return None
+    entries = read_ratchet(body)[0]
+    return ((entries[0].path, entries[0].long_name), entries[0].crap) if entries else None
+
+
+def _frozen_mark_events(patches: list[tuple]) -> list[tuple]:
+    """0.8.1's ratchet_report.mark_events: (ts, patch, *held texts) entries."""
+    events = []
+    for ts, patch, *texts in patches:
+        added, removed = {}, {}
+        for line in (line.removesuffix("\r") for line in patch.split("\n")):
+            row = _frozen_row(line) if line[:1] in ("+", "-") else None
+            if row is not None:
+                (added if line[0] == "+" else removed)[row[0]] = row[1]
+        changed = [(ts, k, "updated" if k in removed else "added", added[k]) for k in sorted(added)]
+        changed += [(ts, k, "dropped", removed[k]) for k in sorted(set(removed) - set(added))]
+        events += changed or [(ts, None, "observed", 0.0)]
+        events += [(ts, None, "held", crap_by_key(read_ratchet(text)[0])) for text in texts]
+    return events
+
+
+def _same_events_both_ways(root: Path, rel: str = MARKS) -> list[tuple]:
+    """The replay of every revision gives the 0.8.1 events, and so does the
+    report path: `ratchet report`'s revisions against 0.8.1's report entries
+    (held_history or HEAD's text). The one "held" event carries the same
+    marks; 0.8.1 dated it at the newest commit that held marks and the new
+    rule at the newest commit, which moves no report number, so the report
+    itself is compared whole. Answers the replay's events."""
+    from crapkit.cli.ratchet_cmds import _report_basis
+
+    replayed = mark_events(marks_history(root, rel))
+    assert replayed == _frozen_mark_events(_frozen_patches(root, rel))
+    revisions, working = _report_basis(root, rel)
+    new = mark_events(revisions) + held_event(revisions)
+    old = _frozen_mark_events(_frozen_report_entries(root, rel))
+    assert [e for e in new if e[2] != "held"] == [e for e in old if e[2] != "held"]
+    assert [e[3] for e in new if e[2] == "held"] == [e[3] for e in old if e[2] == "held"]
+    assert report_from_events(new, working=working) == report_from_events(old, working=working)
+    return replayed
+
+
+def _commit_bytes(root: Path, texts: list[bytes]) -> None:
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "core.autocrlf", "false")
+    for day, text in enumerate(texts):
+        (root / MARKS).write_bytes(text)
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", f"step {day}", date=f"2026-01-{day + 1:02d}T12:00:00+00:00")
+
+
+def test_the_new_rule_gives_the_0_8_1_events_on_a_linear_history(history):
+    assert len(_same_events_both_ways(Path(history["root"]))) == 3
+
+
+def test_the_new_rule_gives_the_0_8_1_events_on_a_crlf_history(tmp_path):
+    crlf = [rows(*marked).replace(b"\n", b"\r\n") for marked in
+            (BASE, (("a( n )", 10.0), ("c( n )", 20.0)),
+             (("a( n )", 10.0), ("b( n )", 3.0), ("c( n )", 20.0)))]
+    _commit_bytes(tmp_path, crlf)
+
+    events = _same_events_both_ways(tmp_path)
+
+    assert [kind for _, _, kind, _ in events] == ["added"] * 3 + ["updated", "dropped", "added"]
+
+
+def test_the_new_rule_gives_the_0_8_1_events_on_record_v1_rows(tmp_path):
+    """Rows the portable record encoding writes as `@crapkit-record-v1` lines."""
+    names = ["#src/a.py", "src/a b.py"]
+    _commit_bytes(tmp_path, [dump_ratchet([RatchetEntry(path, "f( )", 12.0)], stamp="").encode()
+                             for path in names])
+
+    events = _same_events_both_ways(tmp_path)
+
+    assert "@crapkit-record-v1" in (tmp_path / MARKS).read_text(encoding="utf-8")
+    assert [(k, kind) for _, k, kind, _ in events] == [
+        (("#src/a.py", "f( )"), "added"), (("src/a b.py", "f( )"), "added"),
+        (("#src/a.py", "f( )"), "dropped")]
+
+
+def test_a_resave_that_changes_only_line_endings_moves_only_the_clock(tmp_path):
+    """The one place the rules part: the patch read a CRLF resave as each row
+    removed and added at the same value, an update that kept every entry date.
+    A whole revision reads it as no mark change. The report is the same."""
+    _commit_bytes(tmp_path, [rows(*BASE), rows(*BASE).replace(b"\n", b"\r\n")])
+
+    new = mark_events(marks_history(tmp_path, MARKS))
+    frozen = _frozen_mark_events(_frozen_patches(tmp_path, MARKS))
+
+    assert [kind for _, _, kind, _ in new[3:]] == ["observed"]
+    assert [kind for _, _, kind, _ in frozen[3:]] == ["updated"] * 3
+    assert report_from_events(new) == report_from_events(frozen)
+
+
+def _walk_equals_the_report_at_every_commit(root: Path) -> int:
+    """Check 1 at each commit of `root`'s history, checked out in turn: the
+    report the new events give equals oracles/marks_history_walk.py's, which
+    reads every committed version whole with no crapkit and diffs the mark
+    sets itself. Check 3 holds there too. Answers the commits checked."""
+    from accuracy.history_oracles.oracles import marks_history_walk
+
+    shas = git(root, "rev-list", "--reverse", "HEAD").split()
+    for sha in shas:
+        git(root, "checkout", "-q", sha)
+        disk = lenient((root / MARKS).read_bytes())
+        events = mark_events(marks_history(root, MARKS))
+        report = report_from_events(events, working=crap_by_key(read_ratchet(disk)[0]))
+        assert report == marks_history_walk.report(root, MARKS), sha
+        _same_events_both_ways(root)
+    return len(shas)
+
+
+def test_the_history_walk_oracle_equals_the_report_at_every_commit(tmp_path):
+    """A history that tightens, repays, empties and restores."""
+    steps = [rows(*BASE), rows(("a( n )", 10.0), ("b( n )", 20.0), ("c( n )", 20.0)),
+             rows(("a( n )", 10.0), ("c( n )", 20.0)), b"", rows(("a( n )", 10.0)),
+             rows(("a( n )", 10.0), ("b( n )", 4.0))]
+    _commit_bytes(tmp_path, steps)
+
+    assert _walk_equals_the_report_at_every_commit(tmp_path) == len(steps)
+
+
+@pytest.mark.parametrize("name, commits", [("BURN", 6), ("BURN_TIGHTEN", 3)])
+def test_the_history_walk_oracle_equals_the_report_on_every_history_spec(tmp_path, name,
+                                                                          commits):
+    """acc-history-oracles' specs, built as test_burn_down.py builds them, met
+    at every commit and not only at HEAD."""
+    from accuracy.history_oracles.repos import history_specs
+    from accuracy.kit import repos
+
+    built = repos.build(getattr(history_specs, name), tmp_path / name)
+
+    assert _walk_equals_the_report_at_every_commit(built.root) == commits
+
+
+def _merged(root: Path, base: list[str], side_a: list[str], side_b: list[str]) -> None:
+    """`base`, a branch to `side_a` and one to `side_b`, merged back with --no-ff."""
+    def write(names: list[str], message: str, day: int) -> None:
+        entries = [RatchetEntry("src/app.ts", name, 20.0) for name in names]
+        commit_file(root, MARKS, dump_ratchet(entries, stamp=metric_version()), message,
+                    f"2026-01-{day:02d}T12:00:00+00:00")
+
+    git(root, "init", "-q", "-b", "main")
+    write(base, "base", 1)
+    git(root, "checkout", "-q", "-b", "a")
+    write(side_a, "side a", 2)
+    git(root, "checkout", "-q", "-b", "b", "main")
+    write(side_b, "side b", 3)
+    git(root, "checkout", "-q", "main")
+    for day, branch in ((4, "a"), (5, "b")):
+        git(root, "merge", "-q", "--no-ff", "-m", f"merge {branch}", branch,
+            date=f"2026-01-{day:02d}T12:00:00+00:00")
+
+
+def test_the_new_rule_gives_the_0_8_1_events_on_a_merged_history(tmp_path):
+    """Both branches repaid k1, and the merge that joins them shows no change:
+    k1 repaid once, the merge a clock tick, and its own revision the marks it
+    kept."""
+    _merged(tmp_path, ["k1", "k2", "m1", "m3"], ["k2", "m1", "m2", "m3"], ["k2", "m1", "m3", "m4"])
+
+    events = _same_events_both_ways(tmp_path)
+
+    report = report_from_events(events)
+    assert (report["dropped_total"], report["open"]) == (1, 5)
+    revisions = file_revisions(tmp_path, MARKS)
+    assert (revisions[-1].merge, revisions[-1].before) == (True, None)
+    assert revisions[-1].data == blob_at(tmp_path, "HEAD", MARKS)
+    assert marks_history(tmp_path, MARKS)[-1].marks == {
+        ("src/app.ts", name): 20.0 for name in ("k2", "m1", "m2", "m3", "m4")}
+
+
 # --- a renamed marks file keeps its history -------------------------------------
 # The log walks no renames, so `git mv` started the history at the rename: every
 # mark entered there, 0 days old, and no earlier repayment counted.
 
 RENAMED = "2026-06-01T12:00:00+00:00"
-DAY = 86400
 
 
 def several(*names: str) -> str:
@@ -176,9 +660,12 @@ def test_a_renamed_file_goes_on_from_its_old_name(history):
 
     read = marks_history(root, "debt.tsv")
 
-    assert read == [*before, (stamp(RENAMED), "")]
+    assert read[:-1] == before
+    assert (read[-1].time, read[-1].marks, read[-1].before) == (
+        stamp(RENAMED), before[-1].marks, before[-1].marks)
     report = report_from_events(mark_events(read))
     assert (report["dropped_total"], [e["age_days"] for e in report["oldest"]]) == (1, [31])
+    assert _same_events_both_ways(root, "debt.tsv") == mark_events(read)
 
 
 def test_a_rename_that_edits_the_file_reads_as_the_marks_it_changed(tmp_path):
@@ -191,10 +678,13 @@ def test_a_rename_that_edits_the_file_reads_as_the_marks_it_changed(tmp_path):
 
     read = marks_history(tmp_path, "debt.tsv")
 
-    assert len(read) == 2 and [line[0] for line in read[1][1].splitlines()] == ["-"]
+    assert len(read) == 2
+    assert [(kind, k) for _, k, kind, _ in mark_events(read[1:])] == [
+        ("dropped", ("src/a.py", "d( n )"))]
     report = report_from_events(mark_events(read))
     assert (report["open"], report["dropped_total"]) == (3, 1)
     assert {e["age_days"] for e in report["oldest"]} == {(stamp(RENAMED) - stamp("2026-01-01T12:00:00+00:00")) // DAY}
+    assert _same_events_both_ways(tmp_path, "debt.tsv") == mark_events(read)
 
 
 def test_every_rename_is_followed_back_to_the_first_name(tmp_path):
@@ -208,9 +698,10 @@ def test_every_rename_is_followed_back_to_the_first_name(tmp_path):
 
     read = marks_history(tmp_path, "c.tsv")
 
-    assert [patch == "" for _, patch in read] == [False, False, True, True]
+    assert [r.marks == r.before for r in read] == [False, False, True, True]
     report = report_from_events(mark_events(read))
     assert (report["dropped_total"], report["oldest"][0]["age_days"]) == (1, 151)
+    assert _same_events_both_ways(tmp_path, "c.tsv") == mark_events(read)
 
 
 def test_a_rewrite_git_cannot_pair_starts_the_history_there(tmp_path):
@@ -224,7 +715,8 @@ def test_a_rewrite_git_cannot_pair_starts_the_history_there(tmp_path):
 
     read = marks_history(tmp_path, "debt.tsv")
 
-    assert len(read) == 1 and read[0][0] == stamp(RENAMED)
+    assert len(read) == 1 and read[0].time == stamp(RENAMED) and read[0].before is None
+    assert _same_events_both_ways(tmp_path, "debt.tsv") == mark_events(read)
 
 
 def test_a_depth_one_clone_of_a_renamed_file_reads_its_one_commit(history, tmp_path):
@@ -241,6 +733,7 @@ def test_a_depth_one_clone_of_a_renamed_file_reads_its_one_commit(history, tmp_p
 
     report = report_from_events(mark_events(read))
     assert len(read) == 1 and report["oldest"][0]["age_days"] == 0
+    assert _same_events_both_ways(shallow, "debt.tsv") == mark_events(read)
 
 
 # A past revision reads by the marks file's own rule and is never refused:
@@ -292,33 +785,599 @@ def test_a_revision_of_a_byte_order_mark_and_blank_lines_holds_no_marks(history,
 
     assert commit == history["newer"]
     assert [e.crap for e in committed.entries] == [10.0]
+    assert marks_history(root, MARKS)[-1].marks is None
 
 
 def test_the_held_history_ticks_every_commit_after_the_newest_that_held_marks(history):
     """ratchet report replays a blank or missing marks file from here: the
     deletion moves the clock and repays nothing, and the newest revision that
     held marks says which are open."""
-    from crapkit.marks_history import held_history
-
     root = Path(history["root"])
     full = marks_history(root, MARKS)
 
-    assert held_history(root, MARKS) == [full[0], (*full[1], marks(10.0)), (full[2][0], "")]
+    held = full[1].marks
+    assert held_history(root, MARKS) == [full[0], full[1],
+                                         full[2]._replace(marks=held, before=held)]
+    assert held_event(held_history(root, MARKS)) == [(full[2].time, None, "held", held)]
     assert held_history(root, "never.tsv") == []
+    assert _same_events_both_ways(root) == mark_events(full)
+
+
+def test_a_history_that_never_held_marks_reads_as_clock_ticks(tmp_path):
+    _commit_bytes(tmp_path, [b"\n", b"\xef\xbb\xbf\n"])
+
+    read = held_history(tmp_path, MARKS)
+
+    assert [(r.marks, r.before) for r in read] == [(None, None), (None, None)]
+    assert held_event(read) == []
+    assert report_from_events(mark_events(read))["open"] == 0
 
 
 def test_the_held_revision_decides_the_open_marks_and_the_replay_their_ages(history):
     """The replay below opens `gone( n )`, which the held revision does not
-    hold: a merge kept a repayment no patch shows. The open marks are the
-    revision's, and the one the replay also opened keeps its age."""
-    from crapkit.marks_history import held_history
-
+    hold: a merge kept a repayment no revision diff shows. The open marks are
+    the revision's, and the one the replay also opened keeps its age."""
     root = Path(history["root"])
-    reopened = RatchetEntry("src/a.py", "gone( n )", 30.0)
-    patch = "+" + dump_ratchet([reopened], stamp=metric_version()).splitlines()[-1]
     read = held_history(root, MARKS)
+    reopened = MarksRevision("x", read[0].time, {("src/a.py", "gone( n )"): 30.0}, None)
 
-    report = report_from_events(mark_events([(read[0][0], patch), *read]))
+    report = report_from_events(mark_events([reopened, *read]) + held_event(read))
 
     assert [(e["long_name"], e["age_days"]) for e in report["oldest"]] == [("hot( n )", 59)]
     assert (report["open"], report["dropped_total"]) == (1, 0)
+
+
+# --- check 3 on the histories the other unit and e2e files build -----------------
+# Each history is built by the helpers of the file that pins its report, so the
+# frozen 0.8.1 read meets the same commits those tests read through the CLI.
+
+def _four_marks(root: Path) -> None:
+    deleted_file._write_marks(root, deleted_file.NAMES)
+    commit_all(root, "four marks")
+
+
+def _repaid_then_deleted(root: Path) -> None:
+    _four_marks(root)
+    deleted_file._write_marks(root, deleted_file.NAMES[:3])
+    commit_all(root, "repay knotty")
+    deleted_file._delete(root)
+
+
+def _stamp_and_no_rows(root: Path) -> None:
+    _four_marks(root)
+    deleted_file._write_marks(root, ())
+    commit_all(root, "every mark repaid")
+
+
+DELETED_FILE_HISTORIES = [
+    pytest.param(lambda root: (_four_marks(root), deleted_file._delete(root)), id="deleted"),
+    pytest.param(lambda root: (_four_marks(root), deleted_file._empty(root)), id="emptied"),
+    pytest.param(lambda root: (_four_marks(root), (root / MARKS).unlink()),
+                 id="deleted-uncommitted"),
+    pytest.param(_repaid_then_deleted, id="repaid-then-deleted"),
+    pytest.param(_stamp_and_no_rows, id="stamp-and-no-rows"),
+    pytest.param(deleted_file._mark_plain_then_delete, id="plain-then-deleted"),
+]
+
+
+@pytest.mark.parametrize("build", DELETED_FILE_HISTORIES)
+def test_the_0_8_1_events_on_the_deleted_marks_file_histories(repo, build):  # noqa: F811
+    """test_ratchet_report_counts_a_deleted_marks_file.py's histories."""
+    build(repo)
+
+    assert _same_events_both_ways(repo)
+
+
+MERGED_HISTORIES = [
+    pytest.param(merged_history._k(1, 2, 3, 4, 5, 6, 7, 8),
+                 merged_history._k(1, 3, 4, 5, 6, 7, 8, 9),
+                 merged_history._k(1, 2, 3, 4, 6, 7, 8, 9), id="both-added"),
+    pytest.param(merged_history._k(1, 2, 3, 4, 5, 6, 7, 8) + merged_history._names("m1", "m3"),
+                 merged_history._names("m1", "m2", "m3"),
+                 merged_history._names("m1", "m3", "m4"), id="both-pruned"),
+    pytest.param(merged_history._k(1, 2, 3, 4) + merged_history._names("m1", "m3"),
+                 merged_history._k(2, 3, 4) + merged_history._names("m1", "m2", "m3"),
+                 merged_history._k(2, 3, 4) + merged_history._names("m1", "m3", "m4"),
+                 id="both-repaid"),
+]
+
+
+@pytest.mark.parametrize("base, side_a, side_b", MERGED_HISTORIES)
+def test_the_0_8_1_events_on_the_merged_histories(repo, base, side_a, side_b):  # noqa: F811
+    """test_ratchet_report_reads_a_merged_history.py's two-branch histories,
+    before and after the marks file is deleted."""
+    merged_history._two_branches(repo, base, side_a=side_a, side_b=side_b)
+    assert _same_events_both_ways(repo)
+
+    merged_history._delete(repo)
+
+    assert _same_events_both_ways(repo)
+
+
+def test_the_0_8_1_events_on_a_merge_resolved_as_repaid(repo, monkeypatch):  # noqa: F811
+    """The conflicted merge that kept b's repayment of k3, then the delete."""
+    merged_history._merge_resolved_as_repaid(repo, monkeypatch)
+    assert _same_events_both_ways(repo)
+
+    merged_history._dated(monkeypatch, 6)
+    merged_history._delete(repo)
+
+    assert _same_events_both_ways(repo)
+
+
+def test_the_0_8_1_events_on_a_fresh_seed(repo, capsys):  # noqa: F811
+    """test_ratchet_report_fresh_seed_e2e.py's history, in process: `ratchet
+    seed` writes one mark, read before and after the commit that holds it."""
+    seed_artifacts(repo)
+    add_knotty(repo)
+    commit_all(repo, "knotty")
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    assert main(["ratchet", "seed", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    assert _same_events_both_ways(repo) == []
+
+    commit_all(repo, "seed the ratchet")
+
+    assert [kind for _, _, kind, _ in _same_events_both_ways(repo)] == ["added"]
+
+
+# --- the marks a commit held, and the moves between revisions -------------------
+# marks_at answers what one commit held, through the one read verify's stand-in
+# uses; moves pairs the keys each revision dropped and added (keys.pair_moves).
+# Check 1: oracles/marks_history_walk.py reads each commit's file whole with no
+# crapkit. Check 2: test_keys_resolve.py's independent pairing model, applied to
+# each consecutive pair of the oracle's revisions.
+
+def shas(root: Path) -> list[str]:
+    return git(root, "rev-list", "--reverse", "HEAD").split()
+
+
+def test_marks_at_each_commit_is_that_revision_and_nothing_refuses(saved_every_way):
+    """The first three commits hold the file under its old name, the git mv
+    and every later one under MARKS."""
+    read = marks_history(saved_every_way, MARKS)
+    paths = [OLD] * 3 + [MARKS] * 4
+
+    held = [marks_at(saved_every_way, sha, path) for sha, path in zip(shas(saved_every_way), paths)]
+
+    assert held == [revision.marks for revision in read]
+    assert held[1][CAFE] == 5.0, "the cp1252 byte reads as U+FFFD in that one name"
+    assert held[2][key("d( n )")] == 12.0, "the UTF-16 LE revision with its BOM parses"
+    assert marks_at(saved_every_way, shas(saved_every_way)[3], OLD) is None, "git mv deleted it"
+
+
+def test_marks_at_is_none_before_the_file_existed_and_where_it_was_deleted(history):
+    root = Path(history["root"])
+
+    assert marks_at(root, history["base"], MARKS) is None
+    assert marks_at(root, history["newer"], MARKS) == {("src/a.py", "hot( n )"): 10.0}
+    assert marks_at(root, history["gone"], MARKS) is None
+
+
+def test_marks_at_a_commit_a_depth_one_clone_lacks_names_the_fetch(history, tmp_path):
+    shallow = tmp_path / "shallow"
+    git(tmp_path, "clone", "-q", "--depth", "1", Path(history["root"]).as_uri(), str(shallow))
+
+    with pytest.raises(GitError) as refused:
+        marks_at(shallow, history["first"], MARKS)
+
+    assert gitio.shallow_fix(shallow).endswith("git fetch --unshallow")
+    assert str(refused.value).endswith(gitio.shallow_fix(shallow))
+
+
+def _oracle_marks_at_every_commit(root: Path) -> int:
+    """Check 1: the oracle's whole-file read equals marks_at at every commit
+    (the oracle reads a missing or blank file as no marks). Answers the
+    commits checked."""
+    from accuracy.history_oracles.oracles import marks_history_walk
+
+    every = shas(root)
+    for sha in every:
+        oracle = marks_history_walk._marks_at(root, sha, MARKS)
+        assert (marks_at(root, sha, MARKS) or {}) == {k: float(crap) for k, crap in oracle.items()}, sha
+    return len(every)
+
+
+def test_the_history_walk_oracle_equals_marks_at_at_every_commit(tmp_path):
+    steps = [rows(*BASE), rows(("a( n )", 10.0), ("b( n )", 20.0), ("c( n )", 20.0)),
+             rows(("a( n )", 10.0), ("c( n )", 20.0)), b"", rows(("a( n )", 10.0))]
+    _commit_bytes(tmp_path, steps)
+    git(tmp_path, "rm", "-q", MARKS)
+    git(tmp_path, "commit", "-q", "-m", "delete")
+
+    assert _oracle_marks_at_every_commit(tmp_path) == len(steps) + 1
+
+
+@pytest.mark.parametrize("name, commits", [("BURN", 6), ("BURN_TIGHTEN", 3)])
+def test_the_history_walk_oracle_equals_marks_at_on_every_history_spec(tmp_path, name, commits):
+    from accuracy.history_oracles.repos import history_specs
+    from accuracy.kit import repos
+
+    built = repos.build(getattr(history_specs, name), tmp_path / name)
+
+    assert _oracle_marks_at_every_commit(built.root) == commits
+
+
+def _rekeyed_with_an_unrelated_commit(root: Path) -> list[str]:
+    """seed, a commit that leaves the marks file alone, the re-key, the twin."""
+    repository(root)
+    marks_file = MARKS.encode()
+    return [raw_commit(root, files={marks_file: rekey.marks_bytes(rekey.SEEDED)}, age_days=400),
+            raw_commit(root, files={b"README": b"r\n"}, age_days=300),
+            raw_commit(root, files={marks_file: rekey.marks_bytes(rekey.REKEYED)}, age_days=30),
+            raw_commit(root, files={marks_file: rekey.marks_bytes(rekey.SECOND)}, age_days=0)]
+
+
+def test_moves_over_the_whole_history_report_the_rekey_once(tmp_path):
+    """The commit that adds a second classify drops nothing, so pair_moves
+    leaves the twin unpaired and no move is reported for it."""
+    made = rekey.rekey_history(tmp_path)
+    rekeyed = marks_history(tmp_path, MARKS)[1]
+
+    assert moves(tmp_path, None, MARKS) == [
+        Move(made.rekeyed, rekeyed.time, rekey.PATH, (rekey.PATH, rekey.OLD),
+             (rekey.PATH, rekey.NEW))]
+    assert rekeyed.marks == {(rekey.PATH, rekey.NEW): 7.0}
+
+
+def test_moves_over_a_range_that_starts_after_the_rekey_are_none(tmp_path):
+    made = rekey.rekey_history(tmp_path)
+
+    assert moves(tmp_path, f"{made.rekeyed}..HEAD", MARKS) == []
+
+
+def test_moves_from_a_base_that_left_the_marks_file_alone_pair_the_bases_marks(tmp_path):
+    seeded, unrelated, rekeyed, _ = _rekeyed_with_an_unrelated_commit(tmp_path)
+    base = marks_at(tmp_path, unrelated, MARKS)
+    first = marks_history(tmp_path, MARKS)[1].marks
+    expected = keys.pair_moves(rekey.PATH, base.keys() - first.keys(), first.keys() - base.keys())
+
+    found = moves(tmp_path, f"{unrelated}..HEAD", MARKS)
+
+    assert base == marks_at(tmp_path, seeded, MARKS)
+    assert [(m.commit, m.old_key, m.new_key) for m in found] == [(rekeyed, *expected.pairs[0])]
+
+
+def _renamed_and_rekeyed_after_the_base(root: Path) -> list[str]:
+    """seed under OLD, a commit that leaves it alone, then one commit that
+    git mv's it to MARKS and re-keys classify. Eight filler marks keep the
+    re-keyed file similar enough for git to pair the rename."""
+    filler = b"".join(b"calc/other.py\tf%d( x )\t%d.0000\n" % (i, i) for i in range(1, 9))
+    repository(root)
+    return [raw_commit(root, files={OLD.encode(): rekey.marks_bytes(rekey.SEEDED) + filler},
+                       age_days=400),
+            raw_commit(root, files={b"README": b"r\n"}, age_days=300),
+            raw_commit(root, files={MARKS.encode(): rekey.marks_bytes(rekey.REKEYED) + filler},
+                       deletes=(OLD.encode(),), age_days=30)]
+
+
+@pytest.mark.parametrize("base", [0, 1], ids=["seed-base", "unrelated-base"])
+def test_moves_from_a_base_before_a_git_mv_that_rekeys_pair_the_old_names_marks(tmp_path, base):
+    """The range's first revision renamed the file and re-keyed a mark: it
+    pairs against the old name's marks at the base, as the whole history does."""
+    made = _renamed_and_rekeyed_after_the_base(tmp_path)
+    assert gitio.commit_renames(tmp_path, made[2]) == {OLD: MARKS}, "git pairs the rename"
+    whole = moves(tmp_path, None, MARKS)
+
+    found = moves(tmp_path, f"{made[base]}..HEAD", MARKS)
+
+    assert [(m.commit, m.old_key, m.new_key) for m in whole] == [
+        (made[2], (rekey.PATH, rekey.OLD), (rekey.PATH, rekey.NEW))]
+    assert found == whole
+
+
+def test_a_range_whose_base_is_not_an_ancestor_names_both_ends(tmp_path):
+    made = rekey.rekey_history(tmp_path)
+
+    with pytest.raises(GitError) as refused:
+        moves(tmp_path, f"{made.second}..{made.seeded}", MARKS)
+
+    assert made.second in str(refused.value) and made.seeded in str(refused.value)
+
+
+def _model_moves(root: Path) -> set:
+    """Check 2: test_keys_resolve.py's pairing model over each consecutive
+    pair of the oracle's revisions, as (time, old key, new key)."""
+    from accuracy.history_oracles.oracles import marks_history_walk
+    from test_keys_resolve import model_pairs
+
+    found, before = set(), {}
+    for version in marks_history_walk.versions(root, MARKS):
+        dropped, added = before.keys() - version.marks.keys(), version.marks.keys() - before.keys()
+        for path in {k[0] for k in dropped | added}:
+            found |= {(version.at, *pair) for pair in model_pairs(path, dropped, added)[0]}
+        before = version.marks
+    return found
+
+
+def _moved_a_lot(root: Path) -> None:
+    """Moves in two files in one commit, a name two marks left (no pair), a
+    twin that never carries, a value change beside a move, and a move back."""
+    def write(age: int, *marked: tuple[str, str, str]) -> None:
+        body = rekey.STAMP + "\n# crapkit-keys=1\npath\tlong_name\tcrap\n"
+        body += "".join(f"{path}\t{name}\t{crap}\n" for path, name, crap in marked)
+        raw_commit(root, files={MARKS.encode(): body.encode("utf-8")}, age_days=age)
+
+    repository(root)
+    write(50, ("a.py", "f( x )", "9.0"), ("b.py", "g( x )", "8.0"), ("a.py", "h( x )", "7.0"),
+          ("a.py", "h( y )", "6.0"))
+    write(40, ("a.py", "f( x , y )", "9.0"), ("b.py", "g( )", "5.0"), ("a.py", "h( z )", "7.0"))
+    write(30, ("a.py", "f( x , y )", "9.0"), ("b.py", "g( )", "5.0"), ("a.py", "h( z )", "7.0"),
+          ("a.py", "h( z )#2", "3.0"))
+    write(20, ("a.py", "f( x )", "9.0"), ("b.py", "g( )", "5.0"), ("a.py", "h( z )", "7.0"))
+
+
+@pytest.mark.parametrize("build", [rekey.rekey_history, _moved_a_lot])
+def test_the_independent_pairing_model_equals_moves(tmp_path, build):
+    build(tmp_path)
+
+    found = {(m.time, m.old_key, m.new_key) for m in moves(tmp_path, None, MARKS)}
+
+    assert found == _model_moves(tmp_path)
+    assert found, "each history moves at least one mark"
+
+
+# --- a large marks file, edited one commit at a time -----------------------------
+# Consecutive revisions of a large marks file share almost every row. Each
+# history here starts from 400 marks, about 12 KB, and edits them one commit at
+# a time, at the start, the middle and the end of the file. Every revision must
+# read as the whole file reads (RatchetFile.committed, then read_ratchet, the
+# first mark under a key answering), and its events must name exactly what the
+# commit changed, wherever the edit falls.
+
+BIG = 400
+BIG_EPOCH = 1_750_000_000
+
+
+def big_key(n: int, name: str = "f") -> tuple[str, str]:
+    return (f"src/p{n // 10:02d}.py", f"{name}{n:03d}( a )")
+
+
+def big_row(n: int, crap: str = "", name: str = "f") -> bytes:
+    path, key_name = big_key(n, name)
+    return f"{path}\t{key_name}\t{crap or f'{30 + n}.0000'}\n".encode()
+
+
+BIG_ROWS = [big_row(n) for n in range(BIG)]
+
+
+def big_text(rows_: list[bytes]) -> bytes:
+    return HEADER + b"".join(rows_)
+
+
+def _row_at(offset: int) -> int:
+    """The row of BIG_ROWS that holds `offset` of big_text(BIG_ROWS)."""
+    ends = [len(big_text(BIG_ROWS[:n + 1])) for n in range(BIG)]
+    return next(n for n, end in enumerate(ends) if end > offset)
+
+
+# The rows that open and close the file, and the rows that hold its 4 KB and
+# 8 KB offsets.
+EDGES = sorted({0, 1, _row_at(4096), _row_at(4096) + 1, _row_at(8192), BIG - 2, BIG - 1})
+
+
+def _big_history(root: Path, revisions: list[bytes | None]) -> Path:
+    """One commit per revision, a day apart from BIG_EPOCH, all written by one
+    `git fast-import`. None deletes the marks file."""
+    repository(root)
+    stream = []
+    for day, data in enumerate(revisions):
+        stamp = b"%d +0000" % (BIG_EPOCH + day * DAY)
+        change = (b"D %s\n" % MARKS.encode() if data is None
+                  else b"M 100644 inline %s\ndata %d\n%s\n" % (MARKS.encode(), len(data), data))
+        stream += [b"commit refs/heads/main\n", b"author a <a@example.test> %s\n" % stamp,
+                   b"committer c <c@example.test> %s\n" % stamp, b"data 4\nedit\n", change, b"\n"]
+    subprocess.run(["git", "fast-import", "--quiet"], cwd=root, input=b"".join(stream),
+                   capture_output=True, check=True)
+    return root
+
+
+def _whole_read(root: Path, data: bytes | None) -> dict | None:
+    """One revision read whole: the marks a reader that skips nothing gives."""
+    held = None if data is None else RatchetFile.committed(root / MARKS, data)
+    return None if held is None or held.blank else crap_by_key(read_ratchet(held.text)[0])
+
+
+def _read_after_the_base(root: Path, revisions: list[bytes | None]) -> list[tuple]:
+    """The history read back: each revision equals the whole read of its
+    bytes and diffs the one before it. Answers the events after the base,
+    each dated by its revision's index."""
+    read = marks_history(_big_history(root, revisions), MARKS)
+    whole = [_whole_read(root, data) for data in revisions]
+    assert [revision.marks for revision in read] == whole
+    assert [revision.before for revision in read] == [None, *whole[:-1]]
+    return [((ts - BIG_EPOCH) // DAY, *rest) for ts, *rest in mark_events(read) if ts > BIG_EPOCH]
+
+
+def _edited(at: int, *new: bytes) -> list[bytes]:
+    """The 400 rows with row `at` replaced by `new` (none: deleted)."""
+    return BIG_ROWS[:at] + list(new) + BIG_ROWS[at + 1:]
+
+
+@pytest.mark.parametrize("at", EDGES)
+def test_a_changed_value_updates_that_one_mark(tmp_path, at):
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS),
+                                             big_text(_edited(at, big_row(at, "9.5000")))])
+
+    assert events == [(1, big_key(at), "updated", 9.5)]
+
+
+@pytest.mark.parametrize("at", EDGES)
+def test_a_key_moved_to_a_new_name_enters_the_new_key_and_repays_the_old(tmp_path, at):
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS),
+                                             big_text(_edited(at, big_row(at, name="g")))])
+
+    assert events == [(1, big_key(at, "g"), "added", 30.0 + at),
+                      (1, big_key(at), "dropped", 30.0 + at)]
+
+
+@pytest.mark.parametrize("at", EDGES)
+def test_a_duplicate_key_reads_its_first_mark(tmp_path, at):
+    """A second row under a key changes nothing while the first row stays
+    first; a duplicate written before it wins, and the mark goes only with
+    the last row under the key."""
+    later = _edited(at, BIG_ROWS[at], big_row(at, "99.0000"))
+    earlier = _edited(at, big_row(at, "5.0000"), BIG_ROWS[at])
+    only_earlier = _edited(at, big_row(at, "5.0000"))
+
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS), big_text(later),
+                                             big_text(BIG_ROWS), big_text(earlier),
+                                             big_text(only_earlier), big_text(_edited(at))])
+
+    assert events == [(1, None, "observed", 0.0), (2, None, "observed", 0.0),
+                      (3, big_key(at), "updated", 5.0), (4, None, "observed", 0.0),
+                      (5, big_key(at), "dropped", 5.0)]
+
+
+@pytest.mark.parametrize("at", [0, _row_at(4096), BIG - 1])
+def test_a_row_listed_twice_reads_as_one_mark(tmp_path, at):
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS),
+                                             big_text(_edited(at, BIG_ROWS[at], BIG_ROWS[at])),
+                                             big_text(BIG_ROWS)])
+
+    assert events == [(1, None, "observed", 0.0), (2, None, "observed", 0.0)]
+
+
+@pytest.mark.parametrize("gone", [
+    pytest.param(b"", id="empty"),
+    pytest.param(b"\xef\xbb\xbf\n\n", id="byte-order-mark-and-blank-lines"),
+    pytest.param(HEADER, id="header-only"),
+    pytest.param(None, id="deleted"),
+])
+def test_a_revision_with_no_marks_repays_every_mark_and_the_next_enters_them_again(tmp_path,
+                                                                                  gone):
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS), gone, big_text(BIG_ROWS)])
+
+    every = sorted(big_key(n) for n in range(BIG))
+    crap = {big_key(n): 30.0 + n for n in range(BIG)}
+    assert events == ([(1, k, "dropped", crap[k]) for k in every]
+                      + [(2, k, "added", crap[k]) for k in every])
+
+
+@pytest.mark.parametrize("at", [0, _row_at(4096), BIG - 1])
+def test_a_crap_that_is_not_finite_holds_no_mark(tmp_path, at):
+    """read_ratchet refuses nan and inf (ratchet._finite_mark), so no revision
+    holds a mark that does not equal itself: the row reads as no mark."""
+    texts = [big_text(_edited(at, big_row(at, crap))) for crap in ("nan", "inf", "-inf", "1e999")]
+
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS), *texts,
+                                             big_text(_edited(at, big_row(at, "31.0000")))])
+
+    assert events == [(1, big_key(at), "dropped", 30.0 + at), (2, None, "observed", 0.0),
+                      (3, None, "observed", 0.0), (4, None, "observed", 0.0),
+                      (5, big_key(at), "added", 31.0)]
+
+
+def test_runs_of_rows_added_and_removed_enter_and_repay_each_mark(tmp_path):
+    added = [big_row(n, name="h") for n in range(50, 110)]
+    grown = BIG_ROWS[:56] + added + BIG_ROWS[56:]
+    shrunk = grown[:150] + grown[250:]
+
+    events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS), big_text(grown),
+                                             big_text(shrunk)])
+
+    assert events == ([(1, big_key(n, "h"), "added", 30.0 + n) for n in range(50, 110)]
+                      + [(2, big_key(n), "dropped", 30.0 + n) for n in range(90, 190)])
+
+
+def test_the_last_row_reads_with_or_without_a_closing_newline(tmp_path):
+    last = BIG - 1
+    changed = big_text(_edited(last, big_row(last, "7.0000")))
+
+    events = _read_after_the_base(tmp_path, [
+        big_text(BIG_ROWS)[:-1], changed[:-1], changed,
+        big_text(_edited(last, big_row(last, "7.5000")))[:-1], big_text(BIG_ROWS)])
+
+    assert events == [(1, big_key(last), "updated", 7.0), (2, None, "observed", 0.0),
+                      (3, big_key(last), "updated", 7.5),
+                      (4, big_key(last), "updated", 30.0 + last)]
+
+
+def test_line_endings_a_stamp_and_row_order_change_no_mark(tmp_path):
+    crlf_row = _edited(_row_at(4096), BIG_ROWS[_row_at(4096)].replace(b"\n", b"\r\n"))
+    restamped = big_text(BIG_ROWS).replace(b"analysis=11", b"analysis=12")
+
+    events = _read_after_the_base(tmp_path, [
+        big_text(BIG_ROWS), big_text(crlf_row), big_text(BIG_ROWS).replace(b"\n", b"\r\n"),
+        restamped, big_text(BIG_ROWS[::-1]), big_text(_edited(3, big_row(3, "1.0000")))])
+
+    assert events == [(day, None, "observed", 0.0) for day in range(1, 5)] + [
+        (5, big_key(3), "updated", 1.0)]
+
+
+def _random_edit(rng, rows_: list[bytes], serial: int) -> list[bytes]:
+    """One random edit of `rows_`: a value, a run of rows added or removed, a
+    key renamed, a signature changed (a move keys.pair_moves pairs), a
+    duplicate before or after its key, a row repeated, two rows swapped, CRLF
+    on one row, or a crap that is not finite."""
+    at = rng.randrange(len(rows_))
+    row, head, tail = rows_[at], rows_[:at], rows_[at + 1:]
+    keyed = row.rsplit(b"\t", 1)[0]
+    edits = [
+        lambda: [*head, keyed + b"\t%d.0000\n" % rng.randrange(1, 900), *tail],
+        lambda: [*head, *(big_row(serial + i, name="n") for i in range(rng.randrange(1, 9))),
+                 row, *tail],
+        lambda: head + rows_[at + rng.randrange(1, 9):],
+        lambda: [*head, row.replace(b"\tf", b"\tm", 1), *tail],
+        lambda: [*head, row.replace(b"( a )", b"( a , b )", 1), *tail],
+        lambda: [*head, keyed + b"\t4.0000\n", row, *tail],
+        lambda: [*head, row, keyed + b"\t4.0000\n", *tail],
+        lambda: [*head, row, row, *tail],
+        lambda: [*head, *rows_[at:at + 2][::-1], *rows_[at + 2:]],
+        lambda: [*head, row.replace(b"\n", b"\r\n"), *tail],
+        lambda: [*head, keyed + b"\tnan\n", *tail],
+    ]
+    return rng.choice(edits)()
+
+
+def _random_revisions(seed: int, count: int) -> list[bytes | None]:
+    """`count` revisions of the 400 rows, each a random edit away from the
+    last; now and then the closing newline goes, the file is emptied or
+    deleted, or the 400 rows come back. An edit that lists a key twice lasts
+    one revision, so most revisions follow one that lists each key once."""
+    import random
+
+    rng = random.Random(seed)
+    current, revisions = list(BIG_ROWS), [big_text(BIG_ROWS)]
+    while len(revisions) < count:
+        pick = rng.randrange(12)
+        if pick < 10 and current:
+            edited = _random_edit(rng, current, BIG + 10 * len(revisions))
+            data = big_text(edited)[:-1] if pick == 0 else big_text(edited)
+            keyed = {tuple(row.split(b"\t")[:2]) for row in edited}
+            current = edited if len(keyed) == len(edited) else current
+        elif pick == 10:
+            data = rng.choice([b"", None])
+        else:
+            current = list(BIG_ROWS)
+            data = big_text(current)
+        if data != revisions[-1]:
+            revisions.append(data)
+    return revisions
+
+
+@pytest.mark.parametrize("seed", [4033, 4034, 4035])
+def test_a_long_random_history_reads_every_revision_whole(tmp_path, seed):
+    """Every revision equals the whole read of its bytes, and its events and
+    moves are the ones a diff of every key the two revisions hold gives."""
+    revisions = _random_revisions(seed, 60)
+    read = marks_history(_big_history(tmp_path, revisions), MARKS)
+
+    assert len(read) == 60
+    assert [revision.marks for revision in read] == [_whole_read(tmp_path, d) for d in revisions]
+    every_key = [MarksRevision(r.commit, r.time, r.marks, r.before) for r in read]
+    assert mark_events(read) == mark_events(every_key)
+    assert [(m.commit, m.old_key, m.new_key) for m in moves(tmp_path, None, MARKS)] == (
+        _every_key_moves(read))
+
+
+def _every_key_moves(read: list[MarksRevision]) -> list[tuple]:
+    """keys.pair_moves over every key each revision dropped and added."""
+    found = []
+    for revision in read:
+        before, after = revision.before or {}, revision.marks or {}
+        dropped, added = before.keys() - after.keys(), after.keys() - before.keys()
+        for path in sorted({key[0] for key in dropped | added}):
+            found += [(revision.commit, *pair)
+                      for pair in keys.pair_moves(path, dropped, added).pairs]
+    return found

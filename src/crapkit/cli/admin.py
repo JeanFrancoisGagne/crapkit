@@ -24,6 +24,7 @@ from ..invocation import _self, quoted_path, shell_arg
 from ..lane_command import (LaunchSpec, expand_launchers, first_word, install_python, launch_spec,
                             pytest_head, pytest_python, python_token, shell_segments)
 from ..named import first_few
+from ..programs import find, search_path
 from ..repopath import typed_path
 from ..rootfind import MAX_LEVELS, find_root
 from ..store import SnapshotStore
@@ -50,10 +51,8 @@ def _python_name() -> str:
     On Windows `python3` resolves only through the same WindowsApps alias that
     supplies `python`, so where the first name is missing the second is missing
     too, and writing it names an interpreter this very machine cannot run."""
-    import shutil
-
     for name in ("python", "python3", "py"):
-        if shutil.which(name):
+        if find(name):
             return name
     return "python3"
 
@@ -164,10 +163,8 @@ def _bare_python() -> str:
     `python3` there. A machine where only another name resolves (`py` on
     Windows, `python` alone on POSIX) keeps that name, so the config still
     runs on the machine that wrote it."""
-    import shutil
-
     token = python_token()
-    return token if shutil.which(expand_launchers(token)) else _python_name()
+    return token if find(expand_launchers(token)) else _python_name()
 
 
 def _present_markers(root: Path) -> frozenset[str]:
@@ -187,7 +184,17 @@ def _marker_texts(root: Path) -> dict[str, str]:
 
 
 
-def _package_json(root: Path) -> dict:
+class PackageMap(NamedTuple):
+    """Every tracked package.json doctor or init read, by the directory holding it
+    ("" for the root), and the path of each one it could not read with the reason."""
+    packages: dict
+    unreadable: dict[str, str]
+
+
+NO_PACKAGES = PackageMap({}, {})
+
+
+def _package_json(root: Path, caller=None) -> dict:
     """Every tracked package.json, parsed once here into the fields init reads
     (scaffold.NpmPackage), keyed by the directory holding it and "" for the
     root one. No other module parses the file.
@@ -196,12 +203,17 @@ def _package_json(root: Path) -> dict:
     from the root alone, init bound the js lane to a root script that only
     chains the workspaces and produces no coverage of its own. A vendored
     node_modules is skipped: its packages describe somebody else's tests.
+
+    `caller` is the reader that reads one file for its command, and says what a
+    file it cannot read means there: init's by default, which stops on the root
+    one and skips a nested one with a line; doctor's records it and goes on.
     """
     from ..scaffold import npm_package
 
+    read = caller or _package_object
     found = {}
     for path in _package_files(root):
-        data = _package_object(root, path)
+        data = read(root, path)
         if data is not None:
             found[path.rpartition("/")[0]] = npm_package(data)
     return found
@@ -261,18 +273,52 @@ def _next_step(scopes: dict, lanes: tuple) -> str:
 
 
 def _unrouted_workspaces_note(written: tuple, package_json) -> str | None:
-    """Why there is no js lane when several workspaces could each have had
-    one. File presence cannot pick among them, and saying nothing left a
-    monorepo lead to learn it from doctor's next line."""
+    """Why no lane init wrote runs a JS runner when several workspaces could
+    each have had one. File presence cannot pick among them, and saying nothing
+    left a monorepo lead to learn it from doctor's next line."""
     from ..scaffold import runner_workspaces
 
     named = runner_workspaces(package_json)
-    if len(named) < 2 or any(lane.parser == "istanbul" for lane in written):
+    found = [(lane, _lane_toolchain(lane, PackageMap(package_json, {}))) for lane in written]
+    if len(named) < 2 or any(_js_runner(runner) for _, runner in found):
         return None
     listed = ", ".join(f"{directory}: {runner}" for directory, runner in named)
-    return (f"{len(named)} workspaces name a runner ({listed}) and the root names none, so "
-            "no js lane was written: declare one [[lane]] per workspace from the commented "
-            "template, each with its own cwd and artifact")
+    return (f"{len(named)} workspaces name a runner ({listed}) and the root's devDependencies "
+            f"name none, so {_in_their_place(found)}, each with its own cwd and artifact")
+
+
+def _js_runner(found) -> bool:
+    """Does toolchain.infer name a runner a package.json can name (vitest,
+    jest)? devDependencies count: the note's own claim, that the root's
+    devDependencies name none, is a devDependencies fact, so a root lane whose
+    runner only devDependencies name answers it."""
+    from ..toolchain import TOOLCHAINS
+
+    return found.name is not None and TOOLCHAINS[found.name].dev_dependency is not None
+
+
+def _in_their_place(found: list) -> str:
+    """What init wrote in place of the workspace lanes: the root js lane, whose
+    command names no runner. Its runner is unknown when the root test script
+    only fans out to the workspaces, and a non-JS one when that script names
+    one, such as pytest. Either way the note names the lane in doctor's words:
+    saying no js lane was written contradicted init's own `detected ...
+    lane(s)` line one line up, and doctor's runner line for that lane. A lane
+    whose command names its runner, init's py lane, is not in their place."""
+    unnamed = [(lane, runner) for lane, runner in found if runner.source != "command"]
+    if not unnamed:
+        return ("no js lane was written: declare one [[lane]] per workspace from the "
+                "commented template")
+    lane, runner = unnamed[0]
+    return f"{_lane_runs(lane, runner)}: replace it with one [[lane]] per workspace"
+
+
+def _lane_runs(lane, runner) -> str:
+    """What doctor's runner line says the lane runs, in init's note."""
+    if runner.name is None:
+        return f"the runner of lane {lane.name!r} is unknown ({_unknown_runner(lane, runner)})"
+    where = _READ_FROM[runner.source].format(script=runner.script)
+    return f"lane {lane.name!r} runs {runner.name} ({where})"
 
 
 def _print_init_summary(scopes: dict, lanes: tuple, package_json=None) -> None:
@@ -489,13 +535,28 @@ def _lane_first_run_note(spec: LaunchSpec, lane) -> str | None:
     return None
 
 
-def _probed_lanes(lanes: tuple) -> list:
-    """Only a coveragepy lane running `pytest --cov` has anything to probe."""
-    return [lane for lane in lanes
-            if lane.parser == "coveragepy" and "--cov" in lane.command]
+def _probed_lanes(lanes: tuple, packages: PackageMap = NO_PACKAGES) -> list:
+    """Only a lane that spells `pytest --cov` has a plugin to probe: pytest
+    named in its command or in the package.json script it runs
+    (toolchain.infer's `spelled`), with --cov written where pytest is."""
+    return [lane for lane in lanes if _spells_pytest_cov(lane, packages)]
 
 
-def _warn_missing_pytest_cov(root: Path, lanes: tuple) -> None:
+def _spells_pytest_cov(lane, packages: PackageMap) -> bool:
+    found = _lane_toolchain(lane, packages)
+    return found.name == "pytest" and found.spelled and "--cov" in _spelling_text(lane, found, packages)
+
+
+def _spelling_text(lane, found, packages: PackageMap) -> str:
+    """The text the runner word was read from: the lane's command, or the
+    package.json script that names it, from the package infer read."""
+    if found.script is None:
+        return lane.command
+    cwd_package, root_package = _lane_packages(packages, lane.cwd)
+    return (cwd_package or root_package).scripts[found.script]
+
+
+def _warn_missing_pytest_cov(root: Path, lanes: tuple, packages: PackageMap = NO_PACKAGES) -> None:
     """The first-run trap, caught where it starts. The py lane shells out to
     `pytest --cov`, and the --cov flags come from pytest-cov — a package of the
     REPO's interpreter, so a crapkit dependency could only ever cover installs
@@ -509,7 +570,7 @@ def _warn_missing_pytest_cov(root: Path, lanes: tuple) -> None:
     still earns the two notes ahead of the probe, a manager PATH does not carry
     and a first word the shell cannot start.
     """
-    for lane in _probed_lanes(lanes):
+    for lane in _probed_lanes(lanes, packages):
         note = _lane_first_run_note(launch_spec(root, lane), lane)
         if note:
             print(note, file=sys.stderr)
@@ -680,7 +741,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     gitignore = _extend_gitignore(root, live_lanes(lanes, scopes))
     toml_path.write_text(text, encoding="utf-8", newline="\n")
     _print_init_summary(scopes, lanes, packages)
-    _warn_missing_pytest_cov(root, written.lanes)
+    _warn_missing_pytest_cov(root, written.lanes, PackageMap(packages, {}))
     _print_gitignore_step(gitignore)
     return 0
 
@@ -911,7 +972,99 @@ def _lane_findings(cfg, by_lane: list[tuple]) -> list[Finding]:
             or [_doctor_lane_summary(cfg)])
 
 
-def _doctor_lanes(root: Path, cfg) -> list[Finding]:
+# --- the runner each lane runs ---------------------------------------------------
+#
+# Read from the lane's command, then the package.json script it runs, then
+# devDependencies (toolchain.infer). The package map is read once per doctor and
+# handed to both the text lines and `doctor --json`.
+
+
+def _doctor_packages(root: Path) -> PackageMap:
+    """The package map, read through the one reader with doctor as its caller:
+    a file doctor cannot read is recorded, never fatal."""
+    unreadable: dict[str, str] = {}
+
+    def read(root: Path, rel: str) -> dict | None:
+        from ..repotext import repo_json
+
+        try:
+            return repo_json(root / rel, "it")
+        except ConfigError as exc:
+            unreadable[rel] = str(exc)
+            return None
+
+    return PackageMap(_package_json(root, read), unreadable)
+
+
+def _upward(cwd: str) -> list[str]:
+    """The lane's directory, then each directory above it, ending at the root ("")."""
+    parts = [part for part in cwd.replace("\\", "/").split("/") if part not in ("", ".")]
+    return ["/".join(parts[:end]) for end in range(len(parts), -1, -1)]
+
+
+def _lane_packages(packages: PackageMap, cwd: str) -> tuple:
+    """(the package at the lane's cwd or nearest above it, the root's). Both
+    None when the nearest is one doctor could not read: the lane's runner is
+    then read from its command alone."""
+    unread = {rel.rpartition("/")[0] for rel in packages.unreadable}
+    nearest = _nearest(cwd, {*packages.packages, *unread})
+    if nearest is None or nearest in unread:
+        return None, None
+    return packages.packages[nearest], packages.packages.get("")
+
+
+def _nearest(cwd: str, directories: set[str]) -> str | None:
+    """The first of `directories` at or above the lane's cwd, or None."""
+    return next((d for d in _upward(cwd) if d in directories), None)
+
+
+def _lane_toolchain(lane, packages: PackageMap):
+    from ..toolchain import infer
+
+    cwd_package, root_package = _lane_packages(packages, lane.cwd)
+    return infer(lane.command, cwd_package=cwd_package, root_package=root_package)
+
+
+_READ_FROM = {"command": "named in its command",
+              "script": 'named in package.json script "{script}"',
+              "package.json": "package.json devDependencies; the command names no runner"}
+# What "runner unknown" turns off. Config load and the container rule judge each
+# segment of the command by the runner that segment names, so a lane that names
+# two runners keeps its refusals and loses only the hints that need one runner.
+_NONE_OFF = "runner-specific hints and refusals are off for it"
+_TWO_OFF = ("runner-specific hints are off for it; the refusals still read each segment of its "
+            "command by the runner that segment names")
+
+
+def _runner_line(lane, found) -> Finding:
+    """One line per lane: the runner and where crapkit read it, or why it
+    cannot tell and what that turns off."""
+    if found.name:
+        where = _READ_FROM[found.source].format(script=found.script)
+        return Finding("ok", f"lane {lane.name!r}: runs {found.name} ({where})")
+    off = _TWO_OFF if found.words else _NONE_OFF
+    return Finding("note", f"lane {lane.name!r}: runner unknown ({_unknown_runner(lane, found)}); {off}")
+
+
+def _unknown_runner(lane, found) -> str:
+    if found.words:
+        return f"it runs more than one: {', '.join(found.words)}"
+    return f"{lane.command} names none crapkit knows"
+
+
+def _unreadable_packages(packages: PackageMap) -> list[Finding]:
+    return [Finding("WARN", f"{rel}: {reason}; doctor read the runner of each lane under it "
+                            "from the lane's command alone")
+            for rel, reason in sorted(packages.unreadable.items())]
+
+
+def _doctor_runners(cfg, packages: PackageMap) -> list[Finding]:
+    """A WARN per package.json doctor cannot read, then the runner line of every lane."""
+    return _unreadable_packages(packages) + [_runner_line(lane, _lane_toolchain(lane, packages))
+                                             for lane in cfg.lanes]
+
+
+def _doctor_lanes(root: Path, cfg, packages: PackageMap = NO_PACKAGES) -> list[Finding]:
     """The lane checks, then the probe of every lane that passed them. A lane
     with a problem of its own is not probed: the dead-interpreter FAIL already
     names the word, and init's note would say it again one line down."""
@@ -919,8 +1072,8 @@ def _doctor_lanes(root: Path, cfg) -> list[Finding]:
 
     by_lane = [(lane, _lane_problems_of(root, lane)) for lane in cfg.lanes]
     healthy = [lane for lane, problems in by_lane if not problems]
-    return (_lane_findings(cfg, by_lane) + _doctor_results_artifacts(cfg)
-            + list(unreadable_payloads(cfg.lanes)) + _doctor_lane_probes(root, healthy))
+    return (_lane_findings(cfg, by_lane) + _doctor_results_artifacts(cfg, packages)
+            + list(unreadable_payloads(cfg.lanes)) + _doctor_lane_probes(root, healthy, packages))
 
 
 # One probe answers three questions about the python a lane names: where the
@@ -1040,34 +1193,43 @@ def _coverage_floor(name: str, executable: str, version: str) -> tuple[Finding, 
     return coverage_floor_gap(name, executable, version, upgrade)
 
 
-def _doctor_lane_probes(root: Path, lanes) -> list[Finding]:
-    """init's first-run lane note, asked again of every coverage.py lane that
-    runs `pytest --cov`, so a lane whose python cannot import pytest-cov fails
-    doctor instead of the first `crapkit coverage`. Only those lanes: an
-    istanbul lane has no plugin to import. A manager-headed one names no
-    python to ask and gets a note saying so."""
-    return [finding for lane in _probed_lanes(lanes)
+def _doctor_lane_probes(root: Path, lanes, packages: PackageMap = NO_PACKAGES) -> list[Finding]:
+    """init's first-run lane note, asked again of every lane that spells
+    `pytest --cov` (_probed_lanes), so a lane whose python cannot import
+    pytest-cov fails doctor instead of the first `crapkit coverage`. Only those
+    lanes: another runner has no plugin to import. A lane no python heads
+    names no python to ask and gets a note saying so."""
+    return [finding for lane in _probed_lanes(lanes, packages)
             for finding in _lane_probe_findings(root, lane)]
 
 
-_RESULTS_HINT = {
-    "coveragepy": ("add --junitxml=.crapkit/cov/junit-{name}.xml to the command and "
-                   'results_artifact = ".crapkit/cov/junit-{name}.xml" to the lane'),
-    "istanbul": ("add a junit reporter (vitest: --reporter=default --reporter=junit "
-                 "--outputFile=.crapkit/cov/{name}/junit.xml; jest: jest-junit) and a "
-                 "results_artifact naming its file"),
-}
+# The hint for a lane whose runner is not spelled, or whose runner's row carries
+# none: which flags write a junit file is the runner's to say, so only the key
+# is named.
+_JUNIT_HINT = ("add the runner's junit reporter to the command and a results_artifact "
+               "naming the file it writes")
 
 
-def _doctor_results_artifacts(cfg) -> list[Finding]:
+def _doctor_results_artifacts(cfg, packages: PackageMap = NO_PACKAGES) -> list[Finding]:
     """WARN, never FAIL: the lane measures coverage exactly as it did. What it
     cannot do without a results file is feed the two checks that read one, the
     crashed-worker trust check and no-new-failures, and until now nothing said
     they were off (#26)."""
     return [Finding("WARN", f"lane {lane.name!r} declares no results_artifact: the "
                             "crashed-worker check and the no-new-failures check (exit 8) "
-                            f"cannot run for it; {_RESULTS_HINT[lane.parser].format(name=lane.name)}")
-            for lane in cfg.lanes if lane.parser in _RESULTS_HINT and not lane.results_artifact]
+                            f"cannot run for it; {_junit_hint(lane, packages)}")
+            for lane in cfg.lanes if not lane.results_artifact]
+
+
+def _junit_hint(lane, packages: PackageMap) -> str:
+    """The junit_hint of the runner the lane spells, in its command or the
+    package.json script it runs; the generic hint when it spells none, or one
+    whose row carries no hint. devDependencies alone name no flags."""
+    from ..toolchain import TOOLCHAINS
+
+    found = _lane_toolchain(lane, packages)
+    hint = TOOLCHAINS[found.name].junit_hint if found.spelled else None
+    return (hint or _JUNIT_HINT).format(name=lane.name)
 
 
 def _doctor_artifact_litter(cfg) -> list[Finding]:
@@ -1373,7 +1535,7 @@ def _doctor_commit_encoding(root: Path) -> list[Finding]:
 
 
 def _doctor_container(cfg) -> list[Finding]:
-    """A coverage.py lane `crapkit coverage` refuses in this container (WARN)."""
+    """A pytest lane `crapkit coverage` refuses in this container (WARN)."""
     from ..doctor import container_lane_findings, container_marker
 
     marker = container_marker(os.environ, Path("/.dockerenv").exists())
@@ -1511,12 +1673,13 @@ def _doctor_marks_stamp(root: Path, cfg) -> list[Finding]:
 
 
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
-                     show_files: bool) -> list[Finding]:
+                     show_files: bool, packages: PackageMap) -> list[Finding]:
     named = [f for f in files if readable(f)]
     return (_doctor_keys(raw)
             + _doctor_scopes(root, cfg, files, show_files)
             + _doctor_path_names(cfg, raw, files)
-            + _doctor_lanes(root, cfg)
+            + _doctor_lanes(root, cfg, packages)
+            + _doctor_runners(cfg, packages)
             + _doctor_inputs(root, cfg.lanes)
             + _doctor_stamps(root, cfg.lanes)
             + _doctor_artifact_litter(cfg)
@@ -1600,21 +1763,25 @@ def _newest_run_report(store: SnapshotStore | None) -> dict | None:
             "verdict_ok": runs[-1]["verdict_ok"]}
 
 
-def _lane_report(root: Path, lane, stamps) -> dict:
+def _lane_report(root: Path, lane, stamps, packages: PackageMap = NO_PACKAGES) -> dict:
+    """One `lanes[]` item of doctor --json. With no package map the toolchain
+    is read from the lane's command alone."""
     stamp = stamps.entry(lane.artifact)
+    found = _lane_toolchain(lane, packages)
     return {"artifact": lane.artifact,
             "artifact_present": (root / lane.artifact).is_file(),
             "commit": stamp.get("commit"),
             "name": lane.name,
             "refusal": _lane_refusal(lane, stamps),
-            "seconds": stamp.get("seconds")}
+            "seconds": stamp.get("seconds"),
+            "toolchain": {"name": found.name, "source": found.source}}
 
 
-def _lane_reports(root: Path, cfg) -> list[dict]:
+def _lane_reports(root: Path, cfg, packages: PackageMap) -> list[dict]:
     from ..lane_stamps import read
 
     stamps = read(root)
-    return [_lane_report(root, lane, stamps) for lane in cfg.lanes]
+    return [_lane_report(root, lane, stamps, packages) for lane in cfg.lanes]
 
 
 def _lane_refusal(lane, stamps) -> str | None:
@@ -1674,13 +1841,13 @@ def _unreadable_stamps_file_note(fault: str) -> str:
             "writes the file again, or delete it")
 
 
-def _doctor_report(root: Path, cfg, findings: list[Finding]) -> dict:
+def _doctor_report(root: Path, cfg, findings: list[Finding], packages: PackageMap) -> dict:
     """Everything a wrapper needs to tell lane rot from a stale artifact without
     parsing prose: versions, store, newest run, per-lane stamps, findings."""
     from ..analyze import ANALYSIS_VERSION
 
     return {"analysis_version": ANALYSIS_VERSION,
-            "lanes": _lane_reports(root, cfg),
+            "lanes": _lane_reports(root, cfg, packages),
             "newest_run": _newest_run_report(_store_if_any(root)),
             "problems": _at_level(findings, "FAIL"),
             "resources": _resource_policy(cfg),
@@ -1716,9 +1883,10 @@ def _print_findings(findings: list[Finding]) -> None:
     print(_doctor_verdict(findings))
 
 
-def _emit_doctor(root: Path, cfg, findings: list[Finding], as_json: bool) -> None:
+def _emit_doctor(root: Path, cfg, findings: list[Finding], as_json: bool,
+                 packages: PackageMap) -> None:
     if as_json:
-        _print_json(_doctor_report(root, cfg, findings))
+        _print_json(_doctor_report(root, cfg, findings, packages))
         return
     policy = _resource_policy(cfg)
     print(f"resources: up to {policy['pool_worker_limit']} analysis worker(s) per pool, "
@@ -2114,11 +2282,28 @@ def _probed_cli_version(executable: str) -> str | None:
     from ..repotext import lenient
 
     try:
-        done = subprocess.run([executable, "--version"], capture_output=True,
-                              timeout=_PROBE_TIMEOUT_SECONDS)
+        done = _asked_version(executable)
     except (OSError, subprocess.SubprocessError):
         return None
     return _declared_version(lenient(done.stdout or done.stderr)) if done.returncode == 0 else None
+
+
+# Windows' own spelling is case-blind; os.environ keeps its keys upper-case there,
+# so this spelling replaces the caller's rather than sitting beside it.
+_NO_CWD_SEARCH = {"NODEFAULTCURRENTDIRECTORYINEXEPATH": "1"}
+
+
+def _asked_version(executable: str):
+    """`executable --version`, run from the executable's own folder with cmd.exe's
+    search of its current directory off. A launcher may start its interpreter by
+    bare name: npm's shim for a JS bin runs `node` through cmd.exe, which looks
+    in its current directory first, and a `#!/usr/bin/env node` script has env
+    read an empty PATH entry as that directory. Run from where crapkit stood, a
+    `node.bat` planted in the repo answered doctor's probe."""
+    import subprocess
+
+    return subprocess.run([executable, "--version"], capture_output=True, timeout=_PROBE_TIMEOUT_SECONDS,
+                          cwd=os.path.dirname(executable), env={**os.environ, **_NO_CWD_SEARCH})
 
 
 def _declared_version(answer: str) -> str | None:
@@ -2130,12 +2315,14 @@ def _declared_version(answer: str) -> str | None:
 
 
 def _path_launchers() -> list[str]:
-    """Every crapkit launcher on this PATH, in order, less any environment a
-    one-command runner (uvx, `uv run --with`, `pipx run`) built, which that
-    runner put on doctor's PATH and nothing else on the machine inherits."""
+    """Every crapkit launcher on this PATH's absolute entries, in order, less
+    any environment a one-command runner (uvx, `uv run --with`, `pipx run`)
+    built, which that runner put on doctor's PATH and nothing else on the
+    machine inherits. A relative entry names the working directory, and a
+    launcher found there is a planted file doctor must neither name nor run."""
     from ..launchers import path_launchers
 
-    return path_launchers(os.environ.get("PATH", ""))
+    return path_launchers(os.pathsep.join(search_path()))
 
 
 @lru_cache(maxsize=None)
@@ -2258,19 +2445,18 @@ def _name_found_root(found: _Found, looked_in: str) -> None:
 
 @lru_cache(maxsize=None)
 def _claude_code_version() -> tuple[str, str] | None:
-    """The `claude` on PATH and what its `--version` printed, or None when
-    PATH holds none or it cannot answer. Memoized: one machine fact."""
-    import shutil
+    """The `claude` on PATH's absolute entries and what its `--version`
+    printed, or None when they hold none or it cannot answer. Memoized: one
+    machine fact."""
     import subprocess
 
     from ..repotext import lenient
 
-    executable = shutil.which("claude")
+    executable = find("claude")
     if executable is None:
         return None
     try:
-        done = subprocess.run([executable, "--version"], capture_output=True,
-                              timeout=_PROBE_TIMEOUT_SECONDS)
+        done = _asked_version(executable)
     except (OSError, subprocess.SubprocessError):
         return None
     return executable, lenient(done.stdout).strip()
@@ -2429,8 +2615,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if args.tune:
         return _doctor_tune(root, cfg)
     raw = tomllib.loads(repo_text(root / "crapkit.toml", "crapkit.toml"))
-    findings = _doctor_findings(root, cfg, raw, ls_files(root), args.show_files)
-    _emit_doctor(root, cfg, findings, args.json)
+    packages = _doctor_packages(root)  # read once, for the text lines and --json alike
+    findings = _doctor_findings(root, cfg, raw, ls_files(root), args.show_files, packages)
+    _emit_doctor(root, cfg, findings, args.json, packages)
     return 1 if _at_level(findings, "FAIL") else 0
 
 
@@ -2454,8 +2641,12 @@ def _watch_rescore(root: Path, moved: list[str]) -> None:
         return
     # flush: watch output exists to be tailed live; a block-buffered pipe sits silent
     print(f"--- changed: {', '.join(moved)}", flush=True)
-    # a subprocess so a half-saved syntax error can never kill the watcher
-    run_owned([sys.executable, "-m", "crapkit", "rescore", *present, "--repo", str(root)])
+    # a subprocess so a half-saved syntax error can never kill the watcher.
+    # PYTHONSAFEPATH=1: `-m` puts this working directory, the watched repo's
+    # root, first on sys.path, where a crapkit.py ran in place of crapkit. A
+    # rescore starts no configured command, so the variable reaches none.
+    run_owned([sys.executable, "-m", "crapkit", "rescore", *present, "--repo", str(root)],
+              env={**os.environ, "PYTHONSAFEPATH": "1"})
 
 
 def _watched_files(root: Path, cfg) -> list[str]:

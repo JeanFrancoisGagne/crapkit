@@ -40,8 +40,8 @@ artifact with, or `null`.
 - a `coveragepy` or `istanbul` lane with no `results_artifact`: the crashed-worker and
   no-new-failures checks are off for it, whichever runner the lane spells;
 - a committed hook under `core.hooksPath` that is not executable in the index;
-- a `coveragepy` lane with no `container_ok` inside a container, which the lane runner
-  refuses with exit 5;
+- a lane whose command names pytest and that has no `container_ok`, inside a container,
+  which the lane runner refuses with exit 5;
 - a hook that runs crapkit's gate while git runs another: Route 1 under a global
   `core.hooksPath`, Route 2 in a clone that skipped its `git config` line, or either one
   after husky took `core.hooksPath` back;

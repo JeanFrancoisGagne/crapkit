@@ -11,17 +11,20 @@ so a marks file written before the ordinal reads unchanged.
 
 The file opens with a metric stamp comment naming the analysis version and the
 lizard that produced the numbers. Marks measured under different rules are not
-comparable, and without the stamp that reads as a clean run.
+comparable, and without the stamp that reads as a clean run. `MetricStamp` is
+the stamp's one parsed form: `read_stamp`, `run_stamp` and `metric_version`
+hand it out, and every caller compares and renders that value instead of
+reading the line itself.
 """
 from __future__ import annotations
 
 import math
 import re
-from typing import NamedTuple
+from typing import ClassVar, NamedTuple
 
 from .invariants import check_dump, check_marks_kept
 from .invocation import _self
-from .keys import split_ordinal
+from .keys import MarkIndex, mark_key, rows_by_key, split_ordinal
 from .score import ScoredRow, over_ceiling
 from .records import decode_record, encode_record, record_lines
 
@@ -49,27 +52,101 @@ def stamp_text(analysis_version: int | str, lizard_version: str) -> str:
     return f"crapkit-analysis={analysis_version} lizard={lizard_version}"
 
 
-def run_stamp(tool_versions: dict) -> str:
-    """The metric a stored run was measured under; "" for a run that recorded none."""
+_SINGLE_NUMBER = re.compile(r"crapkit-analysis=([0-9]+) lizard=(\S+)")
+_ANALYSIS = re.compile(r"crapkit-analysis=([0-9]+)(?= |$)")
+
+
+class MetricStamp(str):
+    """The metric a marks file or a stored run was measured under, parsed once.
+
+    Three members: `SingleNumberStamp`, one analysis number and the lizard
+    version; `UnreadableStamp`, a stamp line crapkit cannot parse, kept as it
+    was so a refusal can quote it and a write that adds no number writes it
+    back; and `MetricStamp.NONE`, a file or run that recorded none, which is
+    falsy. A stamp is a str of the text after the `# ` that opens its line, so
+    it prints and serializes as that text, and a caller that still holds the
+    text compares equal to it. Two stamps are equal when they render the same
+    line: for two `SingleNumberStamp`s, the same analysis number and the same
+    lizard version.
+    """
+    __slots__ = ()
+    NONE: ClassVar[MetricStamp]
+
+    @classmethod
+    def parse(cls, text: str) -> MetricStamp:
+        """`text` as the stamp it spells. A line that would not render back as
+        itself is unreadable, so a write never respells a committed stamp."""
+        if not text:
+            return cls.NONE
+        found = _SINGLE_NUMBER.fullmatch(text)
+        stamp = SingleNumberStamp(int(found[1]), found[2]) if found else None
+        return stamp if stamp == text else UnreadableStamp(text)
+
+    @property
+    def analysis(self) -> int | None:
+        """The number after the `crapkit-analysis=` that opens the line, with or
+        without a lizard field after it; None when the line opens with none."""
+        found = _ANALYSIS.match(self)
+        return int(found[1]) if found else None
+
+    def render(self) -> str:
+        """The stamp's line without its `# `, as a plain str; "" for no stamp."""
+        return str(self)
+
+
+class SingleNumberStamp(MetricStamp):
+    """`crapkit-analysis=N lizard=X.Y.Z`: one analysis number for every language."""
+
+    def __new__(cls, analysis: int, lizard: str) -> SingleNumberStamp:
+        stamp = super().__new__(cls, stamp_text(analysis, lizard))
+        stamp._versions = (analysis, lizard)
+        return stamp
+
+    def __getnewargs__(self) -> tuple[int, str]:
+        # A copy or a pickle rebuilds the stamp from its two versions, not its text.
+        return self._versions
+
+    @property
+    def lizard(self) -> str:
+        return self._versions[1]
+
+
+class UnreadableStamp(MetricStamp):
+    """A stamp line that is not one crapkit writes. It compares unequal to every
+    other stamp, so verify refuses the marks instead of reading them as unstamped."""
+    __slots__ = ()
+
+
+class _Unstamped(MetricStamp):
+    __slots__ = ()
+
+
+MetricStamp.NONE = _Unstamped("")
+
+
+def run_stamp(tool_versions: dict) -> MetricStamp:
+    """The metric a stored run was measured under; NONE for a run that recorded none."""
     analysis, lizard = tool_versions.get("analysis_version"), tool_versions.get("lizard")
-    return stamp_text(analysis, lizard) if analysis and lizard else ""
+    if not (analysis and lizard):
+        return MetricStamp.NONE
+    return MetricStamp.parse(stamp_text(analysis, lizard))
 
 
-def metric_version() -> str:
+def metric_version() -> MetricStamp:
     # Imported here, not at module scope: the git merge driver runs this module
     # in a temp dir with no analysis stack, and it passes its own stamp through.
     import lizard
 
     from .analyze import ANALYSIS_VERSION
-    return stamp_text(ANALYSIS_VERSION, lizard.version)
+    return SingleNumberStamp(ANALYSIS_VERSION, lizard.version)
 
 
-def read_stamp(text: str) -> str:
-    """The metric a marks file was written under; "" for one written before stamping."""
+def read_stamp(text: str) -> MetricStamp:
+    """The metric a marks file was written under; NONE for one written before stamping."""
     for line in record_lines(text):
         if line.strip() and not _key_stamp(line):
-            return line[1:].strip() if comment_line(line) else ""
-    return ""
+            return MetricStamp.parse(line[1:].strip()) if comment_line(line) else MetricStamp.NONE
+    return MetricStamp.NONE
 
 
 def read_key_version(text: str) -> int:
@@ -99,10 +176,7 @@ def parsed_marks(text: str, entries=None) -> list:
 def check_reader_keys(text: str, entries=None) -> None:
     """Old expression readers lost callbacks, so their anonymous ordinals lack proof.
     `entries` is `read_ratchet(text)[0]` when the caller already holds it."""
-    stamp = read_stamp(text)
-    prefix = "crapkit-analysis="
-    version = stamp[len(prefix):].partition(" ")[0] if stamp.startswith(prefix) else None
-    check_reader_version(parsed_marks(text, entries), version)
+    check_reader_version(parsed_marks(text, entries), read_stamp(text).analysis)
 
 
 def check_reader_version(entries, version) -> None:
@@ -169,7 +243,7 @@ def marked_collisions(entries, rows) -> set:
     return {_marked_group(entry, present) for entry in entries} & ambiguous_groups(rows)
 
 
-def stamp_conflict(recorded: str, current: str) -> str | None:
+def stamp_conflict(recorded: MetricStamp, current: MetricStamp) -> str | None:
     """The refusal when marks and the running metric disagree; None when they compare.
 
     An unstamped file has nothing to disagree with — the caller warns instead.
@@ -201,7 +275,7 @@ def upgrade_remedy(tools: list[str]) -> str:
 _STAMP_TOOLS = (("crapkit-analysis", "crapkit"), ("lizard", "lizard"))
 
 
-def newer_tools(recorded: str, current: str) -> list[str]:
+def newer_tools(recorded: MetricStamp, current: MetricStamp) -> list[str]:
     """The tools `recorded` names at a newer version than `current` does: `crapkit`
     for the analysis version, `lizard` for lizard's. [] when neither is newer, or
     when a stamp does not read as `crapkit-analysis=N lizard=X.Y.Z`."""
@@ -307,24 +381,12 @@ def load_ratchet(text: str) -> list[RatchetEntry]:
     return entries
 
 
-def mark_for(entries: list[RatchetEntry], path: str, long_name: str) -> float | None:
-    """One function's recorded high-water mark, or None when it carries no mark.
-
-    `long_name` is the KEY name: bare for a name only one function in the file
-    holds, `name#2` for the second function holding it. `keys.key_names` builds
-    it from the rows; passing a raw long_name for a twin asks about twin #1.
-    """
-    for e in entries:
-        if e.path == path and e.long_name == long_name:
-            return e.crap
-    return None
-
-
-def dump_ratchet(entries: list[RatchetEntry], *, stamp: str, key_version: int = 0) -> str:
-    """`stamp` is written verbatim, and "" writes none. No default: a writer that
-    stamped by omission relabeled marks another metric recorded, so the choice
-    belongs to `ratchetfile.RatchetFile`'s stamp rules. Every mark must read back
-    as the number it is (`invariants.check_dump`): the file holds four decimals."""
+def dump_ratchet(entries: list[RatchetEntry], *, stamp: MetricStamp, key_version: int = 0) -> str:
+    """`stamp` is written as the line it renders, and NONE writes none. No
+    default: a writer that stamped by omission relabeled marks another metric
+    recorded, so the choice belongs to `ratchetfile.RatchetFile`'s stamp
+    rules. Every mark must read back as the number it is
+    (`invariants.check_dump`): the file holds four decimals."""
     check_dump(entries)
     lines = [f"# {stamp}"] if stamp else []
     if key_version:
@@ -350,12 +412,10 @@ def _merge_key(b: float | None, o: float | None, t: float | None) -> float | Non
 
 def merge_ratchets(base: list[RatchetEntry], ours: list[RatchetEntry],
                    theirs: list[RatchetEntry]) -> list[RatchetEntry]:
-    b = {(e.path, e.long_name): e.crap for e in base}
-    o = {(e.path, e.long_name): e.crap for e in ours}
-    t = {(e.path, e.long_name): e.crap for e in theirs}
+    b, o, t = MarkIndex(base), MarkIndex(ours), MarkIndex(theirs)
     merged = []
-    for key in sorted(set(b) | set(o) | set(t)):
-        crap = _merge_key(b.get(key), o.get(key), t.get(key))
+    for key in sorted(b.keys() | o.keys() | t.keys()):
+        crap = _merge_key(b.mark(key), o.mark(key), t.mark(key))
         if crap is not None:
             merged.append(RatchetEntry(key[0], key[1], crap))
     return merged
@@ -365,10 +425,8 @@ def seed_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: i
                  scope_targets: dict[str, int] | None = None) -> tuple[list[RatchetEntry], int, int]:
     """First-class mark entry: record every over-ceiling function at its current
     CRAP. A mark never rises, seeding included — an existing lower mark stays."""
-    from .verify import rows_by_key
-
     ceilings = scope_targets or {}
-    marks = {(e.path, e.long_name): e for e in prior}
+    marks = MarkIndex(prior).working_copy()
     added = tightened = 0
     for key, row in rows_by_key(fresh).items():
         if not over_ceiling(row.crap, ceilings.get(row.scope, target)):
@@ -426,7 +484,7 @@ def _rename_target(entry: RatchetEntry, present: set, renames: dict[str, str]) -
     git calls that path renamed, and the SAME key name exists at the new one. A
     copy fails the first (the source survives), so its mark never travels.
     """
-    if (entry.path, entry.long_name) in present:
+    if mark_key(entry) in present:
         return None
     dest = renames.get(entry.path)
     if dest is None or (dest, entry.long_name) not in present:
@@ -438,8 +496,6 @@ def follow_renames(prior: list[RatchetEntry], fresh: list[ScoredRow],
                    renames: dict[str, str]) -> tuple[list[RatchetEntry], int]:
     """Marks for renamed files, re-pathed. Runs BEFORE prune so a rename reads as a
     move, not as code that left the repo and forfeits its high-water mark."""
-    from .verify import rows_by_key
-
     present = set(rows_by_key(fresh))
     return _repath(prior, lambda e: _rename_target(e, present, renames))
 
@@ -449,10 +505,8 @@ def prune_ratchet(prior: list[RatchetEntry],
     """Deliberate mark exit: drop entries whose function is absent from the run.
     The automatic update keeps them (an exclude glob or a lane outage also removes
     rows); prune is the human confirming the code is really gone."""
-    from .verify import rows_by_key
-
     present = set(rows_by_key(fresh))
-    kept = [e for e in prior if (e.path, e.long_name) in present]
+    kept = [e for e in prior if mark_key(e) in present]
     return kept, len(prior) - len(kept)
 
 
@@ -478,12 +532,10 @@ def unstable_marks(prior: list[RatchetEntry], fresh: list[ScoredRow],
     unchanged tree. Only marked functions can be tightened, so only they are
     walked; a key the earlier run never scored has nothing to disagree with.
     """
-    from .verify import rows_by_key
-
     worst = rows_by_key(fresh)
     refusals = []
-    for entry in prior:
-        key = (entry.path, entry.long_name)
+    for entry in MarkIndex(prior).entries():
+        key = mark_key(entry)
         row, was = worst.get(key), previous.get(key)
         if row is None or was is None or not _jumped(was, round(row.crap, 4), max_jump):
             continue
@@ -497,14 +549,17 @@ def update_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target:
     """`hold` names keys whose mark this run may not move — `unstable_marks`
     picks them. A held mark keeps its recorded value, drop included: leaving the
     file is the deepest tighten there is. No mark rises and none is added
-    (`invariants.check_marks_kept`)."""
-    from .verify import rows_by_key
+    (`invariants.check_marks_kept`).
 
+    The update rewrites lines, not keys: a key the file lists twice keeps both
+    lines in the order they came, each tightened or dropped against the same
+    fresh row. The first line stays the one `keys.MarkIndex` answers, and
+    `ratchet_delta` counts the key once."""
     fresh_by_key = rows_by_key(fresh)
     ceilings = scope_targets or {}
     updated = []
     for entry in prior:
-        key = (entry.path, entry.long_name)
+        key = mark_key(entry)
         kept = _updated_mark(entry, fresh_by_key.get(key), key in hold,
                              lambda scope: ceilings.get(scope, target))
         if kept is not None:
@@ -547,7 +602,8 @@ def _mark_move(entry: RatchetEntry, fresh: float | None) -> str:
 def ratchet_delta(prior: list[RatchetEntry], updated: list[RatchetEntry]) -> RatchetDelta:
     """The two counts a green verify reports. A mark never rises and an update
     adds none, so dropped plus tightened is the whole difference between the
-    two lists; a mark that kept its value counts as neither."""
-    after = {(e.path, e.long_name): e.crap for e in updated}
-    moves = [_mark_move(e, after.get((e.path, e.long_name))) for e in prior]
+    two lists; a mark that kept its value counts as neither. Each key counts
+    once, under the mark `keys.MarkIndex` answers for it."""
+    after = MarkIndex(updated)
+    moves = [_mark_move(e, after.mark(mark_key(e))) for e in MarkIndex(prior).entries()]
     return RatchetDelta(moves.count("dropped"), moves.count("tightened"))

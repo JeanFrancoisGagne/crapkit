@@ -17,6 +17,7 @@ import re
 import subprocess
 import sys
 import tomllib
+import warnings
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -251,11 +252,17 @@ def blocking_gaps(item):
     return [blocked] if blocked else []
 
 
+def _row(cell, data):
+    """A cell of an every-harness row names a key of [every_harness]."""
+    return _known(cell["row"], data.get("every_harness", {}), "row") if "row" in cell else []
+
+
 def cell_problems(cell, data=MAP):
     problems = _known(cell["packet"], data["packets"], "packet") + _placement(cell)
     problems += [problem for cadence in cell["cadence"].split("+")
                  for problem in _known(cadence, kitcells.CADENCES, "cadence")]
-    return problems + [problem for gap in blocking_gaps(cell) for problem in _known(gap, data["gaps"], "gap")]
+    problems += [problem for gap in blocking_gaps(cell) for problem in _known(gap, data["gaps"], "gap")]
+    return problems + _row(cell, data)
 
 
 def test_every_cell_names_a_known_packet_cadence_placement_and_gap():
@@ -282,6 +289,16 @@ def test_a_job_cell_that_a_test_also_models_names_a_known_os_and_image():
 
     assert cell_problems(cell) == []
     assert cell_problems({**cell, "os": "plan9", "image": "huge"}) == ["os 'plan9'", "image 'huge'"]
+
+
+def test_a_cell_whose_row_the_every_harness_table_lacks_is_caught_by_name():
+    planted = {"packet": "deploy-harnesses", "cadence": "nightly", "os": "linux", "image": "full",
+               "row": "criterion-11"}
+    data = {**MAP, "cell": {**MAP["cell"], "lin-planted": planted}}
+
+    assert {cell_id: cell_problems(cell, data) for cell_id, cell in data["cell"].items()
+            if cell_problems(cell, data)} == {"lin-planted": ["row 'criterion-11'"]}
+    assert cell_problems({**planted, "row": "lanes-visible-04"}) == []
 
 
 def test_a_gap_that_blocks_one_os_of_a_cell_is_a_known_gap():
@@ -323,6 +340,227 @@ def test_every_pair_names_its_consumer_and_a_cell_or_a_reason():
 
 def test_every_open_question_names_a_probe_cell_or_a_manual_check():
     assert [key for key, item in MAP["unknowns"].items() if ("probe" in item) == ("manual" in item)] == []
+
+
+# --- the every-harness rows -------------------------------------------------------
+#
+# A row is a set of cells that runs under each harness pins.toml pins, fresh
+# and upgrade. Its tag says what a nightly run takes: "all" every harness,
+# "core" the 3 core-image ones. Every other cadence takes every harness.
+# These are the rows the 0.9.0 tickets add, keyed by the ticket whose Deploy
+# cells section adds the row's cells (build-map-13 section 1); a row a later
+# ticket adds passes beside them.
+
+ROWS = {
+    "lanes-visible-06": "all", "m1-readers-09": "all", "mission-4-09/harness": "all", "mission-9-06": "all",
+    "protocol-2-step-08": "all", "schema-2-15": "all",
+    "gate-group-06": "core", "lanes-visible-04": "core", "lanes-visible-05": "core", "lanes-visible-08": "core",
+    "lanes-visible-09": "core", "lanes-visible-10": "core", "m1-readers-03": "core", "m1-readers-04": "core",
+    "m1-readers-05": "core", "m1-readers-06": "core", "m1-readers-07": "core", "m5-comment-fixture-03": "core",
+    "m5-comment-fixture-04": "core", "m5-comment-fixture-05": "core", "m5-comment-fixture-07": "core",
+    "m5-comment-fixture-13": "core", "mission-2-14": "core", "mission-4-09/cli": "core",
+}
+TAGS = ("all", "core")
+
+
+def tag_problems(data=MAP):
+    """Each [every_harness] entry that is not exactly `nightly = "all"` or `nightly = "core"`."""
+    return [f"{key}: {entry!r}" for key, entry in data["every_harness"].items()
+            if set(entry) != {"nightly"} or entry["nightly"] not in TAGS]
+
+
+def _with_row(key, entry):
+    return {**MAP, "every_harness": {**MAP["every_harness"], key: entry}}
+
+
+def test_every_row_has_one_key_nightly_tagged_all_or_core():
+    assert tag_problems() == []
+
+
+@pytest.mark.parametrize("entry", [{"nightly": "some"}, {"nightly": "core", "release": "core"}, {}])
+def test_a_row_with_another_tag_or_a_second_key_is_caught(entry):
+    assert tag_problems(_with_row("lin-planted-row", entry)) == [f"lin-planted-row: {entry!r}"]
+
+
+def row_drift(data=MAP):
+    """Each row of ROWS that [every_harness] lacks or tags otherwise."""
+    tags = {key: entry.get("nightly") for key, entry in data["every_harness"].items()}
+    return [f"{key}: map {tags.get(key)!r}, ticket {tag!r}" for key, tag in ROWS.items() if tags.get(key) != tag]
+
+
+def test_every_harness_holds_each_ticket_row_with_its_tag():
+    assert (len(ROWS), list(ROWS.values()).count("all")) == (24, 6)
+    assert row_drift() == []
+
+
+def test_a_dropped_or_flipped_row_is_caught_and_a_later_row_passes():
+    dropped = {key: entry for key, entry in MAP["every_harness"].items() if key != "m1-readers-09"}
+
+    assert row_drift({**MAP, "every_harness": dropped}) == ["m1-readers-09: map None, ticket 'all'"]
+    assert row_drift(_with_row("lanes-visible-04", {"nightly": "all"})) == [
+        "lanes-visible-04: map 'all', ticket 'core'"]
+    assert row_drift(_with_row("a-later-ticket-01", {"nightly": "core"})) == []
+
+
+def row_cells(row, data=MAP):
+    """The [cell] entries that carry this row."""
+    return sorted(cell for cell, entry in data["cell"].items() if entry.get("row") == row)
+
+
+def pending(row, data=MAP):
+    """Why the row's check skips while no [cell] entry carries it, else None."""
+    if row_cells(row, data):
+        return None
+    return (f"{row} is pending: no [cell] entry in tests/deploy/MAP.toml carries row = {row!r} yet, so the ticket "
+            f"that adds the row's cells has not landed; at the release candidate a skip here names untagged cells")
+
+
+@pytest.mark.parametrize("row", sorted(MAP["every_harness"]))
+def test_every_row_is_carried_by_the_cells_its_ticket_adds(row):
+    reason = pending(row)
+    if reason:
+        pytest.skip(reason)
+
+    assert [cell for cell in row_cells(row) if "job" in MAP["cell"][cell]] == [], "a row's cells are pytest cells"
+
+
+def _meta(image="full", row="lanes-visible-04", os="linux"):
+    """A cell's metadata as cells.cell_meta reads it off the item @cell marked. The unit
+    session registers none of the deploy markers, which tests/deploy/conftest.py does."""
+    def test():
+        pass
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", pytest.PytestUnknownMarkWarning)
+        test = kitcells.cell("lin-row-x", channel="pip venv", harness="gemini-cli", scenario="fresh: x",
+                             use_cases="x", os=os, image=image, cadence="nightly", row=row)(test)
+    mark = next(mark for mark in test.pytestmark if mark.name == "deploy_cell")
+    item = SimpleNamespace(get_closest_marker=lambda name: mark if name == "deploy_cell" else None,
+                           module=SimpleNamespace(PACKET="lanes-visible-04"))
+    return kitcells.cell_meta(item)
+
+
+KEEPS = [  # (the item, what a nightly run does with it)
+    (_meta("full"), False),
+    (_meta("gui"), False),
+    (_meta("core"), True),
+    (_meta(None, os="windows"), True),
+    (_meta("full", row="lanes-visible-06"), True),
+    (_meta("full", row=None), True),
+]
+
+
+def test_cell_records_the_row_with_the_cells_other_fields():
+    assert _meta()["row"] == "lanes-visible-04"
+    assert ("cell_row", "lanes-visible-04") in kitcells.properties(_meta())
+    assert "cell_row" not in dict(kitcells.properties(_meta(row=None)))
+
+
+@pytest.mark.parametrize("meta, kept", KEEPS)
+def test_a_nightly_run_drops_a_core_rows_items_on_the_full_image_and_those_built_on_it(meta, kept):
+    assert kitcells.nightly_keeps(meta, "nightly", MAP["every_harness"]) is kept
+
+
+@pytest.mark.parametrize("cadence", ["push", "weekly", "release", "published", None])
+@pytest.mark.parametrize("meta", [meta for meta, _ in KEEPS])
+def test_every_other_cadence_keeps_every_row_on_every_harness(meta, cadence):
+    assert kitcells.nightly_keeps(meta, cadence, MAP["every_harness"]) is True
+
+
+@pytest.mark.parametrize("cadence", ["nightly", "push", "release", None])
+def test_an_item_whose_row_the_map_lacks_is_refused_naming_the_row(cadence):
+    with pytest.raises(ValueError, match=r"lin-row-x.*'criterion-11'.*\[every_harness\]"):
+        kitcells.nightly_keeps(_meta(row="criterion-11"), cadence, MAP["every_harness"])
+
+
+def test_a_row_turns_from_pending_to_carried_and_back_with_its_cells():
+    # The map's cells with their rows stripped, so the check holds after the
+    # ticket that adds lanes-visible-04's cells tags them in the live map.
+    bare = {**MAP, "cell": {cell: {key: value for key, value in entry.items() if key != "row"}
+                            for cell, entry in MAP["cell"].items()}}
+    entry = {"packet": "deploy-harnesses", "cadence": "nightly", "os": "linux", "image": "full",
+             "row": "lanes-visible-04"}
+    carried = {**bare, "cell": {**bare["cell"], "lin-planted": entry}}
+
+    assert "lanes-visible-04 is pending" in pending("lanes-visible-04", bare)
+    assert pending("lanes-visible-04", carried) is None
+    assert "lanes-visible-04 is pending" in pending("lanes-visible-04", {**carried, "cell": bare["cell"]})
+
+
+# --- the cell ids the 0.9.0 tickets name -----------------------------------------
+#
+# Each id enters the map under the packet of the ticket whose Deploy cells
+# section adds its test, so the landed-packet check below skips it by name
+# until that ticket's module is in the tree (build-map-13 section 3). An id
+# whose module the tree already holds sits under `unowned` instead, and its
+# ticket moves it in the change that adds its @cell.
+
+ADDED = {
+    "lin-cc-only-to-measured": "metric-stamp-07",
+    **dict.fromkeys(["lin-criterion-fresh", "lin-criterion-upgrade", "win-criterion-fresh", "win-criterion-upgrade"],
+                    "criterion-13"),
+    **dict.fromkeys(["lin-marked-advisory", "lin-marked-override", "lin-marked-rise-precommit",
+                     "lin-marked-rise-route1", "lin-marked-warn", "lin-up-marked-advisory-n1", "lin-up-marked-rise-n1",
+                     "win-marked-advisory", "win-marked-rise-ps51", "win-up-marked-rise-n1"], "mission-3"),
+    "lin-mixed-0.8.0-reads-0.9.0-marks": "metric-stamp-04",
+    **dict.fromkeys(["lin-signature-carry", "lin-up-signature-carry-n1", "win-m4-carry", "win-up-m4-carry"],
+                    "mission-4-09"),
+    **dict.fromkeys(["lin-step-coverage-py-fresh", "lin-step-coverage-py-upgrade", "win-step-coverage-py-fresh",
+                     "win-step-coverage-py-upgrade"], "m6-step-coverage-06"),
+    **dict.fromkeys(["lin-step-coverage-jest-fresh", "lin-step-coverage-vitest-fresh", "win-step-coverage-jest-fresh",
+                     "win-step-coverage-vitest-fresh"], "unowned"),
+    **dict.fromkeys(["lin-step-neutral-fresh", "lin-step-neutral-upgrade", "win-step-neutral-fresh"],
+                    "protocol-2-step-03a"),
+    "lin-ts-provider-mismatch": "unowned",
+    **dict.fromkeys(["lin-up-languages-0.8.1", "win-up-languages-0.8.1"], "mission-2-14"),
+    "lin-up-pip-0.8.1-seed-converts": "metric-stamp-06",
+    "win-claude-bash-fresh": "protocol-2-step-07",
+    "win-claude-p2-fresh": "protocol-2-step-06",
+    "win-codex-adapter-fresh": "protocol-2-step-11",
+    "win-cursor-adapter-fresh": "protocol-2-step-12",
+}
+# The module each adding ticket creates, which its packet names.
+TICKET_MODULES = {
+    "metric-stamp-07": "test_cc_only_to_measured.py", "criterion-13": "test_criterion.py",
+    "mission-3": "test_mission3_marked_rise.py", "metric-stamp-04": "test_mixed_versions.py",
+    "mission-4-09": "test_mission4_signature_carry.py", "m6-step-coverage-06": "test_step_coverage_cells.py",
+    "protocol-2-step-03a": "test_step_neutral_cells.py", "mission-2-14": "test_language_map_cells.py",
+    "metric-stamp-06": "test_seed_converts.py", "protocol-2-step-07": "test_claude_bash_cells.py",
+    "protocol-2-step-06": "test_claude_p2_cells.py", "protocol-2-step-11": "test_codex_adapter_cells.py",
+    "protocol-2-step-12": "test_cursor_adapter_cells.py",
+}
+
+
+def unlisted(data=MAP):
+    """The ids of ADDED the map lacks, or holds with a problem cell_problems names."""
+    return {cell: cell_problems(data["cell"][cell], data) if cell in data["cell"] else ["not in [cell]"]
+            for cell in ADDED if cell not in data["cell"] or cell_problems(data["cell"][cell], data)}
+
+
+def test_every_cell_id_the_tickets_name_is_a_cell_of_the_map():
+    assert len(ADDED) == 39
+    assert unlisted() == {}
+
+
+def test_a_ticket_cell_id_the_map_drops_is_caught():
+    dropped = {cell: entry for cell, entry in MAP["cell"].items() if cell != "win-m4-carry"}
+
+    assert unlisted({**MAP, "cell": dropped}) == {"win-m4-carry": ["not in [cell]"]}
+
+
+def test_each_adding_tickets_packet_names_the_module_it_creates():
+    named = {packet: f"tests/deploy/{module}" in MAP["packets"].get(packet, {}).get("modules", [])
+             for packet, module in TICKET_MODULES.items()}
+
+    assert [packet for packet, found in named.items() if not found] == []
+
+
+def test_each_ticket_cell_id_waits_in_its_tickets_packet_until_its_cell_is_in_the_tree(tree_cells):
+    """Its ticket may move the id once its @cell exists (out of `unowned`, into the module's packet)."""
+    in_tree = {cell_id(meta) for meta in tree_cells["cells"]}
+    moved = {cell: MAP["cell"][cell]["packet"] for cell, packet in ADDED.items()
+             if cell not in in_tree and MAP["cell"][cell]["packet"] != packet}
+
+    assert moved == {}
 
 
 # --- no release entry runs a cell that needs the tag on GitHub ---------------------------------
@@ -479,10 +717,12 @@ FLAGS = {"online": False, "docker_host": False, "nonblocking": False, "real_cli"
 
 
 def _selection(fields):
-    """What run.py selects a cell on. The image counts only where the cell runs in a container: on Linux."""
+    """What run.py selects a cell on, and the every-harness row a nightly run drops it by. The image
+    counts only where the cell runs in a container: on Linux."""
     image = fields.get("image") if "linux" in _parts(fields.get("os")) else "native"
     return {"cadence": _parts(fields.get("cadence")), "os": _parts(fields.get("os")), "image": image,
-            "packet": fields.get("packet"), **{flag: bool(fields.get(flag, default)) for flag, default in FLAGS.items()}}
+            "packet": fields.get("packet"), "row": fields.get("row"),
+            **{flag: bool(fields.get(flag, default)) for flag, default in FLAGS.items()}}
 
 
 def _shown(value):
@@ -533,6 +773,26 @@ def test_a_windows_cell_matches_whatever_image_its_decorator_defaulted_to():
     meta = {"id": "win-pip-start", "cadence": "push", "os": "windows", "image": "core", "packet": "deploy-channels"}
 
     assert disagreements(meta) == []
+
+
+ROW_CELL = {"cell": {"lin-row-x": {"packet": "deploy-harnesses", "cadence": "nightly", "os": "linux", "image": "full",
+                                   "row": "lanes-visible-04"}}}
+
+
+def _row_meta(**row):
+    return {"id": "lin-row-x", "cadence": "nightly", "os": "linux", "image": "full", "packet": "deploy-harnesses",
+            **row}
+
+
+def test_a_test_that_drops_the_row_its_map_entry_gives_is_caught_and_so_is_the_reverse():
+    untagged = {"cell": {"lin-row-x": {key: value for key, value in ROW_CELL["cell"]["lin-row-x"].items()
+                                       if key != "row"}}}
+
+    assert disagreements(_row_meta(), ROW_CELL) == ["lin-row-x row: @cell None, map 'lanes-visible-04'"]
+    assert disagreements(_row_meta(row="lanes-visible-04"), untagged) == [
+        "lin-row-x row: @cell 'lanes-visible-04', map None"]
+    assert disagreements(_row_meta(row="lanes-visible-04"), ROW_CELL) == []
+    assert disagreements(_row_meta(row=None), untagged) == []
 
 
 TWO_OS = {"cell": {"docs-x": {"packet": "deploy-docs", "cadence": "push", "os": ["linux", "windows"], "image": "core"}}}

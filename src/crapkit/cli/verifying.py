@@ -18,7 +18,7 @@ from ..named import first_few
 from ..repopath import typed_path
 from ..store import SnapshotStore
 from ..universe import in_test_dir, owning_scope, path_matchers
-from ._shared import (_analysis_tools, _command_root, _dirty_tag, _emit_findings, _gate_line,
+from ._shared import (_analysis_tools, _command_root, _emit_findings,
                       _load_ratchet_or_die, _load_repo_config, _print_json,
                       _ratchet_key_version, _refuse_unwritable_outputs, _repo_out_path,
                       _repo_relative, _say_left_out, _stand, _unreadable_json, _write_tsv,
@@ -27,18 +27,17 @@ from .scoring import _scored_run
 
 if TYPE_CHECKING:
     from ..ratchet import RatchetDelta, RatchetEntry
+    from ..ratchetfile import RatchetFile
 
 
 def _emit_verify_findings(root: Path, args, verdict, uncovered: list) -> None:
+    """`uncovered` is every changed line no lane ran: each one is a warning
+    whether or not the lines breach diff_uncovered_max."""
     if not (args.sarif or args.github):
         return
-    from ..sarif import diff_uncovered_results, gate_results, regression_results, unread_results
+    from ..verify import sarif_results
 
-    _emit_findings(root, args.sarif, args.github,
-                   gate_results(verdict.gate_violations)
-                   + unread_results(verdict.unread_files)
-                   + regression_results(verdict.ratchet_regressions)
-                   + diff_uncovered_results(uncovered))
+    _emit_findings(root, args.sarif, args.github, sarif_results(verdict, uncovered))
 
 
 def _no_baseline(root: Path, runs: list[dict] = ()) -> str:
@@ -362,70 +361,6 @@ def _named_seed(named: dict) -> str:
             f"then re-baseline from the run it writes with `{_self()} ratchet seed --baseline ID`")
 
 
-def _override_applies(verdict, reason: str | None) -> bool:
-    """--override grants pure gate violations: a reason, a failed verdict, gate
-    violations, and none of the findings that never qualify."""
-    return (bool(reason) and not verdict.ok and bool(verdict.gate_violations)
-            and not _refusal_parts(verdict))
-
-
-def _refused_cause(count: int, noun: str, first: str) -> str:
-    """`1 ratchet regression (app/m.py pick( a ) 10.75 -> 20.0)`: the count, and
-    the first one named so the line stands on its own in a CI log."""
-    return f"{count} {noun}{'' if count == 1 else 's'} ({first})"
-
-
-def _regression_cause(regressions) -> str:
-    r = regressions[0]
-    return _refused_cause(len(regressions), "ratchet regression",
-                          f"{r.path} {r.long_name} {r.recorded} -> {r.fresh_crap}")
-
-
-def _failure_cause(failures) -> str:
-    return _refused_cause(len(failures), "new test failure", failures[0])
-
-
-def _unread_cause(unread) -> str:
-    return _refused_cause(len(unread), "unread file", f"{unread[0].path}: {unread[0].reason}")
-
-
-def _never_granted() -> tuple:
-    """Each finding kind an override never grants, how to name it, and its escape.
-
-    The escape for a regression is the only one there is; verify never raises a
-    mark, and the override path cannot reach a marked function without also
-    seeing its regression (docs/ratchet.md, Overrides and the audit trail). An
-    unread file holds no function to record as debt, and granting the functions
-    beside it would sign debt while the gate still refuses the file.
-    """
-    from ..merge import UNREAD_ADVICE
-
-    return (("ratchet_regressions", _regression_cause, "raise the mark by hand and commit it"),
-            ("new_failures", _failure_cause, "fix the failing test first"),
-            ("unread_files", _unread_cause, UNREAD_ADVICE))
-
-
-def _refusal_parts(verdict) -> list[tuple[int, str, str]]:
-    """(count, cause, escape) for each finding kind present that no override grants."""
-    return [(len(getattr(verdict, kind)), cause(getattr(verdict, kind)), escape)
-            for kind, cause, escape in _never_granted() if getattr(verdict, kind)]
-
-
-def _override_refusal(verdict) -> str | None:
-    """Why a refused --override did not apply, or None when nothing disqualified it.
-
-    Every cause on one line, each with its own escape: a run holding a
-    regression and a new failure is refused once, not twice.
-    """
-    parts = _refusal_parts(verdict)
-    if not parts:
-        return None
-    counts, causes, escapes = zip(*parts)
-    verb = "qualifies" if sum(counts) == 1 else "qualify"
-    return (f"override refused: {' and '.join(causes)} never {verb} for an override; "
-            f"{'; '.join(escapes)}")
-
-
 def _require_override_reason(reason: str | None) -> None:
     """Refuse an empty or blank --override before any lane runs.
 
@@ -458,7 +393,9 @@ def _refuse_override(verdict, reason: str | None) -> None:
     the override did not take. A passing run (an override that applied
     included), or a run with no reason, prints nothing: nothing was refused.
     """
-    refusal = _override_refusal(verdict) if reason and not verdict.ok else None
+    from ..verify import override_refusal
+
+    refusal = override_refusal(verdict) if reason and not verdict.ok else None
     if refusal:
         print(refusal, file=sys.stderr)
 
@@ -466,20 +403,21 @@ def _refuse_override(verdict, reason: str | None) -> None:
 def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, verdict, reason,
                             *, key_version: int | None = None, identity_rows=None,
                             ratchet_input=None):
-    """Grant --override for pure gate violations; regressions and new failures
-    never qualify (`_refuse_override` says so once the verdict is printed)."""
+    """Grant --override for what the finding kinds let it grant; a kind that
+    refuses one grants nothing (`_refuse_override` says so once the verdict is
+    printed)."""
     from ..override import record_override
     from ..ratchet import metric_version
-    from ..verify import settle_verdict
+    from ..verify import grant, override_grants
 
-    if not _override_applies(verdict, reason):
+    granted = override_grants(verdict) if reason else ()
+    if not granted:
         return verdict
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
-                    alert_command=cfg.alert_command, violations=verdict.gate_violations,
+                    alert_command=cfg.alert_command, violations=list(granted),
                     reason=reason, key_version=key_version, identity_rows=identity_rows,
                     ratchet_input=ratchet_input, metric=metric_version())
-    overridden = verdict.gate_violations
-    return settle_verdict(verdict._replace(gate_violations=[], overridden=tuple(overridden)))
+    return grant(verdict)
 
 
 def _prior_crap(store: SnapshotStore, commit: str, run_id: int) -> dict[tuple[str, str], float]:
@@ -596,24 +534,11 @@ def _release_claims(store: SnapshotStore, git, cfg, scored) -> None:
                                        scope_targets=cfg.scope_targets, stale_commits=stale))
 
 
-def _print_gate_findings(verdict) -> None:
-    from ._shared import _unread_line
-
-    for v in verdict.gate_violations:
-        print(_gate_line(v))
-    for u in verdict.unread_files:
-        print(_unread_line(u.path, u.reason, u.dirty))
-
-
 def _print_verify_findings(verdict) -> None:
-    dirty_ids = set(verdict.dirty_failures)
-    _print_gate_findings(verdict)
-    for r in verdict.ratchet_regressions:
-        print(f"  RATCHET  {r.path}  {r.long_name}: {r.recorded} -> {r.fresh_crap}{_dirty_tag(r.dirty)}")
-    for f in verdict.new_failures:
-        print(f"  NEW FAILURE  {f}{_dirty_tag(f in dirty_ids)}")
-    for v in verdict.overridden:
-        print(f"  OVERRIDDEN  {v.path}:{v.start}  {v.long_name}")
+    from ..verify import text_lines
+
+    for line in text_lines(verdict):
+        print(line)
 
 
 def _print_finding_split(verdict) -> None:
@@ -632,13 +557,10 @@ def _print_finding_split(verdict) -> None:
               "(uncommitted edits and untracked files)")
 
 
-# One exit code per finding kind, in the order the first one present decides.
-_EXIT_ORDER = (("gate_violations", 6), ("unread_files", 6), ("ratchet_regressions", 7),
-               ("new_failures", 8), ("uncovered_violations", 9))
-
-
 def _verify_exit_code(verdict) -> int:
-    return next((code for kind, code in _EXIT_ORDER if getattr(verdict, kind)), 0)
+    from ..verify import exit_code
+
+    return exit_code(verdict)
 
 
 def _warn_diff_cover_breach(verdict, maximum: int | None) -> None:
@@ -798,22 +720,20 @@ def _verify_attribution(verdict) -> dict:
             "dirty_failures": list(verdict.dirty_failures)}
 
 
-_RECORD_FINDINGS = ("gate_violations", "unread_files", "ratchet_regressions", "overridden")
-
-
-def _finding_lists(verdict) -> dict:
-    """The finding kinds whose entries are records, each as a list of objects."""
-    return {kind: [f._asdict() for f in getattr(verdict, kind)] for kind in _RECORD_FINDINGS}
-
-
-def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
+def _verify_result(verdict, run_id: int | None, baseline: dict, commit: str, ranges,
                    uncovered: list, diff_uncovered_max: int | None,
-                   unmarked_over_target: int) -> dict:
+                   unmarked_over_target: int, dirty: frozenset[str] | set[str] = frozenset()) -> dict:
     """`diff_uncovered_max` travels with the count it judges: a reader of exit 9
     (the Action's comment) can say which ceiling the lines went over.
     `unmarked_over_target` is the standing debt no mark covers (see
     `_warn_standing_debt`); it fires no exit code and is the one number that
-    says how much of the tree the ratchet is not holding."""
+    says how much of the tree the ratchet is not holding.
+
+    `findings` lists every finding once, each kind's row giving its common
+    fields, and `counts` the numbers beside them; no kind has a key of its
+    own. `dirty` flags the uncovered lines in files with uncommitted edits."""
+    from ..verify import finding_items
+
     return {
         "ok": verdict.ok,
         "run_id": run_id,
@@ -822,13 +742,10 @@ def _verify_result(verdict, run_id: int, baseline: dict, commit: str, ranges,
         "commit": commit,
         "changed_files": len(ranges),
         "changed_paths": sorted(ranges),
-        **_finding_lists(verdict),
-        "new_failures": verdict.new_failures,
+        "findings": finding_items(verdict, uncovered, dirty),
+        "counts": {"diff_uncovered_count": len(uncovered), "diff_uncovered_max": diff_uncovered_max},
         "forgiven_failures": list(verdict.forgiven_failures),
         "retried_passes": list(verdict.retried_passes),
-        "diff_uncovered_count": len(uncovered),
-        "diff_uncovered": [{"path": p, "line": ln} for p, ln in uncovered[:50]],
-        "diff_uncovered_max": diff_uncovered_max,
         "unmarked_over_target": unmarked_over_target,
         **_verify_attribution(verdict),
     }
@@ -880,11 +797,13 @@ def _warn_untracked_in_scope(untracked: list[str]) -> None:
 
 
 def _warn_diff_uncovered(uncovered: list) -> None:
+    from ..verify import lines_of
+
     if not uncovered:
         return
     print(f"warning: {len(uncovered)} changed line(s) have no coverage", file=sys.stderr)
-    for path, line in uncovered[:20]:
-        print(f"  uncovered {path}:{line}", file=sys.stderr)
+    for line in lines_of("diff_uncovered", uncovered[:20]):
+        print(line, file=sys.stderr)
 
 
 def _receipt(tool_versions: dict, saved, judged: _JudgedMarks,
@@ -895,8 +814,8 @@ def _receipt(tool_versions: dict, saved, judged: _JudgedMarks,
     marks verify judged against (`ratchet_source` "tree", or "committed" with
     the commit that held them and their digest), and the tighten's counts, null
     when this run's tighten wrote nothing (a failed run, --no-tighten, nothing
-    to move). An override's grant is its own write and is listed under
-    `overridden`, not counted here."""
+    to move). An override's grant is its own write and is an `overridden`
+    findings item, not counted here."""
     return {"tool_versions": tool_versions, "ratchet_sha256": saved.sha256,
             "ratchet_source": "committed" if judged.commit else "tree",
             "ratchet_source_commit": judged.commit,
@@ -994,12 +913,82 @@ def _refuse_lane_less_verify(cfg) -> None:
                           "declares coverage_optional = true instead")
 
 
+def _claimed_names(root: Path, cfg, dirty: set[str]) -> tuple:
+    """The gate's unreadable-name findings: each tracked file a scope takes
+    whose name git gives in bytes that are not UTF-8, handed to the gate whole
+    with its `dirty` flag. The gate refuses such a name before it judges
+    anything, so verify stops on them before any lane runs (`_stopped`)."""
+    from ..gate import WHOLE, ChangedFile, UnreadableName, judge
+    from ..gitio import ls_files
+    from ..keys import MarkIndex
+    from ..universe import claimed_unreadable
+
+    claimed = claimed_unreadable(ls_files(root), cfg)
+    if not claimed:
+        return ()
+    return judge([ChangedFile(path, WHOLE, UnreadableName(path, scope, path in dirty))
+                  for path, scope in claimed], cfg.ceiling_of, lambda: MarkIndex(())).unreadable_name
+
+
+class _Stop(NamedTuple):
+    """What verify knows when it stops on a claimed name: the baseline, HEAD,
+    the marks it read and the untracked files a scope would take."""
+    baseline: dict
+    commit: str
+    saved: RatchetFile
+    judged: _JudgedMarks
+    untracked: list[str]
+
+
+def _stopped(args, root: Path, cfg, names: tuple, stop: _Stop) -> int:
+    """The verdict on a tree holding a claimed name, exit 3, with no lane run
+    and no run stored. stderr gets the scan's own sentence, naming the first
+    name and counting the rest, as 0.8.1's refusal printed it; --json prints a
+    verify payload whose findings hold one unreadable_name item per name,
+    --sarif and --github one result each, and an --override says why it
+    grants nothing."""
+    from ..verify import Verdict, settle_verdict, text_lines
+
+    verdict = settle_verdict(Verdict.passing()._replace(claimed_names=tuple(names)))
+    for line in text_lines(verdict, "stderr"):
+        print(line, file=sys.stderr)
+    _emit_verify_findings(root, args, verdict, [])
+    if args.json:
+        _print_json(_stop_payload(verdict, cfg, stop))
+    _refuse_override(verdict, args.override)
+    return _verify_exit_code(verdict)
+
+
+def _stop_payload(verdict, cfg, stop: _Stop) -> dict:
+    """Every key a verify payload prints, each the value verify knew at the
+    stop: no diff was read and nothing was measured, so run_id is null and the
+    lists and counts a run fills are empty; each name is an unreadable_name
+    item in `findings`."""
+    return {**_verify_result(verdict, None, stop.baseline, stop.commit, {}, [], cfg.diff_uncovered_max, 0),
+            **_receipt(_tool_versions(), stop.saved, stop.judged, None),
+            "lanes_without_results": [], "lanes_without_baseline_results": [],
+            "unreadable_names": [], "untracked_in_scope": stop.untracked}
+
+
+def _tool_versions() -> dict:
+    """The versions a run of this crapkit records, read without measuring."""
+    from .. import __version__
+    from ..analyze import ANALYSIS_VERSION
+
+    lizard, *_ = _analysis_tools()
+    return {"crapkit": __version__, "lizard": lizard.version, "analysis_version": str(ANALYSIS_VERSION)}
+
+
+def _refuse_failed_lanes(run) -> None:
+    if run.lane_errors:
+        raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     from ..diffparse import worktree_ranges
     from ..gitio import GitFacts, diff_since
     from ..uncovered import missing_by_path
-    from ..verify import (diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage,
-                          with_unread)
+    from ..verify import diff_uncovered, evaluate, unmarked_over_ceiling, with_diff_coverage
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
@@ -1022,14 +1011,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
     judged = _judged_marks(root, saved, baseline, cfg.ratchet_file)
     _guard_ratchet_stamp(judged.marks, cfg.ratchet_file, *_seed_hint(store, args, baseline, git))
     _emit_baseline(root, store, baseline, args.emit_baseline)
+    claimed = _claimed_names(root, cfg, dirty)
+    if claimed:
+        return _stopped(args, root, cfg, claimed, _Stop(baseline, git.head_commit(), saved, judged, untracked))
 
     # Corpus and cache_hits are coverage's report line, not verdict inputs.
     run = _scored_run(root, cfg, list(cfg.lanes), reuse_artifacts=args.reuse_artifacts,
                       reuse_unchanged=args.reuse_unchanged, git=git)
     commit, scored, provenance = run.commit, run.scored, run.provenance
     tool_versions, fresh_failures = run.tool_versions, run.test_failures
-    if run.lane_errors:
-        raise ToolError(f"verify cannot conclude with failed lanes: {'; '.join(run.lane_errors)}")
+    _refuse_failed_lanes(run)
     _refuse_unreadable_junits(cfg.lanes, provenance)
 
     ranges = worktree_ranges(diff_since(root, basis), root)
@@ -1043,7 +1034,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     verdict = evaluate(fresh=scored, changed_ranges=ranges, ratchet=ratchet,
                        baseline_failures=set(found.carried), fresh_failures=fresh_failures,
                        target=cfg.target, scope_targets=cfg.scope_targets, dirty_paths=dirty,
-                       test_files=_test_files(root, fresh_failures))
+                       test_files=_test_files(root, fresh_failures), unread=run.corpus.unread)
     verdict = _maybe_flake_retry(root, cfg, provenance, verdict)
     unjudged = _warn_baseline_gaps(found, baseline, provenance, verdict.new_failures)
     _warn_suite_shrink(baseline, provenance, behind)
@@ -1057,7 +1048,6 @@ def cmd_verify(args: argparse.Namespace) -> int:
     unmarked = unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets)
     _warn_standing_debt(unmarked)
     verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
-    verdict = with_unread(verdict, run.corpus.unread, set(ranges) | dirty, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)
     # Every row and the verdict meet their documented bounds, or nothing is written.
     check_rows(scored, cfg.ceiling_of)
@@ -1075,7 +1065,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
     _report_verify(args.json,
                    {**_verify_result(verdict, run_id, baseline, commit, ranges,
-                                     uncovered, cfg.diff_uncovered_max, len(unmarked)),
+                                     uncovered, cfg.diff_uncovered_max, len(unmarked), dirty),
                     **_receipt(tool_versions, saved, judged, changes),
                     "lanes_without_results": lane_results.without_results(provenance),
                     "lanes_without_baseline_results": unjudged,
@@ -1307,18 +1297,6 @@ def _print_clear_the_reason() -> None:
           "here - clear it where it was set.")
 
 
-def _granted_crap(cfg, violation) -> float:
-    """The mark the hook's grant writes: the CRAP the function's scope scores
-    with no coverage behind it. A staged blob carries no coverage, so a scope a
-    lane measures marks the untested CRAP, and a cc-only scope marks ccn, as
-    `score` scores it there."""
-    from ..score import flagged_crap
-
-    scope = owning_scope(violation.path, path_matchers({s.name: s.paths for s in cfg.scopes}))
-    flag = "cc-only" if scope in cfg.coverage_optional_scopes else "untested"
-    return flagged_crap(violation.ccn, 0.0, flag)
-
-
 def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) -> None:
     """The audited hook override: alert line, ratchet debt (staged into the
     pending commit), and a snapshot record — all three or nothing."""
@@ -1337,8 +1315,8 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, records, store)
     run_id = store.write_run(commit=head_commit(root), tool_versions={}, rows=[],
                              lanes={"_hook_override": {"staged": True}}, kind="hook")
-    gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0,
-                          _granted_crap(cfg, v), "decompose", False, v.key_name)
+    # Each mark is the high end of the CRAP bound the gate judged the function on.
+    gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0, v.high, "decompose", False, v.key_name)
             for v in violations]
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=gate, reason=reason,
@@ -1359,53 +1337,93 @@ def _warn_unscoped_staged(unscoped: list) -> None:
               "(see docs/configuration.md)", file=sys.stderr)
 
 
-def _split_marked(violations: list, entries: list) -> tuple[list, list]:
-    """Staged violations split into (gated, exempt) on ratchet-mark EXISTENCE.
-
-    Existence, not the `crap > mark` rule `rescore --gate` uses: the gate judges
-    staged blobs, a blob carries no coverage, and without coverage there is no
-    CRAP to compare against a mark. So the question the hook can answer is the
-    only one it asks — did the repo already sign for this function?
-
-    Without this exemption, a comment inside a marked function can refuse the
-    commit while `rescore --gate` on the same tree passes. `verify` keeps the
-    numeric check and catches a mark that actually rose.
-    """
-    from ..keys import stated_key
-
-    marked = {(e.path, e.long_name) for e in entries}
-    gated, exempt = [], []
-    for v in violations:
-        (exempt if stated_key(v) in marked else gated).append(v)
-    return gated, exempt
-
-
-def _note_marked_staged(exempt: list, noun: str = "staged") -> None:
+def _note_marked_staged(carried: int, noun: str = "staged") -> None:
     """One line, never a list. The count says the exemption fired; the marks
     themselves are in the committed TSV, and naming them at every commit would
     reprint debt the repo reads through `crapkit ratchet report`."""
-    if exempt:
-        print(f"crapkit gate: {len(exempt)} {noun} function(s) carry a ratchet mark and "
+    if carried:
+        print(f"crapkit gate: {carried} {noun} function(s) carry a ratchet mark and "
               "were not gated - `crapkit verify` fails a mark that rises", file=sys.stderr)
 
 
-def _gated_violations(root: Path, cfg, violations: list, records=(), noun: str = "staged") -> list:
-    """The breaches the commit is actually refused for.
+# The gate's pardon kinds the hook passes on a mark's existence, with one count
+# line: a blob has no coverage, so a marked function's CRAP is a range and
+# `verify` judges the mark. mission-3-04 turns marked_rise into a refusal.
+_CARRIED = ("pardoned", "marked_rise", "unproven")
 
-    The marks file is read only once something breached: a clean commit is the
-    common case and must not pay to load 40,303 rows it has no question for.
+
+def _hook_marks(root: Path, cfg, records):
+    """The marks callable the gate reads, at most once and only on a breach:
+    a clean commit must not pay to load 40,303 rows it has no question for.
 
     Through `_load_ratchet_or_die`, so an unparseable marks file names itself
     and exits 3. Reading it raw would end a `git commit` in a traceback, which
-    is the one thing a gate on the mandatory path must not do.
-    """
-    if not violations:
-        return []
-    entries = _load_ratchet_or_die(root / cfg.ratchet_file, cfg.ratchet_file)
-    _ratchet_key_version(root, cfg, records, entries=entries)
-    gated, exempt = _split_marked(violations, entries)
-    _note_marked_staged(exempt, noun)
-    return gated
+    is the one thing a gate on the mandatory path must not do."""
+    from ..keys import MarkIndex
+
+    def marks() -> MarkIndex:
+        entries = _load_ratchet_or_die(root / cfg.ratchet_file, cfg.ratchet_file)
+        _ratchet_key_version(root, cfg, records, entries=entries)
+        return MarkIndex(entries)
+    return marks
+
+
+def _judge_hook(root: Path, cfg, gate):
+    """The gate module's findings on the staged rows."""
+    from ..gate import judge
+
+    return judge(gate.changes, cfg.ceiling_of, _hook_marks(root, cfg, gate.records))
+
+
+def _violation(breach):
+    """A breach as the row the hook prints and grants: the function's ccn, its
+    ratchet key, its scope's ceiling and the high end of its CRAP bound."""
+    from ..hook import Violation
+
+    record = breach.function.record
+    return Violation(breach.path, record.long_name, record.start, record.ccn, breach.key_name,
+                     breach.ceiling, breach.function.bound.high)
+
+
+def _breach_scopes(breaches) -> dict[str, list[str]]:
+    """Each scope with the files of its breaches, as check_violations reads them."""
+    scopes: dict[str, list[str]] = {}
+    for breach in breaches:
+        scopes.setdefault(breach.function.scope, []).append(breach.path)
+    return scopes
+
+
+def _refused_violations(cfg, result) -> tuple[list, int]:
+    """The breaches the commit is refused for, worst ccn first, and how many a
+    mark carries. Every breach is held to its scope's ceiling first."""
+    from ..invariants import check_violations
+
+    breaches = (*result.over_ceiling, *(breach for kind in _CARRIED for breach in getattr(result, kind)))
+    check_violations([_violation(breach) for breach in breaches], _breach_scopes(breaches), cfg.ceiling_of)
+    refused = sorted(map(_violation, result.over_ceiling), key=lambda v: (-v.ccn, v.path, v.start))
+    return refused, len(breaches) - len(refused)
+
+
+def _contents(gate, kind) -> tuple:
+    """The staged rows of one kind, read off the gate's input before it judges:
+    `gate.judge` reads the marks file on a breach, so a finding the hook must
+    say first cannot wait for its result. The hook takes an unread file whole,
+    so every Unread row here is one `judge` reports."""
+    return tuple(change.content for change in gate.changes if isinstance(change.content, kind))
+
+
+def _refuse_claimed(gate) -> None:
+    """Exit 3 on a staged name a scope takes that is not UTF-8, before any
+    other line and any override side effect, with the sentence the scan
+    refused it with in 0.8.1: the first name, the rest counted."""
+    from ..errors import UnreadableNameError
+    from ..gate import UnreadableName
+    from ..universe import claimed_text
+
+    names = _contents(gate, UnreadableName)
+    if names:
+        raise UnreadableNameError(claimed_text([(name.path, name.scope) for name in names]),
+                                  [name.path for name in names])
 
 
 def _staged_gate(root: Path, cfg, base: str | None = None, *, whole: bool = False):
@@ -1422,11 +1440,13 @@ def _staged_gate(root: Path, cfg, base: str | None = None, *, whole: bool = Fals
         _analysis_tools()  # importing crapkit.hook reaches lizard too, so it waits its turn
         from ..hook import gate_staged
 
-        gate = gate_staged(root, cfg, reads, whole=whole)
+        return gate_staged(root, cfg, reads, whole=whole)
+
+
+def _say_whole(gate) -> None:
     if gate.whole:
         print("crapkit gate: nothing is staged and no commit is running, so every tracked "
               "file was judged", file=sys.stderr)
-    return gate
 
 
 def _in_a_commit() -> bool:
@@ -1503,15 +1523,38 @@ def _owned_paths(top: Path, base: str | None) -> list[str]:
 def _hook_gate(root: Path, shown: str, base: str | None) -> int:
     """One root's verdict. `shown` prefixes every path it prints: "" at the
     command's own root, `packages/api/` for a root found below the top."""
+    cfg = _load_repo_config(root)
+    return _hook_exit(root, cfg, _staged_gate(root, cfg, base, whole=_may_judge_tracked(base)), shown)
+
+
+def _hook_exit(root: Path, cfg, gate, shown: str = "") -> int:
+    """The staged rows judged and mapped to the hook's exit: a claimed name
+    exits 3 before anything else, an unread file exits 6 before any grant, a
+    function over its ceiling exits 6 unless granted, and a marked breach
+    passes with the count line.
+
+    Every line the gate says beside its verdict prints before `judge` runs:
+    judging reads the marks file on a breach, and an unreadable one exits 3
+    there, so printing after it lost the unread and unscoped lines 0.8.1 gave."""
+    _refuse_claimed(gate)
+    unread = _say_staged(gate, shown)
+    code = _judge_staged(root, cfg, gate, _judge_hook(root, cfg, gate), unread, shown)
+    return 6 if unread else code
+
+
+def _say_staged(gate, shown: str) -> dict[str, str]:
+    """The notes beside the verdict: the whole-tree note, the names left out,
+    the staged files no scope takes and the unread block. Returns each unread
+    path with why no reader read it."""
+    from ..gate import Unread
     from ._shared import _print_unread
 
-    cfg = _load_repo_config(root)
-    gate = _staged_gate(root, cfg, base, whole=_may_judge_tracked(base))
+    _say_whole(gate)
     _say_left_out(gate.unreadable)
     _warn_unscoped_staged([shown + path for path in gate.unscoped])
-    _print_unread({shown + path: why for path, why in gate.unread.items()}, _judged(gate))
-    code = _judge_staged(root, cfg, gate, shown)
-    return 6 if gate.unread else code
+    unread = {found.path: found.reason for found in _contents(gate, Unread)}
+    _print_unread({shown + path: why for path, why in unread.items()}, _judged(gate))
+    return unread
 
 
 def _may_judge_tracked(base: str | None) -> bool:
@@ -1533,14 +1576,17 @@ def _env_override_reason() -> str:
 def _hook_override_refusal(unread: dict) -> str | None:
     """The line verify --override prints for the same unread files, or None
     when every staged file was read."""
-    from ..verify import Verdict, with_unread
+    from ..gate import Unread
+    from ..verify import Verdict, override_refusal
 
-    return _override_refusal(with_unread(Verdict(False, [], [], [], []), unread, set(unread), set()))
+    return override_refusal(Verdict.passing()._replace(
+        unread_files=tuple(Unread(path, why) for path, why in sorted(unread.items()))))
 
 
-def _judge_staged(root: Path, cfg, gate, shown: str = "") -> int:
-    violations = _gated_violations(root, cfg, gate.violations, gate.records, _judged(gate))
-    refusal = _hook_override_refusal(gate.unread) if _env_override_reason() else None
+def _judge_staged(root: Path, cfg, gate, result, unread: dict, shown: str = "") -> int:
+    violations, carried = _refused_violations(cfg, result)
+    _note_marked_staged(carried, _judged(gate))
+    refusal = _hook_override_refusal(unread) if _env_override_reason() else None
     if violations:
         _print_staged_violations(root, cfg, gate, violations, shown)
     if refusal:

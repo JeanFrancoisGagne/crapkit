@@ -20,7 +20,8 @@ import random
 import pytest
 
 from crapkit.config import Lane
-from crapkit.coverage_istanbul import _SIGNATURE, FnCoverage, _fn_spans, _span_owners
+from crapkit.coverage_istanbul import _SIGNATURE, _fn_spans
+from crapkit.score import FnCoverage, span_owners as _span_owners
 from coverage_readers import parse_istanbul, parse_istanbul_missing, split_top_level
 from crapkit.errors import ToolError
 from crapkit.lanes import run_lane
