@@ -23,7 +23,8 @@ from crapkit.store import SnapshotStore
 CFG = ('[crapkit]\ntarget = 6\n[[scope]]\nname = "web"\npaths = ["src"]\n'
        'languages = ["typescript"]\ncoverage_optional = true\n')
 SOURCE = "".join(f"// {n}\n" for n in range(1, 12))
-VERSIONS = {"analysis_version": "10"}
+# The runs carry the running metric, so prune's reader check reads their stamp.
+VERSIONS = {"analysis_version": str(metric_version().analysis), "lizard": metric_version().lizard}
 
 
 def _row(path, start, occurrence, crap=12.0, name="(anonymous)"):

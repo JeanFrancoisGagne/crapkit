@@ -130,8 +130,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # (metric-stamp-01) added six, and the repair that names a runner the root test
 # script names in that note (m1-foundations-09) one more. The one decode init
 # and the full-suite guard read pytest's config files with (build-map-18)
-# added one.
-SRC_DEFS = 3871
+# added one. The per-scope stamp's reader and writer and
+# keys.expression_language (metric-stamp-04) added 35.
+SRC_DEFS = 3906
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

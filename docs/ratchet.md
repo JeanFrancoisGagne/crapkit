@@ -31,6 +31,25 @@ Comments carrying the metric and key-format stamps, a header, then one row per m
 path, key name, CRAP to four decimals. Rows are sorted by that pair, so the file is
 diffable and merge conflicts are local.
 
+That is the single-number stamp crapkit 0.8.x wrote, and crapkit still reads it. The form a
+0.9.0 seed writes stamps each scope on a line of its own:
+
+```
+# crapkit-stamp=2 lizard=1.24.0: crapkit-ratchet.tsv holds one stamp per scope, which crapkit 0.9.0 or later reads
+# crapkit-keys=1
+#scope	calc	analysis python=13; coverage coveragepy=1
+#scope	web	analysis tsx=13 typescript=13; coverage istanbul=1
+path	long_name	crap
+calc/grade.py	classify( score , attempts , late , bonus )	66.0714
+calc/report.py	render( rows , wide , totals , header )	56.0000
+```
+
+The first line names the file and the release that reads it, so crapkit 0.8.x, which cannot
+read this form, refuses to judge or rewrite the file and names it. Each `#scope` line, sorted
+by scope name, gives the analysis number of each of the scope's languages and its coverage mode:
+`cc-only`, `no-lane`, or each coverage parser with its reader number. The header and the
+rows are the same in both forms.
+
 Rows containing delimiters use the shared [portable record encoding](portable-records.md).
 Ordinary three-column rows retain their bytes.
 
