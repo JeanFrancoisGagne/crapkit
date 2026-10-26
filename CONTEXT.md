@@ -49,7 +49,7 @@ A named set of path prefixes and languages that shares one ceiling and one set o
 One configured test command that writes one coverage artifact for the scopes it lists.
 
 **Toolchain**:
-The runner a lane's command runs, read from the command, else from the package.json script it runs, else from devDependencies. No config key names it. Only the first two are spelled in what runs, so only they turn on runner-specific hints and refusals; doctor prints all three, and "runner unknown" when none names one.
+The runner a lane's command runs, read from the command, else from the package.json script it runs, else from devDependencies. No config key names it. A runner named in the command or the script turns on runner-specific hints; only one named in the command turns on refusals. doctor prints all three, and "runner unknown" when none names one.
 _Avoid_: parser (that is how crapkit reads the lane's artifact)
 
 **Lane log**:
