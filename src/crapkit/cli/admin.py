@@ -283,15 +283,15 @@ def _unrouted_workspaces_note(written: tuple, package_json) -> str | None:
     if len(named) < 2 or any(_js_runner(runner) for _, runner in found):
         return None
     listed = ", ".join(f"{directory}: {runner}" for directory, runner in named)
-    return (f"{len(named)} workspaces name a runner ({listed}) and the root's devDependencies "
-            f"name none, so {_in_their_place(found)}, each with its own cwd and artifact")
+    return (f"{len(named)} workspaces name a runner ({listed}), but no lane init wrote runs a "
+            f"JS runner: {_in_their_place(found)}, each with its own cwd and artifact")
 
 
 def _js_runner(found) -> bool:
     """Does toolchain.infer name a runner a package.json can name (vitest,
-    jest)? devDependencies count: the note's own claim, that the root's
-    devDependencies name none, is a devDependencies fact, so a root lane whose
-    runner only devDependencies name answers it."""
+    jest)? devDependencies count: the note says what each lane runs in
+    doctor's words, and doctor names a lane's runner from devDependencies
+    when its command and script name none."""
     from ..toolchain import TOOLCHAINS
 
     return found.name is not None and TOOLCHAINS[found.name].dev_dependency is not None
@@ -307,10 +307,10 @@ def _in_their_place(found: list) -> str:
     whose command names its runner, init's py lane, is not in their place."""
     unnamed = [(lane, runner) for lane, runner in found if runner.source != "command"]
     if not unnamed:
-        return ("no js lane was written: declare one [[lane]] per workspace from the "
+        return ("no js lane was written; declare one [[lane]] per workspace from the "
                 "commented template")
     lane, runner = unnamed[0]
-    return f"{_lane_runs(lane, runner)}: replace it with one [[lane]] per workspace"
+    return f"{_lane_runs(lane, runner)}; replace it with one [[lane]] per workspace"
 
 
 def _lane_runs(lane, runner) -> str:
