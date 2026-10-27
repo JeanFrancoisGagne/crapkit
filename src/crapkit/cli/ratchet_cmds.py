@@ -8,7 +8,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
@@ -16,6 +16,9 @@ from ..named import first_few
 from ..store import SnapshotStore, anywhere
 from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
                       _print_json, _ratchet_or_die, _repo_relative, _stand, behind_head)
+
+if TYPE_CHECKING:
+    from ..ratchet import MetricStamp
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -178,12 +181,12 @@ def _merge_stamp(texts: list[str]) -> None:
     ours, theirs = read_stamp(texts[1]), read_stamp(texts[2])
     if ours != theirs:
         raise ConfigError(
-            f"ratchet merge refused: ours is [{ours or 'unstamped'}] and theirs is "
-            f"[{theirs or 'unstamped'}] - marks from different metric versions cannot "
+            f"ratchet merge refused: ours is [{ours.render() or 'unstamped'}] and theirs is "
+            f"[{theirs.render() or 'unstamped'}] - marks from different metric versions cannot "
             f"merge; {_merge_remedy(ours, theirs)}")
 
 
-def _merge_remedy(ours: str, theirs: str) -> str:
+def _merge_remedy(ours: MetricStamp, theirs: MetricStamp) -> str:
     """Re-seed under the newer side's metric. "re-baseline one side" said neither
     which side nor under which crapkit, and a seed under the older release
     stamps its own older metric, so the next merge refused again."""
@@ -195,7 +198,7 @@ def _merge_remedy(ours: str, theirs: str) -> str:
         side, stamp = "ours", ours
     else:
         return coverage_then_seed("re-baseline one side")
-    return (f"{side} is newer, so with a crapkit that measures [{stamp}], "
+    return (f"{side} is newer, so with a crapkit that measures [{stamp.render()}], "
             f"{coverage_then_seed('re-baseline the merged marks')}")
 
 
@@ -664,7 +667,8 @@ def _refuse_newer_marks(saved, work: _WorkRun, action: str) -> None:
     measured = run_stamp(work.run["tool_versions"])
     if newer_tools(recorded, measured):
         raise ConfigError(f"ratchet {action} refused: {saved.path.name} was recorded under "
-                          f"[{recorded}] and run {work.run['id']} under the older [{measured}]; "
+                          f"[{recorded.render()}] and run {work.run['id']} under the older "
+                          f"[{measured.render()}]; "
                           f"{_BACKWARDS[action]}; {_way_off(work.newer)}")
 
 
@@ -672,7 +676,8 @@ def _newer_than_install(saved, action: str, newer: list[str]) -> str:
     from ..ratchet import metric_version, upgrade_remedy
 
     return (f"ratchet {action} refused: {saved.path.name} was recorded under "
-            f"[{saved.metric_stamp}] and this crapkit measures [{metric_version()}] - "
+            f"[{saved.metric_stamp.render()}] and this crapkit measures "
+            f"[{metric_version().render()}] - "
             f"{upgrade_remedy(newer)}; {_BACKWARDS[action]}. A team going back to this release "
             f"on purpose restores the {saved.path.name} it last wrote from git history")
 
@@ -770,7 +775,7 @@ def _first_key(keys) -> str:
     return f"{path}: {key_name}"
 
 
-def _seed_metric(run: dict) -> str:
+def _seed_metric(run: dict) -> MetricStamp:
     """The stamp seed signs with: the metric its run was measured under.
 
     A run from before crapkit recorded one cannot vouch for any metric, and
@@ -794,8 +799,8 @@ def _metric_note(work: _WorkRun, action: str, *, created: bool) -> str:
     measured, running = run_stamp(run["tool_versions"]), metric_version()
     if measured == running:
         return ""
-    said = f"[{measured}]" if measured else "an unrecorded metric"
-    return (f"; run {run['id']} was measured under {said}, not this crapkit's [{running}]"
+    said = f"[{measured.render()}]" if measured else "an unrecorded metric"
+    return (f"; run {run['id']} was measured under {said}, not this crapkit's [{running.render()}]"
             f"{_stamp_consequence(work, action, created)}")
 
 

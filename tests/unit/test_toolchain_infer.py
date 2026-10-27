@@ -7,7 +7,7 @@ doctor's line and are never `spelled`. Every expected value below is
 written by hand from the rules in the ticket, never computed by the code under
 test.
 """
-from pathlib import PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import subprocess
 import sys
 
@@ -16,7 +16,7 @@ import pytest
 from crapkit import lane_command
 from crapkit.lane_command import expand_launchers, pytest_step
 from crapkit.scaffold import detect_lanes, npm_package
-from crapkit.toolchain import TOOLCHAINS, Inferred, infer
+from crapkit.toolchain import TOOLCHAINS, Inferred, command_spells, infer
 
 DIALECTS = ("sh", "cmd")
 
@@ -276,6 +276,29 @@ def test_the_q81_rows(dialect):
 @pytest.mark.parametrize("command", ["make cov", "just test", "tox -e py311", "nox -s tests"])
 def test_make_just_tox_and_nox_are_opaque(command, dialect):
     assert infer(command, dialect=dialect) == Inferred(None, None)
+
+
+def _glossary_entry(term: str) -> str:
+    """The text under CONTEXT.md's `**term**:` line, up to the blank line that
+    ends the entry, its line breaks read as spaces."""
+    text = (Path(__file__).resolve().parents[2] / "CONTEXT.md").read_text(encoding="utf-8")
+    return " ".join(text.split(f"\n**{term}**:\n", 1)[1].split("\n\n", 1)[0].split())
+
+
+def test_the_glossary_says_the_script_turns_on_hints_and_only_the_command_refusals():
+    """A runner named only in the package.json script is `spelled`, which
+    doctor's hints read, while the refusals read the command's own words
+    (command_spells) and never open package.json. A glossary that credits the
+    script with the refusals tells a reader that wrapping a lane in `npm test`
+    keeps them."""
+    script_only = infer("npm test -- --coverage", root_package=package({"test": "vitest run"}),
+                        dialect="sh")
+    entry = _glossary_entry("Toolchain")
+
+    assert (script_only.name, script_only.spelled) == ("vitest", True)
+    assert not command_spells("npm test -- --coverage", "vitest", "sh")
+    assert "A runner named in the command or the script turns on runner-specific hints" in entry
+    assert "only one named in the command turns on refusals" in entry
 
 
 # --- two runners ---------------------------------------------------------------------
