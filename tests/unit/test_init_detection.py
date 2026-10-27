@@ -46,7 +46,7 @@ def test_the_interpreter_the_config_will_call_is_the_one_that_resolves():
 
 
 def test_a_test_script_names_the_command_npm_would_run():
-    (lane,) = detect_lanes(frozenset(), _package(scripts={"build": "tsc", "test": "vitest run"}))
+    (lane,) = detect_lanes(frozenset(), _package(scripts={"build": "tsc", "test": "node run.js"}))
     assert lane.command == "npm run test -- --coverage"
     assert lane.parser == "istanbul"
     assert lane.artifact == "coverage/coverage-final.json"
@@ -119,7 +119,7 @@ def test_a_tree_of_nothing_but_tests_and_docs_has_no_candidates():
 # --- the artifacts init's own lanes will drop in the consumer's tree ----------
 
 def test_the_ignore_list_covers_crapkits_store_and_each_written_lanes_artifact():
-    lanes = detect_lanes(frozenset({"pyproject.toml"}), _package(scripts={"test": "vitest run"}))
+    lanes = detect_lanes(frozenset({"pyproject.toml"}), _package(scripts={"test": "node run.js"}))
 
     text, added = gitignore_update("", live_lanes(lanes, SCOPES))
 
@@ -130,7 +130,7 @@ def test_the_ignore_list_covers_crapkits_store_and_each_written_lanes_artifact()
 def test_an_artifact_inside_a_directory_ignores_the_directory():
     """istanbul writes a whole coverage/ tree beside coverage-final.json; ignoring
     the one file leaves the rest of it in `git status`."""
-    lanes = detect_lanes(frozenset(), _package(scripts={"test": "vitest run"}))
+    lanes = detect_lanes(frozenset(), _package(scripts={"test": "node run.js"}))
 
     _, added = gitignore_update("", live_lanes(lanes, SCOPES))
 
@@ -238,7 +238,7 @@ def test_a_package_json_naming_no_runner_keeps_the_default_directory():
     """`npm test` can run anything. The two flags are not interchangeable, so an
     unnamed runner keeps the coverage directory its own default puts it in
     rather than getting a flag that would turn a working lane into exit 1."""
-    (lane,) = detect_lanes(frozenset(), _package(scripts={"test": "vitest run"}))
+    (lane,) = detect_lanes(frozenset(), _package(scripts={"test": "node run.js"}))
 
     assert lane.command == "npm run test -- --coverage"
     assert lane.artifact == "coverage/coverage-final.json"
@@ -252,6 +252,24 @@ def test_a_package_json_naming_both_runners_keeps_the_default_directory():
 
     assert lane.command == "npm run test -- --coverage"
     assert lane.artifact == "coverage/coverage-final.json"
+
+
+@pytest.mark.parametrize("script, dev, command, artifact", [
+    ("vitest run", {}, "npm run test -- --coverage --coverage.reportsDirectory=.crapkit/cov/js "
+     "--coverage.reportOnFailure --reporter=default --reporter=junit "
+     "--outputFile=.crapkit/cov/js/junit.xml", ".crapkit/cov/js/coverage-final.json"),
+    ("jest", {"vitest": "^2.0.0"}, "npm run test -- --coverage --coverageDirectory=.crapkit/cov/js",
+     ".crapkit/cov/js/coverage-final.json"),
+    ("pytest", {"vitest": "^2.0.0"}, "npm run test -- --coverage", "coverage/coverage-final.json"),
+], ids=["vitest-beside-no-devdependencies", "jest-beside-vitest", "pytest-beside-vitest"])
+def test_the_runner_the_test_script_runs_picks_the_flags(script, dev, command, artifact):
+    """The flags follow the runner the script runs, as doctor reads the lane;
+    devDependencies speak only when the script names none. Read from
+    devDependencies alone, init handed vitest's flags to a script running jest
+    or pytest, and gave a script running vitest none."""
+    (lane,) = detect_lanes(frozenset(), _package(scripts={"test": script}, devDependencies=dev))
+
+    assert (lane.command, lane.artifact) == (command, artifact)
 
 
 def test_both_runners_installed_still_detect_the_lane_they_always_did():
@@ -876,10 +894,10 @@ def test_scripts_absent_beside_a_runner_runs_the_runner():
 
 def test_non_ascii_names_and_a_package_with_20000_scripts_still_pick_the_test_script():
     many = {f"build:{n}": "tsc" for n in range(20000)}
-    accented = _package(name="café-世界", scripts={"tést": "x", "test": "vitest run"})
+    accented = _package(name="café-世界", scripts={"tést": "x", "test": "node run.js"})
 
     (lane,) = detect_lanes(frozenset(), accented)
-    (crowded,) = detect_lanes(frozenset(), _package(scripts={**many, "test:z": "vitest"}))
+    (crowded,) = detect_lanes(frozenset(), _package(scripts={**many, "test:z": "node run.js"}))
 
     assert lane.command == "npm run test -- --coverage"
     assert crowded.command == "npm run test:z -- --coverage"
