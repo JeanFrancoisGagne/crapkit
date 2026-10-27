@@ -293,10 +293,10 @@ file.
 | jest | `--coverageDirectory=.crapkit/cov/js` | `.crapkit/cov/js/coverage-final.json` |
 
 The two JS flags are not interchangeable: jest exits on vitest's spelling and vitest exits on
-jest's. `init` writes one only when `package.json` names exactly one of the two runners in
-`devDependencies`. `npm test` can run anything, and a wrong flag turns a working lane into an
-argument error. A repo naming neither or both keeps its runner's default directory, and
-`doctor` says so:
+jest's. `init` writes the flags of the runner the `test` script runs, and only when that script
+names none, of the one runner `devDependencies` name. A wrong flag turns a working lane into an
+argument error, so a repo whose script runs pytest, or names no runner while `devDependencies`
+name neither runner or both, keeps its runner's default directory, and `doctor` says so:
 
 ```
 WARN lane 'js' writes coverage/coverage-final.json at the repo root - point it under .crapkit/ (for example .crapkit/cov/js/) to keep the tree clean
@@ -622,10 +622,10 @@ scopes = ["web"]
 
 vitest ships the junit reporter, so those three flags need no package. Name `default`
 alongside it: `--reporter=junit` on its own replaces the console output you watch the run
-through. That is the lane `crapkit init` writes for a repo whose `devDependencies` name
-vitest and whose package.json has a `test` script. When the test script has another name
-that starts with `test`, the command runs that script. With no such script it writes
-`npx vitest run --coverage ...` with the same flags.
+through. That is the lane `crapkit init` writes for a repo whose `test` script runs vitest, or
+whose `devDependencies` name vitest and whose package.json has a `test` script that names no
+runner. When the test script has another name that starts with `test`, the command runs that
+script. With no such script it writes `npx vitest run --coverage ...` with the same flags.
 
 Never put a file filter in a `--coverage` command. vitest silently narrows the coverage
 include set to the filtered files, so everything else reads as uncovered. crapkit refuses
