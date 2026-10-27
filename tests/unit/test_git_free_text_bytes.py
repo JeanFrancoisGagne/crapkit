@@ -32,6 +32,7 @@ from crapkit.marks_history import marks_history
 from crapkit.procs import own_processes, run_owned
 from crapkit.ratchet_report import mark_events, report_from_events
 from name_bytes import NOT_UTF8_NAMES
+from test_marks_history import _same_events_both_ways, _utf8
 
 LATIN1 = b"Ren\xe9"
 REPLACED = "Ren�"
@@ -207,6 +208,8 @@ def test_every_past_revision_of_the_marks_file_reads_into_the_burn_down(tmp_path
 
     assert report["open"] == 1
     assert report["oldest"] == [{"path": "src/app.py", "long_name": "f( x )", "age_days": age}]
+    if _utf8(past):  # Check 3; a CRLF revision resaved as LF is C37's clock tick
+        assert _same_events_both_ways(root, resaves=b"\r\n" in past)
 
 
 G5 = "src/app.py\tgĊ( )\t5.0\n".encode()  # U+010A is 0A 01 in UTF-16 LE: git splits there
@@ -305,6 +308,7 @@ def test_a_marks_commit_whose_author_and_subject_are_not_utf8_reads(tmp_path, ca
 
     assert main(["ratchet", "report", "--repo", str(root)]) == 0
     assert "      2d  src/app.py  f( x )" in capsys.readouterr().out
+    assert _same_events_both_ways(root), "Check 3: the marks file's revisions are UTF-8"
 
 
 CAFE_SOURCE = "def café(n):\n" + "".join(f"    if n == {i}:\n        n += {i}\n" for i in range(1, 8)) \
