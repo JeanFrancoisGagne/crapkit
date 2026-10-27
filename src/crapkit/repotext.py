@@ -23,21 +23,23 @@ where a UTF-16 file was a traceback instead of a sentence.
   back through `marks_bytes`.
 - Text crapkit only reads, ranks or passes along (git's free text such as an
   author name or a commit message, a runner's output, an MCP frame, a
-  .gitignore's lines, which git reads past a BOM) goes through `lenient`, or
-  `lenient_lines` and `lenient_decoder` when it arrives in pieces: a UTF-8 BOM
-  is dropped and each byte that is not UTF-8 reads as U+FFFD. git, Node and a
-  browser read such bytes the same way, and one of them in an author name
-  inside the churn window used to stop every command that reads churn. A
-  child's stdin is written by `child_input`. The Action's comment builder
-  reads the files its steps wrote this way too, and cuts the comment for
-  GitHub's byte limit with `utf8_head`.
+  .gitignore's lines, which git reads past a BOM, and a pytest.ini,
+  .pytest.ini, tox.ini or setup.cfg, which pytest reads past one through
+  iniconfig 2.3.1 or newer) goes through `lenient`, or `lenient_lines` and
+  `lenient_decoder` when it arrives in pieces: a UTF-8 BOM is dropped and each
+  byte that is not UTF-8 reads as U+FFFD. git, Node and a browser read such
+  bytes the same way, and one of them in an author name inside the churn
+  window used to stop every command that reads churn. A child's stdin is
+  written by `child_input`. The Action's comment builder reads the files its
+  steps wrote this way too, and cuts the comment for GitHub's byte limit with
+  `utf8_head`.
 - A file whose own reader decodes UTF-8 and knows no byte-order mark (a
   plugin's manifest, hooks file and installed_plugins.json, which Claude Code
-  reads with Node; a pytest.ini, tox.ini, setup.cfg or pyproject.toml, which
-  pytest reads) goes through `plain_utf8`: U+FFFD for each byte that is not
-  UTF-8, and a BOM kept, which JSON.parse and pytest then refuse, and so does
-  crapkit. What a child printed, which a refusal quotes, reads the same way, as
-  a UTF-8 text-mode pipe reads it (`plaintext.printed_text`).
+  reads with Node; a pyproject.toml, which pytest reads with tomllib) goes
+  through `plain_utf8`: U+FFFD for each byte that is not UTF-8, and a BOM kept,
+  which JSON.parse and tomllib then refuse, and so does crapkit. What a child
+  printed, which a refusal quotes, reads the same way, as a UTF-8 text-mode
+  pipe reads it (`plaintext.printed_text`).
 - A patch or a path name git hands over, which crapkit must hand back byte for
   byte, goes through `escaped`: each byte that is not UTF-8 is a lone
   surrogate, and encoding with surrogateescape gives the byte back. `shown`
@@ -291,10 +293,11 @@ def plain_utf8(data: bytes) -> str:
     For a file whose own reader works that way, so crapkit refuses what it
     refuses: Claude Code reads a plugin's JSON with Node's `readFileSync(path,
     "utf8")`, and JSON.parse refuses the mark as `claude plugin validate`
-    2.1.238 does; pytest 8.3 refuses a pytest.ini or pyproject.toml that opens
-    with one (`unexpected line: '\\ufeff[pytest]'`), and configparser and
-    tomllib refuse the same text, so crapkit reads no testpaths from it
-    either."""
+    2.1.238 does; pytest reads a pyproject.toml with tomllib, which refuses a
+    file that opens with one (`Invalid statement (at line 1, column 1)`), so
+    crapkit reads no testpaths from it either. pytest's INI files are not
+    among these: iniconfig 2.3.1 reads past the mark, and
+    `config.pytest_config_text` reads them with `lenient`."""
     return data.decode("utf-8", "replace")
 
 

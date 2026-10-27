@@ -176,10 +176,9 @@ def _present_markers(root: Path) -> frozenset[str]:
 def _marker_texts(root: Path) -> dict[str, str]:
     """The pytest config files this repo carries, by name. Presence of one picks
     the lane; `testpaths` inside it says whether one lane can measure them all."""
-    from ..repotext import plain_utf8
     from ..scaffold import PYTEST_MARKERS
 
-    return {name: plain_utf8((root / name).read_bytes())
+    return {name: config.pytest_config_text(name, (root / name).read_bytes())
             for name in PYTEST_MARKERS if (root / name).is_file()}
 
 
