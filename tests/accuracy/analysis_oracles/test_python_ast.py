@@ -130,8 +130,10 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # (metric-stamp-01) added six, and the repair that names a runner the root test
 # script names in that note (m1-foundations-09) one more. 090/mission-3 reached
 # 3,745 once gitio.blobs_at read a set of paths' bytes at one revision
-# (mission-3-01), and the sync met at 3,878.
-SRC_DEFS = 3878
+# (mission-3-01), and the sync met at 3,878. It reached 3,884 once
+# hook-precommit refused a marked rise with a block and a fix line of its own
+# (mission-3-04).
+SRC_DEFS = 3884
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

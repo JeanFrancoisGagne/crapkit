@@ -1193,9 +1193,9 @@ def test_a_fix_the_developer_forgot_to_stage_is_named_as_such(repo, capsys):
 
 
 def test_a_staged_function_the_repo_already_signed_for_is_not_gated(repo, capsys):
-    """Existence, not the numeric rule: a blob carries no coverage, so the only
-    question the hook can answer is whether the repo already signed for this
-    function. `verify` keeps the numeric check."""
+    """A blob carries no coverage, so the hook reads knotty's CRAP as the range
+    from ccn 8 to 72, its CRAP untested. A mark of 72 holds the whole range,
+    so the repo already signed for it. `verify` keeps the numeric check."""
     add_knotty(repo)
     stage(repo, "src/app.ts")
     write_marks(repo, ("src/app.ts", "knotty ( n )", 72.0))
@@ -1204,6 +1204,33 @@ def test_a_staged_function_the_repo_already_signed_for_is_not_gated(repo, capsys
 
     assert (code, out) == (0, "")
     assert "1 staged function(s) carry a ratchet mark and were not gated" in err, err
+
+
+def test_a_staged_function_whose_ccn_passed_its_mark_refuses_the_commit(repo, capsys):
+    """ccn 8 against a mark of 7.5: CRAP is never under ccn, so the mark rose
+    at any coverage and the hook refuses, naming the mark it passed."""
+    add_knotty(repo)
+    stage(repo, "src/app.ts")
+    write_marks(repo, ("src/app.ts", "knotty ( n )", 7.5))
+
+    code, out, err = run(["hook-precommit"], repo, capsys)
+
+    assert (code, err) == (6, "")
+    assert "crapkit gate: 1 staged function(s) rose past their ratchet mark:" in out, out
+    assert "ccn   8  src/app.ts:" in out and "knotty ( n )  mark 7.5000" in out, out
+    assert "bring each one's ccn back to its mark or under it" in out, out
+
+
+def test_a_marked_rise_whose_fix_was_never_staged_is_named_as_such(repo, capsys):
+    add_knotty(repo)
+    stage(repo, "src/app.ts")
+    add_knotty(repo, "src/app.ts")
+    write_marks(repo, ("src/app.ts", "knotty ( n )", 7.5))
+
+    code, out, _ = run(["hook-precommit"], repo, capsys)
+
+    assert code == 6
+    assert "note: src/app.ts differs from the working tree" in out, out
 
 
 def test_staged_source_no_scope_claims_is_named_and_not_gated(repo, capsys):
