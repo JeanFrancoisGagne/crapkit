@@ -1307,7 +1307,7 @@ exclude = "reference: how a lane is read and refused; tests/e2e drives each case
 
 [[doc]]
 page = "docs/ratchet.md"
-headings = ["The commit gate skips marked functions"]
+headings = ["The commit gate refuses a marked function whose ccn passed its mark"]
 cells = ["lin-uvtool-ts-quickstart"]
 
 [[doc]]

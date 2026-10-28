@@ -19,10 +19,15 @@
 <!-- /0.9.0:m1-foundations -->
 
 <!-- 0.9.0:mission-3 -->
+- `hook-precommit` refuses a marked function whose staged ccn passed its mark, with exit 6 and a block naming the function, its ccn and its mark: CRAP is never under ccn, so that mark rose at any coverage. Through 0.8.1 it passed any marked function. A marked function whose ccn sits at or under its mark still passes, counted on the stderr line. [The commit gate](docs/ratchet.md#the-commit-gate-skips-marked-functions)
+- check_gate's MCP description now says the commit hook refuses a marked function whose ccn passed its mark. It said the hook pardoned any marked function. The tool, its schemas and the server instructions are unchanged.
+- `hook-precommit` warns on stderr when a marked function's ccn rose since the diff base while its mark may still hold: its CRAP range straddles the mark, so only `verify`, with coverage, can say whether the rise broke it. The warn names each function with its base and staged ccn and its mark, and the commit still goes through. A function added in the commit, or in a first commit, warns too, and a comment edit or a ccn that fell stays on the count line. [The commit gate](docs/ratchet.md#the-commit-gate-skips-marked-functions)
+- `claude-hook` speaks on marked functions, exit 2, each block with its own closing line: a marked block for a function whose ccn passed its mark, which says the commit gate refuses it and a mark only falls, and a warn block for one whose ccn rose since HEAD while its CRAP range straddles the mark, which sends the agent to tests or a decomposition before `verify` judges it. Through 0.8.1 it stayed silent on any marked function. A comment edit or a ccn that fell stays silent, and the advisory for an unmarked breach is unchanged. [claude-hook](docs/agent-json.md#claude-hook)
 <!-- /0.9.0:mission-3 -->
 
 <!-- 0.9.0:metric-stamp -->
 - The analysis version is now one number per language (`analyze.ANALYSIS_VERSIONS`, each starting at 13) and one per coverage reader (`coverage_format.READER_VERSIONS`, each starting at 1), and a change raises only the numbers it moves. The analysis cache keys each file on its language's number, so a change to one language's reader re-reads only that language's files. `ANALYSIS_VERSION` stays 13 and counts the tables' revisions, so the marks-file stamp and every JSON field read as in 0.8.1.
+- Marks a newer lizard stamped, as every marks file seeded on a fresh 0.8.1 install since 2026-10-05 is, now ask for `crapkit coverage`, `crapkit ratchet prune` and `crapkit ratchet seed`, and seed and prune accept them, where 0.8.1 sent the user to upgrade lizard and seed and prune refused. 0.9.0 pins lizard exactly, so only a newer `crapkit-analysis` asks for an upgrade, and that refusal names crapkit alone. `crapkit doctor` lists these marks as a WARN, not a FAIL. A teammate still on 0.8.1 upgrades crapkit, or each of their reseeds moves the marks back. [Upgrading to 0.9.0](docs/upgrading.md#marks-a-newer-lizard-stamped-take-one-reseed)
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->

@@ -1,13 +1,15 @@
 """Protocol 1: one PostToolUse payload on stdin, a ccn advisory out.
 
 The advisory is the only thing this ever says, and it says it about an edit in
-a scope crapkit measures: a function the edit changed, over its ceiling,
-carrying no ratchet mark; or a changed file the edit left unjudged, because no
-reader could read it, because git names it in bytes that are not UTF-8, or
-because git ran and could not report what the edit changed. The unjudged lines
-name the file and the reason; the commit gate refuses the first two once
-staged. Everything else is exit 0 and silence: the malformed payload, the
-unmeasured repo, a machine with no git and the internal exception included.
+a scope crapkit measures: a function the edit changed, over its ceiling, that
+no ratchet mark pardons; a marked one whose ccn passed its mark, or rose since
+HEAD while its CRAP range straddles the mark; or a changed file the edit left
+unjudged, because no reader could read it, because git names it in bytes that
+are not UTF-8, or because git ran and could not report what the edit changed.
+The unjudged lines name the file and the reason; the commit gate refuses the
+first two once staged. Everything else is exit 0 and silence: the malformed
+payload, the unmeasured repo, a machine with no git and the internal exception
+included.
 
 The plugin's one handler runs under several harnesses, and each sends the event
 in its own words. Claude Code and Cursor name the written file in
@@ -38,7 +40,8 @@ every unmeasured repo could not be installed machine-wide at all.
 The hook never blocks and never says it did. PostToolUse runs after the write.
 `hook-precommit` stays the only enforcement point. Both are adapters of the
 gate module: this one hands it the edited file, each function bounded as the
-commit gate bounds a staged one, and words what it finds as advice.
+commit gate bounds a staged one, and HEAD as the base a straddling marked
+function's ccn is compared with, and words what it finds as advice.
 
 Two constraints shape the code rather than the contract:
 
@@ -277,8 +280,8 @@ def _advise_command(payload: dict, memory: _Memory) -> list[str]:
     A shell heredoc or `python - <<'PY'` writes source no Edit event ever names,
     so judging only `file_path` left every Bash-written breach unadvised. Each
     file takes the same per-file ladder an Edit takes, so a file under no
-    crapkit root, mid-sequencing, unscoped or marked stays silent, and the
-    advisory means what it always means.
+    crapkit root, mid-sequencing, unscoped or pardoned by its marks stays
+    silent, and the advisory means what it always means.
     """
     if not _command_event(payload):
         return []
@@ -620,10 +623,23 @@ def _answer(root: Path, cfg, in_scope: dict, rel: str, records: list, ranges) ->
                                _GIT_NEXT)
     scope = _scope_name(in_scope)
     change = _change(cfg, scope, rel, records, ranges)
-    result = judge([change], cfg.ceiling_of, lambda: _marks_for(root / cfg.ratchet_file, rel, records))
+    result = judge([change], cfg.ceiling_of, lambda: _marks_for(root / cfg.ratchet_file, rel, records),
+                   _base_ccn(root, ranges))
     ceiling = cfg.ceiling_of(scope)
-    _check_advisory(_records_of(result, ("over_ceiling", *_CARRIED)), ceiling, in_scope, cfg)
+    _check_advisory(_records_of(result, _BREACH_KINDS), ceiling, in_scope, cfg)
     return _worded(rel, result, ceiling)
+
+
+def _base_ccn(root: Path, ranges):
+    """The gate's base fetch: each unproven function's ccn at HEAD, read by
+    `hook.ccn_at`, the fetch the commit gate reads at its diff's basis. A file
+    judged whole (untracked, before the first commit, or under no repository)
+    has no HEAD copy, so every function in it is new and no git is asked."""
+    if ranges is None:
+        return dict.fromkeys
+    from ..hook import ccn_at
+
+    return lambda keys: ccn_at(root, "HEAD", keys)
 
 
 def _scope_name(in_scope: dict) -> str:
@@ -649,22 +665,21 @@ def _change(cfg, scope: str, rel: str, records: list, ranges):
 
 
 def _worded(rel: str, result, ceiling: int | None) -> list[str]:
-    """The advisory for the gate's findings on one edited file, the first kind
-    present deciding: a claimed name, an unread file, then the functions over
-    `ceiling` no mark carries, worst first. [] when there is nothing to say;
-    `_deliver` decides where the lines go."""
+    """The advisory for the gate's findings on one edited file: a claimed name
+    or an unread file alone, else the unmarked block, the marked block and the
+    warn block, each present only when its kind is. A pardoned or unproven
+    function says nothing: the commit gate passes it without a warn. [] when
+    there is nothing to say; `_deliver` decides where the lines go."""
     if result.unreadable_name:
         return _claimed_lines(result.unreadable_name[0])
     if result.unread:
         return _unread_advisory(rel, result.unread[0].reason)
-    unmarked = sorted(_records_of(result, ("over_ceiling",)), key=lambda rec: (-rec.ccn, rec.start))
-    return _advisory_lines(rel, unmarked, ceiling) if unmarked else []
+    return [*_over_lines(rel, result.over_ceiling, ceiling), *_past_mark_lines(rel, result.marked_rise),
+            *_rise_lines(rel, result.unproven_rise)]
 
 
-# The gate's findings a ratchet mark carries. A working-tree file has no
-# coverage, so its CRAP is a range: the advisory, like the commit gate, passes
-# any marked breach and leaves the number to `verify`.
-_CARRIED = ("pardoned", "marked_rise", "unproven")
+# Every kind of breach the gate finds; each is held to its ceiling before the advisory prints.
+_BREACH_KINDS = ("over_ceiling", "pardoned", "marked_rise", "unproven", "unproven_rise")
 
 
 def _records_of(result, kinds: tuple) -> list:
@@ -744,8 +759,7 @@ def _names(line: str, rel: str) -> bool:
 
 def _proved_entries(text: str, records) -> list:
     """The mark entries of `text`, or none when the marks file cannot prove
-    its key identity: an unproved key grants no advisory exemption and
-    writes nothing."""
+    its key identity: an unproved key pardons nothing and writes nothing."""
     from ..ratchet import checked_key_version, read_ratchet
 
     try:
@@ -769,6 +783,53 @@ def _advisory_lines(rel: str, breaches: list, ceiling: int) -> list[str]:
     body = [f"  ccn {rec.ccn}  {rel}:{rec.start}  {rec.long_name}" for rec in breaches]
     return [head, *body,
             "the commit gate enforces this; decompose there or mark the debt"]
+
+
+def _over_lines(rel: str, breaches, ceiling: int) -> list[str]:
+    """The unmarked block: the functions over `ceiling` no mark covers, worst first."""
+    records = sorted((breach.function.record for breach in breaches), key=lambda rec: (-rec.ccn, rec.start))
+    return _advisory_lines(rel, records, ceiling) if records else []
+
+
+# What each marked block says its functions did, and its closing line. A ccn
+# past the mark is refused at the commit and only a decomposition clears it; a
+# ccn rise across the mark passes the commit, and coverage decides it.
+_PAST_MARK = ("rose past their ratchet mark",
+              "the commit gate refuses a ccn past its mark, and a mark only falls: "
+              "bring the ccn back to its mark or under it")
+_ROSE = ("rose in ccn and may pass their ratchet mark",
+         "`crapkit verify` judges the mark with coverage: add tests that run the new branches, or decompose")
+
+
+def _past_mark_lines(rel: str, rises) -> list[str]:
+    """The marked block: each function whose ccn alone passed its mark."""
+    return _marked_lines(rel, rises, _PAST_MARK, lambda breach: f"{breach.function.record.ccn}")
+
+
+def _rise_lines(rel: str, rises) -> list[str]:
+    """The warn block: each straddling marked function whose ccn rose since
+    HEAD, `new` where HEAD holds no function under its key."""
+    return _marked_lines(rel, rises, _ROSE, _ccn_rise)
+
+
+def _ccn_rise(breach) -> str:
+    before = "new" if breach.base_ccn is None else breach.base_ccn
+    return f"{before} -> {breach.function.record.ccn}"
+
+
+def _marked_lines(rel: str, breaches, said: tuple[str, str], ccn_of) -> list[str]:
+    """One marked block, the advisory's head line, then each function worst
+    ccn first under the handle its mark sits under (`#2` for a second twin),
+    as the commit gate prints it, then the closing line. [] for none."""
+    if not breaches:
+        return []
+    rose, closing = said
+    head = (f"crapkit advisory: {len(breaches)} marked function(s) {rose} in {rel} "
+            "(the edit landed; nothing was blocked)")
+    worst = sorted(breaches, key=lambda breach: (-breach.function.record.ccn, breach.function.record.start))
+    rows = [f"  ccn {ccn_of(breach)}  {rel}:{breach.function.record.start}  {breach.key_name}  "
+            f"mark {breach.mark:.4f}" for breach in worst]
+    return [head, *rows, closing]
 
 
 # --- the session memory ------------------------------------------------------

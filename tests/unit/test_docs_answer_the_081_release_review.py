@@ -237,12 +237,12 @@ def test_hook_precommit_pardons_a_staged_function_on_a_mark_no_commit_holds(repo
     assert "1 staged function(s) carry a ratchet mark and were not gated" in err, err
     readme = _prose("README.md")
     assert "the committed ratchet already carries a mark for" not in readme
-    assert ("Both hooks pardon a function that the marks file in the working tree carries a mark "
-            "for, whether or not that mark is staged or committed") in readme
+    assert ("Both hooks read the marks file in the working tree, whether or not a mark is staged or "
+            "committed") in readme
     assert ("In CI the file on disk is the committed one, so `verify` there fails a function "
             "whose mark never reached a commit") in readme
-    assert ("pardoned: any function the working-tree marks file marks, counted in one stderr line"
-            in _doc("docs/handbook.html"))
+    assert ("pardoned: a marked function whose ccn sits at or under its working-tree mark, counted in one "
+            "stderr line" in _doc("docs/handbook.html"))
 
 
 def test_hook_precommit_with_nothing_staged_pardons_on_the_working_tree_marks(repo, capsys):  # noqa: F811

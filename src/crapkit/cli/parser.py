@@ -256,9 +256,11 @@ def _print_version_json() -> int:
 # The fix sentence is merge.UNREAD_ADVICE, spelled out here because the parser
 # loads on every command and merge is not worth that import; a test holds the two equal.
 _HOOK_PRECOMMIT = (
-    "Gate the staged functions of a commit at min-CCN <= their scope ceiling, read from the "
-    "staged blobs. A function with a mark in the working tree's marks file passes, whether or "
-    "not the mark is staged. Exit 6 on a staged function over its ceiling or a staged file no "
+    "Gate the staged functions of a commit at their scope ceiling, read from the staged blobs: "
+    "ccn alone, since a blob carries no coverage. A function over its ceiling with a mark in the "
+    "working tree's marks file, whether or not the mark is staged, passes while its ccn sits at "
+    "or under that mark, and exits 6 once its ccn passes it, since its CRAP is then past the mark "
+    "at any coverage. Exit 6 on a staged function over its ceiling or a staged file no "
     "reader could read. An UNREAD line names such a file "
     "and the reader's reason: change what the reason names so a reader can parse the file, or "
     "list it under [exclude] globs in crapkit.toml to leave it ungated. Outside a commit (git "
@@ -520,8 +522,9 @@ def build_parser() -> argparse.ArgumentParser:
     ver.add_argument("--json", action="store_true", help="print the verdict as JSON")
     ver.set_defaults(func=_Handler("verifying", "cmd_verify"))
 
-    hook = sub.add_parser("hook-precommit", help="gate staged functions at min-CCN <= target; exit 6 on a function over it "
-                                "or a staged file no reader could read", description=_HOOK_PRECOMMIT)
+    hook = sub.add_parser("hook-precommit", help="gate staged functions at their scope ceiling; exit 6 when a "
+                                "function's ccn passes the ceiling and any ratchet mark it carries, or on a "
+                                "staged file no reader could read", description=_HOOK_PRECOMMIT)
     hook.add_argument("--base", metavar="REF",
                       help="compare the index with merge-base(REF, HEAD), for CI checkouts")
     hook.add_argument("--repo", **_REPO_FLAG)
