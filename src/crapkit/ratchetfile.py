@@ -139,6 +139,7 @@ class RatchetFile:
              read_with: tuple[RatchetFile, ...] = ()) -> str:
         """The text for a write that adds no measured number: both recorded stamps stay.
 
+        A per-scope file keeps its first line and every scope line as they read.
         A file that does not exist yet records nothing, so it takes the metric its
         first numbers came from. `keys` is a key format identity proof just
         established; without one the recorded format stays. `read_with` are the
@@ -179,7 +180,7 @@ class RatchetFile:
         whose read replaced a byte: the override renders it before its alert
         fires, so a refusal leaves no alert and no audit row behind."""
         version = read_key_version(self.text or "") if keys is None else keys
-        text = dump_ratchet(entries, stamp=metric, key_version=version)
+        text = dump_ratchet(entries, stamp=metric, key_version=version, file_name=self.path.name)
         if _lf(text) != _lf(self.text):
             _refuse_replaced((self, *read_with))
         return text

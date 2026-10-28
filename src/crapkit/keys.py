@@ -56,6 +56,7 @@ import re
 from typing import TYPE_CHECKING, NamedTuple
 
 from .errors import CrapkitError, ToolError
+from .languages import LANGUAGE_EXTENSIONS
 
 if TYPE_CHECKING:  # score imports this module
     from .score import ScoredRow
@@ -64,12 +65,24 @@ ORDINAL = "#"
 # What lizard calls a function it could not name. Every anonymous function in a
 # file prints the same string, which is why the handles below exist.
 ANONYMOUS = "(anonymous)"
-_EXPRESSION_SUFFIXES = frozenset(("js", "cjs", "mjs", "ts", "tsx", "jsx"))
+# The JavaScript family, whose anonymous functions expression reader 10 renumbered,
+# and the language each suffix is read as: the language whose analysis number
+# proves a mark's key.
+EXPRESSION_LANGUAGES = ("javascript", "tsx", "typescript")
+_EXPRESSION_LANGUAGE = {suffix[1:]: language for language in EXPRESSION_LANGUAGES
+                        for suffix in LANGUAGE_EXTENSIONS[language]}
+_EXPRESSION_SUFFIXES = frozenset(_EXPRESSION_LANGUAGE)
 
 
 def expression_group(path: str, name: str) -> bool:
     """The anonymous groups whose membership changed with expression reader 10."""
     return path.rpartition(".")[2].lower() in _EXPRESSION_SUFFIXES and name.startswith(ANONYMOUS)
+
+
+def expression_language(path: str) -> str | None:
+    """The language a JavaScript-family file is read as: javascript for .js,
+    .jsx, .mjs and .cjs, typescript for .ts, tsx for .tsx; None outside it."""
+    return _EXPRESSION_LANGUAGE.get(path.rpartition(".")[2].lower())
 
 
 def expression_reader_current(version) -> bool:
