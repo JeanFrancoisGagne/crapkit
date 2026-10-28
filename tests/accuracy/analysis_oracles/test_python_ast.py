@@ -136,7 +136,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # guard read pytest's config files with (build-map-18) added one, and the
 # next sync met at 3,885. It reached 3,892 once hook-precommit warned about a
 # straddling marked function whose ccn rose since the diff base (mission-3-05).
-SRC_DEFS = 3892
+# The per-scope stamp's reader and writer and keys.expression_language
+# (metric-stamp-04) added 35 on 090/metric-stamp, and the sync met at 3,927.
+SRC_DEFS = 3927
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
