@@ -388,14 +388,24 @@ def test_a_root_lane_that_runs_no_js_runner_still_gets_the_note(capsys):
     assert "no js lane was written" not in out, "init wrote lane 'js'"
 
 
-def _init_workspaces(tmp_path, root_test: str, capsys) -> tuple:
+# The root lane's command when its runner is unknown or not a JS runner, and
+# when its test script runs vitest: no report flag, or vitest's own.
+UNROUTED = "npm run test -- --coverage"
+VITEST_ROUTED = (f"{UNROUTED} --coverage.reportsDirectory=.crapkit/cov/js --coverage.reportOnFailure "
+                 "--reporter=default --reporter=junit --outputFile=.crapkit/cov/js/junit.xml")
+
+
+def _init_workspaces(tmp_path, root_test: str, capsys, root_dev: tuple, command: str) -> tuple:
     """init, in process, on a workspaces repo whose web runs vitest and api
-    jest, under a root test script `root_test`: (the repo, init's lines)."""
+    jest, under a root test script `root_test` and root devDependencies
+    `root_dev`, checking that the root lane init writes runs `command`: (the
+    repo, init's lines)."""
     from cli_inproc_repo import git
 
     root = tmp_path / "repo"
     files = {"package.json": {"private": True, "workspaces": ["web", "api"],
-                              "scripts": {"test": root_test}},
+                              "scripts": {"test": root_test},
+                              "devDependencies": {name: "^2.0.0" for name in root_dev}},
              "web/package.json": {"scripts": {"test": "vitest run"},
                                   "devDependencies": {"vitest": "^2.0.0"}},
              "api/package.json": {"scripts": {"test": "jest"},
@@ -410,8 +420,7 @@ def _init_workspaces(tmp_path, root_test: str, capsys) -> tuple:
 
     assert main(["init", "--repo", str(root)]) == 0
     out = capsys.readouterr().out.splitlines()
-    assert '\ncommand = "npm run test -- --coverage"\n' in (root / "crapkit.toml").read_text(
-        encoding="utf-8")
+    assert f'\ncommand = "{command}"\n' in (root / "crapkit.toml").read_text(encoding="utf-8")
     assert out[1].startswith("detected 1 lane(s) from this repo's own files: js - "), out
     return root, out
 
@@ -422,39 +431,65 @@ def _doctor_runner_lines(root) -> list[str]:
     return [f.text for f in admin._doctor_runners(_load_repo_config(root), admin._doctor_packages(root))]
 
 
+@pytest.mark.parametrize("root_dev", [(), ("vitest", "jest")],
+                         ids=["root-devdependencies-none", "root-devdependencies-vitest-jest"])
 def test_init_names_the_lane_it_wrote_when_the_root_script_only_runs_the_workspaces(tmp_path,
-                                                                                    capsys):
+                                                                                    capsys,
+                                                                                    root_dev):
     """The root's test script fans out (`npm test --workspaces`, web on
     vitest, api on jest), so init writes the root lane over it, whose runner
     nothing names. The note said "no js lane was written" one line under init's
     own "detected 1 lane(s) ...: js", and sent the reader to a commented js
-    template init had not written."""
-    root, out = _init_workspaces(tmp_path, "npm test --workspaces", capsys)
+    template init had not written. A root that hoists both runners into its
+    devDependencies, a common npm workspaces shape, names two, so the lane's
+    runner stays unknown and the note reads the same: it says what init checked,
+    that no lane it wrote runs a JS runner, never what the root's
+    devDependencies name."""
+    root, out = _init_workspaces(tmp_path, "npm test --workspaces", capsys, root_dev, UNROUTED)
 
-    assert out[2] == ("2 workspaces name a runner (api: jest, web: vitest) and the root's "
-                      "devDependencies name none, so the runner of lane 'js' is unknown (npm run "
-                      "test -- --coverage names none crapkit knows): replace it with one [[lane]] "
-                      "per workspace, each with its own cwd and artifact"), out
+    assert out[2] == ("2 workspaces name a runner (api: jest, web: vitest), but no lane init "
+                      "wrote runs a JS runner: the runner of lane 'js' is unknown (npm run test -- "
+                      "--coverage names none crapkit knows); replace it with one [[lane]] per "
+                      "workspace, each with its own cwd and artifact"), out
     assert _doctor_runner_lines(root) == [
         "lane 'js': runner unknown (npm run test -- --coverage names none crapkit knows); "
         "runner-specific hints and refusals are off for it"]
 
 
-def test_init_names_the_runner_the_root_script_names_as_doctor_does(tmp_path, capsys):
+@pytest.mark.parametrize("root_dev", [(), ("vitest",)],
+                         ids=["root-devdependencies-none", "root-devdependencies-vitest"])
+def test_init_names_the_runner_the_root_script_names_as_doctor_does(tmp_path, capsys, root_dev):
     """The root's test script runs pytest (web on vitest, api on jest). init
     writes the root lane over it, and doctor says that lane runs pytest, named
-    in the root script. The note said the root names no runner and no js lane
-    was written, and sent the reader to a commented template; the one init
-    wrote is the py one."""
-    root, out = _init_workspaces(tmp_path, "pytest", capsys)
+    in the root script, whatever the root's devDependencies name: the script
+    names a runner, so devDependencies are never read. The note said the root
+    names no runner and no js lane was written, and sent the reader to a
+    commented template; the one init wrote is the py one. The lane carries no
+    JS report flag either: init read the runner from devDependencies alone and
+    handed vitest's flags to pytest when they named vitest."""
+    root, out = _init_workspaces(tmp_path, "pytest", capsys, root_dev, UNROUTED)
 
     (doctor_line,) = _doctor_runner_lines(root)
     assert doctor_line == "lane 'js': runs pytest (named in package.json script \"test\")"
-    assert out[2] == ("2 workspaces name a runner (api: jest, web: vitest) and the root's "
-                      "devDependencies name none, so lane 'js' runs pytest (named in package.json "
-                      "script \"test\"): replace it with one [[lane]] per workspace, each with its "
+    assert out[2] == ("2 workspaces name a runner (api: jest, web: vitest), but no lane init "
+                      "wrote runs a JS runner: lane 'js' runs pytest (named in package.json "
+                      "script \"test\"); replace it with one [[lane]] per workspace, each with its "
                       "own cwd and artifact"), out
     assert doctor_line.removeprefix("lane 'js': ") in out[2]
+
+
+def test_init_routes_the_root_lane_for_the_runner_its_script_names(tmp_path, capsys):
+    """The root's test script runs vitest and its devDependencies name both
+    vitest and jest, so devDependencies alone cannot pick a runner. init read
+    only devDependencies and wrote the root lane with no report flag, which
+    doctor then WARNed about. The script names vitest, so the lane carries
+    vitest's flags, and no workspace note follows: the lane init wrote runs a
+    JS runner."""
+    root, out = _init_workspaces(tmp_path, "vitest run", capsys, ("vitest", "jest"), VITEST_ROUTED)
+
+    assert _doctor_runner_lines(root) == [
+        "lane 'js': runs vitest (named in package.json script \"test\")"]
+    assert not [line for line in out if "workspaces name a runner" in line], out
 
 
 # --- the runner each lane runs ----------------------------------------------------

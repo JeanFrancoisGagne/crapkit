@@ -132,8 +132,10 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # 3,745 once gitio.blobs_at read a set of paths' bytes at one revision
 # (mission-3-01), and the sync met at 3,878. It reached 3,884 once
 # hook-precommit refused a marked rise with a block and a fix line of its own
-# (mission-3-04).
-SRC_DEFS = 3884
+# (mission-3-04). On 090/integration the one decode init and the full-suite
+# guard read pytest's config files with (build-map-18) added one, and the
+# next sync met at 3,885.
+SRC_DEFS = 3885
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
