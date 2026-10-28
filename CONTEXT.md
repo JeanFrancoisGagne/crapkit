@@ -157,7 +157,7 @@ A committed record that one function is allowed to sit at a known CRAP; it may o
 _Avoid_: exemption, baseline entry, whitelist
 
 **Metric stamp**:
-The marks file's first comment line, `crapkit-analysis=N lizard=X.Y.Z`: the rules that produced the marks' numbers. `ratchet seed` sets it to the metric of the run it read, and verify refuses marks whose stamp differs from the running metric.
+The rules each scope's marks were recorded under: one line per scope naming the analysis number of each of its languages and its coverage mode, beside the lizard version. The single `crapkit-analysis=N lizard=X.Y.Z` line is the single-number form 0.8.x wrote, which crapkit still reads. `ratchet seed` sets the stamp to the metric of the run it read, and verify refuses marks whose stamp differs from the running metric.
 _Avoid_: version header
 
 **Pardon**:

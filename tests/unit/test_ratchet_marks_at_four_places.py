@@ -105,12 +105,12 @@ def test_marks_read_before_reader_10_name_every_file_whose_callbacks_moved():
                RatchetEntry("src/a.ts", "(anonymous)", 9.0), RatchetEntry("src/c.py", "f( )", 9.0)]
 
     with pytest.raises(ValueError) as refused:
-        ratchet.check_reader_version(entries, 9)
+        ratchet.check_reader_version(entries, ratchet.SingleNumberStamp(9, "1.24.0"))
 
     assert str(refused.value) == (
         "expression reader 10 changed anonymous function ordinals in src/a.ts, src/b.js; refresh "
         "coverage and reconcile any saved marks with their original functions before reseeding")
-    assert ratchet.check_reader_version(entries, 10) is None
+    assert ratchet.check_reader_version(entries, ratchet.SingleNumberStamp(10, "1.24.0")) is None
 
 
 STAMP = "crapkit-analysis=12 lizard=1.24.0"
