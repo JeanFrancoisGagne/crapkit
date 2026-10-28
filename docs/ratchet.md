@@ -1138,6 +1138,51 @@ ccn where a lane measures the scope, and ccn in a `coverage_optional` scope, whi
 CRAP = ccn. Before 0.8.1 the hook wrote ccn^2 + ccn there too, 72 for a ccn-8 function, and
 verify let the function grow to ccn 72 before its mark failed.
 
+The reason also passes a marked refusal: a marked function whose ccn passed its mark (see
+[the commit gate](#the-commit-gate-refuses-a-marked-function-whose-ccn-passed-its-mark)).
+The commit goes through with the same three records, the alert line names the function, and
+the override row carries the high end of its CRAP range, as for any hook grant. The mark keeps
+its value byte for byte: **marks only fall**. A grant that adds no new mark leaves
+`crapkit-ratchet.tsv` unwritten and out of the commit, and the receipt names each mark it
+kept. On the demo repo, with `read_row` marked 7.3333 and taken to ccn 8 as above:
+
+```
+$ CRAPKIT_OVERRIDE_REASON="hotfix 412, decompose in the follow-up" git commit -m "read two more fields"
+crapkit gate: 1 staged function(s) rose past their ratchet mark:
+  ccn   8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+crapkit: override granted with full audit (hotfix 412, decompose in the follow-up).
+crapkit: 1 ratchet mark kept as it was (a mark only falls): calc/parse.py read_row( line , cols ) 7.3333
+crapkit: clear CRAPKIT_OVERRIDE_REASON now (`unset CRAPKIT_OVERRIDE_REASON`) - while set it grants again on every commit.
+crapkit: a CI job or a launcher that exported it is not cleared by any command here - clear it where it was set.
+[main e1d11b8] read two more fields
+ 1 file changed, 2 insertions(+)
+EXIT=0
+```
+
+The mark did not move, so the next `verify` reports the rise as a ratchet regression, and no
+override grants a ratchet regression:
+
+```
+$ crapkit verify
+warning: 1 changed line(s) have no coverage
+  uncovered calc/parse.py:27
+verify FAILED @ e1d11b8668b vs baseline 79b4063dbfb (2 changed files)
+  changed files: calc/parse.py, crapkit-ratchet.tsv
+  GATE  crap     11.4  ccn   8 cov 62%  calc/parse.py:16  read_row( line , cols )  -> decompose
+  RATCHET  calc/parse.py  read_row( line , cols ): 7.3333 -> 11.375
+  findings: 2 committed / 0 dirty (uncommitted edits and untracked files)
+EXIT=6
+
+$ crapkit verify --override "hotfix 412, decompose in the follow-up"
+...
+override refused: 1 ratchet regression (calc/parse.py read_row( line , cols ) 7.3333 -> 11.375) never qualifies for an override; raise the mark by hand and commit it
+EXIT=6
+```
+
+The override let one commit through and paid nothing back. The ways out are the two a
+ratchet regression always has: bring the function back under its mark, or raise the mark in
+`crapkit-ratchet.tsv` by hand in a commit a reviewer sees.
+
 The hook refuses the override before it writes anything when a staged file went unread,
 with the same `override refused` line verify prints; the commit fails on the file either
 way, so a grant there would only sign debt for a commit that never lands.

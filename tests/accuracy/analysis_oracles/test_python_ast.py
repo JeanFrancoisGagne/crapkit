@@ -135,8 +135,10 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # (mission-3-04). On 090/integration the one decode init and the full-suite
 # guard read pytest's config files with (build-map-18) added one, and the
 # next sync met at 3,885. It reached 3,892 once hook-precommit warned about a
-# straddling marked function whose ccn rose since the diff base (mission-3-05).
-SRC_DEFS = 3892
+# straddling marked function whose ccn rose since the diff base (mission-3-05),
+# and 3,896 once the hook's override grant named the marks it kept and left a
+# marks file it only kept marks in unwritten (mission-3-07).
+SRC_DEFS = 3896
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

@@ -1040,7 +1040,8 @@ still commits, and verify then refuses it with exit 6. Exit 7 stays for a mark t
 in a function the diff never touched.
 
 `CRAPKIT_OVERRIDE_REASON` is a human granting audited debt (alert, ratchet entry and
-snapshot record, all three or nothing). Leave it alone.
+snapshot record, all three or nothing). On a marked function whose ccn passed its mark it
+passes the commit and keeps the mark, so `crapkit verify` still fails the rise. Leave it alone.
 
 ## Determinism is the product
 

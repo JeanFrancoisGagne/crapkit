@@ -73,7 +73,17 @@ def record_override(
     # the two leaves an audit trail with no grant, never a grant with no trail.
     store.write_overrides(run_id, [(*stated_key(v), v.crap, reason) for v in violations])
 
-    saved.publish(text)  # the functional exemption: the debt enters the ratchet, diff-visible
+    # A hook grant that only keeps marks changes no value, so it leaves the
+    # file's bytes alone: a re-render would add a key-format line to a file a
+    # release before 0.8.1 wrote and pad a hand-typed 7.5 to 7.5000.
+    if raise_marks or _adds_a_mark(saved, violations):
+        saved.publish(text)  # the functional exemption: the debt enters the ratchet, diff-visible
+
+
+def _adds_a_mark(saved: RatchetFile, violations: list[GateViolation]) -> bool:
+    """Whether the grant enters a function the marks file does not hold yet."""
+    index = MarkIndex(saved.entries)
+    return any(stated_key(v) not in index for v in violations)
 
 
 def _validate_override_keys(text: str, rows, key_version: int | None) -> None:
