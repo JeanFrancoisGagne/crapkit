@@ -61,9 +61,22 @@ runs:
     # is crapkit itself (`uses: ./`) the lane's `--cov=crapkit` then measures the
     # copy in site-packages: 61 files outside the checkout, and the wrong-tree
     # refusal failed the lane on the first run of this action.
+    #
+    # `python -P -m pip`, not the `pip` script: a `container:` job mounts the
+    # runner's tool cache at /__t, and the script's `#!` still names the host
+    # path it was written under, so `pip` exits 127 there ("required file not
+    # found"). The python setup-python put on PATH runs pip wherever it sits.
+    #
+    # -P, because this step runs in the consumer's checkout and `python -m`
+    # puts the working directory first on sys.path: a pip.py at the root of
+    # that checkout ran in place of pip. Python 3.11 added -P, and crapkit needs
+    # 3.11, so on an older python-version the install fails with Python's
+    # `Unknown option: -P`, and the line before it names the input to change.
     - name: install crapkit from this action's own checkout
       shell: bash
-      run: pip install -e "$GITHUB_ACTION_PATH"
+      run: |
+        python -P -c "" 2>/dev/null || echo "crapkit needs Python 3.11 or newer, and python-version installed $(python --version 2>&1): set python-version to 3.11 or newer" >&2
+        python -P -m pip install -e "$GITHUB_ACTION_PATH"
 
     # The steps below that run crapkit, and the one that posts the comment, keep
     # their own status at 0 and record what they got. The comment is this

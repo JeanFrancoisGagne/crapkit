@@ -59,10 +59,10 @@ def test_an_empty_package_json_object_writes_no_npm_lane(tmp_path):
 
 
 @pytest.mark.parametrize("package, command", [
-    ({"scripts": {"test": "vitest run"}}, "npm run test -- --coverage"),
-    ({"name": "café-世界", "scripts": {"tést": "x", "test": "vitest run"}},
+    ({"scripts": {"test": "node run.js"}}, "npm run test -- --coverage"),
+    ({"name": "café-世界", "scripts": {"tést": "x", "test": "node run.js"}},
      "npm run test -- --coverage"),
-    ({"scripts": {**{f"build:{n}": "tsc" for n in range(20000)}, "test:z": "vitest"}},
+    ({"scripts": {**{f"build:{n}": "tsc" for n in range(20000)}, "test:z": "node run.js"}},
      "npm run test:z -- --coverage"),
 ], ids=["test-script", "non-ascii-names", "20000-scripts"])
 def test_a_test_script_with_no_named_runner_keeps_the_default_directory(tmp_path, package,

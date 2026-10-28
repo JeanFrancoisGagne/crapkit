@@ -15,6 +15,7 @@ from typing import NamedTuple
 from .diffparse import changed_ranges, rendered_ranges, text_line_ranges, utf16_line_spans
 from .errors import GitError, ToolError
 from .gitpaths import nul_paths, readable, split_record
+from .programs import require
 from .repotext import escaped, lenient, lenient_lines, utf16_marked
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
@@ -122,6 +123,12 @@ def _git_unflagged(root: Path, *args: str) -> str:
     return _run(root, args, args)
 
 
+# Every git process here starts the file programs.require finds on PATH's
+# absolute entries, never a `git.exe` the working directory holds, which Windows
+# searches first for a bare name. subprocess takes it as `executable`, so argv[0]
+# stays `git`; run_owned takes it as argv[0], since its POSIX launcher execs
+# argv[0] itself. No git on any absolute entry raises FileNotFoundError, which
+# each start names `git executable not found`, as it named a missing bare `git`.
 def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False,
            pinned: tuple[tuple[str, str], ...] = ()) -> subprocess.CompletedProcess:
     """One git process run to completion, whatever it exits with.
@@ -134,8 +141,8 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False,
     an OS path, so a directory named in Latin-1 on Linux still opens. stderr is
     only ever quoted in a message, so it reads through repotext.lenient."""
     try:
-        res = subprocess.run(["git", *argv], cwd=root, env=_environment(*pinned),
-                             capture_output=True)
+        res = subprocess.run(["git", *argv], executable=require("git"), cwd=root,
+                             env=_environment(*pinned), capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     if binary:
@@ -237,8 +244,8 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
     ended one at a CR inside an author name, which cut the header off its dates.
     """
     try:
-        proc = subprocess.Popen(["git", *_RELATIVE, *args], cwd=root, env=_environment(), stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE)
+        proc = subprocess.Popen(["git", *_RELATIVE, *args], executable=require("git"), cwd=root,
+                                env=_environment(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     with proc:
@@ -789,8 +796,8 @@ def blob_at(root: Path, commit: str, rel_path: str) -> bytes | None:
 
 def _batch_stream(root: Path, requests: bytes) -> bytes:
     try:
-        res = subprocess.run(["git", "cat-file", "--batch"], cwd=root, env=_environment(),
-                             input=requests, capture_output=True)
+        res = subprocess.run(["git", "cat-file", "--batch"], executable=require("git"), cwd=root,
+                             env=_environment(), input=requests, capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     if res.returncode != 0:
@@ -869,7 +876,7 @@ class _Started:
         self.stderr = ""
         try:
             self._proc = subprocess.Popen(
-                ["git", *_RELATIVE, *args], cwd=root, env=_environment(*pinned),
+                ["git", *_RELATIVE, *args], executable=require("git"), cwd=root, env=_environment(*pinned),
                 stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except FileNotFoundError as exc:
@@ -1243,7 +1250,7 @@ def _worktree_git(root: Path, *args: str, owner=None) -> str:
         return _git(root, *args)
     from .procs import run_owned
     try:
-        result = run_owned(["git", *_RELATIVE, *args], cwd=root, env=_environment(),
+        result = run_owned([require("git"), *_RELATIVE, *args], cwd=root, env=_environment(),
                            capture_output=True, owner=owner)
     except FileNotFoundError as error:
         raise GitError("git executable not found") from error

@@ -9,8 +9,9 @@ a saturated machine a child needed 9 s where a test allowed 5 s, and more than
 verify on a correct tree.
 
 A miss has two causes: the child exited before the state appeared, or the bound
-ran out. Either way the child is killed if it still runs, and the failure carries
-what it printed, from its pipes or from the log file it writes to.
+ran out. Either way the child is killed if it still runs, on Windows with every
+process it started, and the failure carries what it printed, from its pipes or
+from the log file it writes to.
 
 Child scripts written from a template cannot import this module. Importing it
 puts the bound in the environment under HANG_ENV, and a template spells
@@ -136,8 +137,23 @@ def _stop(process, seconds):
     code = process.poll()
     if code is not None:
         return f"before the child exited with code {code}"
+    _end_descendants(process)
     process.kill()
     return f"within {seconds} s, so the child was killed"
+
+
+def _end_descendants(process):
+    """On Windows, end every process the child started, the child with them: a
+    descendant left alive keeps the files it holds open, and the next cleanup
+    fails on them (WinError 5 or 32). It runs before process.kill(), since
+    taskkill finds the tree through the live child. POSIX keeps process.kill()
+    alone: a live descendant there blocks no later delete, and a group kill
+    would need every Popen in the suite to start its own session."""
+    if os.name != "nt":
+        return
+    taskkill = os.path.join(os.environ["SystemRoot"], "System32", "taskkill.exe")
+    subprocess.run([taskkill, "/F", "/T", "/PID", str(process.pid)], stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, timeout=_REPORT_SECONDS)
 
 
 def _printed(process, log):

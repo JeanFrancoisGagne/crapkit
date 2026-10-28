@@ -1,12 +1,15 @@
 """MCP stdio handshake against the real server process: initialize, list the
 tools, call one. Newline-delimited JSON-RPC, exactly what an MCP client sends."""
 import json
+import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
 
 from conftest import cli_runner, git_commit_all, git_init_repo
+from name_bytes import NOT_UTF8_NAMES
 
 # The MCP server is a stdio process, and this file tests it as one.
 run_cli = cli_runner(spawn=True)
@@ -59,6 +62,7 @@ def test_initialize_list_and_call(repo: Path):
     assert responses[1]["result"]["serverInfo"]["name"] == "crapkit"
     tool_names = {t["name"] for t in responses[2]["result"]["tools"]}
     assert "get_next_item" in tool_names and "check_config" in tool_names
+    assert len(responses[2]["result"]["tools"]) == 12
     call = responses[3]["result"]
     assert call["isError"] is False, call
     assert "structuredContent" not in call, "2024-11-05 defines no structuredContent"
@@ -194,3 +198,51 @@ def test_gate_without_a_scored_run_is_still_a_tool_error(inventoried_repo: Path)
     error = json.loads(reply["content"][0]["text"])["error"]
     assert (error["exit"], error["kind"]) == (1, "state")
     assert error["message"].startswith("no scored run"),         "the CLI's --json error object is the text: exit 1 is a refusal, not a verdict"
+
+
+def test_gate_on_a_missing_file_is_still_a_tool_error(scored_repo: Path):
+    """check_gate answers exit 3 as a verdict only with the gate payload; the
+    error object of an argument refusal stays a tool error."""
+    reply = _serve(scored_repo, [_call(1, "check_gate", {"path": "pylib/gone.py"})])[1]["result"]
+
+    assert reply["isError"] is True and "structuredContent" not in reply, reply
+    assert json.loads(reply["content"][0]["text"])["error"]["exit"] == 3
+
+
+POSIX_NAME = pytest.mark.skipif(
+    sys.platform == "win32", reason="needs a POSIX file system that stores any byte in a name")
+
+
+@POSIX_NAME
+@NOT_UTF8_NAMES
+def test_gate_on_a_scoped_name_that_is_not_utf8_answers_the_081_verdict(scored_repo: Path):
+    """A name a scope takes, which no reader can key: the verdict 0.8.1 gave,
+    field for field, isError false."""
+    (scored_repo / os.fsdecode(b"pylib/caf\xe9.py")).write_text(TANGLED, encoding="utf-8")
+
+    reply = _serve(scored_repo, [_call(1, "check_gate", {"path": "pylib/caf\udce9.py"})])[1]["result"]
+
+    assert reply["isError"] is False, reply
+    content = reply["structuredContent"]
+    assert json.loads(reply["content"][0]["text"]) == content
+    assert {key: value for key, value in content.items() if not key.startswith("baseline_")} == {
+        "functions": [], "schema": 1,
+        "note": ("coverage is the baseline run's; complexity is the working tree's. "
+                 "Run verify for the real verdict."),
+        "gate": {"ok": False, "judged": 0, "ceilings": {}, "breaches": [], "untracked": [],
+                 "unread_files": [{"path": "pylib/caf\\xe9.py", "dirty": True,
+                                   "reason": ("its name is not UTF-8, and crapkit reads every path as "
+                                              "UTF-8: rename it (git mv) to a UTF-8 name")}]}}
+
+
+@POSIX_NAME
+@NOT_UTF8_NAMES
+def test_gate_on_a_name_no_scope_takes_judges_nothing_and_passes(scored_repo: Path):
+    (scored_repo / "docs").mkdir()
+    (scored_repo / os.fsdecode(b"docs/caf\xe9.md")).write_text(TANGLED, encoding="utf-8")
+
+    reply = _serve(scored_repo, [_call(1, "check_gate", {"path": "docs/caf\udce9.md"})])[1]["result"]
+
+    assert reply["isError"] is False, reply
+    assert reply["structuredContent"]["gate"] == {"ok": True, "judged": 0, "ceilings": {}, "breaches": [],
+                                                  "untracked": [], "unread_files": []}

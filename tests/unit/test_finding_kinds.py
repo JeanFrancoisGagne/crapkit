@@ -3,8 +3,8 @@
 Each kind was named at about twelve sites in six modules (the exit order, the
 dirty split, the override's refusal and grant, the text printers, the JSON
 lists and the SARIF builders), and 0.8.1's unread file missed three of them.
-Now every one of those sites loops over the rows, so a new kind is one row and
-the detector that fills its field. These tests hold each row to what verify
+Now every one of those sites loops over the rows, `verify --json`'s findings
+list included, so a new kind is one row and the detector that fills its field. These tests hold each row to what verify
 printed, exited and wrote before the table, and the locality test at the end
 adds a row to a copy of the table and finds it at every site with no other
 edit.
@@ -75,6 +75,15 @@ def test_the_table_lists_every_kind_in_exit_order():
     assert [r.exit for r in FINDING_KINDS] == [3, 6, 6, 7, 8, 9, None]
     assert [r.fails for r in FINDING_KINDS] == [True] * 6 + [False]
     assert [r.field for r in FINDING_KINDS] == [KINDS[k][0] for k in ORDER]
+
+
+def test_each_row_labels_its_findings_items_with_its_rule():
+    """The label the Action's comment prints for each kind's items; the two
+    kinds of exit 6 share the complexity gate's."""
+    assert [r.rule for r in FINDING_KINDS] == [
+        "unreadable name", "complexity gate", "complexity gate", "ratchet regressions",
+        "new test failures", "diff-coverage ceiling", "override"]
+    assert [r.cap for r in FINDING_KINDS] == [None] * 5 + [50, None]
 
 
 def test_every_row_names_a_verdict_field_and_the_verdict_names_no_kind_twice():
@@ -209,6 +218,15 @@ LINES = {
     "diff_uncovered": ["  uncovered src/a.py:7"],
     "overridden": ["  OVERRIDDEN  src/a.py:3  f( x )"],
 }
+
+
+def _clean(kind: str) -> list[str]:
+    """The kind's clean line, looked up by kind name. Two kind names spell
+    0.8.1 verify keys, and test_no_old_verify_keys reads a literal one as a
+    payload read."""
+    return LINES[kind]
+
+
 DIRTY_LINES = {
     "unreadable_name": [CLAIMED.replace("caf\\xe9.py", "caf\\xe9.py (and 1 more)")],
     "gate_violation": [LINES["gate_violation"][0],
@@ -219,8 +237,8 @@ DIRTY_LINES = {
     "ratchet_regression": [LINES["ratchet_regression"][0],
                            "  RATCHET  lib/n.py  g( y ): 4.0 -> 9.0  [dirty]"],
     "new_failure": [LINES["new_failure"][0], "  NEW FAILURE  tests/u.py::test_b  [dirty]"],
-    "diff_uncovered": [LINES["diff_uncovered"][0], "  uncovered src/a.py:8"],
-    "overridden": [LINES["overridden"][0], "  OVERRIDDEN  src/a.py:30  f( x )"],
+    "diff_uncovered": [*_clean("diff_uncovered"), "  uncovered src/a.py:8"],
+    "overridden": [*_clean("overridden"), "  OVERRIDDEN  src/a.py:30  f( x )"],
 }
 
 
@@ -289,6 +307,8 @@ def _result(rule: str, level: str, text: str, path: str, line: int) -> dict:
 
 
 SARIF = {
+    "unreadable_name": [_result("crapkit/unreadable-name", "error", CLAIMED.removeprefix("crapkit: "),
+                                "src/caf%E9.py", 1)],
     "gate_violation": [_result("crapkit/gate", "error",
                                "f( x ): CRAP 84.0 (ccn 9, cov 50%) -> decompose", "src/a.py", 3)],
     "unread_file": [_result("crapkit/unread", "error",
@@ -303,8 +323,9 @@ SARIF = {
 
 @pytest.mark.parametrize("kind", ORDER)
 def test_each_kind_s_sarif_rule_and_level_are_the_ones_verify_wrote(kind):
-    """new_failure and overridden write no result, and neither does
-    unreadable_name until verify renders the name as a verdict."""
+    """new_failure and overridden write no result. unreadable_name writes its
+    own since verify renders the name as a verdict: its uri percent-encodes
+    the name's own bytes, and its message is universe's sentence."""
     assert verify.sarif_results(holding(kind)) == SARIF.get(kind, [])
 
 
@@ -313,40 +334,7 @@ def test_sarif_reports_every_uncovered_line_whether_or_not_it_breaches():
     written a warning for each one the diff left dark."""
     results = verify.sarif_results(holding("gate_violation"), [("src/a.py", 7)])
 
-    assert results == SARIF["gate_violation"] + SARIF["diff_uncovered"]
-
-
-# --- the JSON lists -------------------------------------------------------------
-
-JSON = {
-    "gate_violation": ("gate_violations", [GATE._asdict()]),
-    "unread_file": ("unread_files", [UNREAD._asdict()]),
-    "ratchet_regression": ("ratchet_regressions", [ROSE._asdict()]),
-    "new_failure": ("new_failures", [FAILURE]),
-    "diff_uncovered": ("diff_uncovered", [{"path": "src/a.py", "line": 7}]),
-    "overridden": ("overridden", [GATE._asdict()]),
-}
-
-
-@pytest.mark.parametrize("kind", ORDER)
-def test_each_kind_s_json_key_is_its_0_8_1_key(kind):
-    """unreadable_name has none: 0.8.1 refused the name before any payload."""
-    lists = verify.json_lists(holding(kind))
-
-    assert set(lists) == {key for key, _ in JSON.values()}
-    if kind in JSON:
-        key, items = JSON[kind]
-        assert lists[key] == items
-        assert all(value == [] for other, value in lists.items() if other != key)
-    else:
-        assert all(value == [] for value in lists.values())
-
-
-def test_the_json_lists_the_first_50_uncovered_lines_whether_or_not_they_breach():
-    lines = [("src/a.py", n) for n in range(1, 61)]
-
-    assert verify.json_lists(Verdict.passing(), lines)["diff_uncovered"] == [
-        {"path": "src/a.py", "line": n} for n in range(1, 51)]
+    assert results == [result for kind in ("gate_violation", "diff_uncovered") for result in SARIF[kind]]
 
 
 # --- the hand exit table --------------------------------------------------------
@@ -354,7 +342,6 @@ def test_the_json_lists_the_first_50_uncovered_lines_whether_or_not_they_breach(
 HAND = {"unreadable_name": "unreadable_name", "unread": "unread_file", "gate": "gate_violation",
         "ratchet": "ratchet_regression", "failures": "new_failure",
         "diff_uncovered": "diff_uncovered"}
-OLD = ("gate", "ratchet", "failures", "diff_uncovered")
 
 
 def _hand_rows() -> list[dict]:
@@ -380,18 +367,6 @@ def test_the_model_and_the_table_give_the_hand_table_s_exit(hand):
     assert verify.exit_code(holding(*(HAND[name] for name in subset))) == int(hand["exit"])
 
 
-def test_the_hand_table_ends_each_four_kind_subset_on_its_0_8_1_row():
-    """test_exit_and_settle reads the four 0.8.1 columns and keeps the last row
-    for each subset of them, so that row must be the one with neither new
-    kind present."""
-    last = {}
-    for hand in _hand_rows():
-        last[frozenset(name for name in OLD if hand[name] == "1")] = hand
-
-    assert len(last) == 16
-    assert all(hand["unread"] == hand["unreadable_name"] == "0" for hand in last.values())
-
-
 # --- locality: one new row reaches every site -----------------------------------
 
 def _probe_line(entry, dirty: bool) -> str:
@@ -402,14 +377,16 @@ PROBE = FindingKind(
     kind="probe", field="retried_passes", exit=4, granted=False,
     refusal=Refusal(place=9, noun="probe", first=str, escape="drop the probe"),
     dirty=lambda verdict, entries: [entry.endswith("!") for entry in entries],
-    text=verify.each(_probe_line), stream="stdout", json_key="probes", json=list,
-    sarif=Sarif("crapkit/probe", "note", lambda entry: (entry, 1), lambda entry: "a probe"))
+    text=verify.each(_probe_line), stream="stdout",
+    sarif=Sarif("crapkit/probe", "note", lambda entry: (entry, 1), lambda entry: "a probe"),
+    rule="probe rule", item=lambda entry: {"probe": entry})
 
 
 def test_a_new_row_reaches_every_site_with_no_other_edit(monkeypatch, tmp_path, capsys):
     """A test-only kind on a copy of the table, reading a field no row reads:
     the exit code, the settled ok, the dirty split, the printer, SARIF and the
-    annotation, the override refusal and the JSON key all find it."""
+    annotation, the override refusal and the findings list all find it, and
+    the payload gives it no key of its own."""
     monkeypatch.setattr(verify, "FINDING_KINDS", (*FINDING_KINDS, PROBE))
     verdict = verify.settle_verdict(Verdict.passing()._replace(retried_passes=("p.py", "q.py!")))
 
@@ -430,13 +407,18 @@ def test_a_new_row_reaches_every_site_with_no_other_edit(monkeypatch, tmp_path, 
     assert [r["ruleId"] for r in document["runs"][0]["results"]] == ["crapkit/probe"] * 2
     payload = verifying._verify_result(verdict, 1, {"id": 1, "commit": "a" * 40}, "a" * 40,
                                        {}, [], None, 0)
-    assert payload["probes"] == ["p.py", "q.py!"]
+    passing = verifying._verify_result(Verdict.passing(), 1, {"id": 1, "commit": "a" * 40},
+                                       "a" * 40, {}, [], None, 0)
+    assert sorted(payload) == sorted(passing) and payload["counts"] == passing["counts"]
     assert (payload["committed_findings"], payload["dirty_findings"]) == (1, 1)
+    common = {"kind": "probe", "fails": True, "exit_code": 4, "overridable": False, "rule": "probe rule"}
+    assert payload["findings"] == [{**common, "dirty": False, "probe": "p.py"},
+                                   {**common, "dirty": True, "probe": "q.py!"}]
 
 
 def test_the_per_kind_sites_are_gone():
     """The deletion test: these named one kind each; FINDING_KINDS replaces them."""
-    gone = {verify: ("_any_finding", "_FLAGGED_FINDINGS"),
+    gone = {verify: ("_any_finding", "_FLAGGED_FINDINGS", "json_lists"),
             verifying: ("_EXIT_ORDER", "_RECORD_FINDINGS", "_override_applies", "_never_granted",
                         "_refusal_parts", "_override_refusal", "_regression_cause",
                         "_failure_cause", "_unread_cause", "_print_gate_findings",

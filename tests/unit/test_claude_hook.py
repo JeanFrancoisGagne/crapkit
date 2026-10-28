@@ -18,7 +18,7 @@ import pytest
 from crapkit.cli.parser import build_parser
 from crapkit.cli import main
 from crapkit.cli import claude_hook
-from crapkit.cli.claude_hook import (_advise, _advisory_lines, _breaches, _command_event,
+from crapkit.cli.claude_hook import (_advise, _advisory_lines, _command_event,
                                      _edited_files, _edited_path, _fresh, _fresh_python,
                                      _judgeable, _marks_for, _measured, _repo_root,
                                      _sequencing, _status_records, cmd_claude_hook)
@@ -384,30 +384,91 @@ def test_a_settled_checkout_carries_no_marker(tmp_path):
     assert _sequencing(tmp_path) is False
 
 
-# --- rung 8: the verdict -----------------------------------------------------
+# --- rung 8: the gate's case rows for claude-hook ------------------------------
+#
+# claude-hook hands the edited file to the gate module as one ChangedFile: the
+# spans the edit changed, `WHOLE` for an untracked file, and each function
+# bounded as the commit gate bounds a staged one. These rows pin what the gate
+# then judges, through the advisory's own lines.
 
-def test_only_a_function_the_edit_touched_and_over_the_ceiling_breaches():
+GATE_TOML = ('[crapkit]\ntarget = 6\n\n'
+             '[[scope]]\nname = "calc"\npaths = ["calc"]\nlanguages = ["python"]\n')
+IN_SCOPE = {"calc": ["calc/grade.py"]}
+
+
+def _cfg(root: Path):
+    from crapkit.config import load_config_text
+
+    return load_config_text(GATE_TOML, root=root)
+
+
+def _answered(root: Path, records, ranges) -> list[str]:
+    return claude_hook._answer(root, _cfg(root), IN_SCOPE, "calc/grade.py", records, ranges)
+
+
+def _named(lines: list[str]) -> list[str]:
+    return [line.rsplit("  ", 1)[-1] for line in lines if line.startswith("  ccn ")]
+
+
+def test_an_untracked_file_is_handed_to_the_gate_whole(tmp_path):
+    """git diff cannot see a file it never recorded, so `None` ranges become
+    the gate's `WHOLE` span, which keeps an empty diff from passing every
+    function in it."""
+    from crapkit.gate import WHOLE
+
+    records = [record("sprawl( n )", 8), record("wide( n )", 7, start=20, end=30)]
+    change = claude_hook._change(_cfg(tmp_path), "calc", "calc/grade.py", records, None)
+
+    assert change.spans == WHOLE
+    assert [f.long_name for f in change.content] == ["sprawl( n )", "wide( n )"]
+    assert _named(_answered(tmp_path, records, None)) == ["sprawl( n )", "wide( n )"]
+
+
+def test_each_function_carries_the_commit_gates_bound(tmp_path):
+    """No coverage stands behind a working-tree file: CRAP at least ccn, at
+    most what an untested function scores, the bound hook-precommit gives a
+    staged one."""
+    change = claude_hook._change(_cfg(tmp_path), "calc", "calc/grade.py", [record("sprawl( n )", 8)],
+                                 [(1, 3)])
+
+    assert [(f.bound.low, f.bound.high, f.scope) for f in change.content] == [(8, 72.0, "calc")]
+
+
+def test_only_a_function_the_edit_touched_and_over_the_ceiling_breaches(tmp_path):
     records = [record("sprawl( n )", 8), record("calm( n )", 3, start=20, end=24)]
 
-    assert [r.long_name for r in _breaches(records, [(1, 3)], 6)] == ["sprawl( n )"]
+    assert _named(_answered(tmp_path, records, [(1, 3)])) == ["sprawl( n )"]
 
 
-def test_an_over_ceiling_function_the_edit_missed_is_not_a_breach():
-    assert _breaches([record("sprawl( n )", 8)], [(40, 41)], 6) == []
+def test_an_over_ceiling_function_the_edit_missed_is_not_a_breach(tmp_path):
+    assert _answered(tmp_path, [record("sprawl( n )", 8)], [(40, 41)]) == []
 
 
-def test_an_untracked_file_is_judged_in_full():
-    """git diff cannot see a file it never recorded, so `None` ranges are what
-    keeps an empty diff from passing every function in it."""
-    records = [record("sprawl( n )", 8), record("wide( n )", 7, start=20, end=30)]
-
-    assert [r.long_name for r in _breaches(records, None, 6)] == ["sprawl( n )", "wide( n )"]
-
-
-def test_breaches_come_out_worst_first():
+def test_breaches_come_out_worst_first(tmp_path):
     records = [record("mild( n )", 7), record("sprawl( n )", 9, start=20, end=30)]
 
-    assert [r.ccn for r in _breaches(records, None, 6)] == [9, 7]
+    lines = _answered(tmp_path, records, None)
+
+    assert [line.split()[1] for line in lines if line.startswith("  ccn ")] == ["9", "7"]
+    assert lines[0].startswith("crapkit advisory: 2 function(s) over ceiling 6 in calc/grade.py")
+
+
+def test_a_claimed_name_is_refused_before_any_function_is_judged(tmp_path, monkeypatch):
+    """A name a scope takes that is not UTF-8 goes to the gate as an
+    UnreadableName: the advisory names it and the rename, and the file is
+    never read, so no function in it is judged."""
+    (tmp_path / "crapkit.toml").write_text(GATE_TOML, encoding="utf-8")
+    monkeypatch.setattr(claude_hook, "_read", lambda root, rel: pytest.fail("the file was read"))
+
+    lines = claude_hook._judge(tmp_path, "calc/caf\udce9.py", claude_hook._Memory(None))
+
+    assert lines == [UNREAD, RENAME]
+
+
+def test_a_name_no_scope_takes_stays_silent_whatever_its_bytes(tmp_path):
+    (tmp_path / "crapkit.toml").write_text(GATE_TOML, encoding="utf-8")
+
+    assert claude_hook._judge(tmp_path, "docs/caf\udce9.md", claude_hook._Memory(None)) == []
 
 
 # --- rung 8: the ratchet exemption ------------------------------------------
@@ -422,18 +483,31 @@ def test_a_mark_is_found_by_path_and_function_name(tmp_path):
     marks = tmp_path / "crapkit-ratchet.tsv"
     marks.write_text(RATCHET, encoding="utf-8")
 
-    assert _marks_for(marks, "calc/grade.py") == {"sprawl( n )"}
+    assert _marks_for(marks, "calc/grade.py").mark(("calc/grade.py", "sprawl( n )")) == 72.0
 
 
 def test_another_files_mark_never_covers_this_one(tmp_path):
     marks = tmp_path / "crapkit-ratchet.tsv"
     marks.write_text(RATCHET, encoding="utf-8")
 
-    assert "wide( n )" not in _marks_for(marks, "calc/grade.py")
+    assert list(_marks_for(marks, "calc/grade.py").keys()) == [("calc/grade.py", "sprawl( n )")]
 
 
 def test_a_repo_with_no_marks_file_carries_no_marks(tmp_path):
-    assert _marks_for(tmp_path / "crapkit-ratchet.tsv", "calc/grade.py") == set()
+    assert list(_marks_for(tmp_path / "crapkit-ratchet.tsv", "calc/grade.py").keys()) == []
+
+
+@pytest.mark.parametrize("crap", ["72.0000", "40.0000", "3.0000"])
+def test_a_marked_breach_is_carried_whatever_its_number(tmp_path, crap):
+    """A working-tree file has no coverage, so the gate reads a mark at the
+    bound's high end as a pardon, one inside it as unproven and one under its
+    low end as a marked rise. The advisory carries all three, as the commit
+    gate does: `verify` judges the number."""
+    (tmp_path / "crapkit-ratchet.tsv").write_text(
+        f"# crapkit-analysis=5 lizard=1.24.0\npath\tlong_name\tcrap\ncalc/grade.py\tsprawl( n )\t{crap}\n",
+        encoding="utf-8")
+
+    assert _answered(tmp_path, [record("sprawl( n )", 8)], None) == []
 
 
 # --- rung 9: the advisory ----------------------------------------------------
@@ -659,10 +733,10 @@ def test_an_unread_file_is_advised_only_when_the_edit_changed_it(ranges, advised
     one; a tracked file whose diff against HEAD is empty holds no change."""
     from crapkit.merge import UnanalyzableFile
 
-    unread = claude_hook._unjudged("src/a.ts", UnanalyzableFile("why"), ranges)
+    unread = _answered(Path("."), UnanalyzableFile("why"), ranges)
 
-    assert unread == (claude_hook._unread_advisory("src/a.ts", "why") if advised else [])
-    assert claude_hook._unjudged("src/a.ts", [], ranges) == []
+    assert unread == (claude_hook._unread_advisory("calc/grade.py", "why") if advised else [])
+    assert _answered(Path("."), [], ranges) == []
 # --- every shape of the PostToolUse payload, through the whole subcommand -----
 #
 # A field null, absent, of another type or not UTF-8 either still names the

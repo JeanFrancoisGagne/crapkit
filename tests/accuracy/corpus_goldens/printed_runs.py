@@ -15,7 +15,7 @@ never parsed out of the line.
 - gate, scoped: each brief's commands.gate (`rescore PATH --gate`) and
   commands.scoped_tests (`test-scoped PATH`);
 - next-step: what `python -m crapkit worklist` prints before any run, `run
-  <python> -m crapkit coverage first`; refusal_next_step() gives it for another
+  <python> -P -m crapkit coverage first`; refusal_next_step() gives it for another
   spelling of the interpreter, such as spaced_interpreter()'s link through a
   directory whose name holds a space;
 - pip: init's note for an interpreter without pytest_cov, `pip install

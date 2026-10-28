@@ -19,7 +19,7 @@ import hang_guard
 from accuracy.kit import exact, repos, rulings
 from accuracy.history_oracles import churn_reads
 from accuracy.history_oracles.churn_reads import Said
-from accuracy.history_oracles.oracles import bugspots_runner, git_walk, pydriller_adapter
+from accuracy.history_oracles.oracles import bugspots_runner, git_walk, history_git, pydriller_adapter
 from accuracy.history_oracles.repos import history_specs as specs
 
 HERE = Path(__file__).resolve().parent
@@ -91,9 +91,10 @@ def test_root_below_git_top_joins(make_repo):
 
 
 def _quoted_numstat_path(root: Path, now: int) -> str:
-    """The non-ASCII path as a numstat line spells it without -z."""
-    out = repos.git(root, "-c", "core.quotePath=true", "log", "--since=12 months ago",
-                    "--numstat", "--format=", "--", specs.NON_ASCII)
+    """The non-ASCII path as a numstat line spells it without -z, in the 12
+    months git counts back from `now`, the spec's clock, not the wall clock."""
+    out = history_git.text(root, "-c", "core.quotePath=true", "log", "--since=12 months ago",
+                           "--numstat", "--format=", "--", specs.NON_ASCII, now=now)
     return out.splitlines()[0].split("\t")[2]
 
 

@@ -35,7 +35,8 @@ def test_lane_env_reaches_the_command(tmp_path):
     cmd = f'"{py}" -c "import os,json,pathlib; pathlib.Path(\'cov.json\').write_text(json.dumps({{os.environ[\'CRAPKIT_PROBE\']: {{}}}}))"'
     lane = Lane(name="envy", command=cmd, artifact="cov.json", parser="istanbul", scopes=(),
                 env=(("CRAPKIT_PROBE", "C:\\x\\probe.ts"),))
-    coverage, prov, _ = run_lane(tmp_path, lane)
+    outcome = run_lane(tmp_path, lane)
+    coverage, prov = outcome.coverage, outcome.provenance
     assert prov["exit_code"] == 0
 
 
@@ -64,7 +65,7 @@ def test_reuse_artifacts_reads_a_coveragepy_artifact_inside_a_container(tmp_path
     lane = Lane(name="py", command="python -m pytest", artifact="cov.json",
                 parser="coveragepy", scopes=())
 
-    coverage, _, _ = run_lane(tmp_path, lane, reuse_artifact=True)
+    coverage = run_lane(tmp_path, lane, reuse_artifact=True).coverage
 
     assert list(coverage) == ["src/a.py"]
 
@@ -118,7 +119,7 @@ def test_a_rerun_that_writes_the_same_bytes_is_still_this_run_s_artifact(tmp_pat
     lane = Lane(name="py", command=f'"{sys.executable}" "{script}"',
                 artifact="cov.json", parser="istanbul", scopes=())
 
-    _, prov, _ = run_lane(tmp_path, lane)
+    prov = run_lane(tmp_path, lane).provenance
 
     assert prov["exit_code"] == 0
 
@@ -356,7 +357,7 @@ def test_the_install_line_names_the_file_a_lane_path_resolves_to(tmp_path):
     with pytest.raises(ToolError) as raised:
         _raise_no_artifact(tmp_path, lane, log, 4)
 
-    assert f"(`{interpreter_word(str(python))} -m pip install pytest-cov`)" in str(raised.value)
+    assert f"(`{interpreter_word(str(python))} -P -m pip install pytest-cov`)" in str(raised.value)
 
 
 def _cov_hint(tmp_path, command: str) -> str:

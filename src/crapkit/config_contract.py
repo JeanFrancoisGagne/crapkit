@@ -194,9 +194,14 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                   'full_suite': {'type': 'boolean',
                                                                  'description': 'false permits '
                                                                                 'positional narrowing '
-                                                                                'in a pytest coverage '
-                                                                                'command'},
-                                                  'container_ok': {'type': 'boolean'},
+                                                                                'in a command step '
+                                                                                'that names pytest'},
+                                                  'container_ok': {'type': 'boolean',
+                                                                   'description': 'true lets a lane '
+                                                                                  'whose command '
+                                                                                  'names pytest run '
+                                                                                  'inside a '
+                                                                                  'container'},
                                                   'results_artifact': {'type': 'string',
                                                                        'description': 'junit XML '
                                                                                       'feeding the '

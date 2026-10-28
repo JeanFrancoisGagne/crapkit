@@ -600,7 +600,7 @@ _SITES = [
     ("digest.py", "scope_rollup", "check_rollup"),
     ("packet.py", "rejudged", "check_rejudged"),
     ("packet.py", "budget", "check_budget"),
-    ("hook.py", "_touched_over_ceiling", "check_violations"),
+    ("cli/verifying.py", "_refused_violations", "check_violations"),
     ("cli/verifying.py", "cmd_verify", "check_verdict"),
     ("cli/verifying.py", "_settle_verify", "check_verdict"),
     ("cli/scoring.py", "_gate_verdict", "check_gate"),

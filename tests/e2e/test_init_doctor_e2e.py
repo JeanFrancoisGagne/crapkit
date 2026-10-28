@@ -16,6 +16,9 @@ from conftest import cli_runner, install_for_pytest_cov, repo_warns
 run_cli = cli_runner(spawn=True)
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
+# doctor's runner line for the js lane init writes over a package whose test
+# script runs vitest.
+SCRIPT_LINE = "ok   lane 'js': runs vitest (named in package.json script \"test\")"
 
 
 def _git_commit_all(repo: Path, message: str) -> None:
@@ -225,6 +228,16 @@ def test_doctor_passes_a_lane_whose_interpreter_really_runs(pytest_repo: Path):
     assert res.returncode == 0, res.stdout
 
 
+def test_doctor_names_the_runner_of_the_pytest_lane_init_wrote(pytest_repo: Path):
+    """Onboarding: the lane init writes for a python repo spells pytest."""
+    assert run_cli(pytest_repo, "init").returncode == 0
+
+    res = run_cli(pytest_repo, "doctor")
+
+    lines = res.stdout.splitlines()
+    assert "ok   lane 'py': runs pytest (named in its command)" in lines, res.stdout
+
+
 def test_init_stays_quiet_when_pytest_cov_is_importable(pytest_repo: Path):
     res = run_cli(pytest_repo, "init")
     assert res.returncode == 0, res.stderr
@@ -348,6 +361,19 @@ def test_init_on_a_vitest_repo_writes_a_lane_doctor_does_not_warn_about(vitest_r
     assert "results_artifact" not in res.stdout, res.stdout
     assert repo_warns(res.stdout) == [
         line for line in res.stdout.splitlines() if "scoped_tests" in line]
+
+
+def test_doctor_reads_the_vitest_lane_init_wrote_from_its_test_script(vitest_repo: Path):
+    """init writes `npm run test -- ...` for a package with a test script; the
+    runner is read from the script that runs, in the text line and in --json."""
+    assert run_cli(vitest_repo, "init").returncode == 0
+
+    text = run_cli(vitest_repo, "doctor")
+    report = json.loads(run_cli(vitest_repo, "doctor", "--json").stdout)
+
+    assert SCRIPT_LINE in text.stdout.splitlines(), text.stdout
+    assert [lane["toolchain"] for lane in report["lanes"]] == [
+        {"name": "vitest", "source": "script"}]
 
 
 def test_the_vitest_lane_init_writes_still_parses_under_the_lane_guard(vitest_repo: Path):
@@ -809,6 +835,15 @@ def test_init_runs_the_js_lane_where_the_runner_lives(workspace_repo: Path):
     assert "--coverage.reportsDirectory=../.crapkit/cov/js" in lane.command
     assert lane.artifact == ".crapkit/cov/js/coverage-final.json", "resolved from the root"
     assert lane.results_artifact == ".crapkit/cov/js/junit.xml"
+
+
+def test_the_workspace_lane_reads_its_runner_from_the_package_in_its_cwd(workspace_repo: Path):
+    """The root's test script only chains the workspaces; web/'s runs vitest."""
+    assert run_cli(workspace_repo, "init").returncode == 0
+
+    res = run_cli(workspace_repo, "doctor")
+
+    assert SCRIPT_LINE in res.stdout.splitlines(), res.stdout
 
 
 def test_doctor_has_nothing_to_say_about_the_workspace_lane(workspace_repo: Path):

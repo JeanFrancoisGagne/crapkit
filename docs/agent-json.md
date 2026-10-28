@@ -862,46 +862,52 @@ The verdict, plus the receipt that says what produced it.
 $ crapkit verify --json
 ```
 
+This one is `tests/fixtures/mini_repo` measured once, then verified with a function over the
+ceiling appended to `src/app.ts` and not yet committed, so `commit` is the baseline's:
+
 ```json
 {
   "baseline_commit": "8c780bb18da329dfe039b55d14faa5a6dc9fcb50",
-  "baseline_run": 8,
+  "baseline_run": 1,
   "changed_files": 1,
-  "changed_paths": ["app/m.py"],
+  "changed_paths": ["src/app.ts"],
   "commit": "8c780bb18da329dfe039b55d14faa5a6dc9fcb50",
-  "committed_findings": 1,
-  "diff_uncovered": [],
-  "diff_uncovered_count": 0,
-  "diff_uncovered_max": null,
+  "committed_findings": 0,
+  "counts": {"diff_uncovered_count": 0, "diff_uncovered_max": null},
   "dirty_failures": [],
-  "dirty_findings": 0,
-  "forgiven_failures": [],
-  "gate_violations": [],
-  "lanes_without_baseline_results": [],
-  "lanes_without_results": [],
-  "new_failures": [],
-  "ok": false,
-  "overridden": [],
-  "ratchet_changes": null,
-  "ratchet_regressions": [
+  "dirty_findings": 1,
+  "findings": [
     {
-      "dirty": false,
-      "fresh_crap": 20.0,
-      "long_name": "pick( a , b , c )",
-      "path": "app/m.py",
-      "recorded": 10.75
+      "ccn": 8,
+      "cov": 0.0,
+      "crap": 72.0,
+      "dirty": true,
+      "exit_code": 6,
+      "fails": true,
+      "key_name": "knotty ( n )",
+      "kind": "gate_violation",
+      "long_name": "knotty ( n )",
+      "overridable": true,
+      "path": "src/app.ts",
+      "remedy": "decompose",
+      "rule": "complexity gate",
+      "start": 21
     }
   ],
-  "ratchet_sha256": "3d05caa586f1d6e63cfce21b70ac06dc31243f82c9ac3071398f67f463cafe2f",
+  "forgiven_failures": [],
+  "lanes_without_baseline_results": [],
+  "lanes_without_results": ["unit"],
+  "ok": false,
+  "ratchet_changes": null,
+  "ratchet_sha256": null,
   "ratchet_source": "tree",
   "ratchet_source_commit": null,
-  "ratchet_source_sha256": "3d05caa586f1d6e63cfce21b70ac06dc31243f82c9ac3071398f67f463cafe2f",
+  "ratchet_source_sha256": null,
   "retried_passes": [],
-  "run_id": 9,
+  "run_id": 2,
   "schema": 1,
   "tool_versions": {"analysis_version": "13", "crapkit": "<version>", "lizard": "1.24.0"},
-  "unmarked_over_target": 0,
-  "unread_files": [],
+  "unmarked_over_target": 1,
   "unreadable_names": [],
   "untracked_in_scope": []
 }
@@ -912,40 +918,95 @@ $ crapkit verify --json
 | Key | Type | Meaning |
 |---|---|---|
 | `ok` | bool | The final verdict after allowed overrides and flake retests. It agrees with the stored run verdict and command exit. Remaining findings or an ungranted diff-coverage breach make it `false`. |
-| `run_id` | int | The run this verify wrote. |
+| `run_id` | int or null | The run this verify wrote. `null` when verify stopped before any lane ran, on [a scoped file whose name is not UTF-8](#a-scoped-file-whose-name-is-not-utf-8). |
 | `baseline_run`, `baseline_commit` | int, string | What it was measured against. |
 | `commit` | string | The commit the verified tree is at. Equal to `baseline_commit` when you are verifying uncommitted work. |
 | `changed_files` | int | Files in the diff being judged. |
-| `unreadable_names` | array of strings | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`: the names the `crapkit: left out` lines on stderr give. `[]` when every name is UTF-8. A scope that takes such a name never gets here: the command exits 3 first. |
+| `unreadable_names` | array of strings | Tracked files no scope takes whose names git gives in bytes that are not UTF-8, left out of the run, each such byte as `\xNN`: the names the `crapkit: left out` lines on stderr give. `[]` when every name is UTF-8. A file a scope takes whose name is not UTF-8 is a finding instead, and stops verify before any lane runs ([below](#a-scoped-file-whose-name-is-not-utf-8)). |
 | `changed_paths` | array of strings | Those files, sorted, since 0.8.1. The text form names the first three on a line under the verdict, the files verify scored ahead of the rest, `changed files: app/m.py, app/n.py, tests/test_m.py`, then `and N more`. |
 | `untracked_in_scope` | array of strings | Source files inside a scope that git does not track, since 0.8.1. verify's diff and corpus hold git-tracked files only, so these were not judged. The text form warns on stderr, names the first three and says to `git add` them. |
 
-### Findings
+### The findings list
+
+`findings` (since 0.9.0) lists every finding once, one item each. Every item carries the six
+fields below, then the fields of its kind. A kind has no key of its own: 0.9.0 dropped the
+0.8.1 per-kind keys, and [Upgrading to 0.9.0](upgrading.md#verify---json-drops-the-081-per-kind-keys)
+maps each one to its place in `findings` or `counts`.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `kind` | string | `unreadable_name`, `gate_violation`, `unread_file`, `ratchet_regression`, `new_failure`, `diff_uncovered` or `overridden`. |
+| `fails` | bool | `true` when the item fails the verdict: its kind fires an exit code and the verdict holds it. A `diff_uncovered` item fails only past `diff_uncovered_max`, and an `overridden` one never does. |
+| `exit_code` | int or null | The exit code the item fires when it fails; `null` when `fails` is `false`. The first item whose `fails` is `true` names verify's exit, and no item fails at exit 0. |
+| `overridable` | bool | `true` for a `gate_violation`, the one kind an `--override` can grant. An override still grants nothing while an item of a kind that refuses one is present (`unreadable_name`, `unread_file`, `ratchet_regression`, `new_failure`), and stderr says why. |
+| `dirty` | bool | `true` when the item's file has uncommitted edits or git does not track it; for a `new_failure`, when its test id names such a file. |
+| `rule` | string | The label of the item's rule, the words the pull-request comment prints for it. |
+
+| Kind | Its own fields | `exit_code` when it fails | `rule` |
+|---|---|---|---|
+| `unreadable_name` | `path`, each byte that is not UTF-8 as `\xNN`; `scope`, the scope that takes it; `reason`, the stderr sentence for that one file | 3 | `unreadable name` |
+| `gate_violation` | `path`, `long_name`, `start`, `ccn`, `cov`, `crap`, `remedy`, `key_name` | 6 | `complexity gate` |
+| `unread_file` | `path`, `reason`: the reader's refusal, naming the line and what to change | 6 | `complexity gate` |
+| `ratchet_regression` | `path`, `long_name` (the ratchet key), `recorded`, `fresh_crap` | 7 | `ratchet regressions` |
+| `new_failure` | `test`: the `classname::name` test id | 8 | `new test failures` |
+| `diff_uncovered` | `path`, `line`: a changed line no test ran | 9, only past `diff_uncovered_max` | `diff-coverage ceiling` |
+| `overridden` | the `gate_violation` fields | none: `fails` is `false` and `exit_code` is `null` | `override` |
+
+Items come in this table's order, which is the exit order, and inside a kind in the order
+the verdict holds them ([below](#other-verdict-keys)). `diff_uncovered` items appear
+whenever a changed line ran in no lane, with `fails` `false` while `diff_uncovered_max` is
+`null` or not passed.
+**`diff_uncovered` items stop at 50; `counts.diff_uncovered_count` does not.**
+
+`counts` holds the numbers beside the items.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `diff_uncovered_count` | int | Every changed line no test ran, where `findings` lists the first 50. |
+| `diff_uncovered_max` | int or null | The ceiling `diff_uncovered_count` is judged against (exit 9); `null` when the repo set none. |
+
+### A scoped file whose name is not UTF-8
+
+A tracked file a scope takes whose name git gives in bytes that are not UTF-8 stops verify
+before any lane runs: the gate cannot judge such a name, so nothing is measured and no run
+is stored. The exit is 3 and stderr carries the one line 0.8.1 printed, naming the first
+such file and counting the rest:
+
+```
+crapkit: src/caf\xe9.py is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name
+```
+
+`--json` prints a verify payload, not an error object. `ok` is `false`, `run_id` is `null`,
+`findings` holds one `unreadable_name` item per file with `exit_code` 3, and
+`counts.diff_uncovered_count` is 0. Each item gives the file's `path`, `scope` and `reason`
+beside the six fields every item carries, and no item of another kind is listed.
+The other keys hold what verify knew before it stopped: the baseline, `commit` (HEAD),
+`tool_versions`, the marks it read and `untracked_in_scope`; `changed_files` is 0, since
+no diff was read.
+`--sarif` writes one `crapkit/unreadable-name` result per file, level `error`, on line 1,
+its `uri` percent-encoding the name's own bytes (`src/caf%E9.py`), and `--github` prints
+one `::error` annotation per file naming it `src/caf\xe9.py`. An `--override` grants
+nothing and says why on stderr. The fix is `git mv` to a UTF-8 name.
+
+### Other verdict keys
 
 | Key | Shape | Fires exit |
 |---|---|---|
-| `gate_violations` | `{path, long_name, start, ccn, cov, crap, remedy, dirty, key_name}` | 6 |
-| `unread_files` | `{path, reason, dirty}`: a changed file no reader could read, so the gate judged none of its functions. `reason` is the reader's refusal, naming the line and what to change | 6 |
-| `ratchet_regressions` | `{path, long_name, recorded, fresh_crap, dirty}` | 7 |
-| `new_failures` | array of `classname::name` test ids | 8 |
-| `diff_uncovered_count` | int, and `diff_uncovered[]` of `{path, line}` | 9, only when `diff_uncovered_max` is set |
-| `diff_uncovered_max` | int, or `null` when the repo set none | none itself; it is the ceiling `diff_uncovered_count` is judged against, so a reader of exit 9 can name it |
-| `overridden` | gate-violation objects an `--override` granted | none; the run passes |
 | `forgiven_failures` | array of test ids the fresh run and the baseline both failed | none; the text form counts them on the OK line as `(N unchanged failures forgiven, first ID)` |
 | `retried_passes` | array of new failures that passed their [flake retry](lanes.md#flake-retest) | none; the text form names them on the OK line as `(N new failures passed on rerun, first ID)` |
 | `lanes_without_results` | array of lane names that declare no `results_artifact`, so they recorded no test results this run and nothing checked their tests for new failures. A lane that declares one and whose junit `--reuse-artifacts` cannot read is not listed: verify exits 5 naming the lane and the junit, and stores no run | none; stderr names a lane with no `results_artifact` whose command exited nonzero (`warning: lane 'x' exited 1 and declares no results_artifact ...`) |
-| `lanes_without_baseline_results` | array of lane names holding a new failure that no trusted run at or behind the baseline recorded a failure list for, so the failure may predate the change | none itself; those failures are in `new_failures` and still fire exit 8, and stderr names each lane |
+| `lanes_without_baseline_results` | array of lane names holding a new failure that no trusted run at or behind the baseline recorded a failure list for, so the failure may predate the change | none itself; those failures are `new_failure` items and still fire exit 8, and stderr names each lane |
 | `unmarked_over_target` | int: functions over their ceiling that carry no ratchet mark, the standing debt neither the gate (touched functions only) nor the ratchet check (marks only) guards | none; the text form prints one `warning: N function(s) over the ceiling carry no ratchet mark ...` line on stderr when it is not zero, naming the first three as path and function and `ratchet seed` as the fix |
 
 `key_name` on a gate violation is the ratchet key: the `long_name` when one function in
 the file holds that name, and `long_name#2` for the second function holding it. It is the
 string to look up in `crapkit-ratchet.tsv`, and `long_name` alone is not, whenever a file
-gives one name to several functions. `ratchet_regressions` carries the key in `long_name`
-already, because the entry it reports comes from the marks file. It lists the largest rise
-first, and rises equal at 4 places in path order. `gate_violations` lists the highest `crap`
-first, and scores equal at 4 places by path, then start line.
+gives one name to several functions. A `ratchet_regression` item carries the key in `long_name`
+already, because the entry it reports comes from the marks file. Those items list the largest
+rise first, and rises equal at 4 places in path order. `gate_violation` items list the highest
+`crap` first, and scores equal at 4 places by path, then start line.
 
-**`diff_uncovered` truncates at 50 entries; `diff_uncovered_count` does not.** Above 50 the
+**`diff_uncovered` items stop at 50; `counts.diff_uncovered_count` does not.** Above 50 the
 two disagree on purpose. Trust the count.
 
 `verify` reports the first of 6, 7, 8, 9 that fires, in that order.
@@ -956,9 +1017,9 @@ included. A lane with failures that passed their flake retry also names those id
 never forgives them: the baseline did not count them as failing.
 
 Since 0.4.5 the gate pardons a touched function whose fresh CRAP sits at or under its ratchet
-mark, the rule `rescore --gate` already applied (#29). So a `gate_violations` entry on a
-marked function means the edit pushed it past the mark, and one payload can carry that entry
-and a `ratchet_regressions` entry for the same function. Exit 6 is the verdict there. Exit 7
+mark, the rule `rescore --gate` already applied (#29). So a `gate_violation` item on a
+marked function means the edit pushed it past the mark, and one payload can carry that item
+and a `ratchet_regression` item for the same function. Exit 6 is the verdict there. Exit 7
 is for a mark that rose in a function the diff never touched. Both rules are stated once in
 [ratchet.md](ratchet.md#the-commit-gate-skips-marked-functions).
 
@@ -994,7 +1055,7 @@ A verdict measures the working tree, so a concurrent session's uncommitted edits
 | `dirty` (on each finding) | The finding's file has uncommitted tracked edits. |
 | `committed_findings` | Gate, ratchet, test-failure and breached diff-coverage findings whose file is clean. |
 | `dirty_findings` | Findings whose file is not. |
-| `dirty_failures` | The subset of `new_failures` whose test id names a file with uncommitted edits. The id's file part is matched in each spelling a runner writes: the repo-path form, the same path with backslashes (`web\src\app.test.ts`, as bun's `file` and jest-junit's `{filepath}` write it on Windows), a leading `./` (`./web/src/app.test.ts`, from a runner handed that argument), an absolute path that resolves inside the checkout (jest-junit's `{filepath}` in its absolute form), and pytest's dotted-module form. The id itself keeps the runner's spelling. |
+| `dirty_failures` | The test ids of the `new_failure` items whose id names a file with uncommitted edits. The id's file part is matched in each spelling a runner writes: the repo-path form, the same path with backslashes (`web\src\app.test.ts`, as bun's `file` and jest-junit's `{filepath}` write it on Windows), a leading `./` (`./web/src/app.test.ts`, from a runner handed that argument), an absolute path that resolves inside the checkout (jest-junit's `{filepath}` in its absolute form), and pytest's dotted-module form. The id itself keeps the runner's spelling. |
 
 CI should treat any non-zero finding count as a failure. A local pre-push check can
 reasonably look at `committed_findings` alone.
@@ -1008,7 +1069,7 @@ reasonably look at `committed_findings` alone.
 | `ratchet_source` | Which marks verify judged against: `"tree"`, the ratchet file as read, or `"committed"`, when that file is missing or blank and verify judged against the newest marks committed since the baseline. |
 | `ratchet_source_commit` | The commit whose marks verify judged against when `ratchet_source` is `"committed"`; `null` for `"tree"`. |
 | `ratchet_source_sha256` | Digest of the marks verify judged against: equal to `ratchet_sha256` for `"tree"`, the committed file's digest for `"committed"`, `null` when there were no marks at all. Pin it to prove which marks a verdict was measured against. |
-| `ratchet_changes` | `{"dropped": N, "tightened": M}` when this run's tighten rewrote the marks file: `dropped` counts marks whose function is now at or under its ceiling, `tightened` marks that fell. **`null` when the tighten wrote nothing**: a failed run, `--no-tighten`, no marks file, or nothing to move. An override's grant is its own write to the marks file and is listed under `overridden`, not counted here. The text form prints the same two counts on the OK line with the `git add` to run (`restamped` in place of the counts when the only change was the stamp line, `N marks granted` after an override). |
+| `ratchet_changes` | `{"dropped": N, "tightened": M}` when this run's tighten rewrote the marks file: `dropped` counts marks whose function is now at or under its ceiling, `tightened` marks that fell. **`null` when the tighten wrote nothing**: a failed run, `--no-tighten`, no marks file, or nothing to move. An override's grant is its own write to the marks file and is an `overridden` item in `findings`, not counted here. The text form prints the same two counts on the OK line with the `git add` to run (`restamped` in place of the counts when the only change was the stamp line, `N marks granted` after an override). |
 
 ---
 
@@ -1128,7 +1189,8 @@ $ crapkit doctor --json
       "commit": "402d25c96687135d15a5a0d3dc40f571edfa5210",
       "name": "py",
       "refusal": null,
-      "seconds": 1.8
+      "seconds": 1.8,
+      "toolchain": {"name": "pytest", "source": "command"}
     }
   ],
   "newest_run": {"id": 1, "kind": "coverage", "verdict_ok": null},
@@ -1163,17 +1225,19 @@ $ crapkit doctor --json
 | Key | Meaning |
 |---|---|
 | `problems` | The FAIL findings, as text. **Non-empty is exit 1.** |
-| `warnings` | The WARN findings as text; exit stays 0. They include unmeasured directories, scopes a lane measures with no `scoped_tests` template, lanes writing their artifacts at the repo root instead of under `.crapkit/`, lanes with no `results_artifact`, a lane whose artifact on disk is the leftover its last attempt failed to replace (the lane's `refusal`, prefixed `lane '<name>': `), a `.crapkit/artifacts.json` crapkit cannot read, a lane whose python is not the one running this doctor, two or more `crapkit` launchers on PATH at different versions, an `[exclude]` glob that matches no tracked file ([configuration](configuration.md#exclude)), a deprecated config key, a marks file with no merge driver set ([ratchet](ratchet.md#the-git-merge-driver)), a container a `coveragepy` lane refuses ([lanes](lanes.md#containers)) and marks stamped by another metric version. |
+| `warnings` | The WARN findings as text; exit stays 0. They include unmeasured directories, scopes a lane measures with no `scoped_tests` template, lanes writing their artifacts at the repo root instead of under `.crapkit/`, lanes with no `results_artifact`, a lane whose artifact on disk is the leftover its last attempt failed to replace (the lane's `refusal`, prefixed `lane '<name>': `), a `.crapkit/artifacts.json` crapkit cannot read, a lane whose python is not the one running this doctor, two or more `crapkit` launchers on PATH at different versions, an `[exclude]` glob that matches no tracked file ([configuration](configuration.md#exclude)), a deprecated config key, a marks file with no merge driver set ([ratchet](ratchet.md#the-git-merge-driver)), a lane whose command names pytest, which `crapkit coverage` refuses in this container ([lanes](lanes.md#containers)), marks stamped by another metric version and a tracked package.json doctor cannot read (it then reads the runner of each lane under that file from the lane's command alone). |
 | `versions` | crapkit, lizard, python. `lizard` is `null` when it is not importable, which is also a FAIL. |
 | `resources` | The worker, memory and log policy doctor resolved for this host, 18 keys, the same policy plain `doctor` prints first. [docs/resources.md](resources.md) says what each budget bounds. |
 | `analysis_version` | The analysis semantics version, currently `13`. Together with `lizard` it forms the ratchet's metric stamp. Follow [the upgrade checks](upgrading.md#measure-before-changing-marks) before restamping; changed function identity can require a reviewed mapping. |
 | `store` | `.crapkit/crap.sqlite`: whether it exists and how big it is. `present: false` and `size_bytes: 0` on a fresh repo. |
 | `newest_run` | `{id, kind, verdict_ok}`, or `null` when nothing has run. `verdict_ok` is `null` for non-verify runs. |
-| `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. `refusal` (since 0.8.1) is `null`, or the sentence saying why `--reuse-artifacts` will not score the file on disk: the lane's last attempt wrote no artifact, and the file predates that attempt, or `.crapkit/artifacts.json` cannot be read, so crapkit cannot tell whether the file is such a leftover. doctor asks the question `--reuse-artifacts` asks, so both give one answer for a lane. `artifact_present: true` beside a `refusal` is a file reuse will not score, not the lane's output. |
+| `lanes` | Per declared lane: `name`, `artifact`, whether the artifact is on disk now, and the `commit` and `seconds` from its stamp. `commit` and `seconds` are `null` for a lane that has never run here. `refusal` (since 0.8.1) is `null`, or the sentence saying why `--reuse-artifacts` will not score the file on disk: the lane's last attempt wrote no artifact, and the file predates that attempt, or `.crapkit/artifacts.json` cannot be read, so crapkit cannot tell whether the file is such a leftover. doctor asks the question `--reuse-artifacts` asks, so both give one answer for a lane. `artifact_present: true` beside a `refusal` is a file reuse will not score, not the lane's output. `toolchain` (since 0.9.0) is `{name, source}`: the runner the lane runs (`pytest`, `vitest`, `jest`, `bun`, `deno`, `cargo llvm-cov`, `go test` or `c8`) and where crapkit read it: `command` (the lane's command names it), `script` (the package.json script the command runs names it) or `package.json` (only devDependencies name it, so no runner check keys on it). Both are `null` when crapkit knows no runner the lane runs, or the lane runs two; no config key names it ([lanes](lanes.md#how-crapkit-reads-a-lanes-runner)). |
 
-`note`-level findings (a file over `max_file_bytes`, no lanes declared, a coverage.py lane
-an environment manager heads and doctor therefore did not probe) appear in the plain output
-only. They are neither problems nor warnings.
+`note`-level findings (a file over `max_file_bytes`, no lanes declared, a `pytest --cov` lane
+an environment manager heads and doctor therefore did not probe, a lane whose runner is
+unknown) appear in the plain output only. They are neither problems nor warnings. The plain
+output's runner line per lane (`ok   lane 'py': runs pytest (named in its command)`) is the
+same answer as `lanes[].toolchain`.
 
 The `results_artifact` warning is new in 0.4.5 (#26), and it names the two checks the lane
 loses rather than the key alone. A repo whose one lane declares neither the artifact nor a
@@ -1257,7 +1321,7 @@ plugin's repair is Claude Code's update pair, or for a plugin under `~/.codex` (
 `codex plugin marketplace add` line at the CLI's release tag, then `codex plugin add
 crapkit@crapkit`. The CLI's repair is the upgrade for the installer that owns the launcher:
 `uv tool upgrade crapkit`, `pipx upgrade crapkit`, `uv pip install --python <that python>
---upgrade crapkit` in a venv uv made, else `<that python> -m pip install --upgrade crapkit`.
+--upgrade crapkit` in a venv uv made, else `<that python> -P -m pip install --upgrade crapkit`.
 Two plain releases order; a pre-release or a local build names both repairs:
 
 ```
@@ -1327,7 +1391,7 @@ script goes into that venv's `Scripts` and nothing else on the machine sees it.
 `pip install --user` is the other: the script goes into `~/.local/bin` or
 `%APPDATA%\Python\Python312\Scripts`, which most PATHs lack. When the crapkit running
 doctor has its own launcher in such a directory, run by that launcher's full path or as
-`python -m crapkit`, the line ends by naming it:
+`python -P -m crapkit`, the line ends by naming it:
 
 ```
 This crapkit's launcher is in /home/dev/.local/bin, which PATH does not list: add that directory to PATH, then restart the agent.
@@ -1462,7 +1526,7 @@ name, so `anchor_ts`, every age and every repayment count across the rename, and
 | `runs prune --json` | `{"pruned_runs": 6, "kept_runs": 4, "freed_bytes": 0}`. |
 | `trend --json` | `{"runs": [{run_id, commit, created_at, functions, over_target, crap_load, avg, by_scope}], "target": 6}`, trusted runs only. Reads and fills the `run_rollup` cache; see below. |
 | `overrides --json` | `{"overrides": [{run_id, commit, created_at, path, function, crap, reason}]}`. |
-| `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, occurrence, ccn, cov, flag, crap, remedy, stale_coverage, unmeasured}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. `unmeasured: true` marks a row no measurement stands behind: the baseline run holds no row it joins by name (a function added or renamed since that run), or its flag is `no-lane` or `cc-only`. Such a row keeps `cov` 0.0, `flag` `untested` for an added or renamed function, and the `crap` and `remedy` those give; the table prints `-` for its cov and ends the line with `(coverage not measured)`. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path], "unread_files": [{path, reason, dirty}]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark pardons (a mark pardons only while the function's crap is at or under it), `unread_files` the changed files no reader could read, whose functions were never judged, in the name and shape verify's `unread_files` has (`dirty` is always true here: the gate judges the working tree's changes since HEAD), `ok` is `breaches == [] and unread_files == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
+| `rescore --json` | `{"baseline_run", "baseline_commit", "functions": [{scope, path, function, start, end, occurrence, ccn, cov, flag, crap, remedy, stale_coverage, unmeasured}], "note"}`. Every row carries `stale_coverage: true`: the complexity is the working tree's, the coverage is the baseline run's. `unmeasured: true` marks a row no measurement stands behind: the baseline run holds no row it joins by name (a function added or renamed since that run), or its flag is `no-lane` or `cc-only`. Such a row keeps `cov` 0.0, `flag` `untested` for an added or renamed function, and the `crap` and `remedy` those give; the table prints `-` for its cov and ends the line with `(coverage not measured)`. With `--gate` the payload adds `gate`: `{"ok", "judged", "ceilings": {path: ceiling}, "breaches": [{path, function, start, ccn, cov, crap, remedy, key_name, ceiling}], "untracked": [path], "unread_files": [{path, reason, dirty}]}`. `judged` counts the functions the working tree changed since HEAD (an untracked file in full), `breaches` the judged functions whose `ccn` is over their file's ceiling and that no ratchet mark pardons (a mark pardons only while the function's crap is at or under it), `unread_files` the changed files no reader could read, whose functions were never judged, in the shape of verify's `unread_file` items (`dirty` is always true here: the gate judges the working tree's changes since HEAD), `ok` is `breaches == [] and unread_files == []`, and the exit is 6 when it is false. The text form prints `gate: 2 changed function(s) judged, 0 over ceiling 6` on stdout when the gate passes and the GATE lines on stderr when it does not. |
 | `duplication --json` | `{"run_id", "pairs": [{similarity, contained, functions: [{path, long_name, start, end, nloc}, ...]}]}`. Containment scoring: shared shingles over the smaller function. Each function is shingled from its own lines: a nested function's lines past its first line are its own, not the enclosing function's, so a factory never pairs through its closure and one with fewer than `--min-lines` lines of its own pairs with nothing. A pair whose two spans nest in one file is dropped, not ranked: nobody can deduplicate a factory from its own closure. `contained` is therefore `false` on every pair here, and it is emitted so pairs and `duplication_twins` read as one shape. |
 | `coupling --json` | `{"window_months", "pairs": [{files: [a, b], support, confidence}]}`. `support` is shared commits, `confidence` is the max-direction ratio. Pairs come highest `support` x `confidence` first, taken over the 4-place `confidence` shown, and pairs that tie come in path order. It reads raw `git log`, so any path in the history can appear, not only scoped source. Ranked pairs are cached; see below. |
 | `mutate --json` | `{"mutants", "killed", "survived", "timed_out", "no_verdict", "survivors": [{path, line, op, original, mutated}], "outside_corpus": [path]}`. `mutants` is the count **after** `--max-mutants`; the truncation warning goes to stderr only. `timed_out` counts the mutants whose suite ran out of time: they stay detected, so `killed` includes them. `no_verdict` counts the mutants whose suite collected no tests (pytest exit 5): no test judged them, and they stay inside `killed` too, as in 0.8.0, so `killed` + `survived` is `mutants`. JSON schema 2 leaves them out of `killed` and the rate; schema 1 keeps the field's meaning. `outside_corpus` lists the diff's paths (or `--files`' paths) the scored corpus does not hold, a test file, an excluded path, a file over `max_file_bytes` or a file no scope claims, sorted; they grew no mutants, and a run with `mutants` 0 and a non-empty `outside_corpus` never started the suite. Every worker uses a kept worktree, including one; see [mutation worktrees](configuration.md#mutation-worktrees). |
@@ -1568,8 +1632,9 @@ the working tree lacks, as every such name in a Git for Windows checkout is, is 
 uncommitted deletion). The refusals that add it: a file argument naming such a file on
 disk (`rescore`, `rescore --gate`, `brief`, `explain`, `mutate --files`, `claims
 release`, `ratchet move`), and a scan meeting such a name a scope takes (`inventory`,
-`coverage`, `verify`, `doctor`). The stderr line names the first file and counts the
-rest; `unread_files` lists every one:
+`coverage`, `doctor`). `verify` meeting one prints its own payload instead, a finding of
+kind `unreadable_name` ([verify](#a-scoped-file-whose-name-is-not-utf-8)). The stderr line
+names the first file and counts the rest; `unread_files` lists every one:
 
 ```json
 {"error": {"exit": 3, "kind": "config", "message": "src/caf\\xe9.py (and 1 more) is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it (git mv) to a UTF-8 name", "unread_files": [{"dirty": false, "path": "src/caf\\xe9.py", "reason": "its name is not UTF-8, and crapkit reads every path as UTF-8: rename it (git mv) to a UTF-8 name"}, {"dirty": true, "path": "src/o\\x92brien.py", "reason": "its name is not UTF-8, and crapkit reads every path as UTF-8: rename it (git mv) to a UTF-8 name"}]}, "schema": 1}

@@ -1,11 +1,12 @@
-"""A pytest or vitest lane with no `results_artifact` gets a doctor WARN (#26).
+"""A lane with no `results_artifact` gets a doctor WARN (#26).
 
 Two of verify's checks read the lane's junit: the crashed-worker trust check
 ("a run nobody finished is not a measurement") and no-new-failures (exit 8).
 A lane that declares no results file never reaches either, and nothing said
 so: doctor reported no problems for a configuration in which a dead xdist
 worker still yielded a full, trusted baseline. WARN, never FAIL: the lane still
-measures coverage exactly as it did.
+measures coverage exactly as it did. The hint follows the runner the lane
+spells, in its command or the package.json script it runs, never its parser.
 """
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +18,7 @@ from crapkit.cli import admin
 from crapkit.cli.admin import _doctor_lanes
 from crapkit.config import Lane
 from crapkit.lane_command import launch_spec
+from crapkit.scaffold import npm_package
 
 
 @pytest.fixture(autouse=True)
@@ -40,14 +42,14 @@ def probe_that_started(monkeypatch):
     real.cache_clear()
 
 
-def lane(name: str, parser: str, results_artifact: str = "") -> Lane:
-    return Lane(name=name, command="python -m pytest", artifact=f".crapkit/cov/{name}.json",
+def lane(name: str, parser: str, results_artifact: str = "", command: str = "python -m pytest") -> Lane:
+    return Lane(name=name, command=command, artifact=f".crapkit/cov/{name}.json",
                 parser=parser, scopes=("src",), results_artifact=results_artifact)
 
 
-def findings(*lanes: Lane, root: Path = Path(".")) -> list[tuple[str, str]]:
+def findings(*lanes: Lane, root: Path = Path("."), packages=admin.NO_PACKAGES) -> list[tuple[str, str]]:
     cfg = SimpleNamespace(lanes=list(lanes), lane_less_scopes=[])
-    return [(f.level, f.text) for f in _doctor_lanes(root, cfg)]
+    return [(f.level, f.text) for f in _doctor_lanes(root, cfg, packages)]
 
 
 def test_a_pytest_lane_without_a_results_file_warns_and_names_what_is_off():
@@ -67,10 +69,33 @@ def test_the_pytest_hint_is_the_two_lines_that_fix_it():
 
 
 def test_a_vitest_lane_gets_a_reporter_hint_instead():
-    (_, warn) = findings(lane("js", "istanbul"))
+    (_, warn) = findings(lane("js", "istanbul", command="npx vitest run --coverage"))
 
     assert warn[1].startswith("lane 'js' declares no results_artifact"), warn[1]
-    assert "junit" in warn[1] and "--junitxml" not in warn[1], warn[1]
+    assert "--reporter=junit --outputFile=.crapkit/cov/js/junit.xml" in warn[1], warn[1]
+    assert "--junitxml" not in warn[1], warn[1]
+
+
+def test_the_hint_follows_the_runner_not_the_parser():
+    """An istanbul lane that runs pytest is told pytest's flag."""
+    (_, warn) = findings(lane("js", "istanbul"))
+
+    assert "--junitxml=.crapkit/cov/junit-js.xml" in warn[1], warn[1]
+
+
+def test_a_runner_its_package_json_script_names_gets_that_runner_s_hint():
+    packages = admin.PackageMap({"": npm_package({"scripts": {"cov": "jest --coverage"}})}, {})
+
+    (_, warn) = findings(lane("js", "istanbul", command="npm run cov"), packages=packages)
+
+    assert "--reporters=jest-junit" in warn[1], warn[1]
+
+
+def test_a_lane_that_spells_no_runner_gets_the_one_generic_hint():
+    (_, warn) = findings(lane("js", "istanbul", command="make cov"))
+
+    assert warn[1].endswith("add the runner's junit reporter to the command and a "
+                            "results_artifact naming the file it writes"), warn[1]
 
 
 def test_a_lane_that_declares_one_is_left_alone():

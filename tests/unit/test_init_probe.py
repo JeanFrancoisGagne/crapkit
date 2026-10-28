@@ -803,10 +803,10 @@ def test_the_interpreter_written_is_a_name_and_never_a_path(tmp_path, monkeypatc
     `shutil.which("python") or "python3"` — which returns THIS machine's
     absolute path, the thing the docstring forbids — would keep the suite
     green while init committed that path into a shared crapkit.toml."""
-    monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(admin, "find", lambda name: None)
     assert admin._interpreter(tmp_path) == "python3"
 
-    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(admin, "find", lambda name: "/usr/bin/" + name)
     assert admin._interpreter(tmp_path) == "{python}"
 
 
@@ -973,7 +973,7 @@ def test_the_pytest_cov_note_names_the_python_it_asked(tmp_path, monkeypatch, ca
     err = capsys.readouterr().err
     assert "`python`" in err, "the word the lane names"
     assert str(tmp_path) in err, "and where that word resolves on this machine"
-    assert "python -m pip install pytest-cov" in err, "an install bound to that interpreter"
+    assert "python -P -m pip install pytest-cov" in err, "an install bound to that interpreter"
     assert '"crapkit[py]"' in err
 
 
@@ -992,7 +992,7 @@ def test_the_install_line_names_the_file_a_lane_path_resolves_to(tmp_path):
     note = admin._missing_pytest_cov_note("py", word, LaunchSpec(tmp_path))
 
     assert f"names `{word}`" in note
-    assert f"run `{interpreter_word(str(python))} -m pip install pytest-cov`" in note
+    assert f"run `{interpreter_word(str(python))} -P -m pip install pytest-cov`" in note
 
 
 # --- and a runner the LANE's own environment supplies -------------------------

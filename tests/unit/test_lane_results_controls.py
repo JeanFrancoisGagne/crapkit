@@ -26,7 +26,7 @@ def test_verify_forgives_a_failure_the_baseline_recorded_under_the_lanes_old_nam
 
     payload = json.loads(out)
     assert code == 0, out + err
-    assert (payload["ok"], payload["new_failures"], payload["forgiven_failures"]) == \
+    assert (payload["ok"], [f["test"] for f in payload["findings"] if f["kind"] == "new_failure"], payload["forgiven_failures"]) == \
         (True, [], ["t::c0"])
 
 
@@ -37,4 +37,4 @@ def test_verify_fails_on_a_failure_the_baseline_did_not_record(counted, capsys):
 
     payload = json.loads(out)
     assert code == 8, out + err
-    assert (payload["ok"], payload["new_failures"]) == (False, ["t::c1"])
+    assert (payload["ok"], [f["test"] for f in payload["findings"] if f["kind"] == "new_failure"]) == (False, ["t::c1"])

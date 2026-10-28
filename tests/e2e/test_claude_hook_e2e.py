@@ -29,6 +29,7 @@ import pytest
 
 import crapkit
 from conftest import child_env, cli_runner
+from name_bytes import ANY_BYTE_NAMES
 
 # The hook is a process Claude Code starts per edit: stdin payload, start
 # time and PYTHONPATH shims all need the real child.
@@ -177,6 +178,16 @@ def fx_unborn_staged_breach(repo: Path) -> None:
     git(repo, "add", "-A")
 
 
+def fx_claimed_non_utf8_name(repo: Path) -> None:
+    """Scope `src` takes src/caf\\xe9.py, a name in Latin-1 bytes that git
+    names as it is stored. Only a file system that stores any byte holds it."""
+    init(repo)
+    write(repo, "crapkit.toml", TOML.replace('"calc"', '"src"'))
+    write(repo, "src/grade.py", CLEAN)
+    commit(repo)
+    (repo / os.fsdecode(b"src/caf\xe9.py")).write_text(BREACH, encoding="utf-8", newline="\n")
+
+
 FIXTURES = {
     "measured_breach": fx_measured_breach,
     "broken_syntax": fx_broken_syntax,
@@ -190,7 +201,11 @@ FIXTURES = {
     "measured_clean": fx_measured_clean,
     "stale_breach": fx_stale_breach,
     "unborn_staged_breach": fx_unborn_staged_breach,
+    "claimed_non_utf8_name": fx_claimed_non_utf8_name,
 }
+# What a golden's `needs` asks of the machine: a name that is not UTF-8 is a
+# file only where the file system stores any byte (not NTFS, not APFS).
+NEEDS = {"any_byte_names": ANY_BYTE_NAMES}
 
 
 def _goldens() -> list[dict]:
@@ -200,7 +215,8 @@ def _goldens() -> list[dict]:
 
 
 CASES = _goldens()
-IDS = [g["case"] for g in CASES]
+PARAMS = [pytest.param(g, id=g["case"], marks=[NEEDS[g["needs"]]] if "needs" in g else [])
+          for g in CASES]
 
 
 def _resolved(value, repo: str):
@@ -247,7 +263,7 @@ def _built(golden: dict, tmp_path: Path) -> Path:
     return repo
 
 
-@pytest.mark.parametrize("golden", CASES, ids=IDS)
+@pytest.mark.parametrize("golden", PARAMS)
 def test_the_recorded_payload_draws_the_recorded_verdict(golden: dict, tmp_path):
     done = run_hook(golden, _built(golden, tmp_path), tmp_path)
 
@@ -255,7 +271,7 @@ def test_the_recorded_payload_draws_the_recorded_verdict(golden: dict, tmp_path)
     assert done.returncode == golden["expect"]["exit"], golden["why"]
 
 
-@pytest.mark.parametrize("golden", CASES, ids=IDS)
+@pytest.mark.parametrize("golden", PARAMS)
 def test_stdout_carries_only_the_json_the_harness_reads(golden: dict, tmp_path):
     """Claude Code parses stdout JSON on exit 0, so a stray print there is a
     protocol break. The one thing stdout may carry is the single JSON object a
@@ -309,6 +325,20 @@ def test_a_no_toml_run_opens_no_store_and_imports_no_analysis_stack(tmp_path):
 
     assert _probe(repo, "calc/grade.py", tmp_path) == {
         "code": 0, "store": False, "lizard": False, "analyze": False}
+
+
+def test_importing_the_hook_module_loads_no_gate_and_no_analysis(tmp_path):
+    """The module scope stays stdlib-only: the gate module, the key and scope
+    rules and lizard are imported inside the judging functions, so an edit in
+    a repo crapkit never measures pays for none of them."""
+    done = subprocess.run([PY, "-X", "importtime", "-c", "import crapkit.cli.claude_hook"], cwd=tmp_path,
+                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=300, env=child_env(_child_overrides()))
+    imported = {line.rsplit("|", 1)[-1].strip() for line in done.stderr.splitlines() if "|" in line}
+
+    assert done.returncode == 0, done.stderr
+    assert "crapkit.cli.claude_hook" in imported, done.stderr
+    assert imported & {"crapkit.gate", "crapkit.keys", "crapkit.universe", "lizard"} == set()
 
 
 def test_even_a_breach_run_never_reaches_the_store(tmp_path):

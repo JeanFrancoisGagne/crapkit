@@ -1,19 +1,26 @@
 """A `crapkit` that records how it was started, then runs the real one.
 
-The record is one JSON line per event, appended to the log path baked into
-_config.py: `start` (argv, cwd, the whole environment, pid, ppid), `first_line`
-(the first line the client wrote to stdin, up to 64 KiB), `client_line` for
-each line after it up to the client's initialize (Goose, Copilot CLI and Crush
-send server/discover first), and `exit` (the real launcher's exit code). A
-harness that ends the server by killing its process group (Goose) leaves no
-`exit`. Stdin is forwarded line by line; stdout and stderr are the real
-launcher's own, inherited, so the client talks to crapkit directly.
+The record is one JSON line per event: `start` (argv, cwd, the whole
+environment, pid, ppid), `first_line` (the first line the client wrote to
+stdin, up to 64 KiB), `client_line` for each line after it up to the client's
+initialize (Goose, Copilot CLI and Crush send server/discover first), and
+`exit` (the real launcher's exit code). A harness that ends the server by
+killing its process group (Goose) leaves no `exit`. Stdin is forwarded line by
+line; stdout and stderr are the real launcher's own, inherited, so the client
+talks to crapkit directly.
+
+Each process writes its records to its own file in the log folder baked into
+_config.py, `<start ns>-<pid>.jsonl`, through one handle under one lock. On
+Windows an append to a shared file is a seek to the end and then a write, so
+two launches that wrote at once overwrote or cut each other's line; the lock
+keeps the main thread's records and the forwarding thread's whole as well.
 
 `ppid` is the process that started `crapkit`: the harness. On Windows a
 console-script crapkit.exe is a launcher that starts the venv's python.exe,
 which starts this interpreter, so there the harness is the launcher's parent
 and the start record names the launcher as `launcher_pid`.
 """
+import functools
 import importlib
 import json
 import ntpath
@@ -21,6 +28,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 
 TH32CS_SNAPPROCESS = 2
 LAUNCHER_DEPTH = 3
@@ -35,10 +43,24 @@ def _load_config():
     return importlib.import_module("crapkit_shim._config")
 
 
+_LOCK = threading.Lock()
+
+
+@functools.cache
+def _log():
+    """This process's record file, opened once at its first record. The name
+    leads with the start time, so the files sort in start order, and the pid
+    keeps two launches in one tick apart."""
+    name = f"{time.time_ns()}-{os.getpid()}.jsonl"
+    return open(os.path.join(_load_config().LOG_DIR, name), "x", encoding="utf-8")
+
+
 def record(event: str, **fields) -> None:
     line = json.dumps({"event": event, "pid": os.getpid(), **fields}, default=str) + "\n"
-    with open(_load_config().LOG, "a", encoding="utf-8") as log:
+    with _LOCK:
+        log = _log()
         log.write(line)
+        log.flush()
 
 
 def _is_initialize(line: bytes) -> bool:

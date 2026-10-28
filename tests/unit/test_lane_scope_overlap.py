@@ -21,6 +21,7 @@ import pytest
 from crapkit.config import Lane
 from crapkit.errors import ToolError
 from crapkit.lanes import _judge_artifact_scope, run_lane
+from crapkit.repopath import Unplaced
 
 OTHER = "/Users/dev/checkout-b/src/faro/core.py"
 
@@ -124,7 +125,7 @@ def test_one_file_in_reach_is_enough_to_let_the_artifact_through(tmp_path):
     """A lane measuring part of what it claims is ordinary; only zero is not."""
     _artifact(tmp_path, OTHER, "src/faro/core.py")
 
-    coverage, _, _ = _run(tmp_path, _lane(), {"src": ("src",)})
+    coverage = _run(tmp_path, _lane(), {"src": ("src",)}).coverage
 
     assert "src/faro/core.py" in coverage
 
@@ -134,7 +135,7 @@ def test_a_scope_that_declares_individual_files_is_reached_exactly(tmp_path):
     calls every one of them unreachable."""
     _artifact(tmp_path, "src/faro/core.py")
 
-    coverage, _, _ = _run(tmp_path, _lane(), {"src": ("src/faro/core.py",)})
+    coverage = _run(tmp_path, _lane(), {"src": ("src/faro/core.py",)}).coverage
 
     assert list(coverage) == ["src/faro/core.py"]
 
@@ -144,7 +145,7 @@ def test_the_prefix_the_lane_declares_is_applied_before_the_question(tmp_path):
     rescues must not be refused on the paths it had before."""
     _artifact(tmp_path, "faro/core.py")
 
-    coverage, _, _ = _run(tmp_path, _lane(path_prefix="src"), {"src": ("src",)})
+    coverage = _run(tmp_path, _lane(path_prefix="src"), {"src": ("src",)}).coverage
 
     assert list(coverage) == ["src/faro/core.py"]
 
@@ -259,8 +260,8 @@ def test_a_relative_key_beside_one_from_another_tree_still_joins(tmp_path):
     did before, glue or no glue."""
     _artifact(tmp_path, "a.py", "/other/checkout/backend/a.py")
 
-    coverage, _, _ = _run(tmp_path, _lane(scopes=("backend",), path_prefix="backend"),
-                          {"backend": ("backend",)})
+    coverage = _run(tmp_path, _lane(scopes=("backend",), path_prefix="backend"),
+                    {"backend": ("backend",)}).coverage
 
     assert "backend/a.py" in coverage
 
@@ -271,7 +272,7 @@ def test_in_tree_paths_that_miss_the_scope_warn_rather_than_fail(tmp_path, capsy
     the repos that are adopting crapkit."""
     _artifact(tmp_path, "tests/test_core.py")
 
-    coverage, _, _ = _run(tmp_path, _lane(), {"src": ("src",)})
+    coverage = _run(tmp_path, _lane(), {"src": ("src",)}).coverage
 
     assert list(coverage) == ["tests/test_core.py"]
     err = capsys.readouterr().err
@@ -307,9 +308,10 @@ def test_a_js_lane_is_not_told_to_run_pytest_through_a_python_manager(tmp_path):
     every lane. `uv run python -m pytest` is not something a vitest lane can do,
     and path_prefix is read by the coveragepy reader alone — the istanbul reader
     rebases against the checkout root and never sees the key."""
+    elsewhere = "/Users/dev/checkout-b/web/src/app.ts"
     with pytest.raises(ToolError) as raised:
-        _judge_artifact_scope(_js_lane(), {"/Users/dev/checkout-b/web/src/app.ts": []},
-                              {"web": ("web/src",)}, tmp_path)
+        _judge_artifact_scope(_js_lane(), {elsewhere: []}, {"web": ("web/src",)}, tmp_path,
+                              {elsewhere: Unplaced.ANOTHER_TREE})
 
     message = str(raised.value)
     assert "describes a different tree" in message
@@ -329,7 +331,8 @@ def test_the_js_warning_names_no_knob_the_js_reader_ignores(tmp_path, capsys):
 
 def test_a_python_lane_keeps_the_advice_the_incident_earned(tmp_path):
     with pytest.raises(ToolError) as raised:
-        _judge_artifact_scope(_lane(), {OTHER: []}, {"src": ("src",)}, tmp_path)
+        _judge_artifact_scope(_lane(), {OTHER: []}, {"src": ("src",)}, tmp_path,
+                              {OTHER: Unplaced.ANOTHER_TREE})
 
     assert "uv run python -m pytest" in str(raised.value)
     assert "path_prefix" in str(raised.value)
@@ -339,7 +342,7 @@ def test_a_lane_whose_scopes_declare_no_path_is_not_judged(tmp_path, capsys):
     """Nothing to compare against is not evidence of a mismatch."""
     _artifact(tmp_path, OTHER)
 
-    coverage, _, _ = _run(tmp_path, _lane(scopes=()), {"src": ("src",)})
+    coverage = _run(tmp_path, _lane(scopes=()), {"src": ("src",)}).coverage
 
     assert list(coverage) == [OTHER]
     assert capsys.readouterr().err == ""
@@ -348,7 +351,7 @@ def test_a_lane_whose_scopes_declare_no_path_is_not_judged(tmp_path, capsys):
 def test_a_caller_that_passes_no_scope_paths_is_not_judged(tmp_path):
     _artifact(tmp_path, OTHER)
 
-    coverage, _, _ = run_lane(tmp_path, _lane(), reuse_artifact=True)
+    coverage = run_lane(tmp_path, _lane(), reuse_artifact=True).coverage
 
     assert list(coverage) == [OTHER]
 
@@ -438,12 +441,13 @@ def test_a_mixed_artifact_is_another_tree_and_the_outside_paths_win(tmp_path):
 
 def test_a_js_lane_is_told_about_its_own_reporter_not_about_coveragepy(tmp_path):
     """The istanbul reader rebases every key that resolves under this checkout,
-    so an absolute in-tree key left over is one this machine could not open:
-    the advice is to rerun the lane here, not a coverage.py setting."""
-    measured = {_inside(tmp_path, "web/src/app.ts"): []}
+    so it records none as kept absolute. Should one reach the check, the advice
+    is to rerun the lane here, not a coverage.py setting."""
+    key = _inside(tmp_path, "web/src/app.ts")
 
     with pytest.raises(ToolError) as raised:
-        _judge_artifact_scope(_js_lane(), measured, {"web": ("web/src",)}, tmp_path)
+        _judge_artifact_scope(_js_lane(), {key: []}, {"web": ("web/src",)}, tmp_path,
+                              {key: Unplaced.KEPT_ABSOLUTE})
 
     message = str(raised.value)
     assert "under this checkout" in message
@@ -456,10 +460,12 @@ def test_a_js_lane_is_told_about_its_own_reporter_not_about_coveragepy(tmp_path)
 # absolute path in this checkout?". Each used to answer it its own way: lanes
 # compared resolved text, the reader asked the disk which directory is the root.
 # A key the reader could not rebase then reached a check that called the same
-# checkout another tree, or the other way round.
+# checkout another tree, or the other way round. Now both readers ask the one
+# placing rule while they read, and the check reads the reasons they recorded.
 
 import os  # noqa: E402
 
+from crapkit import coverage_py  # noqa: E402
 from crapkit.repopath import Reported  # noqa: E402
 from crapkit.lanes import _split_escaped  # noqa: E402
 
@@ -493,8 +499,19 @@ PLACED = {
 }
 
 
+def _coveragepy_record(root, key: str) -> dict:
+    """What the coverage.py reader records for a report keying `key`."""
+    _artifact(root, key)
+    unplaced: dict = {}
+    coverage_py.read(_lane(), root, root / "cov.json", unplaced=unplaced)
+    return unplaced
+
+
 @pytest.mark.parametrize("which", PLACED)
 def test_the_wrong_tree_check_places_a_key_where_the_istanbul_reader_does(tmp_path, which):
+    """istanbul rebases each spelling of this checkout and records none of
+    them; coverage.py keeps each as written and records it kept absolute, so
+    the check files it under this checkout."""
     need, spell = PLACED[which]
     if need == "windows" and os.name != "nt":
         pytest.skip("needs Windows path rules")
@@ -502,9 +519,14 @@ def test_the_wrong_tree_check_places_a_key_where_the_istanbul_reader_does(tmp_pa
         need_case_insensitive(tmp_path)
     root = _placed_tree(tmp_path)
     key = spell(root, tmp_path)
+    keys = Reported(root)
+    written = key.replace("\\", "/")
 
-    assert Reported(root)(key) == "src/app.ts"
-    assert _split_escaped(root, [key.replace("\\", "/")]) == ([], [key.replace("\\", "/")])
+    assert keys(key) == "src/app.ts"
+    assert keys.unplaced == {}
+    record = _coveragepy_record(root, key)
+    assert record == {written: Unplaced.KEPT_ABSOLUTE}
+    assert _split_escaped([written], record) == ([], [written])
 
 
 def test_a_drive_letter_path_is_another_tree_where_the_os_has_no_drives(tmp_path, monkeypatch):
@@ -516,5 +538,10 @@ def test_a_drive_letter_path_is_another_tree_where_the_os_has_no_drives(tmp_path
     root = _placed_tree(tmp_path)
     (root / "C:" / "repo" / "src").mkdir(parents=True)
     monkeypatch.chdir(root)
+    key = "C:/repo/src/app.ts"
+    keys = Reported(root)
 
-    assert _split_escaped(root, ["C:/repo/src/app.ts"]) == (["C:/repo/src/app.ts"], [])
+    assert keys(key) == key
+    assert keys.unplaced == {key: Unplaced.UNOPENABLE}
+    assert _coveragepy_record(root, key) == {key: Unplaced.UNOPENABLE}
+    assert _split_escaped([key], keys.unplaced) == ([key], [])

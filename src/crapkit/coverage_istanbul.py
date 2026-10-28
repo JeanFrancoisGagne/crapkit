@@ -9,13 +9,15 @@ AST-remapped output of @vitest/coverage-v8 >= 3.2, which is istanbul-schema-iden
 
 This module is also the istanbul adapter (coverage_format looks it up from a
 lane's `parser`): it reads the artifact through covstream's framing, keys each
-file by rebasing it under the checkout root, and owns the advice a wrong-tree refusal
-gives an istanbul lane. Attribution itself stays independent of file I/O and
+file by rebasing it under the checkout root, records each key it could not
+rebase with the placing step's reason, and owns the advice a wrong-tree refusal
+gives an istanbul lane; it has no producer facts. Attribution itself stays independent of file I/O and
 JSON framing.
 """
 from __future__ import annotations
 
 import sys
+from array import array
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -27,10 +29,7 @@ from .repotext import json_kind
 
 if TYPE_CHECKING:
     from .config import Lane
-
-
-def _rel_path(abs_path: str, repo_root: str) -> str:
-    return Reported(repo_root)(abs_path)
+    from .repopath import Unplaced
 
 
 # --- span attribution ------------------------------------------------------
@@ -359,16 +358,29 @@ def _dead_lines(cov: dict) -> set[int]:
     return dead
 
 
+# The largest line number array("I") holds. A line past it, or below 1, sits in
+# no span a function or a changed range names, so the evidence leaves it out.
+_LAST_LINE = 2 ** 32 - 1
+
+
+def _missed_only(lines: set[int]) -> score.FileEvidence:
+    """A file's dead lines as its evidence. hit_lines is None: this reader
+    keeps its own function records, so the join builds none from it and only
+    the dead-line fold reads missed_lines."""
+    return score.FileEvidence(None, array("I", sorted(n for n in lines if 0 < n <= _LAST_LINE)))
+
+
 # --- reading the artifact ----------------------------------------------------
 
 _BAD_ISTANBUL = "unparseable istanbul artifact"
 
 
-def _records(w, repo_root: str):
+def _records(w, repo_root: str, keys: Reported | None = None):
     """(repo-relative path, record) per measured file, once every counter of the
     record is there, with its positions on the lines the reader numbers that file
-    by (istanbul_lines). A refusal names the file."""
-    keys = Reported(repo_root)
+    by (istanbul_lines). A refusal names the file. `keys` records each key it
+    left unplaced."""
+    keys = Reported(repo_root) if keys is None else keys
     for abs_path, cov in covstream.split_window(w):
         rel = keys(abs_path)
         yield rel, _named_file(rel, lambda: on_reader_lines(_require_counters(cov),
@@ -379,12 +391,14 @@ def _istanbul_map(w, repo_root: str, per_file) -> dict:
     return {rel: _named_file(rel, lambda: per_file(cov)) for rel, cov in _records(w, repo_root)}
 
 
-def _istanbul_both(w, repo_root: str) -> tuple[dict, dict]:
-    per_file, dead = {}, {}
-    for rel, cov in _records(w, repo_root):
+def _istanbul_both(w, repo_root: str, keys: Reported | None = None) -> tuple[dict, dict]:
+    """path -> function coverage and path -> FileEvidence, from one decode of
+    each file."""
+    per_file, evidence = {}, {}
+    for rel, cov in _records(w, repo_root, keys):
         per_file[rel] = _named_file(rel, lambda: _file_coverage(cov))
-        dead[rel] = _dead_lines(cov)
-    return per_file, dead
+        evidence[rel] = _missed_only(_dead_lines(cov))
+    return per_file, evidence
 
 
 _CLAMPED_NAMED = 3
@@ -428,10 +442,14 @@ def _require_files(per_file: dict) -> None:
             "rerun the lane and check that its command runs the tests")
 
 
-def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = covstream.CHUNK
-                             ) -> tuple[dict[str, list[score.FnCoverage]], dict[str, set[int]], str]:
-    """Function coverage AND dead lines from ONE walk, plus the sha256 of the
-    artifact's own bytes.
+def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = covstream.CHUNK,
+                             reported: Reported | None = None
+                             ) -> tuple[dict[str, list[score.FnCoverage]],
+                                        dict[str, score.FileEvidence], str]:
+    """Function coverage AND each file's FileEvidence (its dead lines as
+    missed_lines, hit_lines None) from ONE walk, plus the sha256 of the
+    artifact's own bytes. `reported` keys the files, and holds the keys it left
+    unplaced when the walk is done; one of the reader's own by default.
 
     verify asks both questions of every istanbul artifact: the lane wants
     function coverage, diff coverage wants the lines no statement ran. Asking
@@ -439,11 +457,11 @@ def parse_istanbul_both_file(path: Path | str, *, repo_root: str, chunk: int = c
     31,459-file tree, against 7.80 s merged. Decoding is the whole cost;
     _dead_lines over an already decoded file is near free.
     """
-    (per_file, dead), digest = covstream.read_walk(
-        path, lambda w: _istanbul_both(w, repo_root), f"{_BAD_ISTANBUL} {path}", chunk)
+    (per_file, evidence), digest = covstream.read_walk(
+        path, lambda w: _istanbul_both(w, repo_root, reported), f"{_BAD_ISTANBUL} {path}", chunk)
     _require_files(per_file)
     _note_clamped_branches(per_file)
-    return per_file, dead, digest
+    return per_file, evidence, digest
 
 
 def parse_istanbul_missing_file(path: Path | str, *, repo_root: str,
@@ -470,12 +488,31 @@ ABSOLUTE_FIX = ("The reader rebases every measured path that resolves under this
                 "checkout, and these could not be opened here: rerun the lane on this "
                 "machine rather than reusing a report written somewhere else")
 UNMEASURED_READING = "or the suite measured a part of the tree these scopes do not name"
+TAKES_PATH_PREFIX = False
+# No producer facts: crapkit knows of no data file, shard or dropping an
+# istanbul producer leaves outside its report, so each one is empty.
+SHARD_GLOB = None
+COMBINE_RECIPE = None
+DROPPINGS = ()
 
 
-def read(lane: Lane, root: Path, artifact: Path
-         ) -> tuple[dict[str, list[score.FnCoverage]], dict[str, set[int]], str]:
-    """The lane's function coverage, dead lines and artifact digest, one walk."""
-    return parse_istanbul_both_file(artifact, repo_root=str(root))
+def data_file(lane: Lane) -> None:
+    """No data file a second lane could collide on."""
+    return None
+
+
+def read(lane: Lane, root: Path, artifact: Path, *,
+         unplaced: dict[str, Unplaced] | None = None
+         ) -> tuple[dict[str, list[score.FnCoverage]], dict[str, score.FileEvidence], str]:
+    """The lane's function coverage, each file's FileEvidence (its dead
+    lines) and the artifact digest, one walk.
+    `unplaced` takes each key the walk could not rebase, with its reason: the
+    keys it rebased are in the checkout, so none of them is there."""
+    keys = Reported(str(root))
+    both = parse_istanbul_both_file(artifact, repo_root=str(root), reported=keys)
+    if unplaced is not None:
+        unplaced.update(keys.unplaced)
+    return both
 
 
 def missing(lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]:
@@ -486,10 +523,3 @@ def missing(lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]:
 def contexts(lane: Lane, root: Path, artifact: Path, source_path: str) -> dict[int, list[str]]:
     """Istanbul records no per-line test contexts, so there is nothing to read."""
     return {}
-
-
-def as_reported(lane: Lane, key: str) -> str:
-    """The key as the runner wrote it. The reader only ever strips the root, so
-    a key that still looks absolute is spelled the way the artifact spells it,
-    and path_prefix, which this reader never adds, is never taken off."""
-    return key

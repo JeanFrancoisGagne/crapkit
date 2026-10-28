@@ -59,9 +59,7 @@ with open(artifact, "w", encoding="utf-8") as fh:
 """
 
 
-VERDICT_KEYS = ("ok", "gate_violations", "ratchet_regressions", "new_failures",
-                "diff_uncovered", "diff_uncovered_count",
-                "committed_findings", "dirty_findings", "dirty_failures")
+VERDICT_KEYS = ("ok", "findings", "counts", "committed_findings", "dirty_findings", "dirty_failures")
 
 
 run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
@@ -119,6 +117,11 @@ def init_repo(repo: Path) -> Path:
     return repo
 
 
+def gate_items(payload: dict) -> list[dict]:
+    """verify --json's gate_violation items."""
+    return [item for item in payload["findings"] if item["kind"] == "gate_violation"]
+
+
 def verdict_of(res: subprocess.CompletedProcess) -> dict:
     payload = json.loads(res.stdout)
     return {k: payload[k] for k in VERDICT_KEYS}
@@ -155,7 +158,7 @@ def test_a_mid_branch_coverage_run_shrinks_the_diff_basis(branch_repo: Path):
     assert res.returncode == 0, res.stdout + res.stderr
     payload = json.loads(res.stdout)
     assert payload["changed_files"] == 1, "only the last commit's file is in the diff"
-    assert payload["gate_violations"] == [], "the branch's ccn-8 function is behind the baseline"
+    assert gate_items(payload) == [], "the branch's ccn-8 function is behind the baseline"
 
 
 def test_base_drives_the_diff_from_the_fork_point(branch_repo: Path):
@@ -166,7 +169,7 @@ def test_base_drives_the_diff_from_the_fork_point(branch_repo: Path):
     assert res.returncode == 6, res.stdout + res.stderr
     payload = json.loads(res.stdout)
     assert payload["changed_files"] == 2, "the whole branch is the diff, not the last commit"
-    assert [(g["path"], g["ccn"]) for g in payload["gate_violations"]] == [("src/debt.py", 8)]
+    assert [(g["path"], g["ccn"]) for g in gate_items(payload)] == [("src/debt.py", 8)]
 
 
 def test_base_picks_a_baseline_run_at_or_behind_the_fork_point(branch_repo: Path):
@@ -290,7 +293,7 @@ def test_findings_from_uncommitted_edits_are_tagged_in_json(dirty_repo: Path):
 
     assert res.returncode == 6, res.stdout + res.stderr
     payload = json.loads(res.stdout)
-    assert {g["path"]: g["dirty"] for g in payload["gate_violations"]} == \
+    assert {g["path"]: g["dirty"] for g in gate_items(payload)} == \
         {"src/a.py": False, "src/b.py": True}
     assert payload["committed_findings"] == 1
     assert payload["dirty_findings"] == 1

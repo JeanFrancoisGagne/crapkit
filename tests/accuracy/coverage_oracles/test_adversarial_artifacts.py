@@ -50,7 +50,7 @@ def test_split_window_hands_back_what_json_loads_reads(document, layout, chunk):
     covstream, window = _window(data, chunk)
 
     assert list(covstream.split_window(window)) == list(json.loads(data).items())
-    assert window.hasher.hexdigest() == hashlib.sha256(data).hexdigest()
+    assert window.reader.hexdigest() == hashlib.sha256(data).hexdigest()
 
 
 def _rebuilt(pairs) -> dict:
@@ -266,14 +266,31 @@ def _unreached_verdict(root: Path, escaped: list[str]) -> str:
     return "spelled absolutely" if escaped else "warned"
 
 
+_ADMITTED_ENTRY = {"missing_lines": [], "functions": {"f": {
+    "start_line": 1, "executed_lines": [1], "missing_lines": [],
+    "summary": {"covered_lines": 1, "num_statements": 1, "num_branches": 0,
+                "covered_branches": 0}}}}
+
+
+def _admission_read(root: Path, lane, keys: list[str]) -> tuple[dict, dict]:
+    """(measured keys, the reader's record of unplaced keys) for a coverage.py
+    report keying `keys`, read by crapkit's own reader."""
+    artifact = root / "admission.json"
+    report = {"meta": {"branch_coverage": True}, "files": dict.fromkeys(keys, _ADMITTED_ENTRY)}
+    artifact.write_text(json.dumps(report), encoding="utf-8")
+    unplaced: dict = {}
+    coverage, _, _ = COVERAGE_PY.read(lane, root, artifact, unplaced=unplaced)
+    return coverage, unplaced
+
+
 def _crapkit_verdict(root: Path, keys: list[str], scope_path: str) -> str:
     config, lanes, errors = CONFIG, LANES, ERRORS
     lane = config.Lane("py", "true", ".crapkit/cov/py.json", "coveragepy", ("s",))
-    coverage = {key.replace("\\", "/"): [] for key in keys}
+    coverage, unplaced = _admission_read(root, lane, keys)
     stderr = io.StringIO()
     try:
         with redirect_stderr(stderr):
-            lanes._judge_artifact_scope(lane, coverage, {"s": (scope_path,)}, root)
+            lanes._judge_artifact_scope(lane, coverage, {"s": (scope_path,)}, root, unplaced)
     except errors.ToolError as refusal:
         return "different tree" if "different tree" in str(refusal) else "spelled absolutely"
     return "warned" if stderr.getvalue() else "admitted"

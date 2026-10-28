@@ -5,18 +5,23 @@ kit's Messages stub.
 one write (an Edit, a Write of a new file, or a Bash heredoc), then a Read per
 turn until a request body carries the advisory, at most five of them. The
 plugin's Edit|Write hook runs async and Claude Code hands its exit 2 to the
-model on a later turn, so before answering each Read the stub waits until the
-shim has recorded the hook's exit; the five Reads are the slack after that.
+model on a later turn, so on the first request after the write the stub waits,
+under the hang bound, until the shim has recorded the hook's exit; the five
+Reads are the slack after that.
 
 The README's Bash entry is a plain command hook: Claude Code waits for it, or
 cancels it at its 20 s timeout, before it sends the next request. So the stub
-does not wait after a Bash write. When that request comes and the shim holds no
-new exit, none will come: the write failed and no PostToolUse hook ran, or
-Claude Code killed the hook before the shim could record one. One of the two
-hit a Windows nightly run at full CPU, and the stub waited out its whole
-120 s bound while Claude Code waited on the stub. The stub then
-sends the same write again, up to RETRIES times; `cat >` overwrites, so the
-retry needs no reset. Each miss and its cause land in the case's `misses`.
+does not wait after a Bash write: when that request comes and the shim holds no
+new exit, none will come.
+
+A write whose hook left no exit, async or Bash, goes again from the case's
+start state (reset), so a resent Edit meets the tree the first one met, up to
+RETRIES times. The shim records since the attempt began give the cause, which
+lands in the case's `misses`: no hook start means the write failed or Claude
+Code ran no hook, and a start with no exit means Claude Code ended the hook at
+its 20 s timeout. After the last retry the model reads, so the case ends and
+assert_cases names the causes; the stub never raises inside its handler, which
+left `claude -p` waiting on a reply that never came.
 
     lin-claude-hook-stub        Edit, Write of a new file, Bash heredoc of Python: one advisory each;
                                 a Bash heredoc of TypeScript: none; no MultiEdit tool offered
@@ -29,6 +34,8 @@ it never passes on a recorded payload.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -75,11 +82,10 @@ EXPECTED = {"edit": advisory("calc/grade.py"), "write-new": advisory("calc/big.p
             "bash-python": advisory("calc/big.py"), "bash-typescript": None}
 
 
-def hook_exits(box) -> int:
-    """Hook processes the shim saw finish: every start that is not the MCP server
-    or a version probe (a below-floor Claude Code spawns a bare `crapkit`)."""
-    return sum(1 for start in shim.starts(box)
-               if start["argv"][1:] not in (["mcp"], ["--version"]) and start["exit"] is not None)
+def hook_launches(box) -> list[dict]:
+    """Hook processes the shim saw start, in start order: every launch that is not
+    the MCP server or a version probe (a below-floor Claude Code spawns a bare `crapkit`)."""
+    return [start for start in shim.starts(box) if start["argv"][1:] not in (["mcp"], ["--version"])]
 
 
 def _text(content) -> str:
@@ -101,57 +107,72 @@ def tool_error(body: dict) -> str:
     return next((_text(block.get("content", "")) for block in last_user(body) if block.get("is_error")), "")
 
 
-def missed_hook(body: dict) -> str:
-    """Why a hook Claude Code runs before its next request left no exit in the shim log."""
+def missed_hook(body: dict, started: bool) -> str:
+    """Why the write's hook left no exit in the shim records since its attempt began."""
+    if started:
+        return "a hook started and left no exit: Claude Code ended it at its 20 s timeout"
     error = tool_error(body)
     if error:
-        return f"the write failed, so no PostToolUse hook ran: {error}"
-    return "the hook recorded no exit: Claude Code cancelled it at its timeout"
+        return f"no hook started: the write failed, so no PostToolUse hook ran: {error}"
+    return "no hook started: Claude Code ran no PostToolUse hook"
 
 
 class Model:
     """The stub's script for one session: the writes, then Reads until the
-    advisory `marker` reaches a request, then a closing text turn. A Bash write
-    whose hook left no exit goes again, up to RETRIES times; `misses` says why."""
+    advisory `marker` reaches a request, then a closing text turn. A write whose
+    hook left no exit goes again from the case's start state, up to RETRIES
+    times; `misses` says why each one went again."""
 
-    def __init__(self, box, writes: list[dict], marker: str, read: str):
-        self.box, self.writes, self.marker, self.read = box, writes, marker, read
+    def __init__(self, box, repo: Path, writes: list[dict], marker: str):
+        self.box, self.repo, self.writes, self.marker = box, repo, writes, marker
         # With no shim on PATH nothing records a hook, and the five Reads are all the wait there is.
         self.shimmed = (box.root / "shim-bin").is_dir()
-        self.sync = self.shimmed and writes[-1]["tool_use"]["name"] in SYNC_TOOLS
+        self.sync = writes[-1]["tool_use"]["name"] in SYNC_TOOLS
         self.misses: list[str] = []
         self.begin(0)
 
     def begin(self, turn: int) -> None:
-        """This attempt's writes start at `turn`; a hook exit counts past the log as it stands."""
-        self.start, self.baseline = turn, hook_exits(self.box)
+        """This attempt's writes start at `turn`; its hooks are the launches past the records as they stand."""
+        self.start, self.before = turn, len(hook_launches(self.box))
+
+    def launched(self) -> list[dict]:
+        return hook_launches(self.box)[self.before:]
 
     def hooked(self) -> bool:
-        return hook_exits(self.box) > self.baseline
+        return any(launch["exit"] is not None for launch in self.launched())
 
-    def settle(self) -> None:
-        if self.shimmed and not self.sync:
-            hang_guard.wait_until(self.hooked, what="the hook's exit in the shim log")
+    def settled(self) -> bool:
+        """Whether this attempt's hook exited. Claude Code ends a Bash hook before
+        its next request; an async one gets the hang bound. A miss returns False
+        instead of raising: a raise inside the stub's handler leaves `claude -p`
+        waiting for a reply."""
+        if self.sync:
+            return self.hooked()
+        try:
+            hang_guard.wait_until(self.hooked, what="the hook's exit in the shim records")
+        except AssertionError:
+            return False
+        return True
 
     def again(self, body: dict) -> bool:
-        """Whether the write goes again: its synchronous hook left no exit, and a retry is left."""
-        if not self.sync or self.hooked():
+        """Whether the write goes again: its hook left no exit, and a retry is left."""
+        if not self.shimmed or self.settled():
             return False
-        self.misses.append(missed_hook(body))
+        self.misses.append(missed_hook(body, bool(self.launched())))
         return len(self.misses) <= RETRIES
 
     def carries(self, body: dict) -> bool:
         return self.marker in json.dumps(body.get("messages", []))
 
     def reads(self, body: dict, step: int) -> dict:
-        self.settle()
         if self.carries(body) or step >= len(self.writes) + READS:
             return {"text": "done"}
-        return {"tool_use": {"name": "Read", "input": {"file_path": self.read}}}
+        return {"tool_use": {"name": "Read", "input": {"file_path": str(self.repo / "calc" / "grade.py")}}}
 
     def __call__(self, body: dict, turn: int) -> dict:
         step = turn - self.start
         if step == len(self.writes) and self.again(body):
+            reset(self.box, self.repo)
             self.begin(turn)
             step = 0
         if step < len(self.writes):
@@ -162,10 +183,13 @@ class Model:
 def session(box, repo: Path, writes: list[dict], marker: str, claude: str = "claude") -> tuple[list[dict], list[str]]:
     """One `claude -p` run against the stub; every request body it sent, and
     why each write that went again did."""
-    model = Model(box, writes, marker, str(repo / "calc" / "grade.py"))
+    model = Model(box, repo, writes, marker)
+    # Every wait the script can spend: an async hook's bound on each of the RETRIES + 1 attempts, plus one
+    # for the session, so a retry runs inside the claude run instead of racing the run's own bound.
+    bound = (RETRIES + 2) * hang_guard.HANG_SECONDS
     with stub_anthropic.serve(model) as stub:
         box.run([claude, "-p", "make the change", "--permission-mode", "bypassPermissions"], cwd=repo, expect=0,
-                env=stub_anthropic.claude_env(stub.url))
+                env=stub_anthropic.claude_env(stub.url), bound=bound)
     return stub.bodies(), model.misses
 
 
@@ -261,20 +285,27 @@ def test_bash_entry_from_0_7_6_fires_after_upgrade(box, candidate, templates):
 # --- the scripted model, without Claude Code -----------------------------------------
 
 BASH_WRITE = [{"tool_use": {"name": "Bash", "input": {"command": heredoc("calc/big.py", "x = 1\n")}}}]
+ASYNC_WRITE = [{"tool_use": {"name": "Write", "input": {"file_path": "calc/big.py", "content": "x = 1\n"}}}]
+WRITES = pytest.mark.parametrize("writes", [BASH_WRITE, ASYNC_WRITE], ids=["bash", "async"])
 HOOK = ["crapkit", "claude-hook", "--protocol", "1"]
+# What reset() runs: a retry starts from the case's start state.
+RESET = [["git", "checkout", "-q", "--", "."], ["git", "clean", "-q", "-f", "--", "calc"]]
 
 
 def fake_box(tmp_path: Path) -> SimpleNamespace:
+    """A box with the shim installed and no records yet; `runs` holds each command run in it."""
     (tmp_path / "shim-bin").mkdir()
-    (tmp_path / "shim.log").write_text("", encoding="utf-8")
-    return SimpleNamespace(root=tmp_path)
+    (tmp_path / shim.LOG_DIR).mkdir()
+    runs: list[list[str]] = []
+    return SimpleNamespace(root=tmp_path, runs=runs, run=lambda argv, **_: runs.append(argv))
 
 
 def shim_records(box, pid: int, *events: str) -> None:
+    """One shim process's record file, named and written as the shim writes it."""
     lines = [{"event": "start", "pid": pid, "argv": HOOK} if kind == "start" else {"event": "exit", "pid": pid, "code": 2}
              for kind in events]
-    with open(box.root / "shim.log", "a", encoding="utf-8") as log:
-        log.writelines(json.dumps(line) + "\n" for line in lines)
+    log = box.root / shim.LOG_DIR / f"{time.time_ns()}-{pid}.jsonl"
+    log.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
 
 
 def after_write(error: str = "") -> dict:
@@ -286,50 +317,61 @@ def after_write(error: str = "") -> dict:
 
 
 @pytest.mark.kit
+@WRITES
 @pytest.mark.parametrize("error, events, why", [
     ("Exit code 1\n/usr/bin/bash: line 1: calc/big.py: No such file or directory", (),
-     "the write failed, so no PostToolUse hook ran"),
-    ("", ("start",), "Claude Code cancelled it at its timeout"),
-])
-def test_a_bash_write_whose_hook_left_no_exit_goes_again_at_once(error, events, why, tmp_path, monkeypatch):
+     "no hook started: the write failed, so no PostToolUse hook ran"),
+    ("", (), "no hook started: Claude Code ran no PostToolUse hook"),
+    ("", ("start",), "a hook started and left no exit: Claude Code ended it at its 20 s timeout"),
+], ids=["write-failed", "no-hook", "hook-timed-out"])
+def test_a_write_whose_hook_left_no_exit_goes_again_from_the_case_s_start(writes, error, events, why, tmp_path,
+                                                                          monkeypatch):
     monkeypatch.setattr(hang_guard, "HANG_SECONDS", 0.5)
     box = fake_box(tmp_path)
-    model = Model(box, BASH_WRITE, advisory("calc/big.py"), "calc/grade.py")
+    model = Model(box, tmp_path, writes, advisory("calc/big.py"))
     shim_records(box, 7, *events)
 
-    assert model(after_write(error), 0 + len(BASH_WRITE)) == BASH_WRITE[0]
+    assert model(after_write(error), len(writes)) == writes[0]
     assert len(model.misses) == 1 and why in model.misses[0]
     assert (error.splitlines() or [""])[-1] in model.misses[0]
+    assert box.runs == RESET
 
 
 @pytest.mark.kit
-def test_a_bash_write_whose_hook_exited_reads_without_going_again(tmp_path):
+@WRITES
+def test_a_write_whose_hook_exited_reads_without_going_again(writes, tmp_path):
     box = fake_box(tmp_path)
-    model = Model(box, BASH_WRITE, advisory("calc/big.py"), "calc/grade.py")
+    model = Model(box, tmp_path, writes, advisory("calc/big.py"))
     shim_records(box, 7, "start", "exit")
 
-    assert model(after_write(), 1)["tool_use"]["name"] == "Read"
-    assert model.misses == []
+    assert model(after_write(), len(writes))["tool_use"]["name"] == "Read"
+    assert model.misses == [] and box.runs == []
 
 
 @pytest.mark.kit
-def test_after_its_retries_a_bash_write_reads_and_the_misses_say_why(tmp_path, monkeypatch):
+@WRITES
+def test_after_its_retries_a_write_reads_and_the_misses_say_why(writes, tmp_path, monkeypatch):
     monkeypatch.setattr(hang_guard, "HANG_SECONDS", 0.5)
     box = fake_box(tmp_path)
-    model = Model(box, BASH_WRITE, advisory("calc/big.py"), "calc/grade.py")
+    model = Model(box, tmp_path, writes, advisory("calc/big.py"))
     replies = [model(after_write(), turn) for turn in range(1, RETRIES + 3)]
 
-    assert replies[:RETRIES] == [BASH_WRITE[0]] * RETRIES
+    assert replies[:RETRIES] == [writes[0]] * RETRIES
     assert replies[RETRIES]["tool_use"]["name"] == "Read"
-    assert len(model.misses) == RETRIES + 1
+    assert len(model.misses) == RETRIES + 1 and box.runs == RESET * RETRIES
 
 
 @pytest.mark.kit
-def test_an_async_hook_is_still_awaited(tmp_path, monkeypatch):
-    monkeypatch.setattr(hang_guard, "HANG_SECONDS", 0.5)
+def test_an_async_write_is_answered_once_its_hook_s_exit_is_recorded(tmp_path):
+    """Claude Code runs the Edit|Write hook async: the request after the write
+    gets its reply once the shim records the hook's exit, with no retry."""
     box = fake_box(tmp_path)
-    write = [{"tool_use": {"name": "Write", "input": {"file_path": "calc/big.py", "content": "x = 1\n"}}}]
-    model = Model(box, write, advisory("calc/big.py"), "calc/grade.py")
+    model = Model(box, tmp_path, ASYNC_WRITE, advisory("calc/big.py"))
+    hook = threading.Timer(0.2, shim_records, args=(box, 7, "start", "exit"))
+    hook.start()
+    try:
+        reply = model(after_write(), len(ASYNC_WRITE))
+    finally:
+        hook.join()
 
-    with pytest.raises(AssertionError, match="the hook's exit in the shim log"):
-        model(after_write(), 1)
+    assert reply["tool_use"]["name"] == "Read" and model.misses == []

@@ -1,0 +1,28 @@
+{
+  "case": "claimed_non_utf8_name",
+  "why": "An Edit to src/caf\\xe9.py, a file scope src takes whose name git gives in bytes that are not UTF-8. No function in it can be keyed, so the gate refuses the name before it judges anything and the commit gate refuses the file at exit 3; silence here would pass it unread. The two lines are the bytes 0.8.1 printed. Only a file system that stores any byte in a name holds the file, so the case skips on NTFS and APFS.",
+  "fixture": "claimed_non_utf8_name",
+  "needs": "any_byte_names",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/src/caf\udce9.py",
+      "old_string": "def grade(n):",
+      "new_string": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/src/caf\udce9.py", "success": true}
+  },
+  "expect": {
+    "exit": 2,
+    "stderr": [
+      "crapkit advisory: src/caf\\xe9.py is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path as UTF-8, so no function in it was judged (the edit landed; nothing was blocked)",
+      "the commit gate refuses such a file (exit 3); rename it to a UTF-8 name"
+    ]
+  }
+}
