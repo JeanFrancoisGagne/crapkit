@@ -298,7 +298,8 @@ FLAGS = {"measured": "", "cc-only": "coverage_optional = true\n"}
 _RISE = re.compile(r"^  ccn +\d+  (\S+):\d+  (.+?)  mark \d+\.\d{4}$", re.M)
 _OVER = re.compile(r"^  ccn +\d+  (\S+):\d+  ((?:(?!  mark ).)+?)$", re.M)
 _COUNT = re.compile(r"^crapkit gate: (\d+) staged function\(s\) carry a ratchet mark", re.M)
-REFUSED, PASSED = ("over_ceiling", "marked_rise"), ("pardoned", "unproven")
+_WARNED = re.compile(r"^  ccn \S+ -> \d+  (\S+):\d+  (.+?)  mark \d+\.\d{4}$", re.M)
+REFUSED, PASSED = ("over_ceiling", "marked_rise"), ("pardoned", "unproven", "unproven_rise")
 
 
 def _generated_config(flag: str) -> str:
@@ -329,10 +330,11 @@ def _generated_tree(flag: str) -> tuple[dict, str]:
 
 
 def _modelled(path: str, ccn: int, functions: dict, cc_only: bool) -> dict[str, set]:
-    """The model's finding for each function of one file, grouped by kind."""
+    """The model's finding for each function of one file, grouped by kind. The
+    file is new in its commit, so the diff base holds none of its functions."""
     found: dict[str, set] = {kind: set() for kind in (*REFUSED, *PASSED)}
     for name, mark in functions.items():
-        kind = model.hook_finding(ccn, GENERATED_CEILING, mark, cc_only)
+        kind = model.hook_finding(ccn, GENERATED_CEILING, mark, cc_only, base_ccn=None)
         if kind is not None:
             found[kind].add((path, f"{name}( n )"))
     return found
@@ -360,11 +362,14 @@ def test_every_hook_verdict_on_the_range_ends_is_the_models(make_repo, flag):
         assert set(_RISE.findall(result.stdout)) == want["marked_rise"], (ccn, result.stdout)
         assert set(_OVER.findall(result.stdout)) == want["over_ceiling"], (ccn, result.stdout)
         assert [int(n) for n in _COUNT.findall(result.stderr)] == ([carried] if carried else []), ccn
+        assert set(_WARNED.findall(result.stderr)) == want["unproven_rise"], (ccn, result.stderr)
         kinds_seen |= {kind for kind, keys in want.items() if keys}
         repos.git(built.top, "commit", "-q", "--no-verify", "-m", path)
 
-    # A cc-only range is one point, so no mark straddles it there.
-    assert kinds_seen == ({*REFUSED, *PASSED} if flag == "measured" else {*REFUSED, "pardoned"})
+    # A cc-only range is one point, so no mark straddles it there. Every file is
+    # new, so each range across its mark warns and none stays unproven.
+    assert kinds_seen == ({*REFUSED, "pardoned", "unproven_rise"} if flag == "measured"
+                          else {*REFUSED, "pardoned"})
 
 
 # --- rescore --gate on the MCP surface ---------------------------------------------------------

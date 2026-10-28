@@ -134,8 +134,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # hook-precommit refused a marked rise with a block and a fix line of its own
 # (mission-3-04). On 090/integration the one decode init and the full-suite
 # guard read pytest's config files with (build-map-18) added one, and the
-# next sync met at 3,885.
-SRC_DEFS = 3885
+# next sync met at 3,885. It reached 3,892 once hook-precommit warned about a
+# straddling marked function whose ccn rose since the diff base (mission-3-05).
+SRC_DEFS = 3892
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

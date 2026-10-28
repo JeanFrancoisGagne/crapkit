@@ -12,8 +12,18 @@ Every bound here comes from `hook._changed_file`, the function that builds the
 hook's rows, so the table judges what the hook hands the gate. The property at
 the bottom holds the classes to the exact CRAP at every coverage a lane can
 report in 60ths.
+
+An unproven function whose ccn rose above its ccn at the diff base, or that the
+base holds no function under its key, is an unproven rise: the hook warns about
+it and still passes. `gate.judge` asks the base through the fetch it is handed,
+once, and only when a function is unproven; the rows at the end hold
+`hook.ccn_at`, the hook's fetch, to the base's keys.
 """
 from __future__ import annotations
+
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
@@ -54,7 +64,7 @@ scopes = ["src"]
 CFG = load_config_text(CONFIG)
 FLAGS = {"src": "untested", "cc": "cc-only"}
 NAME = "read_row( line , cols )"
-KINDS = ("over_ceiling", "pardoned", "marked_rise", "unproven")
+KINDS = ("over_ceiling", "pardoned", "marked_rise", "unproven", "unproven_rise")
 
 
 def record(ccn: int, name: str = NAME, start: int = 1, path: str = "src/a.py") -> FunctionRecord:
@@ -74,6 +84,22 @@ def kinds(result: gate.GateResult) -> dict[str, str]:
 def judge(change: gate.ChangedFile, marks: dict, ceiling: int = 6) -> tuple[gate.GateResult, Marks]:
     fetch = Marks(marks)
     return gate.judge([change], lambda scope: ceiling, fetch), fetch
+
+
+@dataclass
+class Base:
+    """The base fetch: each key's ccn at the diff base from `ccn`, None for a
+    key it does not hold, recording the keys of every call."""
+    ccn: dict = field(default_factory=dict)
+    calls: list = field(default_factory=list)
+
+    def __call__(self, keys):
+        self.calls.append(tuple(keys))
+        return {key: self.ccn.get(key) for key in keys}
+
+
+def judge_against(change: gate.ChangedFile, marks: dict, base: Base, ceiling: int = 6) -> gate.GateResult:
+    return gate.judge([change], lambda scope: ceiling, Marks(marks), base)
 
 
 # --- one row per case -------------------------------------------------------------
@@ -191,3 +217,190 @@ def test_a_rise_and_a_pardon_hold_at_every_coverage(scope):
     # A cc-only range is one point, so nothing there straddles its mark.
     assert {kind for kind, count in checked.items() if count} == (
         {"marked_rise", "pardoned", "unproven"} if scope == "src" else {"marked_rise", "pardoned"}), checked
+
+
+# --- the rise: an unproven function whose ccn rose since the diff base --------------
+
+KEY = ("src/a.py", NAME)
+
+RISE_ROWS = [
+    # (staged ccn, mark, base ccn, kind). ccn 12 is the range (12, 156), ccn 8 (8, 72).
+    pytest.param(12, 110.0, 10, "unproven_rise", id="the-prd-probe-ccn-10-to-12-under-mark-110"),
+    pytest.param(12, 110.0, 12, "unproven", id="a-comment-edit-keeps-ccn-12"),
+    pytest.param(12, 110.0, 13, "unproven", id="ccn-fell-from-13"),
+    pytest.param(8, 8.0, 7, "unproven_rise", id="ccn-7-to-8-under-mark-8"),
+    pytest.param(12, 110.0, None, "unproven_rise", id="the-base-holds-no-function-under-the-key"),
+]
+
+
+@pytest.mark.parametrize(("ccn", "mark", "base_ccn", "kind"), RISE_ROWS)
+def test_an_unproven_function_is_a_rise_when_its_ccn_rose_or_the_base_lacks_it(ccn, mark, base_ccn, kind):
+    base = Base({} if base_ccn is None else {KEY: base_ccn})
+
+    result = judge_against(staged("src", record(ccn)), {KEY: mark}, base)
+
+    assert kinds(result) == {NAME: kind}
+    assert base.calls == [(KEY,)]
+    (breach,) = getattr(result, kind)
+    assert (breach.function.record.ccn, breach.base_ccn, breach.mark, breach.key_name) == (ccn, base_ccn, mark, NAME)
+
+
+def test_a_range_the_high_end_pardons_never_asks_the_base():
+    """ccn 10 is the range (10, 110): its whole range sits at the mark of 110."""
+    base = Base({KEY: 1})
+
+    result = judge_against(staged("src", record(10)), {KEY: 110.0}, base)
+
+    assert kinds(result) == {NAME: "pardoned"}
+    assert base.calls == []
+
+
+def test_the_base_is_asked_once_with_only_the_unproven_functions_keys():
+    """Four marked breaches over two files: one pardoned, one marked rise and
+    two unproven, a twin's `#2` among them. One call names the two."""
+    first = staged("src", record(8, start=1), record(8, start=20), record(8, "plain( )", 40))
+    second = hook._changed_file("src/b.py", [record(8, path="src/b.py")], gate.WHOLE, "src", CFG, {})
+    marks = {KEY: 72.0, ("src/a.py", f"{NAME}#2"): 30.0, ("src/a.py", "plain( )"): 7.0,
+             ("src/b.py", NAME): 30.0}
+    base = Base({("src/a.py", f"{NAME}#2"): 8})
+
+    result = gate.judge([first, second], lambda scope: 6, Marks(marks), base)
+
+    assert base.calls == [(("src/a.py", f"{NAME}#2"), ("src/b.py", NAME))]
+    assert [(b.path, b.key_name, b.base_ccn) for b in result.unproven] == [("src/a.py", f"{NAME}#2", 8)]
+    assert [(b.path, b.key_name, b.base_ccn) for b in result.unproven_rise] == [("src/b.py", NAME, None)]
+
+
+@pytest.mark.parametrize("marks", [
+    pytest.param({}, id="no-mark"),
+    pytest.param({KEY: 72.0}, id="pardoned"),
+    pytest.param({KEY: 7.0}, id="marked-rise"),
+])
+def test_a_change_with_no_unproven_function_never_asks_the_base(marks):
+    base = Base()
+
+    judge_against(staged("src", record(8), record(3, "coerce( word )", 20)), marks, base)
+
+    assert base.calls == []
+
+
+def test_a_caller_with_no_base_fetch_gets_unproven_unchanged():
+    change, marks = staged("src", record(12)), {KEY: 110.0}
+
+    without = gate.judge([change], lambda scope: 6, Marks(marks))
+
+    assert kinds(without) == {NAME: "unproven"}
+    assert without.unproven_rise == ()
+    assert without.unproven[0].base_ccn is None
+
+
+# --- the property: the rise at every coverage and every base ------------------------
+
+BASES = [None, *range(0, 41)]
+
+
+def straddles(craps: list[float], mark: float) -> bool:
+    """Whether coverage alone decides: some coverage puts the exact CRAP past
+    the mark and another holds it at or under."""
+    return any(crap > mark for crap in craps) and any(crap <= mark for crap in craps)
+
+
+def test_a_rise_is_exactly_a_straddling_function_whose_ccn_rose_or_had_no_base():
+    """Over ccn 1 to 40, every mark from the sets above with the base holding
+    no function (the case that warns on any straddle) and the base at the same
+    ccn (the case that never warns), then every base ccn 0 to 40 on three
+    straddling marks per ccn: the low end, the CRAP at half coverage and one
+    step under the high end."""
+    path = "src/a.py"
+    for ccn in range(1, 41):
+        craps = exact_craps(ccn, FLAGS["src"])
+        straddling = [mark for mark in candidate_marks(craps) if straddles(craps, mark)]
+        cases = [(mark, base) for mark in candidate_marks(craps) for base in (None, ccn)]
+        cases += [(mark, base) for mark in (straddling[0], craps[30], straddling[-1]) for base in BASES]
+        names = [f"f{i}( x )" for i in range(len(cases))]
+        base = Base({(path, name): base for name, (_, base) in zip(names, cases) if base is not None})
+
+        result = judge_against(staged("src", *(record(ccn, name, 10 * i + 1, path) for i, name in enumerate(names))),
+                               {(path, name): mark for name, (mark, _) in zip(names, cases)}, base, ceiling=0)
+
+        rose = {name for name, (mark, before) in zip(names, cases)
+                if straddles(craps, mark) and (before is None or ccn > before)}
+        assert {b.key_name for b in result.unproven_rise} == rose, ccn
+        assert len(base.calls) == 1, ccn
+
+
+# --- the hook's base fetch -----------------------------------------------------------
+
+def tangled(name: str, ccn: int) -> str:
+    """`def NAME(n)` at `ccn`: ccn - 1 ifs."""
+    body = "".join(f"    if n > {i}:\n        n += 1\n" for i in range(1, ccn))
+    return f"def {name}(n):\n{body}    return n\n"
+
+
+def git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+
+def committed(tmp_path: Path, files: dict[str, bytes]) -> Path:
+    """A repo whose one commit holds `files`."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "core.autocrlf", "false")
+    for rel, data in files.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_bytes(data)
+    git(repo, "add", "-A")
+    git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "base")
+    return repo
+
+
+def test_the_hook_answers_each_twin_with_the_bases_own_twin(tmp_path):
+    """Two `legacy` defs at ccn 3 and ccn 8: the base's `#2` answers for the
+    staged `#2`, and a key the base never held answers None."""
+    source = tangled("legacy", 3) + "\n" + tangled("legacy", 8)
+    repo = committed(tmp_path, {"src/mod.py": source.encode("utf-8")})
+
+    answers = hook.ccn_at(repo, "HEAD", [("src/mod.py", "legacy( n )#2"), ("src/mod.py", "legacy( n )"),
+                                        ("src/mod.py", "renamed( n )"), ("src/gone.py", "legacy( n )")])
+
+    assert answers == {("src/mod.py", "legacy( n )#2"): 8, ("src/mod.py", "legacy( n )"): 3,
+                       ("src/mod.py", "renamed( n )"): None, ("src/gone.py", "legacy( n )"): None}
+
+
+def test_the_base_read_prints_no_note_of_its_own(tmp_path, capsys):
+    """The staged read already named the file's twins; a second note about
+    the base's copy would print the same line twice beside the warn."""
+    repo = committed(tmp_path, {"src/mod.py": (tangled("legacy", 3) + "\n" + tangled("legacy", 8)).encode("utf-8")})
+
+    hook.ccn_at(repo, "HEAD", [("src/mod.py", "legacy( n )#2")])
+
+    assert capsys.readouterr().err == ""
+
+
+ENCODINGS = {
+    "utf-8": lambda text: text.encode("utf-8"),
+    "utf-16-le-bom": lambda text: b"\xff\xfe" + text.encode("utf-16-le"),
+    "crlf": lambda text: text.replace("\n", "\r\n").encode("utf-8"),
+}
+
+
+@pytest.mark.parametrize("encoding", ENCODINGS)
+def test_the_base_ccn_is_the_same_in_every_encoding(tmp_path, encoding):
+    repo = committed(tmp_path, {"src/mod.py": ENCODINGS[encoding](tangled("legacy", 8))})
+
+    assert hook.ccn_at(repo, "HEAD", [("src/mod.py", "legacy( n )")]) == {("src/mod.py", "legacy( n )"): 8}
+
+
+def test_the_hook_reads_every_base_path_in_one_blobs_at_call(tmp_path, monkeypatch):
+    from crapkit import gitio
+
+    repo = committed(tmp_path, {f"src/{n}.py": tangled("legacy", 8).encode("utf-8") for n in "abc"})
+    calls, real = [], gitio.blobs_at
+    monkeypatch.setattr(gitio, "blobs_at", lambda root, revision, paths: calls.append(list(paths))
+                        or real(root, revision, paths))
+
+    answers = hook.ccn_at(repo, "HEAD", [(f"src/{n}.py", "legacy( n )") for n in "cab"])
+
+    assert calls == [["src/a.py", "src/b.py", "src/c.py"]]
+    assert set(answers.values()) == {8}
