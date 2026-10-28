@@ -7,8 +7,8 @@ question: *has this function got worse than the day we agreed to live with it?*
 it; it fails the build instead. New debt enters only through `ratchet seed` or an audited
 override, both of which are visible in a diff.
 
-The pre-commit gate pardons any marked function; `crapkit verify` fails a mark
-that rises. See [the commit-gate rule](#the-commit-gate-skips-marked-functions).
+The pre-commit gate refuses a marked function once its ccn alone passes the mark;
+`crapkit verify` fails any mark that rises. See [the commit-gate rule](#the-commit-gate-skips-marked-functions).
 When upgrading, review [function identity](#same-line-function-identity) before
 reseeding marks recorded by an older reader.
 
@@ -133,15 +133,32 @@ that twin, wherever it sits in the file. Twins whose CRAP is equal to 4 decimal 
 resolve to the first in the file.
 
 ---
-
-## The commit gate skips marked functions
+<a id="the-commit-gate-skips-marked-functions"></a>
+## The commit gate refuses a marked function whose ccn passed its mark
 
 New in 0.4.0, and it decides which commits get refused. Read it before you seed a repo.
 
-`hook-precommit` judges staged blobs. A blob carries no coverage, so a staged violation has
-a ccn and no CRAP, and there is nothing to compare a mark against. The hook asks the one
-question it can answer: does a `(path, key name)` mark exist? If it does, that function is
-not gated, whatever the edit did to it. One stderr line reports the count, never a list:
+`hook-precommit` judges staged blobs. A blob carries no coverage, so the hook knows a staged
+function's CRAP only as a range: from its ccn, the CRAP with every branch run, up to its CRAP
+with none run, ccn^2 + ccn (ccn in a `coverage_optional` scope). For a function over its
+ceiling that a `(path, key name)` mark covers, it holds that range against the mark at the
+mark's 4 decimal places:
+
+- The whole range at or under the mark: the function is not gated.
+- The range across the mark: not gated either. Only coverage can say which side the CRAP
+  sits on, and `verify` reads the coverage. When the function's ccn rose above its ccn at
+  the diff base, or the base holds no function under its key, the hook names it in a warn
+  block on stderr and still exits 0: the rise may have taken the CRAP past the mark. The
+  diff base is HEAD, or with `--base REF` the merge base of REF and HEAD. A commit that
+  adds a marked function, and a first commit, have no base ccn for it, so they warn too.
+  Since 0.9.0.
+- The ccn above the mark: CRAP is never under ccn, so the CRAP is past the mark at any
+  coverage and the mark rose. The hook refuses the commit with exit 6. Since 0.9.0;
+  through 0.8.1 it passed any marked function whatever its ccn.
+
+The functions it passes without a warn are counted on one stderr line, never a list. A
+comment edit leaves the ccn where the base had it, and a ccn that fell can only lower the
+CRAP, so both stay on this line:
 
 ```
 crapkit gate: 1 staged function(s) carry a ratchet mark and were not gated - `crapkit verify` fails a mark that rises
@@ -151,9 +168,64 @@ The three gates read the file differently:
 
 | Gate | What it holds | What a mark does there |
 |---|---|---|
-| `hook-precommit` | a staged blob: ccn, no coverage | skips the function on the mark's **existence** |
+| `hook-precommit` | a staged blob: ccn, no coverage | skips the function while its **ccn** sits at or under the mark, and warns on stderr when that ccn rose since the diff base; a ccn above the mark is **exit 6** |
 | `rescore --gate` | a scored row: ccn and CRAP | skips the function **at or under** the recorded value |
 | `verify` | a full run | skips a touched function **at or under** the mark, as `rescore --gate` does; above the mark it is **exit 6** when the diff touched the function and **exit 7** when it did not |
+
+On the demo repo (`tools/demo` in the crapkit repo), seeded, with the hook installed:
+`read_row` carries the mark 7.3333, at ccn 6 with 67% of its branches run. Two more
+branches take it to ccn 8, so its CRAP is at least 8 however the tests run it:
+
+```
+$ crapkit ratchet seed
+crapkit-ratchet.tsv: added 3, tightened 0 - 3 mark(s) vs run 1 (f9dd0c270ae)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
+
+$ git commit -m "read two more fields"
+crapkit gate: 1 staged function(s) rose past their ratchet mark:
+  ccn   8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+bring each one's ccn back to its mark or under it (a mark only falls, so no commit raises it).
+EXIT=1
+```
+
+The hook exits 6 and git reports 1. Each row names the function's ccn, its place, its
+handle (`#2` for a second twin) and the mark at its 4 places. The fix is in the code: no
+seed raises a mark, so take the ccn back to the mark or under it. Moving the three defaults
+into a helper of their own takes `read_row` back to ccn 5, and the next commit goes through.
+
+A rise whose ccn stays at or under the mark gets a warn instead. In another repo,
+`classify` carries the mark 110.0000 at ccn 10, and no test reaches it, so the mark is its
+untested CRAP, 10^2 + 10. Two more branches take it to ccn 12: its CRAP now sits somewhere
+from 12 to 156, across the mark, and its ccn rose from 10. Edit, commit, read the warn,
+run `verify`:
+
+```
+$ git commit -m "take ten more points off a fifth attempt"
+crapkit gate: 1 staged marked function(s) rose in ccn and may pass their ratchet mark; `crapkit verify` judges them with coverage:
+  ccn 10 -> 12  calc/grade.py:1  classify( score , attempts , late )  mark 110.0000
+[main 9d3e094] take ten more points off a fifth attempt
+ 1 file changed, 4 insertions(+)
+EXIT=0
+
+$ crapkit verify
+warning: 4 changed line(s) have no coverage
+  uncovered calc/grade.py:11
+  uncovered calc/grade.py:12
+  uncovered calc/grade.py:13
+  uncovered calc/grade.py:14
+verify FAILED @ 9d3e0949f88 vs baseline 1ebf9a01311 (2 changed files)
+  changed files: calc/grade.py, crapkit-ratchet.tsv
+  GATE  crap    156.0  ccn  12 cov 0%  calc/grade.py:1  classify( score , attempts , late )  -> decompose
+  RATCHET  calc/grade.py  classify( score , attempts , late ): 110.0 -> 156.0
+  findings: 2 committed / 0 dirty (uncommitted edits and untracked files)
+EXIT=6
+```
+
+The commit went through: the warn changes no exit code. Each row names the ccn at the base
+(`new` where the base holds no function under the key), the staged ccn, the place, the
+handle and the mark. A function the warn names leaves the count line. The warn is the
+moment to add tests that run the new branches, or to decompose, before `verify` judges the
+CRAP with coverage. Here no test runs `classify`, so its CRAP is 156 and `verify` refuses.
 
 The ratchet check in `verify` is unchanged: it still compares the numbers, and it is still
 where a real regression is caught. Its gate reads a mark the way `rescore --gate` does
@@ -196,10 +268,14 @@ EXIT=6
 
 Both findings are on one function and the verdict is **6**, because 6 beats 7. Exit 7 is
 what is left for a function the diff never touched, which is the case further down under
-[How `verify` uses the ratchet](#how-verify-uses-the-ratchet).
+[How `verify` uses the ratchet](#how-verify-uses-the-ratchet). `hook-precommit` lets that
+commit through: ccn 17 sits under 51.5698, so the range 17 to 306 straddles the mark, and
+only the coverage `verify` reads can settle it. Its ccn rose from 13, so the hook warns
+about it, as it warned about the other `classify` above.
 
-The looseness is deliberate. Before it, a comment added inside a marked function refused the
-commit. On a repo carrying 40,303 marks that meant a seeded tree could not be touched, while
+The pass on a straddling range is deliberate. Before 0.4.0, a comment added inside a marked
+function refused the commit. On a repo carrying 40,303 marks that meant a seeded tree could
+not be touched, while
 `rescore --gate` on the same tree passed. The advisory hook `crapkit claude-hook` pardons on
 existence too, so a session of green advisories no longer ends at a red commit.
 

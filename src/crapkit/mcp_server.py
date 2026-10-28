@@ -305,12 +305,11 @@ TOOLS: tuple[dict, ...] = (
         "unread_verdict": True,
         "description": ("Checks an edited file by rescore --gate's rule: each changed function's "
         "ccn against its scope's ceiling, pardoned only while its crap is at or under its "
-        "ratchet mark. The hook's commit gate pardons any marked function, so this is "
-        "stricter and a breach predicts a verify refusal. Call it after an edit once "
-        "get_function_brief states the rule. It runs no tests, and a breach reads gate.ok "
-        "false, not an error. Marks are read only on a breach, so a clean gate skips a "
-        "broken marks file. A tracked file is judged on its diff from HEAD, an untracked "
-        "one in full."),
+        "ratchet mark. The commit hook sees no coverage and refuses a marked function only "
+        "once its ccn passes the mark, so this is stricter and a breach predicts a verify "
+        "refusal. Call it after an edit once get_function_brief states the rule. It runs no "
+        "tests, and a breach reads gate.ok false, not an error. A clean gate reads no marks. "
+        "A tracked file is judged on its diff from HEAD, an untracked one in full."),
         "properties": {
             "path": {
                 "type": "string",

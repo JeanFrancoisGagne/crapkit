@@ -1338,18 +1338,26 @@ def _warn_unscoped_staged(unscoped: list) -> None:
 
 
 def _note_marked_staged(carried: int, noun: str = "staged") -> None:
-    """One line, never a list. The count says the exemption fired; the marks
-    themselves are in the committed TSV, and naming them at every commit would
-    reprint debt the repo reads through `crapkit ratchet report`."""
+    """One line, never a list. The count says how many breaches a mark carried
+    through; the marks themselves are in the committed TSV, and naming them at
+    every commit would reprint debt the repo reads through `crapkit ratchet
+    report`."""
     if carried:
         print(f"crapkit gate: {carried} {noun} function(s) carry a ratchet mark and "
               "were not gated - `crapkit verify` fails a mark that rises", file=sys.stderr)
 
 
-# The gate's pardon kinds the hook passes on a mark's existence, with one count
-# line: a blob has no coverage, so a marked function's CRAP is a range and
-# `verify` judges the mark. mission-3-04 turns marked_rise into a refusal.
-_CARRIED = ("pardoned", "marked_rise", "unproven")
+# The gate's pardon kinds the hook passes, counted on that one line. A blob has
+# no coverage, so a marked function's CRAP is a range from its ccn to its
+# untested CRAP: a range at or under the mark (pardoned) or across it (unproven)
+# passes, and `verify` judges the exact CRAP. A range above the mark is a marked
+# rise, refused: its ccn alone puts the CRAP past the mark at any coverage. An
+# unproven function whose ccn rose since the diff base passes too, but on the
+# warn block instead of this count.
+_CARRIED = ("pardoned", "unproven")
+
+# A mark only falls, so the fix for a marked rise is in the code.
+_RISE_FIX = "bring each one's ccn back to its mark or under it (a mark only falls, so no commit raises it)."
 
 
 def _hook_marks(root: Path, cfg, records):
@@ -1369,10 +1377,13 @@ def _hook_marks(root: Path, cfg, records):
 
 
 def _judge_hook(root: Path, cfg, gate):
-    """The gate module's findings on the staged rows."""
+    """The gate module's findings on the staged rows, each unproven function's
+    ccn read at the staged diff's basis. Rows with no basis ask no base."""
     from ..gate import judge
+    from ..hook import ccn_at
 
-    return judge(gate.changes, cfg.ceiling_of, _hook_marks(root, cfg, gate.records))
+    base_ccn = None if gate.basis is None else (lambda keys: ccn_at(root, gate.basis, keys))
+    return judge(gate.changes, cfg.ceiling_of, _hook_marks(root, cfg, gate.records), base_ccn)
 
 
 def _violation(breach):
@@ -1393,15 +1404,38 @@ def _breach_scopes(breaches) -> dict[str, list[str]]:
     return scopes
 
 
-def _refused_violations(cfg, result) -> tuple[list, int]:
-    """The breaches the commit is refused for, worst ccn first, and how many a
-    mark carries. Every breach is held to its scope's ceiling first."""
+class _Refused(NamedTuple):
+    """What the hook refuses the commit for, each list worst ccn first, and how
+    many breaches a mark carries through it."""
+    violations: list  # hook.Violation rows over the ceiling that no mark covers
+    rises: list  # gate.Breach rows whose ccn alone passed their mark
+    carried: int
+    paths: set  # the files of both lists, for the note on a fix never staged
+
+
+def _refused_violations(cfg, result) -> _Refused:
+    """The breaches the commit is refused for and how many a mark carries.
+    Every breach is held to its scope's ceiling first."""
+    from operator import attrgetter
+
     from ..invariants import check_violations
 
-    breaches = (*result.over_ceiling, *(breach for kind in _CARRIED for breach in getattr(result, kind)))
-    check_violations([_violation(breach) for breach in breaches], _breach_scopes(breaches), cfg.ceiling_of)
-    refused = sorted(map(_violation, result.over_ceiling), key=lambda v: (-v.ccn, v.path, v.start))
-    return refused, len(breaches) - len(refused)
+    refused, carried = _of_kinds(result, ("over_ceiling", "marked_rise")), _of_kinds(result, _CARRIED)
+    breaches = refused + carried + list(result.unproven_rise)
+    check_violations(list(map(_violation, breaches)), _breach_scopes(breaches), cfg.ceiling_of)
+    return _Refused(list(map(_violation, _worst_first(result.over_ceiling))), _worst_first(result.marked_rise),
+                    len(carried), set(map(attrgetter("path"), refused)))
+
+
+def _of_kinds(result, kinds: tuple) -> list:
+    """The gate's breaches of `kinds`, kind by kind."""
+    return [breach for kind in kinds for breach in getattr(result, kind)]
+
+
+def _worst_first(breaches) -> list:
+    """Highest ccn first, then by file and line: the order a refusal prints."""
+    return sorted(breaches, key=lambda breach: (-breach.function.record.ccn, breach.path,
+                                                breach.function.record.start))
 
 
 def _contents(gate, kind) -> tuple:
@@ -1440,7 +1474,7 @@ def _staged_gate(root: Path, cfg, base: str | None = None, *, whole: bool = Fals
         _analysis_tools()  # importing crapkit.hook reaches lizard too, so it waits its turn
         from ..hook import gate_staged
 
-        return gate_staged(root, cfg, reads, whole=whole)
+        return gate_staged(root, cfg, reads, whole=whole)._replace(basis=reads.basis)
 
 
 def _say_whole(gate) -> None:
@@ -1530,8 +1564,10 @@ def _hook_gate(root: Path, shown: str, base: str | None) -> int:
 def _hook_exit(root: Path, cfg, gate, shown: str = "") -> int:
     """The staged rows judged and mapped to the hook's exit: a claimed name
     exits 3 before anything else, an unread file exits 6 before any grant, a
-    function over its ceiling exits 6 unless granted, and a marked breach
-    passes with the count line.
+    marked function whose ccn alone passed its mark exits 6 before any grant,
+    a function over its ceiling no mark covers exits 6 unless granted, a
+    straddling marked function whose ccn rose passes on the warn block, and
+    every other marked breach passes with the count line.
 
     Every line the gate says beside its verdict prints before `judge` runs:
     judging reads the marks file on a breach, and an unreadable one exits 3
@@ -1584,25 +1620,75 @@ def _hook_override_refusal(unread: dict) -> str | None:
 
 
 def _judge_staged(root: Path, cfg, gate, result, unread: dict, shown: str = "") -> int:
-    violations, carried = _refused_violations(cfg, result)
-    _note_marked_staged(carried, _judged(gate))
+    refused = _refused_violations(cfg, result)
+    _note_marked_staged(refused.carried, _judged(gate))
+    _warn_unproven_rises(result.unproven_rise, shown, _judged(gate))
     refusal = _hook_override_refusal(unread) if _env_override_reason() else None
-    if violations:
-        _print_staged_violations(root, cfg, gate, violations, shown)
+    _print_refused(root, cfg, gate, refused, shown)
     if refusal:
         # Before any side effect: the grant writes and stages the marks file,
         # raises the alert and stores a run, and the unread file refuses the
         # commit whatever the grant signed.
         print(f"crapkit: {refusal}")
         return 6
-    return _grant_or_refuse(root, cfg, violations, gate.records, gate.whole)
+    if refused.rises:
+        return _refuse_rises(refused.violations, gate.whole)
+    return _grant_or_refuse(root, cfg, refused.violations, gate.records, gate.whole)
 
 
-def _print_staged_violations(root: Path, cfg, gate, violations: list, shown: str) -> None:
-    """The breaches, then, inside a commit, each one whose fix was never staged."""
-    _print_breaches(violations, cfg.target, shown, _judged(gate))
-    if not gate.whole:
-        _note_stale_staged(root, {v.path for v in violations}, shown)
+def _print_refused(root: Path, cfg, gate, refused: _Refused, shown: str) -> None:
+    """The breaches no mark covers, then the marked rises, then, inside a
+    commit, each of their files whose fix was never staged."""
+    if refused.violations:
+        _print_breaches(refused.violations, cfg.target, shown, _judged(gate))
+    if refused.rises:
+        _print_rises(refused.rises, shown, _judged(gate))
+    _note_unstaged_fix(root, gate, refused.paths, shown)
+
+
+def _note_unstaged_fix(root: Path, gate, paths: set, shown: str) -> None:
+    """Asks git only when the hook refused something on a staged diff. With
+    nothing staged outside a commit the index equals HEAD, every file was
+    judged whole, and no fix can be left unstaged."""
+    if paths and not gate.whole:
+        _note_stale_staged(root, paths, shown)
+
+
+def _print_rises(rises: list, shown: str, judged: str) -> None:
+    """Each marked function whose ccn alone puts its CRAP past its mark at any
+    coverage: a blob has no coverage, and CRAP is never below ccn. The handle
+    is the key its mark sits under, `#2` for a second twin."""
+    print(f"crapkit gate: {len(rises)} {judged} function(s) rose past their ratchet mark:")
+    for breach in rises:
+        record = breach.function.record
+        print(f"  ccn {record.ccn:>3}  {shown}{breach.path}:{record.start}  {breach.key_name}  "
+              f"mark {breach.mark:.4f}")
+
+
+def _warn_unproven_rises(rises, shown: str, judged: str) -> None:
+    """Each marked function whose range straddles its mark and whose ccn rose
+    since the diff base, on stderr: the commit goes through, and `verify`
+    reads the coverage that says whether the mark held. `new` stands for a
+    base with no function under the key."""
+    if not rises:
+        return
+    print(f"crapkit gate: {len(rises)} {judged} marked function(s) rose in ccn and may pass their "
+          "ratchet mark; `crapkit verify` judges them with coverage:", file=sys.stderr)
+    for breach in _worst_first(rises):
+        record = breach.function.record
+        before = "new" if breach.base_ccn is None else breach.base_ccn
+        print(f"  ccn {before} -> {record.ccn}  {shown}{breach.path}:{record.start}  {breach.key_name}  "
+              f"mark {breach.mark:.4f}", file=sys.stderr)
+
+
+def _refuse_rises(violations: list, whole: bool) -> int:
+    """A marked rise refuses the commit before any grant, with the fix for
+    each block printed: CRAPKIT_OVERRIDE_REASON signs for a breach no mark
+    covers, and a mark only falls."""
+    if violations:
+        _refuse_breaches(whole)
+    print(_RISE_FIX)
+    return 6
 
 
 def _print_breaches(violations: list, target: int, shown: str, judged: str) -> None:
@@ -1641,11 +1727,17 @@ def _grant_or_refuse(root: Path, cfg, violations: list, records, whole: bool = F
     commit nothing is granted: the breach is already committed."""
     if not violations:
         return 0
-    if whole:
-        return _refuse_tracked()
     reason = _env_override_reason()
-    if reason:
+    if reason and not whole:
         _grant_env_override(root, cfg, violations, reason, records)
         return 0
+    return _refuse_breaches(whole)
+
+
+def _refuse_breaches(whole: bool) -> int:
+    """The fix for breaches no mark covers. Outside a commit nothing is
+    granted, and the fix names the seed that records committed debt."""
+    if whole:
+        return _refuse_tracked()
     print("decompose before committing (coverage cannot save a function above the target).")
     return 6

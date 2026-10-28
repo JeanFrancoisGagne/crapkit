@@ -20,7 +20,8 @@ session works in does not hold those pages.
 | An advisory says a file could not be read | No function in it was judged, and the commit gate refuses the file once staged. Change what the `UNREAD` line's reason names, or list the file under `[exclude]` |
 | An advisory fired after a Bash command, not an edit | The same verdict, read off the working tree. See [After a shell write](#after-a-shell-write) |
 | Before committing | `crapkit rescore FILE --gate` |
-| The gate says a staged function carries a ratchet mark | Nothing. The repo signed for that function, so the commit gate skips it. `crapkit verify` still fails a mark that rises |
+| The gate says a staged function rose past its ratchet mark | The commit is refused: its ccn alone puts its CRAP above the mark at any coverage. Bring the ccn back to the mark or under it; the mark does not rise |
+| The gate says a staged marked function rose in ccn and may pass its ratchet mark | The commit went through, but the higher ccn may have taken its CRAP past the mark, and `crapkit verify` judges that with coverage. Add tests that run the new branches, or decompose, before `verify` runs |
 | Where does new code go | `crapkit worklist --top N`, `crapkit coupling`, `crapkit duplication` |
 | Which branches need tests | `uncovered_lines` and `est_uncovered_paths` in the packet |
 | Running the owning scope's tests | `commands.scoped_tests`, run verbatim, never retyped |

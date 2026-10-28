@@ -19,6 +19,9 @@
 <!-- /0.9.0:m1-foundations -->
 
 <!-- 0.9.0:mission-3 -->
+- `hook-precommit` refuses a marked function whose staged ccn passed its mark, with exit 6 and a block naming the function, its ccn and its mark: CRAP is never under ccn, so that mark rose at any coverage. Through 0.8.1 it passed any marked function. A marked function whose ccn sits at or under its mark still passes, counted on the stderr line. [The commit gate](docs/ratchet.md#the-commit-gate-skips-marked-functions)
+- check_gate's MCP description now says the commit hook refuses a marked function whose ccn passed its mark. It said the hook pardoned any marked function. The tool, its schemas and the server instructions are unchanged.
+- `hook-precommit` warns on stderr when a marked function's ccn rose since the diff base while its mark may still hold: its CRAP range straddles the mark, so only `verify`, with coverage, can say whether the rise broke it. The warn names each function with its base and staged ccn and its mark, and the commit still goes through. A function added in the commit, or in a first commit, warns too, and a comment edit or a ccn that fell stays on the count line. [The commit gate](docs/ratchet.md#the-commit-gate-skips-marked-functions)
 <!-- /0.9.0:mission-3 -->
 
 <!-- 0.9.0:metric-stamp -->

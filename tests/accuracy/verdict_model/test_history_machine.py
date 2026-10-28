@@ -443,11 +443,13 @@ class History(RuleBasedStateMachine):
         self.overrides.add(measured.id)
 
     def _staged_violations(self, ccn: dict) -> set:
+        marks = self._marks()
         return {key for key in changed(self.head, self.sc.world)
-                if model.hook_gate(ccn[key], vw.TARGET, key in self._marks())}
+                if model.hook_gate(ccn[key], vw.TARGET, marks.get(key))}
 
     def _tracked_violations(self, ccn: dict) -> set:
-        return {key for key in ccn if model.hook_gate(ccn[key], vw.TARGET, key in self._marks())}
+        marks = self._marks()
+        return {key for key in ccn if model.hook_gate(ccn[key], vw.TARGET, marks.get(key))}
 
     def _hook_violations(self, ccn: dict) -> tuple[set, bool]:
         """(violations, whole). docs/upgrading.md, the commit gate in 0.8.1: run
@@ -464,7 +466,9 @@ class History(RuleBasedStateMachine):
         result = vw.drive.Driver(self.sc.root, env={"CRAPKIT_OVERRIDE_REASON": reason}).run(
             "hook-precommit")
         # Outside a commit nothing is granted: the breach is already committed.
-        granted = grant and not whole
+        # A marked function whose ccn passed its mark refuses before any grant:
+        # the override signs for a breach no mark covers, and a mark only falls.
+        granted = grant and not whole and not violations & set(self._marks())
         assert result.code == _hook_exit(violations, granted), result.stdout + result.stderr
         if violations and granted:
             self._hook_grant(violations, ccn)

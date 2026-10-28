@@ -29,12 +29,13 @@ from itertools import chain
 from pathlib import Path
 from typing import NamedTuple
 
-from .analyze import analyze_jobs, analyze_sources, decode_source, unread_reasons
+from .analyze import _source_records, analyze_jobs, analyze_sources, decode_source, unread_reasons
 from .config import Config
 from .diffparse import changed_ranges, reader_ranges
 from .gate import WHOLE, ChangedFile, CrapBound, Function, Unread, UnreadableName
 from .gitio import GitReads
 from .gitpaths import readable
+from .keys import key_names, key_of
 from .merge import FunctionRecord
 from .score import flagged_crap
 from .universe import _source_extensions, claimed_unreadable, exclude_matcher, excluded, scan_files
@@ -75,6 +76,10 @@ class StagedGate(NamedTuple):
     records: tuple = ()  # full staged identities, including siblings below the ceiling
     unreadable: tuple[str, ...] = ()  # staged names that are not UTF-8 and no scope takes
     whole: bool = False  # nothing was staged, so every tracked file was judged whole
+    # The revision the staged diff was taken against, copied from the staged
+    # reads: the base each unproven function's ccn is read at. None for rows
+    # built with no git read behind them, which ask no base.
+    basis: str | None = None
 
 
 def _materialized(tmp: Path, blobs: dict[str, bytes]) -> list[tuple[str, str]]:
@@ -115,6 +120,29 @@ def staged_records(blobs: dict[str, bytes], *, worker_budget: int = 0) -> dict[s
         jobs = _materialized(Path(tmp), blobs)
         return analyze_jobs(jobs, workers=min(len(jobs), _HOOK_MAX_WORKERS),
                             pool_threshold=_HOOK_POOL_THRESHOLD, chunksize=1, worker_budget=worker_budget)
+
+
+def ccn_at(root: Path, revision: str, keys) -> dict[tuple[str, str], int | None]:
+    """Each (path, key name)'s ccn in what `revision` holds, or None where it
+    holds no function under that key: the paths' bytes in one `gitio.blobs_at`
+    read, keyed by `keys.key_names` over each file's functions so a `#2` twin
+    answers for the base's `#2`."""
+    from .gitio import blobs_at
+
+    keys = list(keys)
+    rows = _base_rows(blobs_at(root, revision, sorted({path for path, _ in keys})))
+    names = key_names(rows)
+    ccn = {key_of(names, row): row.ccn for row in rows}
+    return {key: ccn.get(key) for key in keys}
+
+
+def _base_rows(blobs: dict[str, bytes | None]) -> list[FunctionRecord]:
+    """The records of each blob the base holds, decoded and analyzed as a
+    staged blob is. Silent, unlike `staged_records`: the staged read already
+    named the file's twins and refusals, and a note about the base's copy
+    would repeat one."""
+    return [row for path, blob in blobs.items() if blob is not None
+            for row in _source_records(path, decode_source(blob))]
 
 
 def file_ceilings(cfg, in_scope, checked_files) -> dict[str, int]:
