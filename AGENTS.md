@@ -189,8 +189,10 @@ Three rules decide what it judges:
 - **Metric**: ccn against the file's scope ceiling, coverage ignored. Same question the
   pre-commit hook asks.
 - **Pardon**: a function carrying a ratchet mark it has not exceeded passes. Push it
-  past its mark and it fails here, ahead of verify's exit 6. Verify keeps exit 7 for a
-  mark that rose in a function the diff never touched.
+  past its mark and it fails here, ahead of verify's exit 6. The commit hook sees no
+  coverage and refuses it only once its staged ccn alone passes the mark, so
+  `rescore --gate` still fails first. Verify keeps exit 7 for a mark that rose in a
+  function the diff never touched.
   The marks file is read only when a changed function is over its ceiling, so a clean
   gate never reports a marks file it cannot parse; the next gate that breaches does.
 
@@ -661,7 +663,7 @@ Twelve tools, every one the CLI command's `--json` form:
 | `list_duplicate_functions` | `similarity` | JSON |
 | `get_ratchet_report` | none | JSON |
 | `list_claims` | none | JSON (`claims list --json`) |
-| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it; `ok` false on a breach or on a changed file no reader could read (`gate.unread_files`), exit 6, answered as a result, not a tool error |
+| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it, and the hook refuses a marked function only once its staged ccn alone passes the mark; `ok` false on a breach or on a changed file no reader could read (`gate.unread_files`), exit 6, answered as a result, not a tool error |
 
 Arguments are checked against the served schema before the CLI spawns. `tools/list`
 carries `required` from each tool's positionals, and a missing positional, an undeclared
