@@ -334,10 +334,30 @@ arrive as added context instead, and the hook exits 0:
     the commit gate enforces this; decompose there or mark the debt
 
 Nothing was blocked and nothing in your tree was written. Read it as the earliest warning
-that step 3 will fail, not as a rejected edit. A function the committed ratchet already
-marks never triggers it, and a repo with no `crapkit.toml` never hears from the hook at
-all. Before the repo's first commit there is no HEAD to diff against, so every function in
-the edited file counts as changed.
+that step 3 will fail, not as a rejected edit. A repo with no `crapkit.toml` never hears
+from the hook at all. Before the repo's first commit there is no HEAD to diff against, so
+every function in the edited file counts as changed.
+
+A function the ratchet marks is held to its mark the way the commit gate holds it. Your
+file has no coverage, so its CRAP is a range from its ccn up to its untested CRAP. While
+that range sits at or under the mark, the hook says nothing. A ccn past the mark is past
+it at any coverage, and the commit gate will refuse it, so the hook prints the marked
+block:
+
+    crapkit advisory: 1 marked function(s) rose past their ratchet mark in calc/parse.py (the edit landed; nothing was blocked)
+      ccn 8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+    the commit gate refuses a ccn past its mark, and a mark only falls: bring the ccn back to its mark or under it
+
+Decompose until the ccn sits at or under the mark; no seed raises it. A range across the
+mark whose ccn rose since HEAD may have passed it. The commit goes through with a warn,
+and the hook prints the warn block, with the ccn at HEAD (`new` for none) and now:
+
+    crapkit advisory: 1 marked function(s) rose in ccn and may pass their ratchet mark in calc/grade.py (the edit landed; nothing was blocked)
+      ccn 10 -> 12  calc/grade.py:1  classify( score , attempts , late )  mark 110.0000
+    `crapkit verify` judges the mark with coverage: add tests that run the new branches, or decompose
+
+Add tests that run the new branches before step 5, or decompose. A comment edit, or a
+ccn that fell, stays silent.
 
 The same exit 2 comes with a different head line when the hook could not judge the edit.
 An edit that leaves a file no reader can read (a TypeScript arrow body the reader refuses,
@@ -1031,13 +1051,14 @@ The hook pardons a function the committed ratchet already carries a mark for, an
 reports the count on stderr. Touching signed debt does not refuse the commit; `crapkit
 verify` is what fails a mark that rises.
 
-Two gates, two pardons, and the difference is on purpose. The pre-commit hook pardons
-a marked function whatever its fresh score, because it reads staged blobs and a staged
-blob has no coverage behind it: the hook cannot tell a mark that held from one that
-rose. `crapkit rescore --gate` and `crapkit verify` pardon only a touched function whose
-fresh CRAP sits at or under its mark. So an edit that pushes signed debt past its mark
-still commits, and verify then refuses it with exit 6. Exit 7 stays for a mark that rose
-in a function the diff never touched.
+One pardon, over the CRAP range each gate knows. A mark pardons a function while that
+range sits at or under it. `crapkit verify` knows the exact CRAP and `crapkit rescore
+--gate` the fresh ccn over the last run's coverage. Both hooks read a blob or a working
+tree with no coverage, so their range runs from the ccn up to the untested CRAP: a ccn
+past the mark is refused at the commit, and a range across it passes, with a warn when
+its ccn rose. So an edit that pushes signed debt past its mark by coverage alone still
+commits, and verify then refuses it with exit 6. Exit 7 stays for a mark that rose in a
+function the diff never touched.
 
 `CRAPKIT_OVERRIDE_REASON` is a human granting audited debt (alert, ratchet entry and
 snapshot record, all three or nothing). Leave it alone.

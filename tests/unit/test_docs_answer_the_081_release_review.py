@@ -241,8 +241,8 @@ def test_hook_precommit_pardons_a_staged_function_on_a_mark_no_commit_holds(repo
             "committed") in readme
     assert ("In CI the file on disk is the committed one, so `verify` there fails a function "
             "whose mark never reached a commit") in readme
-    assert ("pardoned: any function the working-tree marks file marks, counted in one stderr line"
-            in _doc("docs/handbook.html"))
+    assert ("pardoned: a marked function whose ccn sits at or under its working-tree mark, counted in one "
+            "stderr line" in _doc("docs/handbook.html"))
 
 
 def test_hook_precommit_with_nothing_staged_pardons_on_the_working_tree_marks(repo, capsys):  # noqa: F811
