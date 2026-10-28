@@ -213,16 +213,10 @@ def test_a_branch_start_with_no_column_opens_its_line_ahead_of_a_function_at_col
 
 # --- ratchet ------------------------------------------------------------------------------------
 
-def test_the_upgrade_remedy_names_one_newer_tool_and_says_it():
-    assert upgrade_remedy(["lizard"]) == (
-        "the marks come from a newer lizard than this install; "
-        "upgrade it to the version that wrote them")
-
-
-def test_the_upgrade_remedy_names_both_newer_tools_and_every_crapkit_pin():
-    assert upgrade_remedy(["crapkit", "lizard"]) == (
-        "the marks come from a newer crapkit and a newer lizard than this install; "
-        "upgrade both to the version that wrote them (the CLI, the Action's `uses:` pin "
+def test_the_upgrade_remedy_names_a_newer_crapkit_and_every_pin_it_runs_from():
+    assert upgrade_remedy(["crapkit"]) == (
+        "the marks come from a newer crapkit than this install; "
+        "upgrade it to the version that wrote them (the CLI, the Action's `uses:` pin "
         "and the pre-commit `rev` alike)")
 
 

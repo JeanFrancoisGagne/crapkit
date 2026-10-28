@@ -440,8 +440,8 @@ Four cases:
 | Recorded stamp | Behavior |
 |---|---|
 | Matches the running metric | Compare normally. |
-| Older than the running metric | **Refused**, exit 3: run `coverage`, then `ratchet prune`, then re-seed. |
-| Newer: a newer crapkit or lizard wrote the marks | **Refused**, exit 3: upgrade this install. `ratchet seed` and `ratchet prune` refuse these marks too. |
+| Older than the running metric, or stamped by a newer lizard | **Refused**, exit 3: run `coverage`, then `ratchet prune`, then re-seed. |
+| Newer: a newer crapkit wrote the marks (a higher `crapkit-analysis`) | **Refused**, exit 3: upgrade this install. `ratchet seed` and `ratchet prune` refuse these marks too. |
 | Absent (a file written before stamping) | Warn, then apply the function-identity checks below. Anonymous JavaScript/TypeScript marks need reader proof. |
 
 ```
@@ -464,12 +464,12 @@ crapkit prints that line from 0.8.1 on; the example is a 0.8.1 reader meeting ma
 later release stamped 14. A 0.8.0 reader meeting 0.8.1's marks prints the older line, which
 asks for a seed; upgrade that reader instead.
 
-The versions compare field by field, as numbers: `crapkit-analysis` is crapkit's, and
-`lizard` names a newer lizard when only that field moved. Seed and prune refuse the same
-file rather than write it: a seed from an older run restamped the whole file backwards, and
-a prune dropped every mark whose function the older reader names differently. A team going
-back to an older release on purpose restores the marks file that release last wrote from git
-history.
+The versions compare as numbers, so lizard 1.9.0 is older than 1.24.0. Only `crapkit-analysis`
+marks a newer release. crapkit pins lizard exactly, so marks a newer lizard stamped, which a
+release that let lizard float (0.8.1 and earlier) writes, ask for `coverage`, `ratchet prune`
+and `ratchet seed` like older marks. Seed and prune refuse marks a newer crapkit stamped: a seed
+would restamp them backwards, and a prune would drop every mark whose function the older reader
+names differently. A team going back to an older release restores its marks from git history.
 
 ```
 $ crapkit verify

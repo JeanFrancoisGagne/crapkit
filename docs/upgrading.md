@@ -172,6 +172,22 @@ same lines as before, and a comment edit inside a marked function stays silent.
 <!-- /0.9.0:mission-3 -->
 
 <!-- 0.9.0:metric-stamp -->
+### Marks a newer lizard stamped take one reseed
+
+crapkit 0.8.1 and earlier accept any lizard below 1.25, and 0.9.0 pins `lizard==1.24.0`.
+PyPI has served lizard 1.24.1 since 2026-10-05, so a crapkit 0.8.1 installed on or after
+that day seeds its marks under a lizard newer than 1.24.0: 1.24.1 to 1.24.3 as of
+2026-10-26. If you seeded or re-seeded on such an install, the first line of your marks
+file names that lizard, as in `# crapkit-analysis=13 lizard=1.24.3`.
+
+0.9.0 reads those marks as it reads older ones: `crapkit verify` exits 3 and names the
+reseed, and `crapkit doctor` lists them as a WARN and exits 0. Run `crapkit coverage`,
+`crapkit ratchet prune` and `crapkit ratchet seed` once after you upgrade to 0.9.0, then
+commit the marks file.
+
+Every teammate upgrades crapkit as well, the Action's `uses:` pin and the pre-commit `rev`
+included. A teammate still on 0.8.1 measures under the newer lizard, so their verify asks
+for a reseed too, and each reseed they run moves the marks back.
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->
