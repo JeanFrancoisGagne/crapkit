@@ -36,7 +36,7 @@ class _Git:
 
 
 @pytest.mark.parametrize("uv_made, install", [
-    (False, "python -m pip install pytest-cov"),
+    (False, "python -P -m pip install pytest-cov"),
     (True, "uv pip install --python python pytest-cov"),
 ], ids=["pip-venv", "uv-venv"])
 def test_the_pytest_cov_note_is_ascii(monkeypatch, uv_made, install):
@@ -85,7 +85,8 @@ def test_the_no_config_lines_are_ascii(tmp_path: Path):
      "and refusals are off for it"),
     ("npx vitest && pytest", Inferred(None, None, ("vitest", "pytest")),
      "lane 'x': runner unknown (it runs more than one: vitest, pytest); runner-specific hints "
-     "and refusals are off for it"),
+     "are off for it; the refusals still read each segment of its command by the runner that "
+     "segment names"),
 ], ids=["command", "script", "devdependencies", "unknown", "two-runners"])
 def test_each_shape_of_doctors_runner_line_is_ascii(command, found, line):
     lane = Lane(name="x", command=command, artifact="x.json", parser="istanbul", scopes=("s",))

@@ -67,11 +67,16 @@ def verify(repo, capsys, *flags: str) -> tuple[int, str, str]:
     return code, out.out, out.err
 
 
+def new_failure_ids(payload: dict) -> list[str]:
+    """The test ids of verify --json's new_failure items."""
+    return [item["test"] for item in payload["findings"] if item["kind"] == "new_failure"]
+
+
 # --- dirty attribution after the retry -----------------------------------------
 
 def test_a_dirty_failure_that_passed_its_retry_is_not_named_dirty(retry_repo, capsys):
-    """dirty_failures is the subset of new_failures whose test file has
-    uncommitted edits, so a failure the retry cleared leaves both lists."""
+    """dirty_failures lists the new_failure items whose test file has
+    uncommitted edits, so a failure the retry cleared leaves both."""
     (retry_repo / TEST_FILE).write_text("export const edited = 1;\n", encoding="utf-8")
     _junit(retry_repo, FLAKY)
     _rerun(retry_repo, passes=True)
@@ -80,7 +85,7 @@ def test_a_dirty_failure_that_passed_its_retry_is_not_named_dirty(retry_repo, ca
 
     payload = json.loads(out)
     assert code == 0, err
-    assert payload["new_failures"] == []
+    assert new_failure_ids(payload) == []
     assert payload["dirty_failures"] == []
     assert payload["dirty_findings"] == 0
 
@@ -94,7 +99,7 @@ def test_a_dirty_failure_that_failed_its_retry_stays_named_dirty(retry_repo, cap
 
     payload = json.loads(out)
     assert code == 8, err
-    assert payload["new_failures"] == [FLAKY]
+    assert new_failure_ids(payload) == [FLAKY]
     assert payload["dirty_failures"] == [FLAKY]
 
 
@@ -139,7 +144,7 @@ def test_the_json_verdict_keeps_forgiven_and_retried_apart(retry_repo, capsys):
     assert code == 0, err
     assert payload["forgiven_failures"] == [OLD]
     assert payload["retried_passes"] == [FLAKY]
-    assert payload["new_failures"] == []
+    assert new_failure_ids(payload) == []
 
 
 def test_a_run_with_no_retry_names_no_retried_pass(retry_repo, capsys):
@@ -172,7 +177,7 @@ def test_a_retried_pass_is_new_again_when_it_fails_against_that_run(retry_repo, 
     payload = json.loads(out)
     assert code == 8, out + err
     assert payload["baseline_run"] == stored_run, "B must measure against A, the retried run"
-    assert payload["new_failures"] == [FLAKY]
+    assert new_failure_ids(payload) == [FLAKY]
     assert payload["forgiven_failures"] == []
 
 
@@ -242,7 +247,7 @@ def test_a_failure_a_lane_never_reran_stays_new_when_another_lanes_rerun_passed(
 
     payload = json.loads(out)
     assert code == 8, out + err
-    assert payload["new_failures"] == [FLAKY]
+    assert new_failure_ids(payload) == [FLAKY]
     assert payload["retried_passes"] == []
     lanes = SnapshotStore(two_lane_repo / ".crapkit" / "crap.sqlite").list_runs()[-1]["lanes"]
     assert lanes["ui"]["failures"] == [FLAKY]

@@ -294,6 +294,8 @@ UNIT_FIXTURES = {
     "statements": istanbul_fixtures.STATEMENTS,
     "declared-arrows": istanbul_fixtures.DECLARED_ARROWS,
     "chosen-arrow": istanbul_fixtures.CHOSEN_ARROW,
+    "nested-callback": istanbul_fixtures.NESTED_CALLBACK,
+    "maps-nothing": istanbul_fixtures.MAPS_NOTHING,
 }
 # The recordings the accuracy suite keeps; its probe_repo module needs filelock,
 # which the unit suite's install does not carry, so the folder is named here.
@@ -460,6 +462,8 @@ UNIT_PARTED = {
     "statements": ([], []),
     "declared-arrows": ([2, 5], []),
     "chosen-arrow": ([2], ["1"]),
+    "nested-callback": ([], []),
+    "maps-nothing": ([], []),
 }
 
 
@@ -473,6 +477,18 @@ def test_the_join_attributes_each_unit_fixture_as_istanbul_does(name):
     assert set(parted_lines) <= _multi_statement_lines(cov)
     assert _listed_off_the_meetings(cov, *UNIT_PARTED[name]) == []
     _totals_agree(cov, parted_lines, parted_branches)
+
+
+def test_every_istanbul_fixture_runs_through_the_differential():
+    """Each top-level istanbul artifact of test_coverage_istanbul.py is a row
+    above, and each row is one of them. An artifact written inline in a test
+    escapes this check, so that file keeps each one at its top level."""
+    artifacts = {name: value for name, value in vars(istanbul_fixtures).items()
+                 if isinstance(value, dict) and value
+                 and all(isinstance(entry, dict) and "fnMap" in entry for entry in value.values())}
+    assert [name for name, value in artifacts.items()
+            if not any(value is fixture for fixture in UNIT_FIXTURES.values())] == []
+    assert len(artifacts) == len(UNIT_FIXTURES)
 
 
 # Every recorded file whose owners part, each parting listed by hand: (statement

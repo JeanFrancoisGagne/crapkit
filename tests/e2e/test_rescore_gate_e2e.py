@@ -391,5 +391,6 @@ def test_the_breaches_rescore_gate_names_are_the_ones_verify_fails_on(tmp_path: 
 
     assert (rescored.returncode, verified.returncode) == (6, 6), rescored.stderr + verified.stderr
     gate = {(b["path"], b["key_name"]) for b in json.loads(rescored.stdout)["gate"]["breaches"]}
-    violations = {(v["path"], v["key_name"]) for v in json.loads(verified.stdout)["gate_violations"]}
+    violations = {(v["path"], v["key_name"]) for v in json.loads(verified.stdout)["findings"]
+                  if v["kind"] == "gate_violation"}
     assert gate == violations == {("pylib/mod.py", "tangled( n )")}

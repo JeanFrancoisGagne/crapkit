@@ -23,7 +23,7 @@ from . import lane_command
 # predate lane_command's tokenizer.
 from .lane_command import Step, command_steps, shell_segments, shell_words  # noqa: F401
 from .repopath import Refused, declared, disk_spelling, file_separators
-from .repotext import plain_utf8
+from .repotext import lenient, plain_utf8
 from .toolchain import step_runner
 
 # `cpp` is the whole C family, C included: lizard resolves every one of its
@@ -153,6 +153,20 @@ _PYTEST_INI_FILES = (("pytest.ini", "pytest", True), (".pytest.ini", "pytest", F
                      ("pyproject.toml", "", False), ("tox.ini", "pytest", False),
                      ("setup.cfg", "tool:pytest", False))
 PYTEST_CONFIG_FILES = tuple(name for name, _, _ in _PYTEST_INI_FILES)
+# pytest reads the four INI files through iniconfig, which reads past a leading
+# UTF-8 byte-order mark from 2.3.1 on, and pyproject.toml through tomllib, which
+# refuses one, so pytest refuses that file. Reading pyproject.toml past the mark
+# would name testpaths no pytest run uses. An older iniconfig refuses the INI
+# files with a mark too, and a lane on one then fails at pytest whatever
+# crapkit read from it.
+_READ_PAST_A_BOM = frozenset(name for name, section, _ in _PYTEST_INI_FILES if section)
+
+
+def pytest_config_text(name: str, data: bytes) -> str:
+    """One pytest config file's bytes as pytest's reader for that file reads
+    them. init and the full-suite guard both read through here, so they never
+    read one file two ways."""
+    return lenient(data) if name in _READ_PAST_A_BOM else plain_utf8(data)
 
 
 def _split_testpaths(value) -> tuple[str, ...]:
@@ -205,7 +219,7 @@ def _toml_testpaths(text: str) -> tuple[str, ...] | None:
 def _pytest_text(directory: str | os.PathLike, name: str) -> str | None:
     """Read one candidate file without confusing absence with an empty file."""
     try:
-        return plain_utf8((Path(directory) / name).read_bytes())
+        return pytest_config_text(name, (Path(directory) / name).read_bytes())
     except OSError:
         return None
 

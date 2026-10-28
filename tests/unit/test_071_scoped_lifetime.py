@@ -61,10 +61,22 @@ def test_watch_rescoring_stops_its_background_writer(tmp_path):
         subprocess.run(['git', *args], cwd=tmp_path, check=True, capture_output=True)
     hooks = tmp_path / 'hooks'
     hooks.mkdir()
+    # `--cycles 1` polls once, .2 s after the banner. A test the host scheduled
+    # later than that edited after the only poll, and watch exited 0 with no
+    # rescore, so the poll waits (at most CHILD_WAIT) for the test's `edited` mark.
     (hooks / 'sitecustomize.py').write_text(
-        'import sys,runpy,os\n'
+        'import sys,runpy,os,time\n'
         'if "rescore" in sys.orig_argv:\n'
-        '    runpy.run_path(os.path.join(os.environ["WATCH_ROOT"],"runner.py"))\n', encoding='utf-8')
+        '    runpy.run_path(os.path.join(os.environ["WATCH_ROOT"],"runner.py"))\n'
+        'elif "watch" in sys.orig_argv:\n'
+        '    from crapkit.cli import admin\n'
+        '    poll = admin.poll\n'
+        '    def after_the_edit(*args):\n'
+        '        until = time.monotonic() + ' + CHILD_WAIT + '\n'
+        '        edited = os.path.join(os.environ["WATCH_ROOT"], "edited")\n'
+        '        while not os.path.exists(edited) and time.monotonic() < until: time.sleep(.01)\n'
+        '        return poll(*args)\n'
+        '    admin.poll = after_the_edit\n', encoding='utf-8')
     environment = {**os.environ, 'WATCH_ROOT': str(tmp_path),
                    'PYTHONPATH': os.pathsep.join(filter(None, (str(hooks), os.environ.get('PYTHONPATH'))))}
     process = subprocess.Popen([sys.executable, '-m', 'crapkit', 'watch', '--cycles', '1',
@@ -77,6 +89,7 @@ def test_watch_rescoring_stops_its_background_writer(tmp_path):
         stat = source.stat()
         source.write_text('def f():\n    return 2\n', encoding='utf-8')  # watch rescores new bytes, not a touch
         os.utime(source, (stat.st_atime, stat.st_mtime + 10))
+        (tmp_path / 'edited').touch()
         output, errors = communicate(process)
         assert process.returncode == 0, errors
         assert 'scoped result' in output
@@ -84,5 +97,6 @@ def test_watch_rescoring_stops_its_background_writer(tmp_path):
         with exclusive_lock(tmp_path / 'writer.lock', label='writer'):
             pass
     finally:
+        (tmp_path / 'edited').touch()  # a test that failed before its edit frees the poll
         (tmp_path / 'release').touch()
         exited(process)

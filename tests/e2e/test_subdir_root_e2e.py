@@ -256,7 +256,7 @@ def test_a_subdir_root_mutates_the_lines_it_changed(nested: Path):
 def _readme_hook_line(root_below: str) -> str:
     """README's hook line for a crapkit root below the git top, pointed at
     `root_below` in place of the page's packages/api."""
-    found = re.search(r"`(exec python -m crapkit hook-precommit --repo packages/api)`",
+    found = re.search(r"`(exec python -P -m crapkit hook-precommit --repo packages/api)`",
                       README.read_text(encoding="utf-8"))
     assert found, "README names no hook line for a crapkit root below the git top"
     return found.group(1).replace("packages/api", root_below)

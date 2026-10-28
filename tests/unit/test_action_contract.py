@@ -501,8 +501,15 @@ def _fails(row, payload: dict, entries: list) -> bool:
     return ceiling is not None and payload.get("diff_uncovered_count", 0) > ceiling
 
 
+# Each kind's 0.8.1 list key, where it had one. The cases below are written
+# that way, and _as_findings turns them into findings items.
+OLD_KEY_OF = {"gate_violation": "gate_violations", "unread_file": "unread_files",
+              "ratchet_regression": "ratchet_regressions", "new_failure": "new_failures",
+              "diff_uncovered": "diff_uncovered", "overridden": "overridden"}
+
+
 def _items_of(row, payload: dict) -> list[dict]:
-    entries = payload.get(row.json_key) or [] if row.json_key else []
+    entries = payload.get(OLD_KEY_OF.get(row.kind)) or []
     fails = _fails(row, payload, entries)
     common = {"kind": row.kind, "fails": fails, "exit_code": row.exit if fails else None,
               "overridable": row.granted, "dirty": False, "rule": row.rule}

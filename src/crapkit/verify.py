@@ -278,11 +278,11 @@ class FindingKind(NamedTuple):
     the verdict never fails on. `granted` says an --override grants it; a
     `refusal` says an override is refused while one is present. `dirty` finds
     the dirty flag of each entry, `text` gives the lines verify prints on
-    `stream`, `json` the kind's list under its 0.8.1 key `json_key` (None: the
-    payload has no list for it), and `sarif` its SARIF form (None: no result).
-    `rule` labels the kind's items in `findings`, the label the Action's
-    comment prints, `item` gives an item's own fields, and `cap` how many
-    items the kind lists at most (None: every one)."""
+    `stream`, and `sarif` its SARIF form (None: no result). `rule` labels the
+    kind's items in `findings`, the label the Action's comment prints, `item`
+    gives an item's own fields, and `cap` how many items the kind lists at most
+    (None: every one). A kind has no key of its own in `verify --json`: its
+    items join `findings`."""
     kind: str
     field: str
     exit: int | None
@@ -291,8 +291,6 @@ class FindingKind(NamedTuple):
     dirty: Callable[[Verdict, Sequence], list[bool]]
     text: Callable[[Sequence, Sequence[bool]], list[str]]
     stream: str
-    json_key: str | None
-    json: Callable[[Sequence], list]
     sarif: Sarif | None
     rule: str
     item: Callable[[Any], dict]
@@ -340,7 +338,7 @@ def _failure_line(test_id: str, dirty: bool) -> str:
 
 def _spot(line) -> tuple[str, int]:
     """(path, line) of an uncovered changed line, an UncoveredViolation or the
-    (path, line) pair `diff_uncovered` lists."""
+    (path, line) pair verify hands its payload."""
     return line[0], line[1]
 
 
@@ -380,17 +378,8 @@ def _failure_flags(verdict: Verdict, test_ids: Sequence[str]) -> list[bool]:
     return [test_id in dirty for test_id in test_ids]
 
 
-def _records(entries: Sequence) -> list[dict]:
-    return [entry._asdict() for entry in entries]
-
-
-# How many uncovered changed lines verify lists; `diff_uncovered_count` counts them all.
+# How many uncovered changed lines `findings` lists; `counts.diff_uncovered_count` counts them all.
 LISTED_LINES = 50
-
-
-def _line_items(lines: Sequence) -> list[dict]:
-    """The first 50 uncovered changed lines."""
-    return [_line_item(line) for line in lines[:LISTED_LINES]]
 
 
 def _line_item(line) -> dict:
@@ -464,44 +453,37 @@ FINDING_KINDS: tuple[FindingKind, ...] = (
     FindingKind(kind="unreadable_name", field="claimed_names", exit=3, granted=False,
                 refusal=Refusal(3, "unreadable name", _shown_path,
                                 "rename it (git mv) to a UTF-8 name"),
-                dirty=_own_flags, text=_claimed_lines, stream="stderr", json_key=None,
-                json=_records,
+                dirty=_own_flags, text=_claimed_lines, stream="stderr",
                 sarif=Sarif("crapkit/unreadable-name", "error", _file_start, _claimed_message),
                 rule="unreadable name", item=_name_item),
     FindingKind(kind="gate_violation", field="gate_violations", exit=6, granted=True,
                 refusal=None, dirty=_own_flags, text=each(gate_line), stream="stdout",
-                json_key="gate_violations", json=_records,
                 sarif=Sarif("crapkit/gate", "error", _gate_start, _gate_message),
                 rule="complexity gate", item=_own_fields),
     FindingKind(kind="unread_file", field="unread_files", exit=6, granted=False,
                 refusal=Refusal(2, "unread file", _unread_cause, UNREAD_ADVICE),
                 dirty=_own_flags, text=each(_unread_file_line), stream="stdout",
-                json_key="unread_files", json=_records,
                 sarif=Sarif("crapkit/unread", "error", _file_start, _unread_message),
                 rule="complexity gate", item=_own_fields),
     FindingKind(kind="ratchet_regression", field="ratchet_regressions", exit=7, granted=False,
                 refusal=Refusal(0, "ratchet regression", _regression_cause,
                                 "raise the mark by hand and commit it"),
                 dirty=_own_flags, text=each(_ratchet_line), stream="stdout",
-                json_key="ratchet_regressions", json=_records,
                 sarif=Sarif("crapkit/ratchet-regression", "error", _file_start, _rise),
                 rule="ratchet regressions", item=_own_fields),
     FindingKind(kind="new_failure", field="new_failures", exit=8, granted=False,
                 refusal=Refusal(1, "new test failure", str, "fix the failing test first"),
-                dirty=_failure_flags, text=each(_failure_line), stream="stdout",
-                json_key="new_failures", json=list, sarif=None,
+                dirty=_failure_flags, text=each(_failure_line), stream="stdout", sarif=None,
                 rule="new test failures", item=_test_item),
-    # Present only past diff_uncovered_max; its JSON list, its findings items
-    # and its SARIF results come from every uncovered changed line (`uncovered`
-    # below), breach or not.
+    # Present only past diff_uncovered_max; its findings items and its SARIF
+    # results come from every uncovered changed line (`uncovered` below),
+    # breach or not.
     FindingKind(kind="diff_uncovered", field="uncovered_violations", exit=9, granted=False,
                 refusal=None, dirty=_own_flags, text=each(_uncovered_line), stream="stderr",
-                json_key="diff_uncovered", json=_line_items,
                 sarif=Sarif("crapkit/diff-uncovered", "warning", _spot, _uncovered_message),
                 rule="diff-coverage ceiling", item=_line_item, cap=LISTED_LINES),
     FindingKind(kind="overridden", field="overridden", exit=None, granted=False, refusal=None,
-                dirty=_own_flags, text=each(_overridden_line), stream="stdout",
-                json_key="overridden", json=_records, sarif=None,
+                dirty=_own_flags, text=each(_overridden_line), stream="stdout", sarif=None,
                 rule="override", item=_own_fields),
 )
 
@@ -597,17 +579,10 @@ def _reported(verdict: Verdict, uncovered: Sequence | None) -> Verdict:
     return verdict._replace(uncovered_violations=tuple(uncovered))
 
 
-def json_lists(verdict: Verdict, uncovered: Sequence | None = None) -> dict[str, list]:
-    """Each kind's list in `verify --json`, under its 0.8.1 key."""
-    reported = _reported(verdict, uncovered)
-    return {row.json_key: row.json(_entries(reported, row))
-            for row in FINDING_KINDS if row.json_key}
-
-
 def finding_items(verdict: Verdict, uncovered: Sequence | None = None,
                   dirty_paths: Collection[str] = ()) -> list[dict]:
     """`verify --json`'s findings: one item per entry of each kind, the kinds in
-    exit order and each kind's entries in the order its 0.8.1 list gives them.
+    exit order and each kind's entries in the order the verdict holds them.
     An item fails when its kind fails and the verdict holds the kind, so the
     lines `uncovered` lists fail only past the ceiling, and a failing item
     names the exit code its kind fires; `dirty_paths` flags those lines."""

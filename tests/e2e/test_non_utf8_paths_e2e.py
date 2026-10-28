@@ -322,13 +322,11 @@ def _plain(repo: Path, result, name: bytes) -> None:
 
 
 def _as_json(repo: Path, result, name: bytes) -> None:
-    """A verify payload, not an error object; unread_files keeps the item the
-    0.8.1 error object listed the name in, {path, reason, dirty}, so a 0.8.1
-    reader of that key still finds it."""
+    """A verify payload, not an error object: its one finding is the name's
+    unreadable_name item, and nothing was measured."""
     printed = json.loads(result.stdout)
     assert printed["findings"] == [_stop_item(name)], printed["findings"]
     assert (printed["ok"], printed["run_id"], "error" in printed) == (False, None, False)
-    assert printed["unread_files"] == [{**UNREAD_FILE, "path": _shown(name), "dirty": not STORES_ANY_BYTE}]
     assert printed["counts"]["diff_uncovered_count"] == 0
 
 
@@ -537,7 +535,8 @@ def test_a_refused_scoped_name_is_listed_in_the_error_objects_unread_files(tmp_p
     """The scan's refusal names the first file on stderr and counts the rest;
     --json lists each one. Committed as they are on POSIX, both are clean; Git
     for Windows cannot check either name out, so git reads both deleted.
-    verify's stop prints its own payload and lists them in the same key."""
+    verify's stop prints its own payload, with one unreadable_name finding
+    per name."""
     repo = _repo(tmp_path)
     assert run_cli(repo, "coverage").returncode == 0
     _commit(repo, {b"src/caf\xe9.py": SOURCE, b"src/o\x92brien.py": SOURCE}, "add two Latin-1 names")
@@ -547,8 +546,13 @@ def test_a_refused_scoped_name_is_listed_in_the_error_objects_unread_files(tmp_p
     assert result.returncode == 3, result.stdout + result.stderr
     dirty = sys.platform == "win32"
     printed = json.loads(result.stdout)
-    assert (printed if command == "verify" else printed["error"])["unread_files"] == [
-        {**UNREAD_FILE, "dirty": dirty}, {**UNREAD_FILE, "path": "src/o\\x92brien.py", "dirty": dirty}]
+    if command == "verify":
+        names = [item for item in printed["findings"] if item["kind"] == "unreadable_name"]
+        assert [(item["path"], item["dirty"], item["reason"]) for item in names] == [
+            (path, dirty, VERIFY_STOP.format(shown=path)) for path in ("src/caf\\xe9.py", "src/o\\x92brien.py")]
+    else:
+        assert printed["error"]["unread_files"] == [
+            {**UNREAD_FILE, "dirty": dirty}, {**UNREAD_FILE, "path": "src/o\\x92brien.py", "dirty": dirty}]
 
 
 # --- a name no scope takes: left out, one line ---------------------------------------

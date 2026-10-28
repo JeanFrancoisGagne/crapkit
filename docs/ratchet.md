@@ -1001,7 +1001,7 @@ EXIT=0
 
 The grant is the override's own write to the marks file, so the OK line ends with the same
 `git add` a tighten's does; `ratchet_changes` stays `null` in the JSON receipt, the grant
-being listed under `overridden`.
+being an `overridden` item in `findings`.
 
 ```
 $ crapkit overrides

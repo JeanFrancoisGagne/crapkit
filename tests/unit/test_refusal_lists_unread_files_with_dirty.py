@@ -1,8 +1,8 @@
 """Every command that refuses a file whose name is not UTF-8 lists it in its
 --json error object as `unread_files`, each item {path, reason, dirty}: the
-shape `rescore --gate --json` and `verify --json` list unread files in. verify
-gives such a name a verdict instead, and its payload lists the name in that
-same `unread_files` beside its `unreadable_name` finding.
+shape `rescore --gate --json` lists unread files in. verify gives such a name
+a verdict instead: its payload lists the name as an `unreadable_name` finding,
+with the same `path` and `dirty`.
 
 The error object's items carried `path` and `reason` alone, so a wrapper that
 reads both surfaces met two shapes for one finding. `dirty` has verify's
@@ -34,6 +34,10 @@ from name_bytes import NOT_UTF8_NAMES
 
 REASON = ("its name is not UTF-8, and crapkit reads every path as UTF-8: "
           "rename it (git mv) to a UTF-8 name")
+# verify's unreadable_name item gives the scan's own sentence as its reason.
+VERIFY_STOP = ("{shown} is in scope '{scope}', but git names it in bytes that are not UTF-8 and crapkit "
+               "reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes "
+               "it unread: rename it (git mv) to a UTF-8 name")
 NAME = "src/caf\udce9.ts"   # b"src/caf\xe9.ts" on POSIX, a lone surrogate on NTFS
 SHOWN = "src/caf\\xe9.ts"
 # An expression-arrow body the TypeScript reader refuses: a file no reader reads.
@@ -57,15 +61,12 @@ def measured(repo, capsys):
     return repo
 
 
-def _error(repo, capsys, *argv: str) -> tuple[int, dict, str]:
-    """The exit, the object that lists the refused names, and stderr. verify
-    meeting such a name prints its own payload, with no `error` key: it lists
-    the names in its top-level `unread_files`, in the same item shape."""
+def _run(repo, capsys, *argv: str) -> tuple[int, dict, str]:
+    """The exit, the printed --json payload, and stderr."""
     command, *rest = argv
     code = main([command, "--json", "--repo", str(repo), *rest])
     out, err = capsys.readouterr()
-    printed = json.loads(out)
-    return code, printed["error"] if command != "verify" else printed, err
+    return code, json.loads(out), err
 
 
 # --- a file argument naming the file ------------------------------------------
@@ -86,7 +87,8 @@ ARGUMENT_COMMANDS = [
 def test_an_untracked_file_argument_is_listed_dirty(measured, capsys, argv):
     (measured / NAME).write_text(KNOTTY, encoding="utf-8")
 
-    code, error, err = _error(measured, capsys, *argv)
+    code, printed, err = _run(measured, capsys, *argv)
+    error = printed["error"]
 
     assert code == 3, err
     assert (error["exit"], error["kind"]) == (3, "config")
@@ -100,7 +102,8 @@ def test_a_committed_file_argument_git_holds_as_is_is_listed_clean(measured, cap
     (measured / NAME).write_text(KNOTTY, encoding="utf-8")
     commit_all(measured, "a Latin-1 name")
 
-    code, error, err = _error(measured, capsys, *argv)
+    code, printed, err = _run(measured, capsys, *argv)
+    error = printed["error"]
 
     assert code == 3, err
     assert error["unread_files"] == [{"path": SHOWN, "reason": REASON, "dirty": False}]
@@ -113,7 +116,8 @@ def test_a_committed_file_argument_edited_since_is_listed_dirty(measured, capsys
     commit_all(measured, "a Latin-1 name")
     (measured / NAME).write_text(KNOTTY + "\n// edited\n", encoding="utf-8")
 
-    code, error, err = _error(measured, capsys, "brief", NAME, "knotty")
+    code, printed, err = _run(measured, capsys, "brief", NAME, "knotty")
+    error = printed["error"]
 
     assert code == 3, err
     assert error["unread_files"] == [{"path": SHOWN, "reason": REASON, "dirty": True}]
@@ -142,7 +146,18 @@ def _index(repo, names: tuple[bytes, ...]) -> None:
             (repo / name.decode("utf-8", "surrogateescape")).write_text(KNOTTY, encoding="utf-8")
 
 
-def _listed(error: dict) -> list[tuple[str, bool]]:
+def _listed(printed: dict) -> list[tuple[str, bool]]:
+    """(path, dirty) for each refused name. verify meeting such a name prints
+    its own payload, with no `error` key: it lists the names as unreadable_name
+    findings, whose reason is the scan's sentence naming the file, its scope and
+    the rename. Every other command lists them in its error object's
+    unread_files, as {path, reason, dirty}."""
+    if "findings" in printed:
+        names = [item for item in printed["findings"] if item["kind"] == "unreadable_name"]
+        assert all(item["reason"] == VERIFY_STOP.format(shown=item["path"], scope=item["scope"])
+                   for item in names), names
+        return [(item["path"], item["dirty"]) for item in names]
+    error = printed["error"]
     assert {tuple(sorted(item)) for item in error["unread_files"]} == {("dirty", "path", "reason")}
     assert {item["reason"] for item in error["unread_files"]} == {REASON}
     return [(item["path"], item["dirty"]) for item in error["unread_files"]]
@@ -153,10 +168,10 @@ def _listed(error: dict) -> list[tuple[str, bool]]:
 def test_a_staged_name_a_scope_takes_is_listed_dirty(measured, capsys, argv):
     _index(measured, LATIN1)
 
-    code, error, err = _error(measured, capsys, *argv)
+    code, printed, err = _run(measured, capsys, *argv)
 
     assert code == 3, err
-    assert _listed(error) == [(SHOWN, True), ("src/o\\x92brien.ts", True)]
+    assert _listed(printed) == [(SHOWN, True), ("src/o\\x92brien.ts", True)]
 
 
 @pytest.mark.parametrize("argv", SCAN_COMMANDS)
@@ -169,10 +184,10 @@ def test_a_committed_name_the_working_tree_lacks_is_listed_dirty(measured, capsy
         "commit", "-q", "-m", "a Latin-1 name")  # the index as it stands: `add -A` drops the name
     (measured / NAME).unlink(missing_ok=True)
 
-    code, error, err = _error(measured, capsys, *argv)
+    code, printed, err = _run(measured, capsys, *argv)
 
     assert code == 3, err
-    assert _listed(error) == [(SHOWN, True)]
+    assert _listed(printed) == [(SHOWN, True)]
 
 
 @POSIX_NAME
@@ -183,10 +198,10 @@ def test_a_committed_name_git_holds_as_is_is_listed_clean(measured, capsys, argv
     commit_all(measured, "two Latin-1 names")
     (measured / "src" / "o\udc92brien.ts").write_text(KNOTTY + "\n// edited\n", encoding="utf-8")
 
-    code, error, err = _error(measured, capsys, *argv)
+    code, printed, err = _run(measured, capsys, *argv)
 
     assert code == 3, err
-    assert _listed(error) == [(SHOWN, False), ("src/o\\x92brien.ts", True)]
+    assert _listed(printed) == [(SHOWN, False), ("src/o\\x92brien.ts", True)]
 
 
 def test_a_tree_git_cannot_list_reads_every_name_untracked(tmp_path):
@@ -201,7 +216,7 @@ def test_the_error_object_and_the_gate_verdict_share_one_item_shape(measured, ca
     """The gate verdict lists a changed unread file; the refusal lists a name
     it cannot read. One reader parses both."""
     (measured / NAME).write_text(KNOTTY, encoding="utf-8")
-    _, error, _ = _error(measured, capsys, "rescore", "--gate", "--", NAME)
+    error = _run(measured, capsys, "rescore", "--gate", "--", NAME)[1]["error"]
     (measured / NAME).unlink()
     with open(measured / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
         fh.write(ARROW)

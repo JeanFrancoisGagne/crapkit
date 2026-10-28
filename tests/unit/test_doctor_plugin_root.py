@@ -794,7 +794,7 @@ def test_a_codex_plugin_ahead_of_the_cli_names_no_claude_command(tmp_path, capsy
     line = _gap(tmp_path, capsys, version="99.0.0", under=str(CODEX_CACHE / "99.0.0"))
 
     assert "claude" not in line
-    assert line.endswith("The CLI is behind; upgrade it with `python -m pip install --upgrade crapkit`.")
+    assert line.endswith("The CLI is behind; upgrade it with `python -P -m pip install --upgrade crapkit`.")
 
 
 def test_a_plugin_under_codex_home_is_codex_s_wherever_that_is(tmp_path, capsys, monkeypatch):
@@ -811,7 +811,7 @@ def test_versions_that_do_not_order_plainly_name_both_repairs(tmp_path, capsys, 
 
     assert line == (_head(tmp_path / "p", version) + " Update whichever is behind: the plugin "
                     "with `claude plugin marketplace update crapkit`, then `claude plugin update "
-                    "crapkit@crapkit --scope user`; the CLI with `python -m pip install --upgrade "
+                    "crapkit@crapkit --scope user`; the CLI with `python -P -m pip install --upgrade "
                     "crapkit`.")
 
 

@@ -59,9 +59,12 @@ EXPORTED = {
 
 def _shell(exported: dict) -> dict:
     """This process's environment as a contributor's shell would pass it on:
-    no width unless the row exports one, plus the row's variables."""
+    no width unless the row exports one, plus the row's variables. It keeps
+    PYTEST_DEBUG_TEMPROOT, the private root conftest.py hands every nested
+    pytest, so this child's sessionfinish never cleans the user-wide one."""
     env = {name: value for name, value in os.environ.items()
-           if name not in ("COLUMNS", "LINES") and not name.startswith("PYTEST_")}
+           if name not in ("COLUMNS", "LINES")
+           and (name == "PYTEST_DEBUG_TEMPROOT" or not name.startswith("PYTEST_"))}
     return {**env, **exported}
 
 

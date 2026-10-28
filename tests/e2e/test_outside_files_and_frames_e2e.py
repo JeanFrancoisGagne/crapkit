@@ -307,10 +307,10 @@ def test_the_action_builds_its_comment_whatever_bytes_a_changed_name_holds(tmp_p
 
 # --- pytest's own config files: config._pytest_text -------------------------
 #
-# The full-suite guard reads `testpaths` from pytest.ini, pyproject.toml or
-# setup.cfg to decide whether a lane's positional `tests` narrows the suite.
-# Whatever the file's bytes, crapkit must read testpaths the way pytest itself
-# does, and never raise.
+# The full-suite guard reads `testpaths` from pytest.ini, .pytest.ini,
+# pyproject.toml, tox.ini or setup.cfg to decide whether a lane's positional
+# `tests` narrows the suite. Whatever the file's bytes, crapkit must read
+# testpaths the way pytest itself does, and never raise.
 
 INI = "[pytest]\ntestpaths = tests\n# généré café\n"
 PYPROJECT = '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n# généré café\n'
@@ -324,6 +324,8 @@ PYTEST_ROWS = [
     pytest.param("pyproject.toml", PYPROJECT.encode("cp1252"), id="pyproject-cp1252"),
     pytest.param("setup.cfg", b"\xef\xbb\xbf" + INI.replace("[pytest]", "[tool:pytest]").encode(),
                  id="setup-cfg-utf8-bom"),
+    pytest.param(".pytest.ini", b"\xef\xbb\xbf" + INI.encode(), id="dot-pytest-ini-utf8-bom"),
+    pytest.param("tox.ini", b"\xef\xbb\xbf" + INI.encode(), id="tox-ini-utf8-bom"),
 ]
 
 GUARDED_LANE = (b'[[lane]]\nname = "py"\n'
@@ -352,21 +354,49 @@ def test_the_full_suite_guard_reads_testpaths_as_pytest_does(tmp_path, name, bod
     honoured = _pytest_testpaths(repo)
 
     assert clean(res), shown(res)
-    # pytest stops on a cp1252 or BOM config before it collects, so the lane
-    # fails loudly whatever the guard says; the guard only has to read the file.
+    # pytest stops before it collects on a cp1252 config, on a BOM
+    # pyproject.toml, and on any BOM config under iniconfig older than 2.3.1,
+    # so the lane fails loudly whatever the guard says; the guard only has to
+    # read the file. Wherever pytest reads it, the guard must agree.
     assert honoured is None or ("narrows a full-suite" in res.stderr) is not honoured, shown(res)
 
 
 @pytest.mark.parametrize("body", [INI.encode("cp1252"), b"\xef\xbb\xbf[pytest]\ntestpaths = tests\n", INI.encode()],
                          ids=["cp1252-pytest-ini", "bom-pytest-ini", "utf8-pytest-ini-control"])
 def test_init_reads_a_pytest_ini_in_any_bytes(tmp_path, body):
-    """pytest refuses the first two, so no lane runs on
-    them; init still reads each one without a traceback."""
+    """pytest refuses the cp1252 file, and the BOM file under iniconfig older
+    than 2.3.1, so no lane runs on them there; init still reads each one
+    without a traceback."""
     repo = repository(tmp_path / "repo")
     commit(repo, {b"pytest.ini": body, b"tests/test_a.py": b"def test_a():\n    assert 1\n",
                   b"src/app.py": APP})
 
     answered(run_cli(repo, "init"))
+
+
+SEVERAL_TESTPATHS = b"[pytest]\ntestpaths = tests integration\n"
+
+
+def _init_config(root: Path, pytest_ini: bytes) -> str:
+    """The crapkit.toml init writes for a repo with this pytest.ini, a test in
+    each testpath and one Python source."""
+    repo = repository(root)
+    commit(repo, {b"pytest.ini": pytest_ini, b"tests/test_a.py": b"def test_a():\n    assert 1\n",
+                  b"integration/test_b.py": b"def test_b():\n    assert 1\n", b"src/app.py": APP})
+    answered(run_cli(repo, "init"))
+    return (repo / "crapkit.toml").read_text(encoding="utf-8")
+
+
+def test_init_writes_the_several_testpaths_note_past_a_bom_as_without_it(tmp_path):
+    """pytest reads a pytest.ini past a BOM with iniconfig 2.3.1 or newer, so
+    init reads both testpaths there too and writes the config, its
+    several-testpaths note included, that it writes for the file without the
+    mark."""
+    plain = _init_config(tmp_path / "plain", SEVERAL_TESTPATHS)
+    marked = _init_config(tmp_path / "bom", b"\xef\xbb\xbf" + SEVERAL_TESTPATHS)
+
+    assert "names several testpaths" in plain
+    assert marked == plain
 
 
 # --- the advisory hook's payload: claude_hook._payload ------------------------

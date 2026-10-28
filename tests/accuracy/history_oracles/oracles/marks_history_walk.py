@@ -1,8 +1,28 @@
-"""The ratchet file's history walked version by version, and the burn-down a reader
-of the docs computes from it. No crapkit.
+"""The ratchet file's history walked revision by revision through pygit2, and the
+burn-down a reader of the docs computes from it. No crapkit.
 
-Where crapkit replays the file's patches, this walk reads every committed
-version whole (`git show <commit>:<file>`) and diffs the mark sets itself.
+Where crapkit reads the file's revisions through `git log` and `git cat-file`,
+this walk reads the commit objects, their trees and every revision's blob
+whole through pygit2 1.20.1 (libgit2, no git process), and diffs the mark sets
+itself. tools/accuracy/pins.toml pins pygit2 for the nightly tier, so a check
+that walks a history runs there and asks for the oracle (`oracle("pygit2")`).
+pygit2 is imported where the walk starts, as pygit2_renames does, so
+read_marks, decode and shallow serve a push-tier or unit test that has no
+pygit2.
+
+The walk: from HEAD back along a line of commits (a merge is refused here:
+the fixtures hold none). A commit is a revision of the file when its tree and
+its parent's hold different bytes under the file's name, or when it renamed
+the file. A commit that adds the name while its parent lacks it renamed the
+file when libgit2 pairs the two (find_similar, FIND_RENAMES, 50 percent, the
+threshold `git diff -M` takes; pygit2_renames.py says the same), and the walk
+goes on under the old name from its parent. A revision that deletes the file
+reads as no marks.
+
+Each revision is decoded by the rule docs/ratchet.md#how-the-file-is-read
+gives for every past revision: UTF-16 when the bytes open with a UTF-16
+byte-order mark, else UTF-8 with a UTF-8 byte-order mark dropped, and each
+byte that fits neither reads as U+FFFD, so nothing refuses.
 
 The file (docs/ratchet.md#what-a-mark-is): comment lines start with '#', then
 a header `path<TAB>long_name<TAB>crap`, then one mark per row, keyed by
@@ -36,15 +56,35 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
+import re
 
-from .history_git import git, text
+from .history_git import text
 
 DAY = 86_400
 HEADER = ("path", "long_name", "crap")
+RENAME_THRESHOLD = 50
+UTF16_MARKS = {b"\xff\xfe": "utf-16-le", b"\xfe\xff": "utf-16-be"}
+UTF8_MARK = b"\xef\xbb\xbf"
+# surrogateescape turns each byte UTF-8 cannot decode into one lone surrogate
+# from U+DC80 to U+DCFF, so each such byte becomes one U+FFFD below.
+_ESCAPED = re.compile("[\udc80-\udcff]")
 
 
 class EncodedRow(ValueError):
     """A row this reader does not decode."""
+
+
+class Unwalked(ValueError):
+    """A history this walk does not follow: a merge."""
+
+
+def decode(data: bytes) -> str:
+    """One revision's text by the docs' rule for a past revision."""
+    codec = UTF16_MARKS.get(data[:2])
+    if codec is not None:
+        return data[2:].decode(codec, "replace")
+    body = data[len(UTF8_MARK):] if data.startswith(UTF8_MARK) else data
+    return _ESCAPED.sub("\ufffd", body.decode("utf-8", "surrogateescape"))
 
 
 def read_marks(text: str) -> dict[tuple[str, str], Decimal]:
@@ -65,26 +105,81 @@ def _mark(row: str) -> tuple[tuple[str, str], Decimal]:
     return (cells[0], cells[1]), Decimal(cells[2])
 
 
+def _marks_of(data: bytes | None) -> dict:
+    return {} if data is None else read_marks(decode(data))
+
+
 @dataclass(frozen=True)
 class Version:
     at: int
     marks: dict
+    path: str = ""
+
+
+def _repository(root: Path):
+    """The pygit2 repository holding `root`, and `root`'s path inside its tree."""
+    import pygit2
+
+    repo = pygit2.Repository(pygit2.discover_repository(str(root)))
+    prefix = Path(root).resolve().relative_to(Path(repo.workdir).resolve()).as_posix()
+    return repo, "" if prefix == "." else prefix + "/"
+
+
+def _blob_id(tree, path: str):
+    """The blob id `tree` holds at `path`, or None."""
+    try:
+        entry = tree[path]
+    except KeyError:
+        return None
+    return entry.id if entry.type_str == "blob" else None
+
+
+def _renamed_from(repo, parent, commit, path: str) -> str | None:
+    """The path libgit2 pairs with `path` as a rename from `parent` to `commit`."""
+    import pygit2
+
+    diff = repo.diff(parent, commit)
+    diff.find_similar(flags=pygit2.enums.DiffFind.FIND_RENAMES,
+                      rename_threshold=RENAME_THRESHOLD)
+    renamed = pygit2.enums.DeltaStatus.RENAMED
+    return next((delta.old_file.path for delta in diff.deltas
+                 if delta.status == renamed and delta.new_file.path == path), None)
+
+
+def _step(repo, commit, path: str):
+    """(the revision `commit` makes of the file at `path` or None, the path the
+    walk goes on under from its parent)."""
+    if len(commit.parents) > 1:
+        raise Unwalked(f"{commit.id} is a merge: this walk follows one line of commits")
+    parent = commit.parents[0] if commit.parents else None
+    here = _blob_id(commit.tree, path)
+    there = None if parent is None else _blob_id(parent.tree, path)
+    older = path
+    if here is not None and there is None and parent is not None:
+        older = _renamed_from(repo, parent, commit, path) or path
+        there = _blob_id(parent.tree, older)
+    if here == there and older == path:
+        return None, older
+    data = None if here is None else repo[here].data
+    return Version(commit.author.time, _marks_of(data), path), older
 
 
 def versions(root: Path, name: str) -> list[Version]:
-    """Every committed version of the file, oldest first; a deletion reads empty."""
-    log = git(root, "log", "--reverse", "--format=%H %at", "--", name).decode("utf-8")
-    return [Version(int(at), _marks_at(root, sha, name))
-            for sha, at in (line.split() for line in log.splitlines())]
-
-
-def _marks_at(root: Path, sha: str, name: str) -> dict:
-    listed = git(root, "ls-tree", "--name-only", sha, "--", name).decode("utf-8").strip()
-    return read_marks(git(root, "show", f"{sha}:./{name}").decode("utf-8")) if listed else {}
+    """Every committed revision of the file, oldest first, back through every
+    rename libgit2 pairs; a deletion reads as no marks."""
+    repo, prefix = _repository(root)
+    if repo.head_is_unborn:
+        return []
+    found, commit, path = [], repo[repo.head.target], prefix + name
+    while commit is not None:
+        version, path = _step(repo, commit, path)
+        found += [version] if version is not None else []
+        commit = commit.parents[0] if commit.parents else None
+    return found[::-1]
 
 
 def _on_disk(path: Path) -> dict:
-    return read_marks(path.read_bytes().decode("utf-8")) if path.exists() else {}
+    return _marks_of(path.read_bytes()) if path.exists() else {}
 
 
 @dataclass

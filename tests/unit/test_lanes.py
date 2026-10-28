@@ -357,7 +357,7 @@ def test_the_install_line_names_the_file_a_lane_path_resolves_to(tmp_path):
     with pytest.raises(ToolError) as raised:
         _raise_no_artifact(tmp_path, lane, log, 4)
 
-    assert f"(`{interpreter_word(str(python))} -m pip install pytest-cov`)" in str(raised.value)
+    assert f"(`{interpreter_word(str(python))} -P -m pip install pytest-cov`)" in str(raised.value)
 
 
 def _cov_hint(tmp_path, command: str) -> str:

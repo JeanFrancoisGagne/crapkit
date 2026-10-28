@@ -163,6 +163,9 @@ modules = ["tests/deploy/test_claimed_name_hook_cells.py"]
 [packets.gate-group-09]
 modules = ["tests/deploy/test_claimed_name_cells.py"]
 
+[packets.gate-group-04a]
+modules = ["tests/deploy/test_shallow_checkout_flow.py"]
+
 # --- every-harness rows -----------------------------------------------------------
 # What a nightly run takes of each row: "all" its cells on all 17 harnesses,
 # "core" on the 3 core-image ones. The header says how a row's tests name it.
@@ -594,6 +597,8 @@ lin-up-claimed-name-hook = { packet = "gate-group-08", cadence = "nightly", os =
 # gate-group-09: the class U claimed-name cells driving claude-hook, fresh and upgrade
 lin-claimed-name-claude-hook = { packet = "gate-group-09", cadence = "nightly", os = "linux", image = "core" }
 lin-up-claimed-name-claude-hook = { packet = "gate-group-09", cadence = "nightly", os = "linux", image = "core" }
+# gate-group-04a: a depth-1 clone reads one commit of the marks history, says so, and refuses --enforce
+lin-depth1-checkout = { packet = "gate-group-04a", cadence = "nightly", os = "linux", image = "cells" }
 
 # --- what blocks a cell or a job -------------------------------------------------
 # Each is work outside this packet (the kit, a cell no packet writes yet) or a
@@ -1043,6 +1048,7 @@ devcontainers-cli = ["lin-devcontainer"]
 "repeatability" = ["lin-repeat", "win-repeat", "lin-clock", "lock-drift"]
 "plugin manifest validation" = ["lin-plugin-validate-strict", "win-plugin-validate-strict"]
 "release check" = ["lin-release-check-candidate", "win-release-check-candidate"]
+"ratchet report in a depth-1 clone" = ["lin-depth1-checkout"]
 
 # --- channel and consumer pairs ------------------------------------------------------
 # What finds crapkit when a consumer starts it: a git hook, the merge driver,

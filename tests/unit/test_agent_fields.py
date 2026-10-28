@@ -445,10 +445,12 @@ def _null_forms(payloads: dict, field: AgentField) -> set[bool]:
 
 @NOT_UTF8_NAMES
 def test_the_unread_finding_has_one_shape_in_every_payload(payloads):
+    """verify lists an unread file as an unread_file item in `findings`, so
+    the gate block and the error object are the two lists left."""
     shapes = {f.payload: f.key for f in ADDED if f.key.endswith("unread_files")}
     keys = {payload: _entry_keys(payloads[payload][0], key) for payload, key in shapes.items()}
 
-    assert set(shapes.values()) == {"gate.unread_files", "unread_files", "error.unread_files"}
+    assert set(shapes.values()) == {"gate.unread_files", "error.unread_files"}
     assert keys == {payload: [["dirty", "path", "reason"]] for payload in shapes}
 
 

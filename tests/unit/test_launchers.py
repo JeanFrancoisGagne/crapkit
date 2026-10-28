@@ -172,7 +172,7 @@ def test_a_venv_launcher_upgrades_through_the_python_beside_it(tmp_path):
     python = scripts / ("python.exe" if WINDOWS else "python3")
     python.write_bytes(b"")
 
-    assert upgrade_command(str(launcher), quote) == f"<{python}> -m pip install --upgrade crapkit"
+    assert upgrade_command(str(launcher), quote) == f"<{python}> -P -m pip install --upgrade crapkit"
 
 
 def test_a_venv_uv_made_upgrades_through_uv_pip_because_it_holds_no_pip(tmp_path):
@@ -191,7 +191,7 @@ def test_a_windows_install_s_scripts_launcher_upgrades_through_the_python_above_
     python = tmp_path / "Python312" / ("python.exe" if WINDOWS else "python3")
     python.write_bytes(b"")
 
-    assert upgrade_command(str(launcher), quote) == f"<{python}> -m pip install --upgrade crapkit"
+    assert upgrade_command(str(launcher), quote) == f"<{python}> -P -m pip install --upgrade crapkit"
 
 
 def test_a_script_s_shebang_names_its_interpreter(tmp_path):
@@ -203,7 +203,7 @@ def test_a_script_s_shebang_names_its_interpreter(tmp_path):
     launcher.parent.mkdir(parents=True)
     launcher.write_text(f"#!{python}\nfrom crapkit.cli import main\n", encoding="utf-8")
 
-    assert upgrade_command(str(launcher), quote) == f"<{python}> -m pip install --upgrade crapkit"
+    assert upgrade_command(str(launcher), quote) == f"<{python}> -P -m pip install --upgrade crapkit"
 
 
 def test_a_shebang_naming_a_shell_is_not_the_interpreter(tmp_path):
@@ -213,12 +213,12 @@ def test_a_shebang_naming_a_shell_is_not_the_interpreter(tmp_path):
     launcher.parent.mkdir()
     launcher.write_text("#!/bin/sh\n'''exec' \"/opt/my env/bin/python\" \"$0\" \"$@\"\n", encoding="utf-8")
 
-    assert upgrade_command(str(launcher), quote) == "python -m pip install --upgrade crapkit"
+    assert upgrade_command(str(launcher), quote) == "python -P -m pip install --upgrade crapkit"
 
 
 def test_a_launcher_that_cannot_be_read_falls_back_to_plain_pip(tmp_path):
     assert upgrade_command(str(tmp_path / "gone" / "crapkit"), quote) == (
-        "python -m pip install --upgrade crapkit")
+        "python -P -m pip install --upgrade crapkit")
 
 
 # --- the reinstall that repairs a launcher that cannot answer ----------------------
@@ -250,7 +250,7 @@ def test_a_venv_launcher_is_reinstalled_through_the_python_beside_it(tmp_path, u
         (tmp_path / "venv" / "pyvenv.cfg").write_text("uv = 0.9.2\n", encoding="utf-8")
 
     expected = (f"uv pip install --python <{python}> --force-reinstall crapkit" if uv_made
-                else f"<{python}> -m pip install --force-reinstall crapkit")
+                else f"<{python}> -P -m pip install --force-reinstall crapkit")
     assert reinstall_command(str(launcher), quote) == expected
 
 
@@ -259,4 +259,4 @@ def test_a_launcher_with_no_python_found_is_reinstalled_through_python(tmp_path)
     launcher.parent.mkdir()
     launcher.write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
 
-    assert reinstall_command(str(launcher), quote) == "python -m pip install --force-reinstall crapkit"
+    assert reinstall_command(str(launcher), quote) == "python -P -m pip install --force-reinstall crapkit"

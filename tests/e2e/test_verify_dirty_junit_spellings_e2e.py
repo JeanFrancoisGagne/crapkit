@@ -140,6 +140,11 @@ def _verify_after_breaking_the_test(repo: Path, classname: str) -> dict:
     return json.loads(done.stdout)
 
 
+def _new_failures(verdict: dict) -> list[str]:
+    """The test ids of verify --json's new_failure items."""
+    return [item["test"] for item in verdict["findings"] if item["kind"] == "new_failure"]
+
+
 @pytest.mark.parametrize("spelling", list(SPELLINGS))
 def test_a_new_failure_in_the_test_file_under_edit_is_dirty_in_every_spelling(tmp_path, spelling):
     spec, spell = SPELLINGS[spelling]
@@ -149,8 +154,8 @@ def test_a_new_failure_in_the_test_file_under_edit_is_dirty_in_every_spelling(tm
 
     verdict = _verify_after_breaking_the_test(repo, classname)
 
-    assert verdict["new_failures"] == [f"{classname}::adds"], verdict
-    assert verdict["dirty_failures"] == verdict["new_failures"], (
+    assert _new_failures(verdict) == [f"{classname}::adds"], verdict
+    assert verdict["dirty_failures"] == _new_failures(verdict), (
         f"{classname!r} names the edited web/src/app.test.ts; verify called it committed")
     assert (verdict["committed_findings"], verdict["dirty_findings"]) == (0, 1)
 
@@ -165,5 +170,5 @@ def test_a_relative_junit_file_in_another_case_stays_committed_on_a_case_sensiti
 
     verdict = _verify_after_breaking_the_test(repo, "WEB/src/app.test.ts")
 
-    assert verdict["new_failures"] == ["WEB/src/app.test.ts::adds"]
+    assert _new_failures(verdict) == ["WEB/src/app.test.ts::adds"]
     assert verdict["dirty_failures"] == []

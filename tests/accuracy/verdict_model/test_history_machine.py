@@ -180,10 +180,27 @@ def _regressed(fresh: dict, marks: dict) -> frozenset:
     return frozenset(key for key, crap in fresh.items() if model.regression(crap, marks.get(key)))
 
 
+# The list verify --json printed each kind under before 0.9.0 listed every
+# finding once under `findings`. A retro replay runs such a crapkit.
+LISTED_BEFORE_FINDINGS = {"gate_violation": "gate_violations",
+                          "ratchet_regression": "ratchet_regressions",
+                          "new_failure": "new_failures"}
+
+
+def findings_of(payload: dict, kind: str) -> list:
+    """verify --json's findings of one kind, each as its item carries it and a
+    new_failure as its test id. A crapkit before 0.9.0 printed the kind's own
+    list instead, holding the same entries: that list."""
+    if "findings" not in payload:
+        return payload[LISTED_BEFORE_FINDINGS[kind]]
+    items = [item for item in payload["findings"] if item["kind"] == kind]
+    return [item["test"] for item in items] if kind == "new_failure" else items
+
+
 def json_verdict(payload: dict) -> Verdict:
-    gate = {(v["path"], v["key_name"] or v["long_name"]) for v in payload["gate_violations"]}
-    ratchet = {(r["path"], r["long_name"]) for r in payload["ratchet_regressions"]}
-    return Verdict(frozenset(gate), frozenset(ratchet), frozenset(payload["new_failures"]))
+    gate = {(v["path"], v["key_name"] or v["long_name"]) for v in findings_of(payload, "gate_violation")}
+    ratchet = {(r["path"], r["long_name"]) for r in findings_of(payload, "ratchet_regression")}
+    return Verdict(frozenset(gate), frozenset(ratchet), frozenset(findings_of(payload, "new_failure")))
 
 
 def digest_pair(history: list[Measured]) -> set[int]:
@@ -814,21 +831,21 @@ def test_the_prune_report_names_each_moved_field_and_the_tree(repo_templates, tm
 
 def _verified(code: int, **fields) -> vw.drive.Result:
     """A verify answer, as the two sides of the record check print one."""
-    payload = {"gate_violations": [], "ratchet_regressions": [], "new_failures": [],
-               "forgiven_failures": [], "baseline_run": 4, "run_id": 9, **fields}
+    payload = {"findings": [], "forgiven_failures": [], "baseline_run": 4, "run_id": 9, **fields}
     return vw.drive.Result(("verify",), code, json.dumps(payload), "")
 
 
-GATE = [{"path": "src/app.py", "key_name": "a3( x )", "long_name": "a3( x )"}]
+GATE = [{"kind": "gate_violation", "path": "src/app.py", "key_name": "a3( x )", "long_name": "a3( x )"}]
+NEW = [{"kind": "new_failure", "test": "t::known"}]
 ONE_VERDICT = {
     "only the run ids differ": (_verified(0), _verified(0, baseline_run=None, run_id=1), True),
-    "a gate finding differs": (_verified(6, gate_violations=GATE), _verified(0), False),
+    "a gate finding differs": (_verified(6, findings=GATE), _verified(0), False),
     "the exit differs": (_verified(0), _verified(6), False),
     "both forgive the baseline's failure": (_verified(0, forgiven_failures=["t::known"]),
                                             _verified(0, forgiven_failures=["t::known"],
                                                       baseline_run=None, run_id=1), True),
     "the record counts the forgiven failure as new (V8)": (
-        _verified(0, forgiven_failures=["t::known"]), _verified(8, new_failures=["t::known"]),
+        _verified(0, forgiven_failures=["t::known"]), _verified(8, findings=NEW),
         False),
     "both refuse alike": (vw.drive.Result(("verify",), 5, "", "a"), vw.drive.Result(("verify",), 5, "", "b"), True),
     "one refuses": (_verified(0), vw.drive.Result(("verify",), 5, "", ""), False),

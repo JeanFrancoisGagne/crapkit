@@ -92,11 +92,13 @@ def _script(directory: Path, name: str, body: str) -> None:
 
 
 # The `python` a reader's PATH holds: none (a name sh cannot run, 127, as sh
-# says it for a missing command), one that imports this crapkit, or a system
-# python that does not (-I drops PYTHONPATH, -S drops site-packages).
+# says it for a missing command), one that imports this crapkit, a system
+# python that does not (-I drops PYTHONPATH, -S drops site-packages), or one
+# older than 3.11, which answers -P the way Python 3.10 does.
 PYTHONS = {"missing": 'echo "python: not found" >&2\nexit 127',
            "crapkit": 'exec "{exe}" "$@"',
-           "bare": 'exec "{exe}" -I -S "$@"'}
+           "bare": 'exec "{exe}" -I -S "$@"',
+           "old": '[ "$1" = -P ] || exec "{exe}" -I -S "$@"\necho "Unknown option: -P" >&2\nexit 2'}
 
 
 def shims(tmp_path: Path, *, crapkit: bool = True, python: str = "missing", uvx: bool = False) -> Path:
@@ -249,13 +251,16 @@ def readme_exit_code(said: str) -> int:
 
 
 @pytest.mark.parametrize("python, said", [("missing", "python: not found"),
-                                          ("bare", "No module named crapkit")])
+                                          ("bare", "No module named crapkit"),
+                                          ("old", "Unknown option: -P")])
 def test_the_pages_name_what_a_hook_that_reaches_no_crapkit_prints(tmp_path, python, said):
     """README said the hook exits 127 whenever its PATH holds neither a
     `crapkit` nor a `python` that imports it. That holds with no python at all.
     A system python without crapkit runs, prints `No module named crapkit` and
-    exits 1. Git refuses the commit both ways, with that line on stderr, and
-    the handbook's callout names it for the reader who sees it."""
+    exits 1. A python older than 3.11 has no `-P`, which the body's last line
+    passes, and stops there with exit 2. Git refuses the commit each way, with
+    that line on stderr, and the handbook's callout names it for the reader who
+    sees it."""
     env = machine(tmp_path, shims(tmp_path, crapkit=False, python=python))
     repo = adopted(tmp_path, env)
     paste([sh()], readme_fence(ROUTE_ONE, "sh"), repo, env)

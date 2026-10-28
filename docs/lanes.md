@@ -192,6 +192,7 @@ ok   lane 'py': runs pytest (named in its command)
 ok   lane 'js': runs vitest (named in package.json script "test")
 ok   lane 'js': runs vitest (package.json devDependencies; the command names no runner)
 note lane 'js': runner unknown (npm run cov names none crapkit knows); runner-specific hints and refusals are off for it
+note lane 'both': runner unknown (it runs more than one: pytest, vitest); runner-specific hints are off for it; the refusals still read each segment of its command by the runner that segment names
 ```
 
 `doctor --json` carries the same answer as each lane's `toolchain`
@@ -226,11 +227,20 @@ deno, `cargo llvm-cov`, `go test` and c8. Three places are read, in this order:
 `make`, `just`, `tox` and `nox` run recipes crapkit does not read, so the command stops
 there and only the script and devDependencies steps can answer. A lane that names two
 runners, in two segments or in its command and its script, gets no runner, and its line
-says which two.
+says which two. Lane 'both' in the last line above runs
+`python -m pytest --cov && npx vitest run --coverage`.
 
-"runner unknown" is not a failure, and doctor's exit code does not change. It means the
-hints and refusals that key on one runner skip that lane. Naming the runner in the command
-turns them back on:
+"runner unknown" is not a failure, and doctor's exit code does not change. The hints that
+need one runner for the whole lane skip it: doctor's pytest-cov probe does not run, and the
+missing-`results_artifact` WARN gives a generic hint in place of the runner's junit flags.
+The refusals work differently. Each one reads every segment of the command on its own and
+judges it by the runner that segment names: the vitest file-filter refusal reads a segment
+that names vitest, and the [full-suite rule](#the-full-suite-rule) and the
+[container guard](#containers) read one that names pytest. A lane whose command names no
+runner draws none of them. A lane that names two keeps every refusal its segments draw:
+lane 'both' is refused in a container, and refused at load once its pytest segment gets a
+positional or its vitest segment a file filter. Naming the runner in the command turns the
+hints and refusals back on:
 `npx vitest run --coverage` in place of `npm run cov`. A package.json crapkit cannot read
 (not UTF-8, UTF-16, or not one JSON object) is one WARN naming the file, and each lane under
 it is read from its command alone.
@@ -283,10 +293,10 @@ file.
 | jest | `--coverageDirectory=.crapkit/cov/js` | `.crapkit/cov/js/coverage-final.json` |
 
 The two JS flags are not interchangeable: jest exits on vitest's spelling and vitest exits on
-jest's. `init` writes one only when `package.json` names exactly one of the two runners in
-`devDependencies`. `npm test` can run anything, and a wrong flag turns a working lane into an
-argument error. A repo naming neither or both keeps its runner's default directory, and
-`doctor` says so:
+jest's. `init` writes the flags of the runner the `test` script runs, and only when that script
+names none, of the one runner `devDependencies` name. A wrong flag turns a working lane into an
+argument error, so a repo whose script runs pytest, or names no runner while `devDependencies`
+name neither runner or both, keeps its runner's default directory, and `doctor` says so:
 
 ```
 WARN lane 'js' writes coverage/coverage-final.json at the repo root - point it under .crapkit/ (for example .crapkit/cov/js/) to keep the tree clean
@@ -612,10 +622,10 @@ scopes = ["web"]
 
 vitest ships the junit reporter, so those three flags need no package. Name `default`
 alongside it: `--reporter=junit` on its own replaces the console output you watch the run
-through. That is the lane `crapkit init` writes for a repo whose `devDependencies` name
-vitest and whose package.json has a `test` script. When the test script has another name
-that starts with `test`, the command runs that script. With no such script it writes
-`npx vitest run --coverage ...` with the same flags.
+through. That is the lane `crapkit init` writes for a repo whose `test` script runs vitest, or
+whose `devDependencies` name vitest and whose package.json has a `test` script that names no
+runner. When the test script has another name that starts with `test`, the command runs that
+script. With no such script it writes `npx vitest run --coverage ...` with the same flags.
 
 Never put a file filter in a `--coverage` command. vitest silently narrows the coverage
 include set to the filtered files, so everything else reads as uncovered. crapkit refuses
@@ -697,7 +707,7 @@ That note names the interpreter word it probed and the path that word resolves t
 and its install command is bound to the same word:
 
 ```
-note: lane 'py' names `python`, which resolves here to /home/dev/venvbare/bin/python and cannot import pytest_cov - run `python -m pip install pytest-cov` in the environment the suite runs in (pip install "crapkit[py]" when that is crapkit's own environment), then `crapkit coverage`
+note: lane 'py' names `python`, which resolves here to /home/dev/venvbare/bin/python and cannot import pytest_cov - run `python -P -m pip install pytest-cov` in the environment the suite runs in (pip install "crapkit[py]" when that is crapkit's own environment), then `crapkit coverage`
 ```
 
 A machine has more than one python, and the note used to say only "this python". Where the
@@ -706,7 +716,7 @@ move: repoint the lane instead.
 
 A lane that names its python by path, such as the `.venv\Scripts\python.exe` init writes
 for a repo's venv on Windows, gets an install command that names the file the path
-resolves to, `C:/work/app/.venv/Scripts/python.exe -m pip install pytest-cov`. The word as
+resolves to, `C:/work/app/.venv/Scripts/python.exe -P -m pip install pytest-cov`. The word as
 the lane spells it runs only from the lane's directory, and Git Bash reads its
 backslashes as escapes. Forward slashes run in cmd.exe, PowerShell and Git Bash, and a
 directory name that needs quoting is quoted on its own, as in a next step
@@ -718,7 +728,7 @@ active venv. Before 0.4.12 it read `pip install pytest-cov` and named no environ
 so a reader whose lane ran its own venv installed the package where it changed nothing. The
 refusal binds the install to an interpreter under the same condition the probe uses: the
 step that runs pytest starts with a python. So `python -m pytest --cov` and
-`cd web && python -m pytest --cov` earn `python -m pip install pytest-cov`, while
+`cd web && python -m pytest --cov` earn `python -P -m pip install pytest-cov`, while
 `uv run pytest --cov` and `coverage run -m pytest --cov=pylib` name the environment and stop
 there. Neither `uv`
 nor `coverage` has a `-m pip install`, and a reader who runs one gets a second, unrelated
@@ -928,7 +938,7 @@ crapkit scores from, only since 7.13.1 and `crapkit coverage` refuses that lane'
 with exit 5:
 
 ```
-FAIL lane 'py' runs coverage 7.4.4 (/home/you/ledger/.venv/bin/python), which writes no function start lines, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.13.1); install 7.13.1 or later there with `/home/you/ledger/.venv/bin/python -m pip install "coverage>=7.13.1"` and raise any pin that holds it lower
+FAIL lane 'py' runs coverage 7.4.4 (/home/you/ledger/.venv/bin/python), which writes no function start lines, so `crapkit coverage` refuses its report with exit 5 (needs coverage >= 7.13.1); install 7.13.1 or later there with `/home/you/ledger/.venv/bin/python -P -m pip install "coverage>=7.13.1"` and raise any pin that holds it lower
 ```
 
 It does check that the manager itself is installed here, because the lockfile is the
@@ -1275,7 +1285,7 @@ refuses. It prints one WARN per lane whose command names pytest and that has no
 `container_ok`, naming the trigger it found:
 
 ```
-WARN lane 'py' runs a coverage.py suite and this is a container (/.dockerenv exists): `crapkit coverage` refuses it with exit 5; if the container is sized for the suite, set container_ok = true on the lane (docs/lanes.md#containers)
+WARN lane 'py' runs pytest and this is a container (/.dockerenv exists): `crapkit coverage` refuses it with exit 5; if the container is sized for the suite, set container_ok = true on the lane (docs/lanes.md#containers)
 doctor: no problems found, 1 warning above
 ```
 
@@ -1638,7 +1648,7 @@ Rules that keep this from hiding real failures:
 - Only lanes that declare `retest_command` retest. Lanes without one keep every failure.
   A test that several lanes failed drops out only when each of those lanes reran it and
   it passed.
-- A test only drops out of `new_failures` when the rerun's own results artifact says it
+- A test only stops being a `new_failure` item when the rerun's own results artifact says it
   passed. The lane's report moves aside while the retest runs, so a report at the path
   afterwards is the retest's, even one written inside the old report's time tick. No
   artifact (the lane's report goes back), a crash, or a timeout during the retest keeps

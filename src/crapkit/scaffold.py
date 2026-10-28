@@ -7,7 +7,7 @@ from typing import NamedTuple
 from .config import PYTEST_CONFIG_FILES, pytest_testpaths_texts as pytest_testpaths  # noqa: F401  init and tests import it from here
 from .config import _as_testpath
 from .coverage_format import lane_format
-from .toolchain import TOOLCHAINS, Toolchain
+from .toolchain import TOOLCHAINS, Toolchain, infer
 
 from .universe import (LANGUAGE_EXTENSIONS, exclude_matcher, excluded, is_test_file,
                        scopes_with_tests)
@@ -236,18 +236,26 @@ def _dependency_names(value) -> frozenset[str]:
     return frozenset()
 
 
-def _js_runner(dev_dependencies: frozenset[str]) -> str | None:
-    """The runner whose flags this lane may carry, or None when package.json
-    names neither runner or both.
+def _js_runner(package: NpmPackage) -> str | None:
+    """The runner whose flags this package's lane may carry, or None.
 
-    `npm test` can run anything, so devDependencies is the only thing that names
-    the runner — and naming it wrong is worse than the litter: jest exits on
-    vitest's `--coverage.reportsDirectory` and vitest exits on jest's
-    `--coverageDirectory`. Unresolved, the lane keeps the directory its runner
-    already defaults to and doctor says so.
+    Read the way doctor reads the lane (toolchain.infer): the runner the test
+    script runs, and only when that script names none, the one runner
+    devDependencies name. With no test script, devDependencies alone. Naming
+    it wrong is worse than the litter: jest exits on vitest's
+    `--coverage.reportsDirectory`, vitest exits on jest's `--coverageDirectory`,
+    and a script that runs pytest gets neither. A script that runs a runner
+    package.json cannot name, or two runners, keeps the directory its runner
+    already defaults to, and doctor says so.
     """
-    named = _named_runners(dev_dependencies)
-    return named[0] if len(named) == 1 else None
+    command = _npm_test_command(package.scripts)
+    if command is None:
+        named = _named_runners(package.dev_dependencies)
+        return named[0] if len(named) == 1 else None
+    found = infer(command, cwd_package=package)
+    if found.name is None or TOOLCHAINS[found.name].dev_dependency is None:
+        return None
+    return found.name
 
 
 def _js_junit(row: Toolchain, dev_dependencies: frozenset[str],
@@ -314,16 +322,17 @@ def _js_root_lane(package: NpmPackage) -> LaneSpec | None:
     command = _js_command(package)
     if command is None:
         return None
-    runner = _js_runner(package.dev_dependencies)
+    runner = _js_runner(package)
     if runner is None:
         return LaneSpec("js", command, _JS_DEFAULT_ARTIFACT, "istanbul", _JS_LANGUAGES)
     return _js_routed_lane(package, command, runner, "")
 
 
 def _runner_workspaces(packages: Packages) -> list[tuple[str, str]]:
-    """The workspace directories whose own devDependencies name one runner,
-    each paired with the runner it named, so no caller asks twice."""
-    named = ((directory, _js_runner(package.dev_dependencies))
+    """The workspace directories whose own package.json names one runner (its
+    test script, else its devDependencies), each paired with the runner it
+    named, so no caller asks twice."""
+    named = ((directory, _js_runner(package))
              for directory, package in packages.items() if directory)
     return sorted((directory, runner) for directory, runner in named if runner)
 
@@ -365,13 +374,13 @@ def _packages(package_json: PackageJson) -> Packages:
 def _js_lane(package_json: PackageJson) -> LaneSpec | None:
     """The js lane, from the root package.json and the workspaces beside it.
 
-    The root wins when it names a runner itself. Only a root that names none
-    hands the question to the workspaces, so a repo that already worked keeps
-    the lane it always got.
+    The root wins when it names a JS runner itself (_js_runner). Only a root
+    that names none hands the question to the workspaces, so a repo that
+    already worked keeps the lane it always got.
     """
     packages = _packages(package_json)
     root = packages.get("", NO_PACKAGE)
-    if _js_runner(root.dev_dependencies) is None:
+    if _js_runner(root) is None:
         workspace = _js_workspace_lane(packages)
         if workspace is not None:
             return workspace
@@ -686,7 +695,7 @@ def _js_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
         return ScopedEntry(_NPM_WORKSPACE.format(script=script, directory=name),
                            f"{name}/ is an npm workspace with its own {script} script, "
                            "run from the root with -w", True)
-    runner = _js_runner(facts.packages.get("", NO_PACKAGE).dev_dependencies)
+    runner = _js_runner(facts.packages.get("", NO_PACKAGE))
     if runner:
         return ScopedEntry(TOOLCHAINS[runner].related_tests, f"{runner}'s related-tests mode, keyed by "
                            "the runner package.json names", False)
