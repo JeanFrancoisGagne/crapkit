@@ -146,9 +146,48 @@ refusal too.
 <!-- /0.9.0:m1-foundations -->
 
 <!-- 0.9.0:mission-3 -->
+`hook-precommit` exits 6 on a marked function whose staged ccn passed its mark, where
+0.8.1 passed any marked function. A staged blob has no coverage, but CRAP is never under
+ccn, so such a mark rose at any coverage, and `verify` would fail it later. A CI step that
+runs `hook-precommit --base` now exits 6 on that commit, sooner than `verify` did. The
+refusal names the function, its ccn and its mark:
+
+```
+crapkit gate: 1 staged function(s) rose past their ratchet mark:
+  ccn   8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+```
+
+Decompose the function until its ccn sits at or under the mark, or pass the commit with
+`CRAPKIT_OVERRIDE_REASON` set, which records the override and leaves the mark as it was
+([the commit gate](ratchet.md#the-commit-gate-skips-marked-functions)). A marked function
+whose ccn sits at or under its mark passes as before, counted on the stderr line.
+
+`claude-hook` now exits 2 on a marked function whose ccn passed its mark or rose, where
+0.8.1 stayed silent on any marked function, so an agent sees advisories on debt the repo
+marked. A ccn past the mark draws the marked block, which the commit gate will refuse; a
+ccn that rose since HEAD while the CRAP range straddles the mark draws the warn block,
+which the commit gate passes with a warn. Each block has its own closing line
+([claude-hook](agent-json.md#claude-hook)). The advisory for an unmarked breach prints the
+same lines as before, and a comment edit inside a marked function stays silent.
 <!-- /0.9.0:mission-3 -->
 
 <!-- 0.9.0:metric-stamp -->
+### Marks a newer lizard stamped take one reseed
+
+crapkit 0.8.1 and earlier accept any lizard below 1.25, and 0.9.0 pins `lizard==1.24.0`.
+PyPI has served lizard 1.24.1 since 2026-10-05, so a crapkit 0.8.1 installed on or after
+that day seeds its marks under a lizard newer than 1.24.0: 1.24.1 to 1.24.3 as of
+2026-10-26. If you seeded or re-seeded on such an install, the first line of your marks
+file names that lizard, as in `# crapkit-analysis=13 lizard=1.24.3`.
+
+0.9.0 reads those marks as it reads older ones: `crapkit verify` exits 3 and names the
+reseed, and `crapkit doctor` lists them as a WARN and exits 0. Run `crapkit coverage`,
+`crapkit ratchet prune` and `crapkit ratchet seed` once after you upgrade to 0.9.0, then
+commit the marks file.
+
+Every teammate upgrades crapkit as well, the Action's `uses:` pin and the pre-commit `rev`
+included. A teammate still on 0.8.1 measures under the newer lizard, so their verify asks
+for a reseed too, and each reseed they run moves the marks back.
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->

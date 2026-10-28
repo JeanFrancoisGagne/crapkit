@@ -636,7 +636,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     else:
         entries, note = _pruned(root, store, marks, fresh)
         text = saved.kept(entries, keys=key_version, new_file_metric=metric_version())
-    _publish_checked(saved, text, entries, fresh, latest["tool_versions"].get("analysis_version"))
+    _publish_checked(saved, text, entries, fresh, latest["tool_versions"])
     metric_note = _metric_note(work, action, created=saved.text is None)
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(work.skipped, work.newer)}{metric_note}")
@@ -836,12 +836,15 @@ def _measured_here(run: dict | None) -> dict | None:
     return None
 
 
-def _publish_checked(saved, text: str, entries: list, fresh: list, analysis_version) -> None:
-    """Refuse to write `text`, which holds `entries`, when its marks cannot be keyed."""
-    from ..ratchet import check_reader_version, checked_key_version
+def _publish_checked(saved, text: str, entries: list, fresh: list, tool_versions: dict) -> None:
+    """Refuse to write `text`, which holds `entries`, when its marks cannot be
+    keyed: the stamp of the run that measured them and the text's own stamp
+    each prove the expression reader for every JavaScript-family mark's
+    language."""
+    from ..ratchet import check_reader_version, checked_key_version, run_stamp
 
     try:
-        check_reader_version(entries, analysis_version)
+        check_reader_version(entries, run_stamp(tool_versions))
         checked_key_version(text, fresh, entries=entries)
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc

@@ -93,5 +93,4 @@ def test_a_breaching_gate_still_names_a_mark_line_it_skipped(scored, capsys):
 def test_check_gate_tells_an_agent_what_a_clean_gate_no_longer_reports():
     (entry,) = [t for t in tool_listing() if t["name"] == "check_gate"]
 
-    assert "read only on a breach" in entry["description"], entry["description"]
-    assert "marks file" in entry["description"], entry["description"]
+    assert "A clean gate reads no marks" in entry["description"], entry["description"]

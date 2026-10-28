@@ -149,7 +149,7 @@ def test_nested_root_gates(make_repo, gate):
     """a1 touched to ccn 8 under a root one directory below the top: each gate
     refuses it with exit 6, as the model's gates say."""
     sc = _nested_touched(make_repo)
-    fired = model.hook_gate(PAST.ccn, vw.TARGET, marked=False) and model.verify_gate(
+    fired = model.hook_gate(PAST.ccn, vw.TARGET, None) and model.verify_gate(
         model.Row("src/app.py", PAST.long_name, 1, PAST.crap), True, vw.TARGET, None)
     assert fired and GATES[gate](sc) == 6
 

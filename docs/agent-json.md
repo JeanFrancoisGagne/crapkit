@@ -522,7 +522,7 @@ session need not read the config to learn which number it is aiming at.
 |---|---|---|
 | `ceiling` | int | The scope's effective target. `rescore --gate` compares `ccn` against this and nothing else. Same value as `target`. |
 | `binds` | string | The gate's scope rule as one sentence, the same string in every packet: `changed functions only; a ratchet mark pardons standing debt at or under it`. Print it, do not branch on it. |
-| `ratchet_mark` | float or null | The mark this function already carries. At or under it, an edit inside the function passes `rescore --gate` and `verify`'s gate alike. Push it past the mark and both refuse, `rescore --gate` at exit 6 and `verify` at exit 6 as well since #29. Exit 7 is what is left for a mark that rose in a function the diff never touched. |
+| `ratchet_mark` | float or null | The mark this function already carries. At or under it, an edit inside the function passes `rescore --gate` and `verify`'s gate alike. Push it past the mark and both refuse, `rescore --gate` at exit 6 and `verify` at exit 6 as well since #29. The pre-commit hook sees no coverage and refuses the function only once its staged ccn alone passes the mark. Exit 7 is what is left for a mark that rose in a function the diff never touched. |
 | `mark_age_days` | int or null | How old that mark is, measured from the newest commit that touched the ratchet file, never from the wall clock. |
 | `diff_uncovered_max` | int or null | The configured ceiling on changed lines with no coverage. `null` means warn only: `verify` prints the count and exits 0. |
 
@@ -1676,7 +1676,9 @@ is the first `crapkit.toml` above the edited file. The plugin registers it async
 |---|---|---|
 | `0` | nothing to say | stdout and stderr both empty |
 | `2` | a changed function is over its ceiling, or a changed file went unjudged, in Claude Code | three or more lines on stderr, which reach the model |
-| `0` | the same, in Cursor, Copilot CLI or VS Code | one line of JSON on stdout carrying those lines; stderr empty |
+| `2` | a changed marked function's ccn passed its mark, in Claude Code | the marked block on stderr, after any unmarked block for the same file |
+| `2` | a changed marked function's ccn rose since HEAD while its CRAP range straddles its mark, in Claude Code | the warn block on stderr, after the other two |
+| `0` | any of these, in Cursor, Copilot CLI or VS Code | one line of JSON on stdout carrying those lines; stderr empty |
 
 Captured from a real run, on a file whose `route` reached ccn 7 under a ceiling of 6:
 
@@ -1685,6 +1687,31 @@ crapkit advisory: 1 function(s) over ceiling 6 in app/m.py (the edit landed; not
   ccn 7  app/m.py:1  route( a , b , c , d )
 the commit gate enforces this; decompose there or mark the debt
 ```
+
+A marked function speaks in a block of its own, with its own closing line. Since 0.9.0 the
+hook holds it to its mark as `hook-precommit` does ([ratchet.md](ratchet.md#the-commit-gate-skips-marked-functions)):
+a working-tree file carries no coverage, so its CRAP is a range from its ccn up to its
+untested CRAP. A ccn past the mark is past it at any coverage, and the commit gate will
+refuse it:
+
+```
+crapkit advisory: 1 marked function(s) rose past their ratchet mark in calc/parse.py (the edit landed; nothing was blocked)
+  ccn 8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+the commit gate refuses a ccn past its mark, and a mark only falls: bring the ccn back to its mark or under it
+```
+
+A range across the mark whose ccn rose since HEAD, or that HEAD holds no function for, may
+have passed it, and only coverage can say. The commit gate passes it with a warn, and the
+advisory warns too, with the ccn at HEAD (`new` for none) and now:
+
+```
+crapkit advisory: 1 marked function(s) rose in ccn and may pass their ratchet mark in calc/grade.py (the edit landed; nothing was blocked)
+  ccn 10 -> 12  calc/grade.py:1  classify( score , attempts , late )  mark 110.0000
+`crapkit verify` judges the mark with coverage: add tests that run the new branches, or decompose
+```
+
+Each row names the handle the mark sits under, `#2` for a second twin. A file can print
+an unmarked block, then a marked block, then a warn block, under one exit 2.
 
 **It is advisory, and the wording says so.** PostToolUse runs after the write, so the edit is
 already on disk and nothing can block it. `hook-precommit` stays the only enforcement point.
@@ -1808,7 +1835,7 @@ shell; skip it when every write arrives as an `Edit`.
 
 ### The silence ladder
 
-Five rungs, each exiting 0 with both streams empty. Any uncaught exception does the same.
+Six rungs, each exiting 0 with both streams empty. Any uncaught exception does the same.
 
 | Rung | Silent when |
 |---|---|
@@ -1816,7 +1843,8 @@ Five rungs, each exiting 0 with both streams empty. Any uncaught exception does 
 | event | stdin is not one JSON object, or not a `PostToolUse` (`postToolUse` from Cursor) naming the file it wrote or a shell tool's `tool_input.command`, or the file it names has a suffix crapkit does not measure |
 | repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config. On a `Bash` event: no git repo above the command's `cwd`, or no changed `*.py` fresh enough to judge |
 | git state | mid-rebase, mid-merge or mid-cherry-pick |
-| verdict | no scope claims the file, a reader read it and found no functions, no changed function is over the ceiling, or every one that is carries a ratchet mark |
+| verdict | no scope claims the file, a reader read it and found no functions, or no changed function is over the ceiling |
+| mark | every changed function over the ceiling carries a mark that its range, ccn up to its untested CRAP, sits at or under, or that its range straddles with a ccn no higher than at HEAD |
 
 Since 0.4.7 the protocol rung is checked first, ahead of the event shape and ahead of every
 git call, so a payload for a protocol this CLI does not answer costs nothing but the read of
@@ -1827,8 +1855,11 @@ Silence is the design. PostToolUse renders every nonzero exit but 2 invisible, a
 the edits this was measured against land in repos with no `crapkit.toml`. A hook that fired
 there would be either useless or unbearable.
 
-The hook pardons on a mark's existence, not the numeric rule `verify` applies: the store is never
-opened, so the hook holds no CRAP to compare. Same rule as the commit gate, described in
+The hook pardons by the range rule every gate applies, over the CRAP range it can know: the
+store is never opened, so it holds no coverage and reads the range from ccn up to the
+untested CRAP. A mark pardons while that range sits at or under it; a range whose low end
+passes it is the marked block, and a range across it whose ccn rose is the warn block. Same
+rule as the commit gate, described in
 [ratchet.md](ratchet.md#the-commit-gate-skips-marked-functions).
 
 An unknown `claude-*` subcommand exits 0 silently too, so a plugin newer than the installed
@@ -1991,7 +2022,7 @@ can serve several checkouts.
 | `get_function_history` | `path`, `name`, `history` (bool: adds `commits` per function, the CLI's `--history`), `tests` (bool: adds `tests`, the CLI's `--tests`) | JSON text |
 | `check_config` | | JSON text (the `doctor --json` report) |
 | `get_next_item` | `top` (int), `exclude` (array of strings: one fragment per element, each becoming its own `--exclude`, so a path fragment reads in any spelling `next-item --exclude` reads: `./pkg/legacy` is `pkg/legacy`, `pkg\legacy` is `pkg/legacy` on a Windows server, and `PKG/Legacy` is `pkg/legacy` where the disk ignores case), `scope` (array of strings, as on `list_worklist`) | JSON text |
-| `check_gate` | `path` (repo-relative source file, or absolute inside the repo, in any spelling the [CLI path rules](configuration.md#file-paths-and-root-discovery) read; outside the repo or missing is a config error, and an unchanged or unscoped file judges 0) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`'s rule (`ok`, `judged`, `ceilings`, `breaches`, `untracked`, `unread_files`). A ratchet mark pardons a changed function only while its crap sits at or under the mark, which is stricter than the pre-commit hook, where any mark pardons; the marks file is read only when a changed function breached, so a clean gate never reports a marks file it cannot parse. A breach exits 6 and answers as a result with `gate.ok` false, not a tool error. A `path` naming a file a scope takes whose name is not UTF-8 is refused before any judging, as every gate refuses it: the answer is a result with `gate.ok` false, `judged` 0 and the file in `gate.unread_files`, each item a `path`, the `reason` that says to rename it, and `dirty` true. The server decides it without starting the CLI, and the result carries `baseline_run`, `baseline_commit` and `note` like every other verdict. Such a name no scope takes judges 0 with `gate.ok` true, as any unscoped file does |
+| `check_gate` | `path` (repo-relative source file, or absolute inside the repo, in any spelling the [CLI path rules](configuration.md#file-paths-and-root-discovery) read; outside the repo or missing is a config error, and an unchanged or unscoped file judges 0) | JSON text: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`'s rule (`ok`, `judged`, `ceilings`, `breaches`, `untracked`, `unread_files`). A ratchet mark pardons a changed function only while its crap sits at or under the mark, which is stricter than the pre-commit hook: that hook sees no coverage and refuses a marked function only once its staged ccn alone passes the mark. The marks file is read only when a changed function breached, so a clean gate never reports a marks file it cannot parse. A breach exits 6 and answers as a result with `gate.ok` false, not a tool error. A `path` naming a file a scope takes whose name is not UTF-8 is refused before any judging, as every gate refuses it: the answer is a result with `gate.ok` false, `judged` 0 and the file in `gate.unread_files`, each item a `path`, the `reason` that says to rename it, and `dirty` true. The server decides it without starting the CLI, and the result carries `baseline_run`, `baseline_commit` and `note` like every other verdict. Such a name no scope takes judges 0 with `gate.ok` true, as any unscoped file does |
 
 Results arrive as MCP text content, and every tool's text is the payload of the CLI's
 `--json` form: parse it, or read `structuredContent`, which carries the same object parsed

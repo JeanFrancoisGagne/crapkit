@@ -1,0 +1,28 @@
+{
+  "case": "marked_rise",
+  "why": "HEAD holds sprawl( n ) at ccn 7, marked 10.0, and the edit adds a branch. Its CRAP now sits somewhere from 8 to 72, across the mark, and only coverage can say which side: the commit gate passes the staged blob and warns. The advisory warns too, naming the ccn at HEAD and now, in a block whose closing line sends the agent to tests or a decomposition before verify judges the mark.",
+  "fixture": "marked_rise",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "    return n",
+      "new_string": "    if n == 7:\n        n += 7\n    return n"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {
+    "exit": 2,
+    "stderr": [
+      "crapkit advisory: 1 marked function(s) rose in ccn and may pass their ratchet mark in calc/grade.py (the edit landed; nothing was blocked)",
+      "  ccn 7 -> 8  calc/grade.py:1  sprawl( n )  mark 10.0000",
+      "`crapkit verify` judges the mark with coverage: add tests that run the new branches, or decompose"
+    ]
+  }
+}

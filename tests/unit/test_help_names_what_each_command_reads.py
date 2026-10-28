@@ -159,8 +159,11 @@ def test_the_schema_names_every_placeholder_the_retest_fills():
 # history", and report's open marks are the file's rows, committed or not.
 
 MARKS = "crapkit-ratchet.tsv"
-HOOK_MARKS = ("A function with a mark in the working tree's marks file passes, whether or not "
-              "the mark is staged.")
+# Since 0.9.0 the mark holds the function's ccn, not its existence: a ccn past
+# the mark puts the CRAP past it at any coverage, and the hook exits 6.
+HOOK_MARKS = ("A function over its ceiling with a mark in the working tree's marks file, whether "
+              "or not the mark is staged, passes while its ccn sits at or under that mark, and "
+              "exits 6 once its ccn passes it")
 RATCHET_MANAGES = "ratchet manage the marks file: seed new debt, prune gone code"
 REPORT_READS = ("report: the burn-down: open marks are the file's rows, committed or not, or the "
                 "rows its history last held when it is missing or blank, and ages and repayments "
