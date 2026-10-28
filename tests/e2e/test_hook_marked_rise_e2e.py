@@ -15,6 +15,11 @@ the function whose whole range sits at or under its mark is not one.
 
 `audit`, added to the fixture here, is a function no test runs: seed marks it
 at its untested CRAP, 56, the high end of the range a comment edit leaves it.
+`banner` is untested too, marked 20 at ccn 4. No test reaches either one, so
+each mark is ccn^2 + ccn and rises with ccn: a branch added to either leaves a
+range that straddles its mark, and the hook warns. The warn differential holds
+those warns to verify: every warned function is a ratchet_regression item, and
+every regression the hook did not refuse was warned.
 """
 from __future__ import annotations
 
@@ -82,6 +87,15 @@ TWO_MORE_BRANCHES = ('    if row.get("score") is None:\n        row["score"] = 0
                      '    if row.get("bonus") is None:\n        row["bonus"] = 0\n')
 RISE_HEAD = "crapkit gate: 1 staged function(s) rose past their ratchet mark:"
 RISE_ROW = re.compile(r"^  ccn +(\d+)  (\S+):(\d+)  (.+?)  mark (\d+\.\d{4})$", re.M)
+WARN_HEAD = "rose in ccn and may pass their ratchet mark; `crapkit verify` judges them with coverage:"
+WARN_ROW = re.compile(r"^  ccn (\S+) -> (\d+)  (\S+):(\d+)  (.+?)  mark (\d+\.\d{4})$", re.M)
+BANNER = "banner( bins , total )"
+AUDIT_NAME = "audit( rows , key )"
+BANNER_AT_7 = ("def banner(bins, total):\n",
+               "def banner(bins, total):\n    if total is None or bins is None or not bins:\n        return ''\n")
+AUDIT_AT_8 = ('        elif row.get("score", 0) > 70:\n',
+              '        elif row.get("score", 0) > 75:\n            total += 5\n'
+              '        elif row.get("score", 0) > 70:\n')
 IDENTITY = ("-c", "user.email=t@t", "-c", "user.name=t")
 
 
@@ -186,23 +200,66 @@ def test_git_commit_runs_the_refusal_and_keeps_head(demo: Path):
 
 def test_every_refused_rise_is_a_regression_and_no_high_end_pardon_is_one(demo: Path):
     """read_row at ccn 8 (a rise), audit under a comment (its range 7 to 56
-    sits at its mark of 56: pardoned) and banner at ccn 7 against its mark of
-    20 (the range 7 to 56 straddles it): the hook names the rise alone, and
-    verify on the committed tree agrees on both ends."""
+    sits at its mark of 56: pardoned) and banner from ccn 4 to 7 against its
+    mark of 20 (the range 7 to 56 straddles it, and ccn rose): the hook refuses
+    the rise, warns about banner, counts audit, and verify on the committed
+    tree agrees on every one."""
     edit(demo, "calc/parse.py", *TWO_MORE_BRANCHES)
     edit(demo, "calc/report.py", "    total = 0\n    for row in rows:\n",
          "    total = 0\n    # each row once\n    for row in rows:\n")
-    edit(demo, "calc/report.py", "def banner(bins, total):\n",
-         "def banner(bins, total):\n    if total is None or bins is None or not bins:\n        return ''\n")
+    edit(demo, "calc/report.py", *BANNER_AT_7)
     git(demo, "add", "-A")
 
     hook = run_cli(demo, "hook-precommit")
     refused = {row[3] for row in RISE_ROW.findall(hook.stdout)}
+    warned = {row[4] for row in WARN_ROW.findall(hook.stderr)}
     git(demo, *IDENTITY, "commit", "-q", "--no-verify", "-m", "three edits")
     found = regressions(demo)
 
     assert hook.returncode == 6, hook.stdout + hook.stderr
     assert refused == {READ_ROW}
-    assert "crapkit gate: 2 staged function(s) carry a ratchet mark" in hook.stderr, hook.stderr
-    assert refused <= set(found), found
-    assert "audit( rows , key )" not in found, found
+    assert WARN_ROW.findall(hook.stderr) == [("4", "7", "calc/report.py", "26", BANNER, "20.0000")], hook.stderr
+    assert "crapkit gate: 1 staged function(s) carry a ratchet mark" in hook.stderr, hook.stderr
+    assert refused | warned <= set(found), found
+    assert AUDIT_NAME not in found, found
+
+
+def test_every_warned_function_is_a_regression_and_every_unrefused_regression_was_warned(demo: Path):
+    """audit from ccn 7 to 8 under its mark of 56 and banner from 4 to 7 under
+    its mark of 20, both seeded at coverage 0: each range straddles its mark
+    and each ccn rose. The hook warns about both and exits 0; verify on the
+    committed tree reports exactly those two."""
+    edit(demo, "calc/report.py", *AUDIT_AT_8)
+    edit(demo, "calc/report.py", *BANNER_AT_7)
+    git(demo, "add", "-A")
+
+    hook = run_cli(demo, "hook-precommit")
+    warned = {row[4] for row in WARN_ROW.findall(hook.stderr)}
+    git(demo, *IDENTITY, "commit", "-q", "--no-verify", "-m", "two rises under their marks")
+    found = regressions(demo)
+
+    assert hook.returncode == 0, hook.stdout + hook.stderr
+    assert f"crapkit gate: 2 staged marked function(s) {WARN_HEAD}" in hook.stderr, hook.stderr
+    assert warned == {AUDIT_NAME, BANNER}, hook.stderr
+    assert set(found) == warned, found
+    assert (found[AUDIT_NAME]["recorded"], found[BANNER]["recorded"]) == (56.0, 20.0), found
+
+
+def test_git_commit_prints_the_warn_and_records_the_commit(demo: Path):
+    """The warn as git runs the hook: the commit goes through, and git passes
+    the hook's stderr on."""
+    hook = demo / ".git" / "hooks" / "pre-commit"
+    hook.write_bytes(f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" -m crapkit hook-precommit\n'.encode())
+    hook.chmod(0o755)
+    before = git(demo, "rev-parse", "HEAD")
+    edit(demo, "calc/report.py", *BANNER_AT_7)
+    git(demo, "add", "-A")
+
+    committed = subprocess.run(["git", *IDENTITY, "commit", "-q", "-m", "banner checks its input"], cwd=demo,
+                               capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               env=child_env({"CRAPKIT_OVERRIDE_REASON": None}))
+
+    assert committed.returncode == 0, committed.stdout + committed.stderr
+    assert f"crapkit gate: 1 staged marked function(s) {WARN_HEAD}" in committed.stderr, committed.stderr
+    assert "  ccn 4 -> 7  calc/report.py:26  banner( bins , total )  mark 20.0000" in committed.stderr
+    assert git(demo, "rev-parse", "HEAD") != before
