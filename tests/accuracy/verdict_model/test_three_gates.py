@@ -6,9 +6,9 @@ the rules, restated in model_verdict:
 - hook-precommit judges staged functions the commit changes: ccn over the
   ceiling, skipped while the ccn sits at or under the function's mark, since
   a blob has no coverage and CRAP is never under ccn;
-- claude-hook judges the edited file's changed functions by ccn over the
-  ceiling, skipped when a mark exists for the function, and exits 2 with an
-  advisory;
+- claude-hook judges the edited file's changed functions by the hook's rule,
+  their ccn read against HEAD's, and exits 2 with an advisory naming every one
+  the hook refuses or warns about;
 - rescore --gate judges the functions the tree changed since HEAD: ccn over
   the ceiling, pardoned while the CRAP it computes from the fresh ccn and the
   last run's coverage sits at or under the mark;
@@ -42,6 +42,8 @@ BASE = (vw.World().with_fn("app", vw.Fn("marked", 6, 6)).with_fn("app", vw.Fn("l
 # A refused function's row: `ccn N  path:line  name`, and on the hook's marked
 # rise block `  mark M.MMMM` after the name.
 _LISTED = re.compile(r"^\s+ccn\s+\d+\s+(\S+):\d+\s+(.+?)(?:\s+mark \d+\.\d{4})?\s*$", re.M)
+# The advisory's warn row: `ccn B -> N  path:line  name  mark M.MMMM`.
+_WARNED = re.compile(r"^\s+ccn\s+\S+ -> \d+\s+(\S+):\d+\s+(.+?)\s+mark \d+\.\d{4}\s*$", re.M)
 
 
 def _fns(world: vw.World) -> dict:
@@ -77,7 +79,9 @@ def _hook_breach(key, fn: vw.Fn) -> bool:
 
 
 def _advisory_breach(key, fn: vw.Fn) -> bool:
-    return model.advisory_gate(fn.ccn, vw.TARGET, key in MARKS)
+    """HEAD holds BASE, so a function BASE lacks has no ccn there."""
+    base = _fns(BASE).get(key)
+    return model.advisory_gate(fn.ccn, vw.TARGET, MARKS.get(key), base_ccn=base.ccn if base else None)
 
 
 def _rescore_breach(key, fn: vw.Fn) -> bool:
@@ -113,7 +117,7 @@ def advisory(scenario: vw.Scenario, path: str) -> tuple[int, frozenset]:
     payload = {"hook_event_name": "PostToolUse", "tool_name": "Edit", "cwd": str(scenario.root),
                "tool_input": {"file_path": str(scenario.root / path)}}
     result = scenario.run("claude-hook", "--protocol", "1", stdin=json.dumps(payload))
-    return result.code, listed(result.stderr)
+    return result.code, listed(result.stderr) | frozenset(_WARNED.findall(result.stderr))
 
 
 def hook(scenario: vw.Scenario) -> tuple[int, frozenset]:
@@ -231,8 +235,8 @@ def test_the_hook_exempts_a_marked_function(seeded, tmp_path):
 @pytest.mark.process
 def test_the_hook_refuses_a_marked_function_its_ccn_took_past_the_mark(seeded, tmp_path):
     """ratchet.md: ccn 14 against the mark of 13.125 is a rise at any
-    coverage, so the hook exits 6 naming the function and the mark, where
-    the advisory, on the mark's existence, stays silent."""
+    coverage, so the hook exits 6 naming the function and the mark, as the
+    advisory's marked block named it mid-session."""
     scenario = seeded.copy(tmp_path / "repo")
     scenario.set(CASES["grow-marked-past-its-ccn"])
     key = (APP, "marked( x )")

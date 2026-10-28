@@ -9,9 +9,10 @@ doc: README.md:1382-1474 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aac
 doc: README.md:1476-1503 sha256=374689f0fb536f3116a2bc9b2820b3c7ef6eed0062f4dfdfc7453da57e00f9fa
 doc: README.md:1288-1288 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
 doc: CONTEXT.md:34-41 sha256=f7baa578e3f82045a5588991a9c2a408ee7995faa7f12e682342b60295ef2987
-doc: CONTEXT.md:91-173 sha256=d12f609607187024c71f79ee8a82055496667e1d450acc8a1d1fc8f4f6325099
+doc: CONTEXT.md:91-173 sha256=395c91466b52dc512219d14a40c3b5d7bddb59b5fbdd50c6093a94d2bfec8469
 doc: docs/ratchet.md:20-108 sha256=ea4a39929b56820608dc20b72a86865470153eea4c7b9da53845b9d95c5a596c
 doc: docs/ratchet.md:137-233 sha256=d5cf4828c9bde2e5ad519564b8b38b1c5bf1156e6dc15df24ca93f5d5b1bf104
+doc: docs/ratchet.md:276-280 sha256=0b862f815fe45a0f42c3d20e9280662fe954b8f170ada1654b49b04a0ec2e45a
 doc: docs/ratchet.md:284-347 sha256=e4ca95739a264be11a9e79d98b2d4b7f8792124bfc6fd2ec223f371b8ec08729
 doc: docs/ratchet.md:432-490 sha256=c7885067090b5f114ae7ea9ebc2911bba938f9edfee98cb20cf84862e53df96d
 doc: docs/ratchet.md:580-599 sha256=8962538fcb9660a65b4db6bbabf4066b59d1dca7806438a783db076fc1a7df9b
@@ -379,11 +380,13 @@ def hook_warns(ccn: int, ceiling: int, mark: Decimal | None, base_ccn: int | Non
     return hook_finding(ccn, ceiling, mark, cc_only, base_ccn) == "unproven_rise"
 
 
-def advisory_gate(ccn: int, ceiling: int, marked: bool) -> bool:
-    """claude-hook sees the edited file: ccn, no coverage. It pardons a
-    function on its mark's existence (docs/ratchet.md, the commit gate: the
-    advisory pardons on existence)."""
-    return ccn > ceiling and not marked
+def advisory_gate(ccn: int, ceiling: int, mark: Decimal | None, cc_only: bool = False,
+                  base_ccn: int | None | str = UNASKED) -> bool:
+    """claude-hook sees the edited file: ccn, no coverage, and the ccn at
+    HEAD. It holds the file's range against the mark by the commit gate's
+    rule (docs/ratchet.md:276-280, the advisory hook), and speaks on every
+    function the hook refuses and every one it warns about."""
+    return hook_finding(ccn, ceiling, mark, cc_only, base_ccn) in ("over_ceiling", "marked_rise", "unproven_rise")
 
 
 def regression(crap, mark: Decimal | None) -> bool:
