@@ -6,11 +6,13 @@ ccn rose above its ccn at the diff base, or the base holds no function under its
 key, the hook names it in a warn block on stderr and still exits 0, and the
 function leaves the count line. The model restates that; the rows below hold
 the model to the four base cases, and the generated tree holds crapkit to the
-model, never to itself.
+model, never to itself. claude-hook reads the same rule off the working tree,
+its base ccn at HEAD, and the same tree holds it to model_verdict.advisory_gate.
 """
 from __future__ import annotations
 
 from decimal import Decimal
+import json
 import re
 
 import pytest
@@ -104,9 +106,8 @@ def _files(cases, staged: bool) -> dict[str, str]:
     return {path: "\n\n".join(sources) for path, sources in files.items()}
 
 
-@pytest.mark.process
-def test_every_warn_rise_and_count_on_the_generated_tree_is_the_models(make_repo):
-    cases = _cases()
+def _generated(make_repo, cases):
+    """The base side committed with every mark, the staged side written over it and staged."""
     marks = "path\tlong_name\tcrap\n" + "".join(f"{path}\t{name}( n )\t{mark:.4f}\n"
                                                  for path, _, name, _, mark in cases)
     built = make_repo(repos.Spec(steps=(repos.Commit(
@@ -115,8 +116,19 @@ def test_every_warn_rise_and_count_on_the_generated_tree_is_the_models(make_repo
     for path, source in _files(cases, staged=True).items():
         (built.root / path).write_bytes(source.encode("utf-8"))
     repos.git(built.top, "add", "-A")
-    found = {(path, f"{name}( n )"): model.hook_finding(ccn, CEILING, mark, base_ccn=base_ccn)
-             for path, ccn, name, base_ccn, mark in cases}
+    return built
+
+
+def _found(cases) -> dict:
+    return {(path, f"{name}( n )"): model.hook_finding(ccn, CEILING, mark, base_ccn=base_ccn)
+            for path, ccn, name, base_ccn, mark in cases}
+
+
+@pytest.mark.process
+def test_every_warn_rise_and_count_on_the_generated_tree_is_the_models(make_repo):
+    cases = _cases()
+    built = _generated(make_repo, cases)
+    found = _found(cases)
 
     result = drive.Driver(built.root, env={"CRAPKIT_OVERRIDE_REASON": None}).run("hook-precommit")
 
@@ -129,3 +141,33 @@ def test_every_warn_rise_and_count_on_the_generated_tree_is_the_models(make_repo
     assert [int(n) for n in _COUNT.findall(result.stderr)] == [carried], result.stderr
     assert result.code == (6 if kind("marked_rise") else 0), result.stdout + result.stderr
     assert {finding for finding in found.values()} == {"marked_rise", "pardoned", "unproven", "unproven_rise"}
+
+
+# claude-hook's rows: the marked block's `ccn N  path:line  name  mark M` and
+# the warn block's `ccn B -> N  path:line  name  mark M`.
+_ADVISED_RISE = re.compile(r"^  ccn \d+  (\S+):\d+  (.+?)  mark \d+\.\d{4}$", re.M)
+_ADVISED_WARN = re.compile(r"^  ccn \S+ -> \d+  (\S+):\d+  (.+?)  mark \d+\.\d{4}$", re.M)
+
+
+@pytest.mark.process
+def test_the_advisory_on_the_generated_tree_speaks_where_the_model_says(make_repo):
+    """docs/ratchet.md, the advisory hook: claude-hook holds each edited
+    function's range against its mark by the commit gate's rule, its ccn read
+    against HEAD's. One Bash event judges every fresh file of the tree; the
+    marked block names each function the hook refuses, the warn block each one
+    it warns about, and every other function stays out of both."""
+    cases = _cases()
+    built = _generated(make_repo, cases)
+    found = _found(cases)
+    payload = {"hook_event_name": "PostToolUse", "tool_name": "Bash", "cwd": str(built.root),
+               "tool_input": {"command": "python gen.py"}}
+
+    result = drive.Driver(built.root).run("claude-hook", "--protocol", "1", stdin=json.dumps(payload))
+
+    rises, warns = set(_ADVISED_RISE.findall(result.stderr)), set(_ADVISED_WARN.findall(result.stderr))
+    spoke = {(path, f"{name}( n )") for path, ccn, name, base_ccn, mark in cases
+             if model.advisory_gate(ccn, CEILING, mark, base_ccn=base_ccn)}
+    assert rises == {key for key, finding in found.items() if finding == "marked_rise"}, result.stderr
+    assert warns == {key for key, finding in found.items() if finding == "unproven_rise"}, result.stderr
+    assert rises | warns == spoke
+    assert result.code == (2 if spoke else 0), result.stderr

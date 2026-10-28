@@ -161,6 +161,14 @@ Decompose the function until its ccn sits at or under the mark, or pass the comm
 `CRAPKIT_OVERRIDE_REASON` set, which records the override and leaves the mark as it was
 ([the commit gate](ratchet.md#the-commit-gate-skips-marked-functions)). A marked function
 whose ccn sits at or under its mark passes as before, counted on the stderr line.
+
+`claude-hook` now exits 2 on a marked function whose ccn passed its mark or rose, where
+0.8.1 stayed silent on any marked function, so an agent sees advisories on debt the repo
+marked. A ccn past the mark draws the marked block, which the commit gate will refuse; a
+ccn that rose since HEAD while the CRAP range straddles the mark draws the warn block,
+which the commit gate passes with a warn. Each block has its own closing line
+([claude-hook](agent-json.md#claude-hook)). The advisory for an unmarked breach prints the
+same lines as before, and a comment edit inside a marked function stays silent.
 <!-- /0.9.0:mission-3 -->
 
 <!-- 0.9.0:metric-stamp -->

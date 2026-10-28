@@ -439,7 +439,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <!-- ============================ 06 TWO GATES ============================ -->
 <h2 id="twogates"><span class="sn">06</span>The two gates</h2>
 <p class="lede">Two hooks fire on their own. Only one of them can stop you, and knowing which is the difference between reading a note and losing a commit.</p>
-<p>The <strong>advisory</strong> runs after every edit and annotates. The <strong>commit gate</strong> runs at <code>git commit</code> and blocks. They read the same ceiling map and subtract the same ratchet marks, so they cannot disagree about a function.</p>
+<p>The <strong>advisory</strong> runs after every edit and annotates. The <strong>commit gate</strong> runs at <code>git commit</code> and blocks. They read the same ceiling map and hold a function to its ratchet mark by the same rule, so they cannot disagree about a function.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 900 410" role="img" aria-label="The per-edit advisory and the commit gate across one editing session">
@@ -449,7 +449,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   <text x="40" y="60" class="sm">fires on Edit and Write in every repo on the machine, and on Bash where you register that matcher</text>
   <text x="40" y="78" class="sm">the plugin ships <tspan class="mono">Edit|Write</tspan> only · the Bash half is a second entry in your own settings, <tspan class="mono">*.py</tspan> only</text>
   <text x="40" y="96" class="sm">reads the file plus <tspan class="mono">git diff HEAD</tspan> for that path · never opens the store · writes only under .git</text>
-  <text x="40" y="114" class="sm">a breach, or an edit it could not judge: three lines on stderr and exit 2 · the model reads them</text>
+  <text x="40" y="114" class="sm">a breach, a marked ccn past or risen across its mark, an unjudged edit: stderr, exit 2 · the model reads it</text>
   <text x="40" y="132" class="sm">no crapkit.toml · file in no scope · mid-rebase · bad input · any internal error → exit 0, silent</text>
 
   <text x="140" y="164" text-anchor="middle" class="sm">silent</text>
@@ -480,7 +480,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   <text x="860" y="294" text-anchor="end" class="lbl" font-weight="700" fill="var(--accent)">this one blocks</text>
   <text x="40" y="318" class="sm">reads the staged blobs in one <tspan class="mono">git cat-file --batch</tspan> · cc-only, no store, no coverage, no network</text>
   <text x="40" y="336" class="sm">a breach: the hook exits 6, git reports 1, the commit does not happen · decompose, or sign for the debt</text>
-  <text x="40" y="354" class="sm">pardoned: any function the working-tree marks file marks, counted in one stderr line</text>
+  <text x="40" y="354" class="sm">pardoned: a marked function whose ccn sits at or under its working-tree mark, counted in one stderr line</text>
   <text x="40" y="372" class="sm">costs the size of the commit, not the size of the repo</text>
   <text x="860" y="372" text-anchor="end" class="sm"><tspan class="mono">crapkit verify</tspan> fails a mark that rises</text>
 </svg>
@@ -492,8 +492,8 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <p>Silence everywhere else is the other half of the design. This hook is installed once per user and then fires on every edit that user makes, anywhere. 47.5% of the edits it was measured against land in repos with no <code>crapkit.toml</code>. A hook that spoke there would be unbearable within a day, so an unmeasured repo costs one <code>stat</code> and an exit 0.</p>
 
 <h3>The commit gate pardons marked functions</h3>
-<p>Before 0.4.0 the two disagreed. The advisory pardoned ratchet-marked functions and the commit gate did not, so touching signed debt produced a wall: green advisories all session, then a refused commit. <strong>The commit gate pardons marked functions too</strong>, on mark existence, and prints one line saying how many. <code>crapkit verify</code> keeps the numeric check and is what fails a mark that actually rises.</p>
-<p class="xanno">Existence, not the numeric rule, because the gate judges staged blobs. A blob carries no coverage, so there is no CRAP to compare against a mark. The only question the gate can answer is the one it asks: did the repo already sign for this function?</p>
+<p>Before 0.4.0 the two disagreed. The advisory pardoned ratchet-marked functions and the commit gate did not, so touching signed debt produced a wall: green advisories all session, then a refused commit. <strong>The commit gate pardons marked functions too</strong>, while their ccn sits at or under the mark, and prints one line saying how many. A ccn past the mark is refused, and a ccn that rose across it passes with a warn. Since 0.9.0 the advisory holds the edited file to the same rule and speaks on both, each in a block of its own. <code>crapkit verify</code> keeps the numeric check and is what fails a mark that actually rises.</p>
+<p class="xanno">The range rule, the one every gate applies, read over what a hook can know. A blob or a working-tree file carries no coverage, so its CRAP is a range: at least its ccn, every branch run, at most its untested CRAP. The whole range at or under the mark is pardoned. A ccn above the mark is past it at any coverage. A range across the mark is left to the coverage <code>verify</code> reads, with a warn when the ccn rose.</p>
 
 <h3>verify pardons a function at or under its mark</h3>
 <p>Since 0.4.5 the third reader agrees with them. <code>crapkit verify</code> reads a mark the way <code>rescore --gate</code> always did: a touched function whose fresh CRAP sits <em>at or under</em> its mark is pardoned, not a gate violation. Before this, an edit inside signed debt passed the advisory, passed the commit gate, and then met exit 6 at merge, which was the last place the three readers could still disagree about one function.</p>

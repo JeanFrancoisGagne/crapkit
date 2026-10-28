@@ -273,11 +273,11 @@ commit through: ccn 17 sits under 51.5698, so the range 17 to 306 straddles the 
 only the coverage `verify` reads can settle it. Its ccn rose from 13, so the hook warns
 about it, as it warned about the other `classify` above.
 
-The pass on a straddling range is deliberate. Before 0.4.0, a comment added inside a marked
-function refused the commit. On a repo carrying 40,303 marks that meant a seeded tree could
-not be touched, while
-`rescore --gate` on the same tree passed. The advisory hook `crapkit claude-hook` pardons on
-existence too, so a session of green advisories no longer ends at a red commit.
+The pass on a straddling range is deliberate. Before 0.4.0, a comment added inside a marked function
+refused the commit: on a repo carrying 40,303 marks a seeded tree could not be touched, while `rescore --gate`
+on the same tree passed. The advisory hook `crapkit claude-hook` holds the edited file's range against the
+mark by the same rule, its ccn read against HEAD's: a ccn past the mark draws its marked block, a ccn rise
+across the mark its warn block, and the rest stays silent, so a session of green advisories no longer ends at a red commit.
 
 ---
 

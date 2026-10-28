@@ -1,16 +1,21 @@
-"""Two mark rules, on purpose, and the line between them.
+"""One mark rule, read over the CRAP range each gate knows.
+
+The gate module's pardon holds a function's CRAP range against its mark: the
+whole range at or under the mark pardons it, a low end above the mark is a
+marked rise, and a range across the mark is unproven. What differs between
+the gates is the range they can know.
 
 The commit gate judges staged blobs. A blob has no coverage, so a staged
-violation has no exact CRAP, only a range from ccn to its untested CRAP.
-`hook-precommit` judges it through the gate module and passes a marked breach
-while its ccn sits at or under the mark, with one count line: the CRAP may
-still sit under the mark, and only coverage can say. A ccn above the mark puts
-the CRAP above it at any coverage, so the hook refuses that marked rise.
+function's range runs from its ccn to its untested CRAP. `hook-precommit`
+passes a marked breach while its ccn sits at or under the mark, with one count
+line: the CRAP may still sit under the mark, and only coverage can say. A ccn
+above the mark puts the CRAP above it at any coverage, so the hook refuses
+that marked rise. claude-hook reads the same range off the working tree.
 
-`rescore --gate` and `verify` both hold a scored row, so they keep the numeric
-rule: at or under the recorded mark it is carried debt, past it the mark rose
-and the verdict fails. Both judge through the gate module's pardon, and this
-file pins that the hook's range rule did not leak into rescore's.
+`rescore --gate` and `verify` both hold a scored row, an exact value, so the
+same rule reads as the numeric one: at or under the recorded mark it is carried
+debt, past it the mark rose and the verdict fails. This file pins that the
+hook's range did not leak into rescore's exact value.
 """
 import json
 
@@ -101,7 +106,7 @@ def test_a_ccn_above_the_mark_is_a_refused_rise(ccn: int):
     assert (split.violations, split.carried) == ([], 0)
 
 
-# --- rescore and verify: still the numeric rule -------------------------------
+# --- rescore and verify: the same rule over an exact value ---------------------
 
 def rescore_breaches(rows: list) -> list:
     """The breaches rescore --gate fails on, each file taken whole, under MARK."""
@@ -121,7 +126,7 @@ def test_a_scored_breach_at_its_mark_is_still_carried_debt():
 
 # --- the marks file deleted in the commit under gate ----------------------------
 #
-# Both rules pardon through the marks file, so a commit that deletes it takes
+# Every gate pardons through the marks file, so a commit that deletes it takes
 # every pardon with it. Each gate then judges every changed function, the strict
 # direction: a gone file never reads as "this function was signed for".
 

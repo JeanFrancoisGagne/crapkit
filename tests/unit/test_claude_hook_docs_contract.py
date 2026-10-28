@@ -150,13 +150,35 @@ def advisory_samples(text: str) -> list[str]:
 
 _UNREAD = re.compile(r"crapkit advisory: (\S+) could not be read")
 
+# The marked blocks, by the words their head line says the functions did.
+MARKED_BLOCKS = {"rose past their ratchet mark": claude_hook._past_mark_lines,
+                 "rose in ccn and may pass their ratchet mark": claude_hook._rise_lines}
+_MARKED = re.compile(r"crapkit advisory: (\d+) marked function\(s\) (" + "|".join(map(re.escape, MARKED_BLOCKS))
+                     + r") in (\S+) \(")
+_MARKED_BREACH = SimpleNamespace(function=SimpleNamespace(record=_BREACH), key_name=_BREACH.long_name,
+                                 mark=72.0, base_ccn=7)
+
+
+def _marked_lines(sample: str) -> list[str] | None:
+    """The marked or warn block the hook builds for the values a sample's head
+    line names, or None for a sample that is neither."""
+    marked = _MARKED.match(sample)
+    if marked is None:
+        return None
+    count, words, rel = int(marked.group(1)), marked.group(2), marked.group(3)
+    return MARKED_BLOCKS[words](rel, [_MARKED_BREACH] * count)
+
 
 def rendered_head(sample: str) -> str:
     """The head line the hook would build for the values this sample names:
-    the unread-file head for a sample about a file, else the breach head."""
+    the unread-file head for a sample about a file, the marked or warn head
+    for a sample about marked functions, else the breach head."""
     unread = _UNREAD.match(sample)
     if unread:
         return claude_hook._unread_advisory(unread.group(1), "why")[0]
+    marked = _marked_lines(sample)
+    if marked:
+        return marked[0]
     values = _VALUES.search(sample)
     assert values, f"no count, ceiling and path to read out of {sample!r}"
     count, ceiling, rel = int(values.group(1)), int(values.group(2)), values.group(3)
@@ -179,6 +201,34 @@ def test_the_page_prints_the_closing_line_the_hook_builds(page):
     closing = claude_hook._advisory_lines("calc/grade.py", [_BREACH], 6)[-1]
 
     assert closing in _prose(page), f"{page} does not carry {closing!r}"
+
+
+# Every page a reader learns the advisory from.
+DOC_PAGES = ("README.md", "AGENTS.md", "CONTEXT.md", *sorted(
+    p.relative_to(ROOT).as_posix() for pattern in ("docs/*.md", "docs/*.html", "plugin/skills/*/SKILL.md")
+    for p in ROOT.glob(pattern)))
+
+
+def marked_samples(page: str) -> list[list[str]]:
+    """The marked and warn blocks the hook would build for each one a page prints."""
+    return [lines for lines in map(_marked_lines, advisory_samples(_prose(page))) if lines]
+
+
+@pytest.mark.parametrize("page", DOC_PAGES)
+def test_a_page_that_prints_a_marked_block_prints_the_closing_line_the_hook_builds(page):
+    """Each marked block ends on its own closing line, the half a reader acts
+    on: the commit gate's refusal, or verify's judgement with coverage."""
+    for lines in marked_samples(page):
+        assert lines[-1] in _prose(page), f"{page} does not carry {lines[-1]!r}"
+
+
+def test_the_agent_pages_print_both_marked_blocks():
+    """The pages an agent reads at exit 2 quote the marked block and the warn
+    block, so the contract above is never checked against nothing."""
+    printed = {_MARKED.match(lines[0]).group(2)
+               for page in ("AGENTS.md", "docs/agent-json.md") for lines in marked_samples(page)}
+
+    assert printed == set(MARKED_BLOCKS)
 
 
 def test_the_agent_page_prints_the_unread_advisory_the_hook_builds():
