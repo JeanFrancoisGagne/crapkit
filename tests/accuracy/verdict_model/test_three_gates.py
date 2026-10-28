@@ -4,9 +4,11 @@ docs/ratchet.md#the-commit-gate-skips-marked-functions and README exit 6 give
 the rules, restated in model_verdict:
 
 - hook-precommit judges staged functions the commit changes: ccn over the
-  ceiling, skipped when a mark exists for the function;
-- claude-hook judges the edited file's changed functions the same way and
-  exits 2 with an advisory;
+  ceiling, skipped while the ccn sits at or under the function's mark, since
+  a blob has no coverage and CRAP is never under ccn;
+- claude-hook judges the edited file's changed functions by ccn over the
+  ceiling, skipped when a mark exists for the function, and exits 2 with an
+  advisory;
 - rescore --gate judges the functions the tree changed since HEAD: ccn over
   the ceiling, pardoned while the CRAP it computes from the fresh ccn and the
   last run's coverage sits at or under the mark;
@@ -15,11 +17,14 @@ the rules, restated in model_verdict:
   marked function above its mark, touched or not (exit 7 when only that fires).
 
 Every case edits one seeded repository (marks on `marked` and `low`), runs the
-four commands and compares the functions each one names with the model's.
+four commands and compares the functions each one names with the model's. The
+hook is also held to the model alone on generated trees: every ccn from 1 to
+20, marked at each end of its range and one step either side, under both flags.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 import json
 import re
 
@@ -34,7 +39,9 @@ APP = vw.FILES["app"]
 BASE = (vw.World().with_fn("app", vw.Fn("marked", 6, 6)).with_fn("app", vw.Fn("low", 2, 0))
         .with_fn("app", vw.Fn("fine", 1, 2)).with_fn("lib", vw.Fn("g", 1, 2))
         .with_test(vw.Test("t1")).with_test(vw.Test("t2", lane="b")))
-_LISTED = re.compile(r"^\s+ccn\s+\d+\s+(\S+):\d+\s+(.+?)\s*$", re.M)
+# A refused function's row: `ccn N  path:line  name`, and on the hook's marked
+# rise block `  mark M.MMMM` after the name.
+_LISTED = re.compile(r"^\s+ccn\s+\d+\s+(\S+):\d+\s+(.+?)(?:\s+mark \d+\.\d{4})?\s*$", re.M)
 
 
 def _fns(world: vw.World) -> dict:
@@ -66,7 +73,11 @@ class Gates:
 
 
 def _hook_breach(key, fn: vw.Fn) -> bool:
-    return model.hook_gate(fn.ccn, vw.TARGET, key in MARKS)
+    return model.hook_gate(fn.ccn, vw.TARGET, MARKS.get(key))
+
+
+def _advisory_breach(key, fn: vw.Fn) -> bool:
+    return model.advisory_gate(fn.ccn, vw.TARGET, key in MARKS)
 
 
 def _rescore_breach(key, fn: vw.Fn) -> bool:
@@ -83,9 +94,9 @@ def _judged(rule, fns: dict, keys) -> frozenset:
 
 def expected(world: vw.World) -> Gates:
     fns, touched = _fns(world), _touched(world)
-    staged = _judged(_hook_breach, fns, touched)
+    staged, advised = _judged(_hook_breach, fns, touched), _judged(_advisory_breach, fns, touched)
     ratchet = frozenset(k for k, fn in fns.items() if model.regression(fn.crap, MARKS.get(k)))
-    return Gates(staged, staged, _judged(_rescore_breach, fns, touched),
+    return Gates(staged, advised, _judged(_rescore_breach, fns, touched),
                  _judged(_verify_breach, fns, touched), ratchet)
 
 
@@ -162,6 +173,8 @@ def seeded(seeded_world):
 CASES = {
     "touch-marked": BASE.with_fn("app", vw.Fn("marked", 6, 6, "edited")),
     "grow-marked": BASE.with_fn("app", vw.Fn("marked", 8, 8)),
+    # ccn 14 against the mark of 13.125: CRAP is at least 14 at any coverage.
+    "grow-marked-past-its-ccn": BASE.with_fn("app", vw.Fn("marked", 13, 13)),
     "repay-marked": BASE.with_fn("app", vw.Fn("marked", 6, 12)),
     "touch-low": BASE.with_fn("app", vw.Fn("low", 2, 0, "edited")),
     "new-complex": BASE.with_fn("app", vw.Fn("big", 7, 0)),
@@ -204,14 +217,30 @@ def test_verify_passes_an_edit_inside_a_marked_function_at_its_mark(seeded, tmp_
 
 @pytest.mark.process
 def test_the_hook_exempts_a_marked_function(seeded, tmp_path):
-    """ratchet.md: the hook skips a staged marked function whatever the edit
-    did, and says how many it skipped on one stderr line."""
+    """ratchet.md: the hook skips a staged marked function while its ccn
+    sits at or under the mark (ccn 9 against 13.125), and says how many it
+    skipped on one stderr line."""
     scenario = seeded.copy(tmp_path / "repo")
     scenario.set(CASES["grow-marked"])
 
     code, names = hook(scenario)
 
     assert (code, names) == (0, frozenset())
+
+
+@pytest.mark.process
+def test_the_hook_refuses_a_marked_function_its_ccn_took_past_the_mark(seeded, tmp_path):
+    """ratchet.md: ccn 14 against the mark of 13.125 is a rise at any
+    coverage, so the hook exits 6 naming the function and the mark, where
+    the advisory, on the mark's existence, stays silent."""
+    scenario = seeded.copy(tmp_path / "repo")
+    scenario.set(CASES["grow-marked-past-its-ccn"])
+    key = (APP, "marked( x )")
+
+    code, names = hook(scenario)
+
+    assert model.hook_finding(14, vw.TARGET, MARKS[key]) == "marked_rise"
+    assert (code, names) == (6, frozenset({key}))
 
 
 @pytest.mark.process
@@ -248,6 +277,94 @@ def test_the_advisory_reads_an_encoded_mark(seeded, tmp_path):
     (scenario.root / odd).write_bytes(vw.source((vw.Fn("big", 7, 0, "edited"),))[0].encode("utf-8"))
 
     assert advisory(scenario, odd) == (0, frozenset())
+
+
+# --- the commit hook against the model on generated trees ----------------------------------------
+#
+# model_verdict.hook_finding restates docs/ratchet.md's commit gate: a staged
+# function over its ceiling with no mark is refused; a marked one is held as the
+# range from its ccn to its untested CRAP (ccn^2 + ccn, or ccn in a
+# coverage_optional scope) against the mark at the mark's 4 places, and refused
+# only when its ccn alone passes the mark. Each tree holds one file per ccn from
+# 1 to 20, one function per mark: no mark, and each end of the range, one step
+# under it and one step over it. The hook judges one file per run, and its exit
+# code, the functions each refusal block names and the count on its stderr line
+# are each held to the model, never to crapkit.
+
+GENERATED_CEILING = 2
+GENERATED_CCNS = range(1, 21)
+STEP = Decimal("0.0001")
+FLAGS = {"measured": "", "cc-only": "coverage_optional = true\n"}
+_RISE = re.compile(r"^  ccn +\d+  (\S+):\d+  (.+?)  mark \d+\.\d{4}$", re.M)
+_OVER = re.compile(r"^  ccn +\d+  (\S+):\d+  ((?:(?!  mark ).)+?)$", re.M)
+_COUNT = re.compile(r"^crapkit gate: (\d+) staged function\(s\) carry a ratchet mark", re.M)
+REFUSED, PASSED = ("over_ceiling", "marked_rise"), ("pardoned", "unproven")
+
+
+def _generated_config(flag: str) -> str:
+    return (f'[crapkit]\ntarget = {GENERATED_CEILING}\n\n[[scope]]\nname = "src"\npaths = ["src"]\n'
+            f'languages = ["python"]\n{FLAGS[flag]}')
+
+
+def _source(name: str, ccn: int) -> str:
+    """`def NAME(n)` with ccn - 1 ifs: McCabe ccn."""
+    body = "".join(f"    if n > {i}:\n        n += 1\n" for i in range(1, ccn))
+    return f"def {name}(n):\n{body}    return n\n"
+
+
+def _marks_at_the_ends(ccn: int, cc_only: bool) -> list:
+    """No mark, then each end of the hook's range, one step under it and one over."""
+    ends = [model.mark_value(end) for end in model.hook_range(ccn, cc_only)]
+    return [None, *sorted({end + delta for end in ends for delta in (-STEP, Decimal(0), STEP)})]
+
+
+def _generated_tree(flag: str) -> tuple[dict, str]:
+    """{path: {function: its mark}} for every ccn, and the marks file over them."""
+    files = {f"src/c{ccn}.py": {f"c{ccn}_m{i}": mark for i, mark in
+                                enumerate(_marks_at_the_ends(ccn, flag == "cc-only"))}
+             for ccn in GENERATED_CCNS}
+    rows = [f"{path}\t{name}( n )\t{mark:.4f}" for path, functions in files.items()
+            for name, mark in functions.items() if mark is not None]
+    return files, "path\tlong_name\tcrap\n" + "".join(row + "\n" for row in rows)
+
+
+def _modelled(path: str, ccn: int, functions: dict, cc_only: bool) -> dict[str, set]:
+    """The model's finding for each function of one file, grouped by kind."""
+    found: dict[str, set] = {kind: set() for kind in (*REFUSED, *PASSED)}
+    for name, mark in functions.items():
+        kind = model.hook_finding(ccn, GENERATED_CEILING, mark, cc_only)
+        if kind is not None:
+            found[kind].add((path, f"{name}( n )"))
+    return found
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("flag", sorted(FLAGS))
+def test_every_hook_verdict_on_the_range_ends_is_the_models(make_repo, flag):
+    files, marks = _generated_tree(flag)
+    built = make_repo(repos.Spec(steps=(repos.Commit(
+        files={"crapkit.toml": _generated_config(flag), "crapkit-ratchet.tsv": marks}, message="seed"),)))
+    driver = drive.Driver(built.root, env={"CRAPKIT_OVERRIDE_REASON": None})
+    kinds_seen = set()
+    for ccn, (path, functions) in zip(GENERATED_CCNS, files.items()):
+        (built.root / path).parent.mkdir(exist_ok=True)
+        (built.root / path).write_bytes("\n\n".join(_source(name, ccn) for name in functions).encode("utf-8"))
+        repos.git(built.top, "add", "--", path)
+        want = _modelled(path, ccn, functions, flag == "cc-only")
+
+        result = driver.run("hook-precommit")
+
+        refused = want["over_ceiling"] | want["marked_rise"]
+        carried = len(want["pardoned"]) + len(want["unproven"])
+        assert result.code == (6 if refused else 0), (ccn, result.stdout, result.stderr)
+        assert set(_RISE.findall(result.stdout)) == want["marked_rise"], (ccn, result.stdout)
+        assert set(_OVER.findall(result.stdout)) == want["over_ceiling"], (ccn, result.stdout)
+        assert [int(n) for n in _COUNT.findall(result.stderr)] == ([carried] if carried else []), ccn
+        kinds_seen |= {kind for kind, keys in want.items() if keys}
+        repos.git(built.top, "commit", "-q", "--no-verify", "-m", path)
+
+    # A cc-only range is one point, so no mark straddles it there.
+    assert kinds_seen == ({*REFUSED, *PASSED} if flag == "measured" else {*REFUSED, "pardoned"})
 
 
 # --- rescore --gate on the MCP surface ---------------------------------------------------------

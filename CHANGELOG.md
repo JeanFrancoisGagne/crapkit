@@ -19,6 +19,7 @@
 <!-- /0.9.0:m1-foundations -->
 
 <!-- 0.9.0:mission-3 -->
+- `hook-precommit` refuses a marked function whose staged ccn passed its mark, with exit 6 and a block naming the function, its ccn and its mark: CRAP is never under ccn, so that mark rose at any coverage. Through 0.8.1 it passed any marked function. A marked function whose ccn sits at or under its mark still passes, counted on the stderr line. [The commit gate](docs/ratchet.md#the-commit-gate-skips-marked-functions)
 <!-- /0.9.0:mission-3 -->
 
 <!-- 0.9.0:metric-stamp -->

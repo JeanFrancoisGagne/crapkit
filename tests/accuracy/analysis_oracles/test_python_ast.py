@@ -128,10 +128,14 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # repair that names the js lane init wrote in its workspace note
 # (m1-foundations-09) added one, the typed ratchet.MetricStamp and its members
 # (metric-stamp-01) added six, and the repair that names a runner the root test
-# script names in that note (m1-foundations-09) one more. The one decode init
-# and the full-suite guard read pytest's config files with (build-map-18)
-# added one.
-SRC_DEFS = 3871
+# script names in that note (m1-foundations-09) one more. 090/mission-3 reached
+# 3,745 once gitio.blobs_at read a set of paths' bytes at one revision
+# (mission-3-01), and the sync met at 3,878. It reached 3,884 once
+# hook-precommit refused a marked rise with a block and a fix line of its own
+# (mission-3-04). On 090/integration the one decode init and the full-suite
+# guard read pytest's config files with (build-map-18) added one, and the
+# next sync met at 3,885.
+SRC_DEFS = 3885
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
