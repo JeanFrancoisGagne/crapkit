@@ -572,12 +572,19 @@ def _xfail(gap: bool, reason: str) -> list:
     return [pytest.mark.xfail(strict=True, reason=reason)] if gap else []
 
 
+def _emptied(row, value) -> bool:
+    """`{}` on an object row empties it and keeps its type, so a refusal has no
+    wrong type to name. On a row of any other type `{}` is a retype."""
+    return row.type == "object" and value == {}
+
+
 def _retypes(row) -> list:
-    """Every wrong value for the row's type. A member or a map emptied is a
-    valid artifact (no function, an empty map), so `{}` is no retype for it."""
+    """Every wrong value for the row's type. An object member or a map emptied
+    is a valid artifact (no function, an empty map), so `{}` is no retype for
+    it. A count or an array member set to `{}` is retyped like any other row."""
     is_map = row.locator.split(".")[-1] in MAPS[row.format]
-    keep_empty = row.absent is not None and not is_map
-    return [value for value in WRONG[row.type] if keep_empty or value != {}]
+    valid_empty = row.absent is None or is_map
+    return [value for value in WRONG[row.type] if not (valid_empty and _emptied(row, value))]
 
 
 def _left_out(row, value) -> bool:
@@ -615,7 +622,7 @@ OPTIONAL = [pytest.param(row, id=_row_id(row))
             for row in FIELDS if row.absent is not None and not row.required]
 RETYPED = [_refused_case(row, value) for row in FIELDS for value in _retypes(row)]
 RETYPED_TO_A_KIND = [_typed_case(row, value)
-                     for row in FIELDS for value in _retypes(row) if value != {}]
+                     for row in FIELDS for value in _retypes(row) if not _emptied(row, value)]
 
 
 def test_every_format_has_rows_in_the_field_table():
@@ -698,13 +705,13 @@ def test_a_retyped_fields_refusal_names_what_it_found(tmp_path, row, value):
 
 
 def _listed(row, value) -> bool:
-    """A retype the lists above hold short of a claim. `{}` empties an object,
-    so it is held here only where it reads as the field left out."""
+    """A retype the lists above hold short of a claim. An emptied object has no
+    type to name, so it is held here only where it reads as the field left out."""
     key = (row.format, row.locator)
     if _left_out(row, value):
         return True
-    return value != {} and (key in TYPE_UNNAMED or key in KEPT_AS_WRITTEN
-                            or (key in NULL_AS_ABSENT and value is None))
+    return not _emptied(row, value) and (key in TYPE_UNNAMED or key in KEPT_AS_WRITTEN
+                                         or (key in NULL_AS_ABSENT and value is None))
 
 
 LISTED = [pytest.param(row, value, id=f"{_row_id(row)}={value!r}")

@@ -300,6 +300,22 @@ def test_every_hint_names_results_artifact():
     assert all("results_artifact" in hint for hint in _HINTS.values())
 
 
+def test_the_changelog_gives_a_script_the_hints_and_only_the_command_the_refusals(tmp_path):
+    """A runner named only in the package.json script the command runs gets
+    doctor's hint and no refusal, as the script rows above say. The slot's
+    CHANGELOG line said a wrapped command such as `npm test` gets neither,
+    which told a reader the hints were gone too."""
+    cfg = config_module.Config(lanes=(_lane("npm run cov", "istanbul"),))
+    (warn,) = admin._doctor_results_artifacts(cfg, _packages(SCRIPT_VITEST))
+    changelog = (Path(__file__).resolve().parents[2] / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert warn.text.endswith(_HINTS["vitest"]), warn.text
+    assert _loads(tmp_path, "npm run cov -- --coverage src/a.test.ts", "istanbul", SCRIPT_VITEST)
+    assert ("A wrapped command gets the hints when the package.json script it runs names the "
+            "runner") in changelog
+    assert "only a runner named in the command itself turns them on" in changelog
+
+
 @pytest.mark.parametrize("inference, command, root_package, fires", WORKSPACE_NOTE, ids=_ids(WORKSPACE_NOTE))
 def test_the_workspace_note_asks_whether_init_wrote_a_js_runner_lane(inference, command, root_package,
                                                                      fires):

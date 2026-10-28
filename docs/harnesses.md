@@ -191,7 +191,7 @@ steps:
 |---|---|
 | Config file | The file `--mcp-config` names in the step's `claude_args`. `--allowedTools mcp__crapkit` lets the model call the twelve tools without a permission prompt, which a workflow run has no one to answer. |
 | Starts in | The checkout the job runs in. |
-| Environment | The job's environment. A job with a `container:` runs in a container, where a coverage.py lane refuses to start ([docs: containers](lanes.md#containers)). |
+| Environment | The job's environment. A job with a `container:` runs in a container, where a lane whose command names pytest refuses to start unless it sets `container_ok = true` ([docs: containers](lanes.md#containers)). |
 | Versions | `@v1`. |
 | Plugin hooks | None: this config adds the tools only. |
 | After an upgrade | Every run installs crapkit afresh. Pin the version in the install step, the way [Route 4](../README.md#route-4-ci) pins it. |
