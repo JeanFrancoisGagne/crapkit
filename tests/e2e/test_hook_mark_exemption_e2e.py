@@ -13,10 +13,16 @@ coverage could still hold the CRAP there; `verify` judges the exact number. A
 ccn above the mark puts the CRAP above it at any coverage, so the hook refuses
 that marked rise with exit 6 and a block naming the function and its mark.
 
+When a straddling function's ccn rose above its ccn at the diff base, or the
+base holds no function under its key, the hook still passes it, but on a warn
+block on stderr instead of the count line: the rise may have broken the mark,
+and `verify` says whether it did.
+
 These run against the real subcommand through `run_cli`, because the gate's
 answer is the exit code a git commit reads.
 """
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -36,6 +42,11 @@ languages = ["python"]
 CEILING = "exceed the complexity ceiling"
 DECOMPOSE = "decompose before committing"
 EXEMPT = "carry a ratchet mark"
+COUNT_LINE = ("crapkit gate: {n} staged function(s) carry a ratchet mark and were not gated - "
+              "`crapkit verify` fails a mark that rises")
+WARN_HEAD = ("crapkit gate: {n} staged marked function(s) rose in ccn and may pass their ratchet mark; "
+             "`crapkit verify` judges them with coverage:")
+WARN_WORDS = "rose in ccn"
 
 
 run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
@@ -122,14 +133,13 @@ def test_a_comment_edit_inside_a_marked_function_commits(seeded: Path):
 
 def test_the_exemption_says_how_many_marks_it_honoured(seeded: Path):
     """One line, on stderr, naming the count. Transparency without a list: the
-    marks are in the committed TSV and `crapkit ratchet report` reads them."""
+    marks are in the committed TSV and `crapkit ratchet report` reads them. A
+    comment edit leaves legacy's ccn where the base had it, so no warn."""
     stage_comment_in_legacy(seeded)
 
     res = run_cli(seeded, "hook-precommit")
 
-    lines = [ln for ln in res.stderr.splitlines() if EXEMPT in ln]
-    assert lines == ["crapkit gate: 1 staged function(s) carry a ratchet mark and were not "
-                     "gated - `crapkit verify` fails a mark that rises"], res.stderr
+    assert res.stderr == COUNT_LINE.format(n=1) + "\n", res.stderr
 
 
 def test_two_marked_functions_are_one_line_not_two(tmp_path: Path):
@@ -223,20 +233,219 @@ def test_an_unparseable_marks_file_names_itself_instead_of_crashing(tmp_path: Pa
     assert "Traceback" not in res.stderr, res.stderr
 
 
-# --- the rise only coverage can see, and where it is caught -------------------
+# --- the rise only coverage can see: warned, and caught by verify -------------
 
-def test_a_marked_function_that_got_worse_is_verifys_problem_not_the_gates(seeded: Path):
-    """The cost this rule accepts. ccn 12 sits under the mark of 63.6, so the
-    staged blob, with no coverage, cannot say whether the CRAP passed it: the
-    range 12 to 156 straddles the mark. `verify` compares the numbers against
-    the mark, which is the check that stays."""
+LANE_CONFIG = CONFIG + """
+[exclude]
+globs = ["tests/**"]
+
+[[lane]]
+name = "py"
+command = "python -m pytest tests -p no:cacheprovider -p no:randomly --cov=src --cov-branch --cov-report=json:.crapkit/cov/py.json"
+artifact = ".crapkit/cov/py.json"
+parser = "coveragepy"
+scopes = ["src"]
+full_suite = false
+env = { COVERAGE_PROCESS_CONFIG = "", COV_CORE_DATAFILE = "" }
+"""
+WARN_ROW = re.compile(r"^  ccn (\S+) -> (\d+)  (\S+):(\d+)  (.+?)  mark (\d+\.\d{4})$", re.M)
+
+
+def warn_rows(stderr: str) -> list[tuple[str, ...]]:
+    return WARN_ROW.findall(stderr)
+
+
+def measured_repo(tmp_path: Path) -> Path:
+    """The seeded repo under a pytest lane whose one test reaches neither
+    function, scored, with legacy's mark set to 63.6 under the stamp seed
+    wrote and committed."""
+    repo = seeded_repo(tmp_path, "measured", None, LANE_CONFIG)
+    write(repo, ".gitignore", ".crapkit/\n__pycache__/\n.coverage\n")
+    write(repo, "tests/test_nothing.py", "def test_nothing():\n    assert True\n")
+    git(repo, "add", "-A")
+    git(repo, *COMMIT, "-m", "a test")
+    for step in (("coverage",), ("ratchet", "seed")):
+        done = run_cli(repo, *step)
+        assert done.returncode == 0, done.stdout + done.stderr
+    marks_file = repo / "crapkit-ratchet.tsv"
+    text = marks_file.read_bytes().decode("utf-8").replace("legacy( n )\t72.0000", "legacy( n )\t63.6000")
+    marks_file.write_bytes(text.encode("utf-8"))
+    git(repo, "add", "-A")
+    git(repo, *COMMIT, "-m", "marks")
+    return repo
+
+
+def test_a_marked_function_that_got_worse_is_verifys_problem_not_the_gates(tmp_path: Path):
+    """ccn 12 sits under the mark of 63.6, so the staged blob, with no
+    coverage, cannot say whether the CRAP passed it: the range 12 to 156
+    straddles the mark. Its ccn rose from 8, so the hook warns and passes.
+    `verify` compares the numbers on the committed tree and reports the rise."""
+    repo = measured_repo(tmp_path)
+    write(repo, "src/mod.py", tangled("legacy", 11) + "\n" + tangled("newer"))
+    git(repo, "add", "src/mod.py")
+
+    res = run_cli(repo, "hook-precommit")
+    git(repo, *COMMIT, "--no-verify", "-m", "legacy grows")
+    verified = run_cli(repo, "verify", "--json")
+    regressions = {item["long_name"]: item for item in json.loads(verified.stdout)["findings"]
+                   if item["kind"] == "ratchet_regression"}
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert warn_rows(res.stderr) == [("8", "12", "src/mod.py", "1", "legacy( n )", "63.6000")], res.stderr
+    assert "ccn 8 -> 12" in res.stderr and "mark 63.6000" in res.stderr, res.stderr
+    assert verified.returncode == 6, verified.stdout + verified.stderr
+    assert regressions["legacy( n )"]["recorded"] == 63.6, regressions
+
+
+def test_the_warn_block_is_ascii_on_stderr_and_takes_the_function_off_the_count(seeded: Path):
+    """legacy rose from 8 to 12 under its mark of 63.6; newer is not touched.
+    The head line, one row, exit 0, nothing on stdout and no count line."""
     write(seeded, "src/mod.py", tangled("legacy", 11) + "\n" + tangled("newer"))
     git(seeded, "add", "src/mod.py")
 
     res = run_cli(seeded, "hook-precommit")
 
+    assert (res.returncode, res.stdout) == (0, ""), res.stdout + res.stderr
+    assert res.stderr == (WARN_HEAD.format(n=1) + "\n"
+                          "  ccn 8 -> 12  src/mod.py:1  legacy( n )  mark 63.6000\n"), res.stderr
+    assert res.stderr.isascii()
+
+
+def test_a_comment_edit_beside_a_rise_keeps_its_place_on_the_count_line(tmp_path: Path):
+    repo = seeded_repo(tmp_path, "both", marks(("src/mod.py", "legacy( n )", 63.6),
+                                               ("src/mod.py", "newer( n )", 63.6)))
+    write(repo, "src/mod.py", tangled("legacy", 11) + "\n" + commented("newer"))
+    git(repo, "add", "src/mod.py")
+
+    res = run_cli(repo, "hook-precommit")
+
     assert res.returncode == 0, res.stdout + res.stderr
-    assert "1 staged function(s) carry a ratchet mark" in res.stderr, res.stderr
+    assert res.stderr.splitlines() == [COUNT_LINE.format(n=1), WARN_HEAD.format(n=1),
+                                       "  ccn 8 -> 12  src/mod.py:1  legacy( n )  mark 63.6000"], res.stderr
+
+
+def test_a_ccn_that_fell_under_the_mark_stays_on_the_count_line(tmp_path: Path):
+    """legacy at ccn 9 in the base falls to ccn 8, a comment line added: the
+    range 8 to 72 still straddles the mark of 63.6, and nothing rose."""
+    repo = seeded_repo(tmp_path, "fell", LEGACY_MARK, source=tangled("legacy", 8) + "\n" + tangled("newer"))
+    write(repo, "src/mod.py", commented("legacy") + "\n" + tangled("newer"))
+    git(repo, "add", "src/mod.py")
+
+    res = run_cli(repo, "hook-precommit")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert res.stderr == COUNT_LINE.format(n=1) + "\n", res.stderr
+
+
+def test_a_marked_function_added_in_the_commit_warns(tmp_path: Path):
+    """The marks file names `added`, which the base holds nowhere: no base ccn
+    to compare, so the hook warns."""
+    repo = seeded_repo(tmp_path, "added", marks(("src/mod.py", "added( n )", 63.6)))
+    write(repo, "src/mod.py", tangled("legacy") + "\n" + tangled("newer") + "\n" + tangled("added"))
+    git(repo, "add", "src/mod.py")
+
+    res = run_cli(repo, "hook-precommit")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert warn_rows(res.stderr) == [("new", "8", "src/mod.py", "35", "added( n )", "63.6000")], res.stderr
+
+
+def test_a_first_commit_that_carries_a_marks_file_warns_for_each_straddling_function(tmp_path: Path):
+    """No commit yet: HEAD is unborn and answers no ccn for any key."""
+    repo = tmp_path / "first"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    write(repo, "crapkit.toml", CONFIG)
+    write(repo, "src/mod.py", tangled("legacy") + "\n" + tangled("newer"))
+    write(repo, "crapkit-ratchet.tsv", marks(("src/mod.py", "legacy( n )", 63.6), ("src/mod.py", "newer( n )", 63.6)))
+    git(repo, "add", "-A")
+
+    res = run_cli(repo, "hook-precommit")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert warn_rows(res.stderr) == [("new", "8", "src/mod.py", "1", "legacy( n )", "63.6000"),
+                                     ("new", "8", "src/mod.py", "18", "newer( n )", "63.6000")], res.stderr
+    assert EXEMPT not in res.stderr, res.stderr
+
+
+def test_a_twin_rise_compares_with_the_bases_own_twin(tmp_path: Path):
+    """Two `legacy` defs at ccn 8, both marked 63.6. The second grows to ccn
+    9: the warn names `#2` against the base's `#2`, and the first, untouched,
+    is not judged. The twin note prints once, for the staged file alone."""
+    twins = tangled("legacy") + "\n" + tangled("legacy")
+    repo = seeded_repo(tmp_path, "twins", marks(("src/mod.py", "legacy( n )", 63.6),
+                                                ("src/mod.py", "legacy( n )#2", 63.6)), source=twins)
+    write(repo, "src/mod.py", tangled("legacy") + "\n" + tangled("legacy", 8))
+    git(repo, "add", "src/mod.py")
+
+    res = run_cli(repo, "hook-precommit")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert warn_rows(res.stderr) == [("8", "9", "src/mod.py", "18", "legacy( n )#2", "63.6000")], res.stderr
+    assert res.stderr.count("defines legacy( n ) more than once") == 1, res.stderr
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-16-le-bom", "crlf"])
+def test_a_base_blob_in_any_encoding_gives_the_same_base_ccn(tmp_path: Path, encoding: str):
+    encode = ENCODINGS[encoding]
+    repo = seeded_repo(tmp_path, encoding, LEGACY_MARK)
+    (repo / "src" / "mod.py").write_bytes(encode(tangled("legacy") + "\n" + tangled("newer")))
+    git(repo, "add", "-A")
+    git(repo, *COMMIT, "--allow-empty", "-m", f"as {encoding}")
+    (repo / "src" / "mod.py").write_bytes(encode(tangled("legacy", 11) + "\n" + tangled("newer")))
+    git(repo, "add", "src/mod.py")
+
+    res = run_cli(repo, "hook-precommit")
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert warn_rows(res.stderr) == [("8", "12", "src/mod.py", "1", "legacy( n )", "63.6000")], res.stderr
+
+
+class BlobReads:
+    """A spy on gitio.blobs_at: the paths of each call, then the real read."""
+
+    def __init__(self, monkeypatch):
+        from crapkit import gitio
+
+        self.calls, real = [], gitio.blobs_at
+
+        def spy(root, revision, paths):
+            paths = list(paths)
+            self.calls.append(paths)
+            return real(root, revision, paths)
+        monkeypatch.setattr(gitio, "blobs_at", spy)
+
+
+MARKED_BOTH = marks(("src/mod.py", "legacy( n )", 63.6), ("src/other.py", "other( n )", 63.6))
+LAZY = {
+    # name: (marks, staged src/mod.py, staged src/other.py, exit, the paths of each blobs_at call)
+    "clean": (MARKED_BOTH, tangled("legacy") + "\n" + tangled("newer") + "\nX = 1\n", tangled("other"), 0, []),
+    "all-refused": (marks(("src/mod.py", "legacy( n )", 9.0)), tangled("legacy", 9) + "\n" + tangled("newer"),
+                    tangled("other"), 6, []),
+    "all-pardoned-by-the-high-end": (marks(("src/mod.py", "legacy( n )", 72.0)),
+                                     commented("legacy") + "\n" + tangled("newer"), tangled("other"), 0, []),
+    "straddling": (MARKED_BOTH, tangled("legacy", 11) + "\n" + tangled("newer"), tangled("other", 11), 0,
+                   [["src/mod.py", "src/other.py"]]),
+}
+
+
+@pytest.mark.parametrize("case", sorted(LAZY))
+def test_the_hook_reads_base_blobs_only_for_a_straddling_function_and_in_one_call(tmp_path: Path, monkeypatch,
+                                                                                    case: str):
+    ratchet, mod, other, code, reads = LAZY[case]
+    repo = seeded_repo(tmp_path, case, ratchet)
+    write(repo, "src/other.py", tangled("other"))
+    git(repo, "add", "-A")
+    git(repo, *COMMIT, "-m", "other")
+    write(repo, "src/mod.py", mod)
+    write(repo, "src/other.py", other)
+    git(repo, "add", "-A")
+    spy = BlobReads(monkeypatch)
+
+    res = run_cli(repo, "hook-precommit")
+
+    assert res.returncode == code, res.stdout + res.stderr
+    assert spy.calls == reads, spy.calls
 
 
 # --- the rise the ccn alone proves ------------------------------------------------
@@ -321,6 +530,36 @@ def test_a_rise_beside_an_unread_staged_file_prints_both(tmp_path: Path):
     assert res.returncode == 6, res.stdout + res.stderr
     assert "UNREAD  src/handlers.ts" in res.stdout, res.stdout
     assert rise_rows(res.stdout) == [LEGACY_ROW], res.stdout
+
+
+def test_a_warn_beside_an_unread_staged_file_exits_6_and_prints_both(tmp_path: Path):
+    """The unread file refuses the commit; the warn about legacy still prints."""
+    repo = seeded_repo(tmp_path, "unread-warn", LEGACY_MARK, UNREAD_CONFIG)
+    write(repo, "src/handlers.ts", REFUSED_ARROW)
+    write(repo, "src/mod.py", tangled("legacy", 11) + "\n" + tangled("newer"))
+    git(repo, "add", "-A")
+
+    res = run_cli(repo, "hook-precommit")
+
+    assert res.returncode == 6, res.stdout + res.stderr
+    assert "UNREAD  src/handlers.ts" in res.stdout, res.stdout
+    assert warn_rows(res.stderr) == [("8", "12", "src/mod.py", "1", "legacy( n )", "63.6000")], res.stderr
+
+
+def test_a_refused_rise_beside_a_warned_one_refuses_on_stdout_and_warns_on_stderr(tmp_path: Path):
+    """legacy passed its mark of 9 (ccn 10): refused. newer rose from 8 to 12
+    under its mark of 63.6: warned. Exit 6 for the refusal alone."""
+    repo = seeded_repo(tmp_path, "rise-and-warn", marks(("src/mod.py", "legacy( n )", 9.0),
+                                                        ("src/mod.py", "newer( n )", 63.6)))
+    write(repo, "src/mod.py", tangled("legacy", 9) + "\n" + tangled("newer", 11))
+    git(repo, "add", "src/mod.py")
+
+    res = run_cli(repo, "hook-precommit")
+
+    assert res.returncode == 6, res.stdout + res.stderr
+    assert rise_rows(res.stdout) == [LEGACY_ROW], res.stdout
+    assert WARN_WORDS not in res.stdout, res.stdout
+    assert warn_rows(res.stderr) == [("8", "12", "src/mod.py", "22", "newer( n )", "63.6000")], res.stderr
 
 
 def test_only_the_second_twin_past_its_mark_is_refused_under_its_handle(tmp_path: Path):

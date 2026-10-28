@@ -1,5 +1,6 @@
 """CI gates the committed change against its base with the current index, a
-marked function whose ccn passed its mark included."""
+marked function whose ccn passed its mark included, and reads a straddling
+function's base ccn at the merge base `--base` names."""
 from conftest import git, git_commit_all, git_init_repo, run_cli
 
 
@@ -76,6 +77,44 @@ def test_a_committed_marked_rise_is_refused_against_the_base_and_outside_a_commi
     assert "  ccn   5  src/logic.py:1  decide( a , b )  mark 3.0000" in changed.stdout
     assert tracked.returncode == 6, tracked.stdout + tracked.stderr
     assert "crapkit gate: 1 tracked function(s) rose past their ratchet mark:" in tracked.stdout
+
+
+MEASURED_AT_6 = '[crapkit]\ntarget=6\n[[scope]]\nname="src"\npaths=["src"]\nlanguages=["python"]\n'
+
+
+def tangled(decisions: int) -> str:
+    """`legacy(n)` with `decisions` ifs: ccn is one more."""
+    body = "".join(f"    if n > {i}:\n        n = n + 1\n" for i in range(1, decisions + 1))
+    return f"def legacy(n):\n{body}    return n\n"
+
+
+def test_base_main_in_a_ci_shaped_clone_warns_against_the_merge_base_blob(tmp_path):
+    """legacy is marked 63.6 at ccn 8. The branch takes it to ccn 10 and main,
+    after the fork, to ccn 12. The range 10 to 110 straddles the mark either
+    way: against the merge base legacy rose from 8, against main's tip it fell
+    from 12. `--base main` reads the merge base and warns."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    git_init_repo(origin)
+    (origin / "crapkit.toml").write_text(MEASURED_AT_6, encoding="utf-8")
+    (origin / "crapkit-ratchet.tsv").write_text("path\tlong_name\tcrap\nsrc/logic.py\tlegacy( n )\t63.6000\n",
+                                                encoding="utf-8", newline="\n")
+    (origin / "src").mkdir()
+    (origin / "src" / "logic.py").write_text(tangled(7), encoding="utf-8", newline="\n")
+    git_commit_all(origin, "base")
+    clone = tmp_path / "clone"
+    git(tmp_path, "clone", "-q", "-c", "core.autocrlf=false", str(origin), str(clone))
+    git(clone, "checkout", "-q", "-b", "change")
+    (clone / "src" / "logic.py").write_text(tangled(9), encoding="utf-8", newline="\n")
+    git_commit_all(clone, "legacy grows on the branch")
+    (origin / "src" / "logic.py").write_text(tangled(11), encoding="utf-8", newline="\n")
+    git_commit_all(origin, "legacy grows on main")
+    git(clone, "fetch", "-q", "origin", "main:main")
+
+    based = run_cli(clone, "hook-precommit", "--base", "main")
+
+    assert based.returncode == 0, based.stdout + based.stderr
+    assert "  ccn 8 -> 10  src/logic.py:1  legacy( n )  mark 63.6000" in based.stderr.splitlines(), based.stderr
 
 
 def test_an_unknown_gate_base_refuses_instead_of_judging_nothing(tmp_path):

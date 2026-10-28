@@ -612,7 +612,7 @@ full verdict. The preview and hooks differ in what their available evidence can 
 |---|---|---|
 | `crapkit claude-hook` | after an agent's edit lands | **advisory.** Names the breach to the agent: on stderr in Claude Code, as added context in Cursor, Copilot CLI and VS Code. Blocks nothing, because PostToolUse runs after the write |
 | `crapkit rescore FILE --gate` | when you ask, after the first coverage run | **preview.** A stricter preview of the commit gate, sub-second, before you stage: a ratchet mark pardons a function only while its CRAP is at or under the mark. With no run behind it, exit 1 and `no snapshot` |
-| `crapkit hook-precommit` | `git commit`, or by hand | **blocks.** The hook exits 6; git reports 1. Inside a commit it judges the staged blobs only, so it costs the size of the commit and needs no coverage. A marked function passes while its ccn sits at or under its mark and is refused once its ccn passes it. Run outside a commit with nothing staged, as `pre-commit run --all-files` does, it judges every tracked file and fails on committed debt no ratchet mark covers; `crapkit coverage`, then `crapkit ratchet seed`, records that debt |
+| `crapkit hook-precommit` | `git commit`, or by hand | **blocks.** The hook exits 6; git reports 1. Inside a commit it judges the staged blobs only, so it costs the size of the commit and needs no coverage. A marked function passes while its ccn sits at or under its mark and is refused once its ccn passes it; when that ccn rose since the diff base, it still passes, named in a warn on stderr. Run outside a commit with nothing staged, as `pre-commit run --all-files` does, it judges every tracked file and fails on committed debt no ratchet mark covers; `crapkit coverage`, then `crapkit ratchet seed`, records that debt |
 | `crapkit verify` | before you push, and in CI | **the verdict.** Gate, ratchet, new test failures, diff coverage, against the trusted baseline |
 
 Both hooks read the marks file in the working tree, whether or not a mark is staged or
@@ -626,6 +626,9 @@ staged blob has no coverage, so the pre-commit hook reads CRAP as a range from c
 untested value: it refuses with exit 6 once ccn alone passes the mark, and passes the rest
 with a count on stderr (`staged function(s) carry a ratchet mark and were not gated`). It
 says the same about a staged file no `[[scope]]` claims, so a new directory is never ungated in silence.
+A passed function whose ccn rose since the diff base gets a warn on stderr instead of the
+count (`staged marked function(s) rose in ccn and may pass their ratchet mark`), and the
+commit still goes through: add tests or decompose before `verify` judges it.
 
 Every gate refuses a changed file no reader could read, exit 6, because it judged none of
 the functions in it: `crapkit gate: 1 staged file(s) could not be read, so no function in
