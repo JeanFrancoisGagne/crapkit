@@ -27,6 +27,7 @@
 
 <!-- 0.9.0:metric-stamp -->
 - The analysis version is now one number per language (`analyze.ANALYSIS_VERSIONS`, each starting at 13) and one per coverage reader (`coverage_format.READER_VERSIONS`, each starting at 1), and a change raises only the numbers it moves. The analysis cache keys each file on its language's number, so a change to one language's reader re-reads only that language's files. `ANALYSIS_VERSION` stays 13 and counts the tables' revisions, so the marks-file stamp and every JSON field read as in 0.8.1.
+- Marks a newer lizard stamped, as every marks file seeded on a fresh 0.8.1 install since 2026-10-05 is, now ask for `crapkit coverage`, `crapkit ratchet prune` and `crapkit ratchet seed`, and seed and prune accept them, where 0.8.1 sent the user to upgrade lizard and seed and prune refused. 0.9.0 pins lizard exactly, so only a newer `crapkit-analysis` asks for an upgrade, and that refusal names crapkit alone. `crapkit doctor` lists these marks as a WARN, not a FAIL. A teammate still on 0.8.1 upgrades crapkit, or each of their reseeds moves the marks back. [Upgrading to 0.9.0](docs/upgrading.md#marks-a-newer-lizard-stamped-take-one-reseed)
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->
