@@ -499,10 +499,11 @@ def marked_collisions(entries, rows) -> set:
 def stamp_conflict(recorded: MetricStamp, current: MetricStamp) -> str | None:
     """The refusal when marks and the running metric disagree; None when they compare.
 
-    An unstamped file has nothing to disagree with — the caller warns instead.
-    Marks a newer crapkit or lizard wrote are sent to an upgrade: the stock
+    An unstamped file has nothing to disagree with: the caller warns instead.
+    Marks a newer crapkit wrote are sent to an upgrade: the stock
     coverage-then-seed would restamp them under this older metric, and every
-    teammate on the newer release would then be refused.
+    teammate on the newer release would then be refused. Marks a newer lizard
+    stamped take that reseed, since the exact lizard pin admits no upgrade.
     """
     if not recorded or recorded == current:
         return None
@@ -516,21 +517,24 @@ def stamp_conflict(recorded: MetricStamp, current: MetricStamp) -> str | None:
 
 
 def upgrade_remedy(tools: list[str]) -> str:
-    """What to do about marks a newer install measured: upgrade this one. Every
-    caller says what its own write would have done to them instead."""
-    where = (" (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike)"
-             if "crapkit" in tools else "")
-    return (f"the marks come from a newer {' and a newer '.join(tools)} than this install; "
-            f"upgrade {'both' if len(tools) > 1 else 'it'} to the version that wrote them{where}")
+    """What to do about marks a newer crapkit measured: upgrade this one, everywhere
+    it runs. `tools` is what `newer_tools` returned, which names crapkit alone.
+    Every caller says what its own write would have done to them instead."""
+    return ("the marks come from a newer crapkit than this install; upgrade it to the "
+            "version that wrote them (the CLI, the Action's `uses:` pin and the pre-commit "
+            "`rev` alike)")
 
 
-# The stamp's fields, and the tool each one is the version of.
-_STAMP_TOOLS = (("crapkit-analysis", "crapkit"), ("lizard", "lizard"))
+# The stamp fields that mark a newer release, and the tool each is the version of.
+# lizard is not one: crapkit pins it exactly and moves the analysis version with
+# it, so a newer lizard in a stamp comes from a release that let lizard float, and
+# the reseed that moves those marks to the pinned lizard is their remedy.
+_STAMP_TOOLS = (("crapkit-analysis", "crapkit"),)
 
 
 def newer_tools(recorded: MetricStamp, current: MetricStamp) -> list[str]:
-    """The tools `recorded` names at a newer version than `current` does: `crapkit`
-    for the analysis version, `lizard` for lizard's. [] when neither is newer, or
+    """`["crapkit"]` when `recorded` names a newer analysis version than `current`
+    does, the one field that marks a newer release. [] when it is not newer, or
     when a stamp does not read as `crapkit-analysis=N lizard=X.Y.Z`."""
     then, now = _stamp_versions(recorded), _stamp_versions(current)
     return [tool for field, tool in _STAMP_TOOLS if _is_newer(then.get(field), now.get(field))]
