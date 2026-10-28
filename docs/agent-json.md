@@ -1676,7 +1676,9 @@ is the first `crapkit.toml` above the edited file. The plugin registers it async
 |---|---|---|
 | `0` | nothing to say | stdout and stderr both empty |
 | `2` | a changed function is over its ceiling, or a changed file went unjudged, in Claude Code | three or more lines on stderr, which reach the model |
-| `0` | the same, in Cursor, Copilot CLI or VS Code | one line of JSON on stdout carrying those lines; stderr empty |
+| `2` | a changed marked function's ccn passed its mark, in Claude Code | the marked block on stderr, after any unmarked block for the same file |
+| `2` | a changed marked function's ccn rose since HEAD while its CRAP range straddles its mark, in Claude Code | the warn block on stderr, after the other two |
+| `0` | any of these, in Cursor, Copilot CLI or VS Code | one line of JSON on stdout carrying those lines; stderr empty |
 
 Captured from a real run, on a file whose `route` reached ccn 7 under a ceiling of 6:
 
@@ -1685,6 +1687,31 @@ crapkit advisory: 1 function(s) over ceiling 6 in app/m.py (the edit landed; not
   ccn 7  app/m.py:1  route( a , b , c , d )
 the commit gate enforces this; decompose there or mark the debt
 ```
+
+A marked function speaks in a block of its own, with its own closing line. Since 0.9.0 the
+hook holds it to its mark as `hook-precommit` does ([ratchet.md](ratchet.md#the-commit-gate-skips-marked-functions)):
+a working-tree file carries no coverage, so its CRAP is a range from its ccn up to its
+untested CRAP. A ccn past the mark is past it at any coverage, and the commit gate will
+refuse it:
+
+```
+crapkit advisory: 1 marked function(s) rose past their ratchet mark in calc/parse.py (the edit landed; nothing was blocked)
+  ccn 8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+the commit gate refuses a ccn past its mark, and a mark only falls: bring the ccn back to its mark or under it
+```
+
+A range across the mark whose ccn rose since HEAD, or that HEAD holds no function for, may
+have passed it, and only coverage can say. The commit gate passes it with a warn, and the
+advisory warns too, with the ccn at HEAD (`new` for none) and now:
+
+```
+crapkit advisory: 1 marked function(s) rose in ccn and may pass their ratchet mark in calc/grade.py (the edit landed; nothing was blocked)
+  ccn 10 -> 12  calc/grade.py:1  classify( score , attempts , late )  mark 110.0000
+`crapkit verify` judges the mark with coverage: add tests that run the new branches, or decompose
+```
+
+Each row names the handle the mark sits under, `#2` for a second twin. A file can print
+an unmarked block, then a marked block, then a warn block, under one exit 2.
 
 **It is advisory, and the wording says so.** PostToolUse runs after the write, so the edit is
 already on disk and nothing can block it. `hook-precommit` stays the only enforcement point.
@@ -1808,7 +1835,7 @@ shell; skip it when every write arrives as an `Edit`.
 
 ### The silence ladder
 
-Five rungs, each exiting 0 with both streams empty. Any uncaught exception does the same.
+Six rungs, each exiting 0 with both streams empty. Any uncaught exception does the same.
 
 | Rung | Silent when |
 |---|---|
@@ -1816,7 +1843,8 @@ Five rungs, each exiting 0 with both streams empty. Any uncaught exception does 
 | event | stdin is not one JSON object, or not a `PostToolUse` (`postToolUse` from Cursor) naming the file it wrote or a shell tool's `tool_input.command`, or the file it names has a suffix crapkit does not measure |
 | repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config. On a `Bash` event: no git repo above the command's `cwd`, or no changed `*.py` fresh enough to judge |
 | git state | mid-rebase, mid-merge or mid-cherry-pick |
-| verdict | no scope claims the file, a reader read it and found no functions, no changed function is over the ceiling, or every one that is carries a ratchet mark |
+| verdict | no scope claims the file, a reader read it and found no functions, or no changed function is over the ceiling |
+| mark | every changed function over the ceiling carries a mark that its range, ccn up to its untested CRAP, sits at or under, or that its range straddles with a ccn no higher than at HEAD |
 
 Since 0.4.7 the protocol rung is checked first, ahead of the event shape and ahead of every
 git call, so a payload for a protocol this CLI does not answer costs nothing but the read of
@@ -1827,8 +1855,11 @@ Silence is the design. PostToolUse renders every nonzero exit but 2 invisible, a
 the edits this was measured against land in repos with no `crapkit.toml`. A hook that fired
 there would be either useless or unbearable.
 
-The hook pardons on a mark's existence, not the numeric rule `verify` applies: the store is never
-opened, so the hook holds no CRAP to compare. Same rule as the commit gate, described in
+The hook pardons by the range rule every gate applies, over the CRAP range it can know: the
+store is never opened, so it holds no coverage and reads the range from ccn up to the
+untested CRAP. A mark pardons while that range sits at or under it; a range whose low end
+passes it is the marked block, and a range across it whose ccn rose is the warn block. Same
+rule as the commit gate, described in
 [ratchet.md](ratchet.md#the-commit-gate-skips-marked-functions).
 
 An unknown `claude-*` subcommand exits 0 silently too, so a plugin newer than the installed

@@ -161,7 +161,7 @@ The marks file's first comment line, `crapkit-analysis=N lizard=X.Y.Z`: the rule
 _Avoid_: version header
 
 **Pardon**:
-A ratchet mark lifting a gate breach. `rescore --gate` and `verify` pardon a changed function only while its CRAP sits at or under its mark; the pre-commit hook pardons any marked function, because a staged blob has no coverage to score.
+A ratchet mark lifting a gate breach, by one rule over the CRAP range each gate knows: an exact value for `verify`, the overlay bound for `rescore --gate`, ccn up to the untested CRAP for both hooks. A mark pardons while that range sits at or under it; a range whose low end passes it is a ratchet regression. A range across the mark passes, and both hooks warn when its ccn rose, since only coverage says which side the CRAP sits on.
 
 **Ratchet regression**:
 A marked function whose CRAP rose above its mark; never overridable.
