@@ -142,8 +142,11 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # (mission-3-06), and the sync met at 3,933.
 # It reached 3,896 on the lane once the hook's override grant named the marks
 # it kept and left a marks file it only kept marks in unwritten (mission-3-07),
-# and the landing met at 3,937.
-SRC_DEFS = 3943
+# and the landing met at 3,937. The per-scope stamp merge (metric-stamp-09)
+# added 22 on 090/metric-stamp, and the landing met at 3,959. 090/integration
+# reached 3,943 once the marks history read one patch stream (mission-3-11),
+# and the sync met at 3,965.
+SRC_DEFS = 3965
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
