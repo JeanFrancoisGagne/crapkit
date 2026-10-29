@@ -803,10 +803,13 @@ python tools/deploy/run.py --native --os windows        # Windows or macOS, afte
 ```
 
 ci.yml runs the push set in `deploy-linux`, `deploy-linux-native`, `deploy-windows` and
-`deploy-action`. deploy.yml runs the nightly, weekly, release and published sets, and runs
-on a pull request only when it changes an install surface or carries the `deploy-full`
-label. Before a release, push HEAD (the commit stage 1 will bump), dispatch the release
-set with `gh workflow run deploy.yml --ref main -f cadence=release` and wait for it to
+`deploy-action`. deploy.yml runs the nightly, weekly, release and published sets: the
+nightly and weekly on their schedule on main, any set on a dispatch, and none on a pull
+request. accuracy.yml runs its tiers the same way. To run a set on a branch, dispatch it:
+`gh workflow run deploy.yml --ref <branch> -f cadence=nightly` for the deploy cells,
+`gh workflow run accuracy.yml --ref <branch> -f mode=nightly` for the accuracy suite's
+nightly tier. Before a release, push HEAD (the commit stage 1 will bump), dispatch the
+release set with `gh workflow run deploy.yml --ref main -f cadence=release` and wait for it to
 pass: `python tools/release/release.py check VERSION` refuses until a release-cadence run
 at HEAD is green. `tests/deploy/MAP.toml` maps every documented install command, channel,
 harness and upgrade source to its cells, and `tests/unit/test_deploy_map.py` fails on a
