@@ -459,9 +459,9 @@ lin-marked-override = { packet = "mission-3", cadence = "nightly", os = "linux",
 lin-up-marked-rise-n1 = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
 lin-marked-advisory = { packet = "mission-3", cadence = "nightly", os = "linux", image = "core" }
 lin-up-marked-advisory-n1 = { packet = "mission-3", cadence = "nightly", os = "linux", image = "core" }
-win-marked-rise-ps51 = { packet = "mission-3", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
-win-marked-advisory = { packet = "mission-3", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
-win-up-marked-rise-n1 = { packet = "mission-3", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-marked-rise-ps51 = { packet = "mission-3", cadence = "nightly", os = "windows" }
+win-marked-advisory = { packet = "mission-3", cadence = "nightly", os = "windows" }
+win-up-marked-rise-n1 = { packet = "mission-3", cadence = "nightly", os = "windows" }
 # mission-4-09: the harness-less and Windows cells; its per-harness cells carry their row
 lin-signature-carry = { packet = "mission-4-09", cadence = "push", os = "linux", image = "cells" }
 lin-up-signature-carry-n1 = { packet = "mission-4-09", cadence = "push", os = "linux", image = "cells" }
@@ -743,7 +743,8 @@ harness = "core"
 runs = ["--native --os windows --cadence {cadence} --packet deploy-channels -n 4",
         "--native --os windows --cadence {cadence} --packet deploy-git -n 4",
         "--native --os windows --cadence {cadence} --packet deploy-upgrade -n 4",
-        "--native --os windows --cadence {cadence} --packet deploy-fixes -n 4"]
+        "--native --os windows --cadence {cadence} --packet deploy-fixes -n 4",
+        "--native --os windows --cadence {cadence} --packet mission-3 -n 4"]
 timeout = 60
 measured = 0
 
