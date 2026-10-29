@@ -21,14 +21,16 @@ and `verify` says whether it did.
 These run against the real subcommand through `run_cli`, because the gate's
 answer is the exit code a git commit reads.
 """
+import hashlib
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from conftest import cli_runner
+from conftest import child_env, cli_runner
 
 CONFIG = """[crapkit]
 target = 6
@@ -599,6 +601,37 @@ def test_a_rise_in_any_encoding_gets_the_same_verdict_and_line(tmp_path: Path, e
 
     assert res.returncode == 6, res.stdout + res.stderr
     assert rise_rows(res.stdout) == [LEGACY_ROW], res.stdout
+
+
+KEPT_LEGACY = "crapkit: 1 ratchet mark kept as it was (a mark only falls): src/mod.py legacy( n ) 9.0000"
+
+
+def test_git_commit_with_a_reason_passes_a_marked_rise_and_keeps_its_mark(tmp_path: Path):
+    """CRAPKIT_OVERRIDE_REASON on `git commit`: legacy, marked 9.0000, commits
+    at ccn 10 with one alert line, the receipt names the kept mark, and the
+    marks file keeps its bytes and stays out of the commit, though it has no
+    key-format line a write would add. git hands a hook's stdout on through
+    its own stderr."""
+    alert, log = tmp_path / "alert.py", tmp_path / "alerts.log"
+    alert.write_bytes(b"import sys\nopen(sys.argv[1], 'ab').write(sys.stdin.buffer.read())\n")
+    command = f"'\"{sys.executable}\" \"{alert}\" \"{log}\"'"
+    config = CONFIG.replace("[crapkit]\n", f"[crapkit]\nalert_command = {command}\n")
+    repo = seeded_repo(tmp_path, "granted", LEGACY_AT_9, config)
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.write_bytes(f'#!/bin/sh\nexec "{Path(sys.executable).as_posix()}" -m crapkit hook-precommit\n'.encode())
+    hook.chmod(0o755)
+    before = hashlib.sha256((repo / "crapkit-ratchet.tsv").read_bytes()).hexdigest()
+    stage_legacy_at_ccn_10(repo)
+
+    committed = subprocess.run(["git", *COMMIT, "-m", "hotfix"], cwd=repo, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace",
+                               env=child_env({"CRAPKIT_OVERRIDE_REASON": "hotfix 412"}))
+
+    assert committed.returncode == 0, committed.stdout + committed.stderr
+    assert KEPT_LEGACY in committed.stderr.splitlines(), committed.stderr
+    assert git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["src/mod.py"]
+    assert hashlib.sha256((repo / "crapkit-ratchet.tsv").read_bytes()).hexdigest() == before
+    assert len(log.read_bytes().splitlines()) == 1 and b"legacy( n )" in log.read_bytes()
 
 
 # --- the hook against verify, on the committed tree ---------------------------------

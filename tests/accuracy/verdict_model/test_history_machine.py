@@ -466,9 +466,9 @@ class History(RuleBasedStateMachine):
         result = vw.drive.Driver(self.sc.root, env={"CRAPKIT_OVERRIDE_REASON": reason}).run(
             "hook-precommit")
         # Outside a commit nothing is granted: the breach is already committed.
-        # A marked function whose ccn passed its mark refuses before any grant:
-        # the override signs for a breach no mark covers, and a mark only falls.
-        granted = grant and not whole and not violations & set(self._marks())
+        # A marked function whose ccn passed its mark joins the grant, which
+        # keeps its mark: a mark only falls.
+        granted = grant and not whole
         assert result.code == _hook_exit(violations, granted), result.stdout + result.stderr
         if violations and granted:
             self._hook_grant(violations, ccn)
@@ -493,9 +493,11 @@ class History(RuleBasedStateMachine):
                 if (vw.FILES[scope], fn.long_name) not in marks]
 
     def _hook_grant(self, violations, ccn) -> None:
-        """The hook synthesizes the worst case, ccn^2 + ccn, keeps the recorded
-        stamp and records a hook run."""
-        worst = {key: model.mark_value(ccn[key] * ccn[key] + ccn[key]) for key in violations}
+        """The hook synthesizes the worst case, ccn^2 + ccn, for each violation
+        no mark covers, keeps every mark there is and the recorded stamp, and
+        records a hook run."""
+        marks = self._marks()
+        worst = {key: model.mark_value(ccn[key] * ccn[key] + ccn[key]) for key in violations if key not in marks}
         self._read_upgraded_marks()
         self.stamp = model.stamp_after("hook-override", self._recorded(), self.running)
         self.marks = {**self._marks(), **worst}

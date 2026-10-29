@@ -4,8 +4,9 @@
 CRAP bound is what a blob can say with no coverage: at least ccn, at most the
 CRAP `score` gives it at coverage 0 under its scope's flag. cli/verifying
 judges the rows through `gate.judge` and maps each kind of finding to the
-hook's exit: a marked rise refuses with exit 6 and a block of its own, before
-any grant; a pardoned or unproven breach passes and is counted on one line.
+hook's exit: a marked rise refuses with exit 6 and a block of its own unless
+CRAPKIT_OVERRIDE_REASON grants it beside any unmarked breach, with its mark
+kept; a pardoned or unproven breach passes and is counted on one line.
 
 `hook_split` is this module's helper for the older mark tests: it runs
 hand-built staged violations through the gate and the hook's mapping.
@@ -165,7 +166,7 @@ BREACH_KINDS = ("pardoned", "marked_rise", "unproven", "over_ceiling")
 # the count line counts it.
 KINDS = [
     pytest.param(80.0, "pardoned", 0, False, True, id="pardoned"),
-    pytest.param(7.0, "marked_rise", 6, False, False, id="marked_rise-refused"),
+    pytest.param(7.0, "marked_rise", 0, True, False, id="marked_rise-granted"),
     pytest.param(30.0, "unproven", 0, False, True, id="unproven"),
     pytest.param(None, "over_ceiling", 0, True, False, id="over_ceiling-granted"),
 ]
@@ -193,23 +194,23 @@ def test_a_marked_rise_prints_its_own_block_on_stdout_in_ascii(hooked):
     assert out.isascii()
 
 
-def test_a_marked_rise_refuses_before_the_grant_a_breach_beside_it_would_get(hooked):
-    """The override signs for a breach no mark covers; it does not raise a
-    mark. With a marked rise staged nothing is granted, the unmarked block
-    prints first, and each block gets its fix line."""
+def test_a_reason_grants_a_marked_rise_and_the_breach_beside_it_in_one_grant(hooked):
+    """The unmarked block prints first, then the rise block, and no fix line:
+    one grant takes both, the unmarked breach first, each at its bound's high
+    end. That the grant keeps the rise's mark is test_hook_override_marked_rise's."""
     other = record("fresh( a , b )", 20, 9)
     rows = changed(PATH, staged_function(record()), staged_function(other))
 
     code, out, _ = hooked(rows, marks=marked(7.0))
 
-    assert (code, hooked.grants) == (6, [])
+    assert code == 0
+    assert [[(v.long_name, v.key_name, v.high) for v in grant] for grant in hooked.grants] == [
+        [("fresh( a , b )", "fresh( a , b )", 90.0), (NAME, NAME, 72.0)]]
     assert out.splitlines() == [
         "crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:",
         f"  ccn   9  {PATH}:20  fresh( a , b )",
         RISE_HEAD,
-        f"  ccn   8  {PATH}:1  {NAME}  mark 7.0000",
-        "decompose before committing (coverage cannot save a function above the target).",
-        RISE_FIX]
+        f"  ccn   8  {PATH}:1  {NAME}  mark 7.0000"]
 
 
 def test_marked_rises_print_worst_ccn_first_each_under_its_handle(hooked):
