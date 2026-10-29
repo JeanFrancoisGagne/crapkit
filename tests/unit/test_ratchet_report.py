@@ -146,34 +146,42 @@ def test_no_working_tree_argument_reports_the_committed_state_alone():
 
 # --- the git read under the history ----------------------------------------
 
-def test_the_ratchet_history_asks_git_for_no_patch_and_reads_blobs_in_one_process(monkeypatch):
-    """One `git log` that names object ids (--raw, --cc for a merge) and no
-    patch text, with no rename walk, then one `cat-file --batch` process for
-    every blob it named."""
+def test_the_ratchet_history_reads_one_patch_stream_and_only_the_created_blob(monkeypatch):
+    """One `git log -p -U0` that also names object ids (--raw, --cc for a
+    merge), with no rename walk and gitio's patch protocol flags, then one
+    `cat-file --batch` process for the one blob no patch carries: the
+    revision that created the file."""
     from pathlib import Path
 
     from crapkit import gitio
 
     old, new = "1" * 40, "2" * 40
     log = (b"\x001000 " + b"a" * 40 + b"\n\n:000000 100644 " + b"0" * 40 + b" " + old.encode()
-           + b" A\tcrapkit-ratchet.tsv\n\x002000 " + b"b" * 40 + b"\n\n:100644 100644 "
-           + old.encode() + b" " + new.encode() + b" M\tcrapkit-ratchet.tsv\n")
+           + b" A\tcrapkit-ratchet.tsv\n\ndiff --git a/crapkit-ratchet.tsv b/crapkit-ratchet.tsv\n"
+           + b"new file mode 100644\n--- /dev/null\n+++ b/crapkit-ratchet.tsv\n@@ -0,0 +1,2 @@\n"
+           + b"+h\n+1\n\x002000 " + b"b" * 40 + b"\n\n:100644 100644 "
+           + old.encode() + b" " + new.encode() + b" M\tcrapkit-ratchet.tsv\n\n"
+           + b"diff --git a/crapkit-ratchet.tsv b/crapkit-ratchet.tsv\n--- a/crapkit-ratchet.tsv\n"
+           + b"+++ b/crapkit-ratchet.tsv\n@@ -2 +2 @@\n-1\n+-- a/x\r\n\\ No newline at end of file\n")
     seen, batches = [], []
     # The log is read as bytes and framed before any decode: a CR inside a row
     # must not become a Git header line.
     monkeypatch.setattr(gitio, "_git_bytes",
                         lambda root, *args, **kwargs: seen.append((args, kwargs)) or log)
     monkeypatch.setattr(gitio, "_batch_stream", lambda root, requests: batches.append(requests) or (
-        b"".join(b"%s blob 1\n%s\n" % (oid.encode(), oid[:1].encode()) for oid in (old, new))))
+        b"%s blob 4\nh\n1\n\n" % old.encode()))
 
     read = gitio.file_revisions(Path("."), "crapkit-ratchet.tsv")
 
     ((args, kwargs),) = seen
     assert "--raw" in args and "--cc" in args and "--no-renames" in args
-    assert "-p" not in args and "-U0" not in args
+    assert "-p" in args and "-U0" in args
+    assert {"--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/"} <= set(args)
     assert "--follow" not in args
     assert "--reverse" in args, "oldest-first ordering is what mark_events assumes"
     assert kwargs == {}
-    assert batches == [f"{old}\n{new}\n".encode()]
-    assert [(r.time, r.data, r.before, r.merge) for r in read] == [
-        (1000, b"1", None, False), (2000, b"2", b"1", False)]
+    assert batches == [f"{old}\n".encode()]
+    assert [(r.time, r.data, r.before, r.merge, r.blob, r.base, r.rows) for r in read] == [
+        (1000, b"h\n1\n", None, False, old, None, None),
+        (2000, None, None, False, new, old,
+         gitio.PatchRows((b"1",), (b"-- a/x\r",), False, False))]

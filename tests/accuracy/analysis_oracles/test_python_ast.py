@@ -143,7 +143,7 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # It reached 3,896 on the lane once the hook's override grant named the marks
 # it kept and left a marks file it only kept marks in unwritten (mission-3-07),
 # and the landing met at 3,937.
-SRC_DEFS = 3937
+SRC_DEFS = 3943
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

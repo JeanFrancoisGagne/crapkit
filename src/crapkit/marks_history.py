@@ -1,10 +1,15 @@
 """The marks file's git history: every past revision a command reads, one reader.
 
-Every past revision of the marks file is read whole, through
-`RatchetFile.committed` under the past-revision rule: UTF-8 with a byte-order
-mark dropped, UTF-16 when a byte-order mark says so, any other byte as U+FFFD,
-and never a refusal, since the file those bytes came from may be gone. No
-reader parses patch lines. The readers:
+Every past revision of the marks file reads as `RatchetFile.committed` reads
+it, under the past-revision rule: UTF-8 with a byte-order mark dropped,
+UTF-16 when a byte-order mark says so, any other byte as U+FFFD, and never a
+refusal, since the file those bytes came from may be gone. The history comes
+from one `git log -p -U0 --raw` stream (gitio.file_revisions): a revision
+carries the marks of the one it changed through the rows its patch took out
+and put in, and only a revision the patch cannot carry is read whole from its
+blob (_RevisionReader says which). On Windows a whole-blob read of every
+revision cost 1.2 to 1.6 s per `ratchet report` on 40,303 marks in 200
+revisions, in pipe transport alone. The readers:
 
 - `ratchet report` and `brief` read mark ages and repayments off
   `marks_history`, the file's revisions parsed into marks, which
@@ -38,15 +43,17 @@ never held marks.
 """
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import NamedTuple
 
 from .errors import GitError
-from .gitio import (FileRevision, ancestry, blob_at, commit_renames, file_revisions,
-                    proven_ancestor, shallow_fix)
+from .gitio import (FileRevision, PatchRows, ancestry, blob_at, commit_renames, file_revisions,
+                    object_blobs, proven_ancestor, shallow_fix)
 from .keys import Key, mark_key, pair_moves
 from .ratchet import read_ratchet
 from .ratchetfile import RatchetFile
+from .repotext import marks_text, plain_utf8
 
 
 class MarksRevision(NamedTuple):
@@ -87,7 +94,7 @@ def marks_history(root: Path, ratchet_file: str) -> list[MarksRevision]:
 
 def _revisions(root: Path, ratchet_file: str, rev_range: str | None) -> list[MarksRevision]:
     """marks_history over `rev_range`, BASE..HEAD; all of HEAD's history for None."""
-    read = _RevisionReader(root / ratchet_file)
+    read = _RevisionReader(root, ratchet_file)
     return [read.revision(revision) for revision in _walk(root, ratchet_file, rev_range)]
 
 
@@ -96,7 +103,7 @@ def marks_at(root: Path, commit: str, ratchet_file: str) -> dict | None:
     a revision; None when that commit held no marks file, or one of only blank
     lines. A past revision never refuses. A commit this clone does not hold
     raises GitError, and in a shallow clone it names the fetch."""
-    return _RevisionReader(root / ratchet_file).held(_held(root, commit, ratchet_file))
+    return _RevisionReader(root, ratchet_file).held(_held(root, commit, ratchet_file))
 
 
 def moves(root: Path, rev_range: str | None, ratchet_file: str) -> list[Move]:
@@ -209,8 +216,8 @@ def _stitched(segments: list[list[FileRevision]]) -> list[FileRevision]:
     commit with no older revision keeps the bytes _walk opened it with."""
     revisions = list(segments[0])
     for segment in segments[1:]:
-        old = revisions[-1].data if revisions else segment[0].before
-        revisions += [segment[0]._replace(before=old), *segment[1:]]
+        opened = segment[0]._replace(base=revisions[-1].blob) if revisions else segment[0]
+        revisions += [opened, *segment[1:]]
     return revisions
 
 
@@ -221,91 +228,147 @@ def _renamed_from(root: Path, commit: str, path: str) -> str | None:
 
 
 class _Read(NamedTuple):
-    """One revision as the reader read it. `text` and `marks` are None for no
-    file or one of only blank lines. `once` says the revision lists every key
-    once: only then can the next revision carry its marks. `changed` holds
-    the keys of the marks a carry took out or put in; None for a revision
-    read in full."""
-    data: bytes | None
-    text: str | None
+    """One revision as the reader read it. `blob` names it; None for no file,
+    or for bytes read with no id. `marks` is None for no file or one of only
+    blank lines. `filled` counts the rows that hold more than blank space, so
+    a carry knows when a revision went blank. `once` says the revision lists
+    every key once: only then can the next revision carry its marks.
+    `changed` holds the keys of the marks a carry took out or put in, against
+    the revision it carried from; None for a revision read whole."""
+    blob: str | None
     marks: dict | None
+    filled: int
     once: bool
     changed: frozenset | None
+
+
+_NO_FILE = _Read(None, None, 0, True, None)
 
 
 class _RevisionReader:
     """Revisions read into marks, oldest first.
 
-    A revision decodes whole through RatchetFile.committed, and its rows read
-    by ratchet.read_ratchet's rule. read_ratchet reads each row on its own, so
-    a row is read once however many revisions hold it.
+    A revision gitio read whole decodes through RatchetFile.committed, and
+    its rows read by ratchet.read_ratchet's rule. read_ratchet reads each row
+    on its own, so a row is read once however many revisions hold it.
 
-    A history of a large marks file changes a few rows per commit. A revision
-    read against the one it changed starts from that one's marks and reads
-    only the rows the two texts do not share (_changed_rows), so it costs the
-    rows it changed, not the rows the file holds: ratchet report took 3.1 s
-    on 40,303 marks in 200 revisions when each revision built its marks anew.
-    The first mark under a key answers, so a revision that lists a key twice,
-    or follows one that did, is read row by row in full, and so is one whose
-    base is not the revision read last.
+    Every other revision carries the marks of the one it changed through its
+    patch: the marks of the rows the patch took out go, those of the rows it
+    put in come, each row decoded as the whole revision decodes it. A row
+    both sides hold, moved or not, comes back out of both, so the rows that
+    change are the ones a whole read of each side would say, whatever diff
+    algorithm git ran. The first mark under a key answers, so a revision that
+    lists a key twice, or follows one that did, is read whole. A byte-order
+    mark reads only on line 1, so a patch that takes out line 1 and puts in
+    none, or the reverse, moves a row it does not name onto or off line 1,
+    and that revision is read whole too. A revision gitio did not read whole
+    is read through its blob id then.
     """
 
-    def __init__(self, path: Path) -> None:
-        self._path = path
+    def __init__(self, root: Path, ratchet_file: str) -> None:
+        self._root, self._path = root, root / ratchet_file
         self._rows = _Rows()
-        self._newest = _Read(None, None, None, True, None)
+        self._newest = _NO_FILE
 
     def revision(self, revision: FileRevision) -> MarksRevision:
         """One commit's revision, read against the revision it changed."""
-        before = self._at(revision.data if revision.merge else revision.before)
-        after = before if revision.merge else self._after(before, revision.data)
+        if revision.merge:
+            before = after = self._side(revision.blob, revision.data)
+        else:
+            before = self._side(revision.base, revision.before)
+            after = self._after(before, revision)
         self._newest = after
         return MarksRevision(revision.commit, revision.time, after.marks, before.marks,
-                             frozenset() if after is before else after.changed)
+                             _changed(before, after))
 
     def held(self, held: RatchetFile | None) -> dict | None:
         """key -> crap for one revision as _committed read it; None for none."""
         return self._whole(None, held).marks
 
-    def _at(self, data: bytes | None) -> _Read:
-        """The revision `data` holds: the one read last when it is that one,
-        else read in full."""
-        return self._newest if data == self._newest.data else self._whole(
-            data, _committed(self._path, data))
+    def _side(self, blob: str | None, data: bytes | None) -> _Read:
+        """The revision `blob` names: read whole from `data` when gitio read
+        it, the one read last when it is that one, else read whole off git."""
+        if data is not None:
+            return self._whole(blob, _committed(self._path, data))
+        if blob is None:
+            return _NO_FILE
+        if blob == self._newest.blob:
+            return self._newest
+        return self._whole(blob, _committed(self._path, _object(self._root, blob)))
 
-    def _after(self, before: _Read, data: bytes | None) -> _Read:
-        """`data` read against `before`: carried from it when it can be, else
-        read in full."""
-        held = _committed(self._path, data)
-        return self._carried(before, data, held) or self._whole(data, held)
+    def _after(self, before: _Read, revision: FileRevision) -> _Read:
+        """The revision a commit left: carried from `before` through its rows
+        when it can be, else read whole. A whole read names no keys it
+        changed, even when it is the one read last."""
+        carried = None if revision.rows is None else self._carried(before, revision.blob, revision.rows)
+        return carried or self._side(revision.blob, revision.data)._replace(changed=None)
 
-    def _carried(self, before: _Read, data: bytes | None, held: RatchetFile | None) -> _Read | None:
-        """`held` read from `before`: the marks of the rows only `before`
-        holds go, those of the rows only `held` holds come. None when either
-        holds no text, `before` lists a key twice, the texts do not line up
-        again (_changed_rows), or a row that came lists a key already held."""
-        rows = _changed_rows(before.text, held.text) if _carries(before, held) else None
-        if rows is None:
+    def _carried(self, before: _Read, blob: str | None, rows: PatchRows) -> _Read | None:
+        """The revision `rows` lead to from `before`. None when `before` lists
+        a key twice, the patch moves which row is line 1, or a row that came
+        lists a key still held."""
+        if not before.once or rows.old_top != rows.new_top:
             return None
-        gone, came = map(self._marked, rows)
-        marks = _carry(before.marks, gone, came)
-        return None if marks is None else _Read(data, held.text, marks, True, _keys(gone + came))
+        gone, came = _unshared(_texts(rows.gone, rows.old_top), _texts(rows.came, rows.new_top))
+        out, into = self._marked(gone), self._marked(came)
+        marks = _carry(before.marks or {}, out, into)
+        if marks is None:
+            return None
+        filled = before.filled - _filled(gone) + _filled(came)
+        return _Read(blob, marks if filled else None, filled, True, _keys(out + into))
 
-    def _whole(self, data: bytes | None, held: RatchetFile | None) -> _Read:
-        """`data` read row by row in full, as _committed read it into `held`."""
+    def _whole(self, blob: str | None, held: RatchetFile | None) -> _Read:
+        """One revision read row by row in full, as _committed read it into `held`."""
         if held is None:
-            return _Read(data, None, None, True, None)
-        marks = self._marked((held.text or "").split("\n"))
+            return _Read(blob, None, 0, True, None)
+        rows = (held.text or "").split("\n")
+        marks = self._marked(rows)
         by_key = dict(reversed(marks))  # reversed: the first mark under a key wins
-        return _Read(data, held.text, by_key, len(by_key) == len(marks), None)
+        return _Read(blob, by_key, _filled(rows), len(by_key) == len(marks), None)
 
     def _marked(self, rows: list[str]) -> list[tuple]:
         """(key, crap) for each row that holds a mark, in order."""
         return list(filter(None, map(self._rows.__getitem__, rows)))
 
 
-def _carries(before: _Read, held: RatchetFile | None) -> bool:
-    return held is not None and before.text is not None and before.once
+def _texts(rows: tuple[bytes, ...], top: bool) -> list[str]:
+    """Each row as RatchetFile.committed decodes it: line 1 (the first row
+    when `top`) as the file's start, a byte-order mark dropped, and every
+    other row as UTF-8 that keeps a mark as U+FEFF. Any other byte reads as
+    U+FFFD. A UTF-16 revision never gets here: gitio hands no rows for a
+    patch that holds a NUL, whether git printed it as binary or as text."""
+    texts = [plain_utf8(row) for row in rows]
+    if top:
+        texts[0] = marks_text(rows[0])
+    return texts
+
+
+def _changed(before: _Read, after: _Read) -> frozenset:
+    """The keys `before` and `after` may hold different marks under: none for
+    one revision, the keys a carry moved, else each key whose mark differs."""
+    if after is before:
+        return frozenset()
+    if after.changed is not None:
+        return after.changed
+    return _differing(before.marks or {}, after.marks or {})
+
+
+def _differing(old: dict, new: dict) -> frozenset:
+    """Each key one of two revisions read whole holds a mark under that the
+    other does not hold the same."""
+    return frozenset(key for key in old.keys() | new.keys() if old.get(key) != new.get(key))
+
+
+def _unshared(gone: list[str], came: list[str]) -> tuple[list[str], list[str]]:
+    """The rows only `gone` holds and the rows only `came` holds, a row both
+    hold taken out of each once."""
+    went, arrived = Counter(gone), Counter(came)
+    return list((went - arrived).elements()), list((arrived - went).elements())
+
+
+def _filled(rows: list[str]) -> int:
+    """The rows that hold more than blank space (RatchetFile.blank)."""
+    return sum(map(bool, map(str.strip, rows)))
 
 
 def _carry(marks: dict, gone: list[tuple], came: list[tuple]) -> dict | None:
@@ -325,93 +388,6 @@ def _carry(marks: dict, gone: list[tuple], came: list[tuple]) -> dict | None:
 
 def _keys(marked: list[tuple]) -> frozenset:
     return frozenset(key for key, _ in marked)
-
-
-# Characters two revisions are compared in while they agree, and the reach of
-# the search for the row where they agree again after a difference.
-_BLOCK = 4096
-# Rows of the older text tried, one after another, as the place the two agree again.
-_RESYNC = 8
-# A carry gives up once the texts differ in more than one stretch per this
-# many characters of the older text. On 40,303 marks a carry through one
-# stretch per 1,024 characters took 15 ms and a read in full 28 ms; through
-# one per 512 the carry took 29 ms.
-_CARRIED = 1024
-
-
-def _changed_rows(old: str, new: str) -> tuple[list[str], list[str]] | None:
-    """The rows only `old` holds and the rows only `new` holds, or None when,
-    past a difference, none of the next _RESYNC rows of `old` turns up in
-    `new` within _BLOCK characters, or when the texts differ in more than one
-    stretch per _CARRIED characters of `old`.
-
-    The stretches both texts hold are compared a block at a time and never
-    split into rows. A row both hold may still come back on both sides, which
-    carries its mark out and back in unchanged.
-    """
-    gone: list[str] = []
-    came: list[str] = []
-    i = j = 0
-    for _ in range(len(old) // _CARRIED + 1):
-        i, j = _agreed(old, new, i, j)
-        if i == len(old) or j == len(new):
-            return gone + old[i:].split("\n"), came + new[j:].split("\n")
-        found = _realigned(old, new, i, j)
-        if found is None:
-            return None
-        gone += old[i:found[0]].split("\n")
-        came += new[j:found[1]].split("\n")
-        i, j = found
-    return None
-
-
-def _agreed(old: str, new: str, i: int, j: int) -> tuple[int, int]:
-    """From the row starts (i, j), the row starts where `old` and `new` first
-    hold different rows, or the ends of both when they hold the same rest."""
-    while i + _BLOCK <= len(old) and new.startswith(old[i:i + _BLOCK], j):
-        i, j = i + _BLOCK, j + _BLOCK
-    rest, other = old[i:i + _BLOCK], new[j:j + _BLOCK]
-    if rest == other:  # shorter than a block: both end here
-        return len(old), len(new)
-    start = old.rfind("\n", 0, i + _shared(rest, other)) + 1
-    return start, start + j - i
-
-
-def _shared(a: str, b: str) -> int:
-    """How many characters `a` and `b`, two strings that differ, share before
-    they do. Bisected: a[:low] equals b[:low], a[:high] does not equal b[:high]."""
-    low, high = 0, min(len(a), len(b)) + 1
-    while high - low > 1:
-        mid = (low + high) // 2
-        low, high = (mid, high) if a[low:mid] == b[low:mid] else (low, mid)
-    return low
-
-
-def _realigned(old: str, new: str, i: int, j: int) -> tuple[int, int] | None:
-    """Past the differing rows at the row starts (i, j), the row starts where
-    `old` and `new` hold one row again: the first of the next _RESYNC rows of
-    `old` that `new` holds as a row within _BLOCK characters of j. The ends of
-    both when `old` runs out of rows that end in a newline first."""
-    p = i
-    for _ in range(_RESYNC):
-        end = old.find("\n", p) + 1
-        if not end:
-            return len(old), len(new)
-        q = _row_at(new, old[p:end], j)
-        if q is not None:
-            return p, q
-        p = end
-    return None
-
-
-def _row_at(text: str, row: str, start: int) -> int | None:
-    """Where `row`, its newline included, is a whole row of `text`, from the
-    row start `start` to _BLOCK characters past it; None when it is not."""
-    stop = start + _BLOCK + len(row)
-    at = text.find(row, start, stop)
-    while at > start and text[at - 1] != "\n":  # inside a longer row: look on
-        at = text.find(row, at + 1, stop)
-    return None if at < 0 else at
 
 
 class _Rows(dict):
@@ -436,13 +412,27 @@ def newest_committed_marks(root: Path, base: str, ratchet_file: str):
 
 
 def _newest_marks(root: Path, base: str, ratchet_file: str):
+    """Newest first, each revision's bytes read only until one holds marks."""
     path = root / ratchet_file
     for revision in reversed(file_revisions(root, ratchet_file, f"{base}..HEAD")):
-        held = _committed(path, revision.data)
+        held = _committed(path, _left(root, revision))
         if held is not None:
             return revision.commit, held
     held = _held(root, base, ratchet_file)
     return None if held is None else (base, held)
+
+
+def _left(root: Path, revision: FileRevision) -> bytes | None:
+    """The bytes a commit left: gitio's whole read, else its blob read now;
+    None where it deleted the file."""
+    if revision.data is not None or revision.blob is None:
+        return revision.data
+    return _object(root, revision.blob)
+
+
+def _object(root: Path, blob: str) -> bytes:
+    """One blob the history named, read by its id."""
+    return object_blobs(root, [blob])[blob]
 
 
 def _held(root: Path, commit: str, ratchet_file: str) -> RatchetFile | None:
