@@ -1305,6 +1305,8 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
     pending commit), and a snapshot record — all three or nothing. A function
     the marks file already holds keeps its mark's value: a mark only falls.
     A store that cannot take the audit stops the grant before the alert."""
+    from contextlib import suppress
+
     from ..gitio import head_commit
     from ..override import record_override
     from ..ratchet import metric_version
@@ -1314,8 +1316,11 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
 
     _require_override_alert(reason, cfg)
     db_path = root / ".crapkit" / "crap.sqlite"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        # A root that takes no .crapkit folder leaves SQLite to refuse the
+        # store's open (CANTOPEN), so it reads as a read-only store too.
+        with suppress(PermissionError):
+            db_path.parent.mkdir(parents=True, exist_ok=True)
         store = SnapshotStore(db_path)
         saved = RatchetFile.read(root / cfg.ratchet_file)
         key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, records, store)
