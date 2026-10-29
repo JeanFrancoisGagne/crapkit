@@ -44,6 +44,7 @@ PAST = "rose past their ratchet mark"
 ROSE = "may pass their ratchet mark"
 COUNT = "carry a ratchet mark and were not gated"
 MARKS = "crapkit-ratchet.tsv"
+SKILL = Path("plugin") / "skills" / "crapkit" / "SKILL.md"
 PARSE = "calc/parse.py"
 HANDLE = "read_row( line , cols )"
 GRADE = "calc/grade.py"
@@ -381,13 +382,31 @@ def blocks(box, repo: Path) -> dict[str, tuple[list[dict], list[str]]]:
             "comment": (edit_turns(repo / PARSE, SHORT, NOTE + SHORT), [])}
 
 
+# Each head line claude-hook prints, N-1's too, runs from "crapkit advisory: "
+# to LANDED on one line. The crapkit skill's description, which Claude Code
+# lists in every request, quotes the opening words without LANDED, so a count of
+# the bare prefix would take it as one more advisory, and a wait on it would end
+# a silent case's Reads before an async hook's words reach a request.
+LANDED = "(the edit landed; nothing was blocked)"
+# json.dumps writes every newline and quote inside a string with a backslash,
+# so a match stops at the end of the head's line.
+HEAD = re.compile(r'crapkit advisory: [^"\\]*?' + re.escape(LANDED))
+
+
+def advisory_count(messages: list) -> int:
+    """The advisory blocks a request's messages carry: one head line each."""
+    return len(HEAD.findall(json.dumps(messages)))
+
+
 def judged(box, repo: Path, writes: list[dict], lines: list[str]) -> dict:
     """One `claude -p` session against the stub: how many advisories the last
-    request carries, and which expected lines it lacks."""
+    request carries, and which expected lines it lacks. A case that expects
+    none waits for LANDED, so the stub reads its five turns for a late block."""
     reset(box, repo)
-    bodies, misses = session(box, repo, writes, lines[0] if lines else "crapkit advisory: ")
-    text = json.dumps(bodies[-1].get("messages", []))
-    return {"advisories": text.count("crapkit advisory: "), "missing": [line for line in lines if line not in text],
+    bodies, misses = session(box, repo, writes, lines[0] if lines else LANDED)
+    messages = bodies[-1].get("messages", [])
+    text = json.dumps(messages)
+    return {"advisories": advisory_count(messages), "missing": [line for line in lines if line not in text],
             "misses": misses}
 
 
@@ -508,6 +527,41 @@ def test_the_gate_section_is_found_by_its_kept_anchor_whatever_its_heading_says(
     assert anchored_heading(page) == "New words for the rule"
     with pytest.raises(docsnip.DocSnipError, match="no heading follows"):
         anchored_heading("## The commit gate skips marked functions\n")
+
+
+def last_request(description: str, blocks: list[list[str]]) -> list[dict]:
+    """A last request's messages as Claude Code sends them: the skill list in a
+    system reminder, the Edit's result, then the hook's blocks."""
+    listing = f"<system-reminder>\nThe following skills are available:\n\n- crapkit: {description}\n</system-reminder>"
+    said = "\n".join(line for block in blocks for line in block)
+    result = {"type": "tool_result", "tool_use_id": "toolu_0", "content": "The file has been updated."}
+    return [{"role": "user", "content": [{"type": "text", "text": listing}, {"type": "text", "text": "make the change"}]},
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_0", "name": "Edit", "input": {}}]},
+            {"role": "user", "content": [result, {"type": "text", "text": f"PostToolUse:Edit hook error: {said}"}]}]
+
+
+def skill_description() -> str:
+    """The crapkit skill's description as Claude Code lists it: its frontmatter value, unquoted."""
+    text = (Path(__file__).resolve().parents[2] / SKILL).read_text(encoding="utf-8")
+    return json.loads(text.split("\ndescription: ", 1)[1].splitlines()[0])
+
+
+@pytest.mark.kit
+@pytest.mark.parametrize("count", [0, 1, 2, 3])
+def test_the_advisory_count_takes_the_hook_s_blocks_and_never_the_skill_list(count):
+    """The crapkit skill's description quotes the advisory's opening words, and
+    Claude Code lists it in every request, so it counts for nothing. Each block
+    is a past, warn or unmarked head line and a row as claude-hook prints them;
+    the closing lines hold no head and are left out."""
+    description = skill_description()
+    blocks = [[f"crapkit advisory: 1 marked function(s) {PAST} in {PARSE} {LANDED}",
+               f"  ccn 8  {PARSE}:1  {HANDLE}  mark 7.0000"],
+              [f"crapkit advisory: 1 marked function(s) rose in ccn and {ROSE} in {GRADE} {LANDED}",
+               f"  ccn 9 -> 10  {GRADE}:1  {GRADE_HANDLE}  mark 9.0000"],
+              [f"{advisory('calc/big.py')} {LANDED}", "  ccn 7  calc/big.py:1  big( n )"]]
+
+    assert "crapkit advisory: " in description
+    assert advisory_count(last_request(description, blocks[:count])) == count
 
 
 @pytest.mark.kit
