@@ -510,18 +510,23 @@ def test_the_merge_driver_merges_three_per_scope_files_with_no_analysis_stack(tm
         HEAD, "# crapkit-keys=1", *SCOPE_LINES, "path\tlong_name\tcrap", "src/a.py\tf( )\t30.0000")
 
 
-def test_two_different_per_scope_stamps_still_refuse_to_merge(tmp_path, monkeypatch):
-    """As two different single-number stamps do; metric-stamp-09 replaces the rule."""
+def test_a_scope_stamp_only_theirs_raised_wins_the_merge(tmp_path, monkeypatch, capsys):
+    """BASE and OURS keep web at typescript 13 and THEIRS raised it to 14, so
+    THEIRS's web line wins; OURS changed a mark, so the note names web."""
     raised = ScopeStamps("1.24.0", {**SCOPES.scopes,
                                     "web": ScopeStamp({"typescript": 14, "tsx": 13}, {"istanbul": 1})})
     files = _sides(tmp_path, raised)
-    before = (tmp_path / "ours.tsv").read_bytes()
     _blocked(monkeypatch)
 
-    with pytest.raises(ConfigError, match=r"ratchet merge refused: ours is \[crapkit-stamp=2 lizard=1\.24\.0 "):
-        cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
+    code = cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
 
-    assert (tmp_path / "ours.tsv").read_bytes() == before
+    output = capsys.readouterr()
+    assert (code, output.out) == (0, "ratchet merge: 1 mark(s)\n"), output.err
+    assert output.err == ("ratchet merge: scope web's stamp came from THEIRS and OURS changed 1 mark(s); "
+                          "if verify names web, run crapkit ratchet seed --scope web\n")
+    web = "#scope\tweb\tanalysis tsx=13 typescript=14; coverage istanbul=1"
+    assert (tmp_path / "ours.tsv").read_text(encoding="utf-8") == _lines(
+        HEAD, "# crapkit-keys=1", *SCOPE_LINES[:2], web, "path\tlong_name\tcrap", "src/a.py\tf( )\t30.0000")
 
 
 # --- crapkit 0.8.x meets a per-scope file --------------------------------------------
