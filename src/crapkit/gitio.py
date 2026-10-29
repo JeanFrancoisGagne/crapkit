@@ -1172,31 +1172,52 @@ def staged_reads(root: Path, base: str | None = None):
         reads.close()
 
 
+class PatchRows(NamedTuple):
+    """The rows one commit's -U0 patch took out of a file (`gone`) and put in
+    (`came`), in patch order, each as its bytes without the LF. `old_top`
+    says `gone` opens with the old file's line 1, `new_top` that `came`
+    opens with the new file's."""
+    gone: tuple[bytes, ...]
+    came: tuple[bytes, ...]
+    old_top: bool
+    new_top: bool
+
+
 class FileRevision(NamedTuple):
     """One commit that touched a file, as `file_revisions` reads it.
 
-    `data` is the file's bytes as the commit left them, None where it deleted
-    the file. `before` is the bytes it changed: its parent's, None where it
-    created the file. A merge holds `merge` True and `before` None: git shows
-    a merge's change against no one parent, and `git log -p` prints none.
+    `blob` names the blob the commit left, None where it deleted the file.
+    `base` names the blob it changed, None where it created the file and for
+    a merge: git shows a merge's change against no one parent. `rows` is the
+    commit's patch, None where git printed no rows to carry a revision
+    through: a merge, a created or deleted file, a binary patch, a patch
+    with a NUL (a UTF-16 revision printed as text). `data` and
+    `before` are the bytes of `blob` and `base` where they were read whole,
+    else None.
     """
     commit: str
     time: int
     data: bytes | None
     before: bytes | None
     merge: bool
+    blob: str | None
+    base: str | None
+    rows: PatchRows | None
 
 
 def file_revisions(root: Path, rel_path: str, rev_range: str | None = None) -> list[FileRevision]:
     """Each commit in `rev_range` that touched one file, oldest first, with
-    the file's bytes at it and at its parent; all of HEAD's history when
-    `rev_range` is None. The time is the author date.
+    its patch rows and object ids; all of HEAD's history when `rev_range` is
+    None. The time is the author date.
 
-    Two processes for a history of any length. One `git log` names each
-    commit's object ids and prints no patch text (--raw; for a merge, the
-    combined line --cc prints, whose last id is the merge's own). One `git
-    cat-file --batch` reads every distinct blob. The bytes are handed out as
-    stored: the caller decides how a revision reads.
+    One `git log -p -U0 --raw` stream names each commit's ids and prints its
+    patch. One `git cat-file --batch` reads whole only the blobs the rows
+    cannot stand for: each revision with no rows, and the base of a revision
+    whose base is not the blob the revision listed before it left (the first
+    of a range, a commit on a second branch). On Windows a batch of every
+    blob cost 1.2 to 1.6 s per `ratchet report` on 40,303 marks in 200
+    revisions in pipe transport alone. Bytes are handed out as stored: the
+    caller decides how a revision reads.
 
     No --follow: rename detection cost 0.6s of a 1.14s `ratchet report` on a
     72k-commit history and found nothing. The cost is real, since --follow also
@@ -1211,33 +1232,97 @@ def file_revisions(root: Path, rel_path: str, rev_range: str | None = None) -> l
     """
     try:
         listed = _revision_sides(root, rel_path, rev_range)
-        blobs = _object_blobs(root, sorted({oid for _, _, *ids, _ in listed for oid in ids if oid}))
+        wanted = _whole_reads(listed)
+        blobs = object_blobs(root, sorted({oid for pair in wanted for oid in pair if oid}))
     except GitError as exc:
         raise GitError(f"{exc}{shallow_fix(root)}") from exc
-    return _with_bytes(listed, blobs)
+    return [revision._replace(before=blobs.get(base), data=blobs.get(blob))
+            for revision, (base, blob) in zip(listed, wanted)]
 
 
-def _with_bytes(listed: list[tuple], blobs: dict[str, bytes]) -> list[FileRevision]:
-    """Each listed commit with the bytes its ids name. A commit with no
-    --raw line keeps the bytes the commit before it left."""
-    revisions: list[FileRevision] = []
-    data = None
-    for stamp, commit, before, after, merge in listed:
-        data = data if after == _UNSHOWN else blobs.get(after)
-        revisions.append(FileRevision(commit, stamp, data, blobs.get(before), merge))
-    return revisions
+def _whole_reads(listed: list[FileRevision]) -> list[tuple[str | None, str | None]]:
+    """(base, blob) to read whole per revision, None for a side its rows or
+    the revision before it answer."""
+    wanted, previous = [], None
+    for revision in listed:
+        base = None if revision.merge or revision.base == previous else revision.base
+        wanted.append((base, revision.blob if revision.rows is None else None))
+        previous = revision.blob
+    return wanted
 
 
-def _revision_sides(root: Path, rel_path: str, rev_range: str | None) -> list[tuple]:
-    """(time, commit, before id, after id, merge) per commit, oldest first.
+def _revision_sides(root: Path, rel_path: str, rev_range: str | None) -> list[FileRevision]:
+    """Each commit's ids and rows, oldest first, no bytes read yet. A commit
+    with no --raw line keeps the blob the commit before it left.
 
     A path may hold U+0001, the old separator, so each record opens with a
     NUL: only a physical header line starts with the NUL timestamp marker, and
-    raw LF framing keeps a CR in a legacy field from making one."""
+    raw LF framing keeps a CR in a legacy field from making one. Every patch
+    line opens with its indicator, so no row starts with that NUL either."""
     out = _git_bytes(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at %H",
-                     "--raw", "--cc", "--no-abbrev", "--no-renames",
+                     "-p", "--raw", "--cc", "--no-abbrev", *_PATCH,
                      *([rev_range] if rev_range else []), "--", rel_path)
-    return [(stamp, commit, *_raw_sides(body)) for stamp, commit, body in _log_entries(out)]
+    revisions, previous = [], None
+    for stamp, commit, body in _log_entries(out):
+        base, blob, merge = _raw_sides(body)
+        blob = previous if blob == _UNSHOWN else blob
+        rows = None if merge or None in (base, blob) else _patch_rows(body)
+        revisions.append(FileRevision(commit, stamp, None, None, merge, blob, base, rows))
+        previous = blob
+    return revisions
+
+
+_HUNK = re.compile(rb"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
+_BINARY = re.compile(rb"^Binary files .* differ$", re.MULTILINE)
+
+
+def _patch_rows(body: bytes) -> PatchRows | None:
+    """One commit's rows off its -U0 patch, None for a binary patch or one
+    with a NUL: a bare `diff` attribute prints a UTF-16 revision as text,
+    and its rows, split at each 0x0A byte, do not decode one by one.
+
+    Rows are counted off each hunk header, never told apart by their first
+    character alone: a row `-- a/x` prints as `--- a/x`, which a header also
+    starts with. A `\\ No newline at end of file` line belongs to the row
+    before it."""
+    if b"\0" in body or _BINARY.search(body):
+        return None
+    gone: list[bytes] = []
+    came: list[bytes] = []
+    lines = iter(body.split(b"\n"))
+    for line in lines:
+        hunk = _HUNK.match(line)
+        if hunk:
+            _take_hunk(lines, hunk, gone, came)
+    return PatchRows(tuple(gone), tuple(came), *_tops(_HUNK.search(body)))
+
+
+def _take_hunk(lines, hunk: re.Match, gone: list[bytes], came: list[bytes]) -> None:
+    """The hunk's rows onto `gone` and `came`."""
+    old, new = _count(hunk[2]), _count(hunk[4])
+    while old or new:
+        line = next(lines)
+        if line[:1] == b"-":
+            gone.append(line[1:])
+            old -= 1
+        elif line[:1] == b"+":
+            came.append(line[1:])
+            new -= 1
+
+
+def _tops(first: re.Match | None) -> tuple[bool, bool]:
+    """Whether the first hunk takes out the old line 1 and puts in the new
+    one. Only the first hunk can: hunks come in file order. `-0,0` and
+    `+0,0` name the line an insertion or a deletion follows, not a row."""
+    if first is None:
+        return False, False
+    return (first[1] == b"1" and _count(first[2]) > 0,
+            first[3] == b"1" and _count(first[4]) > 0)
+
+
+def _count(spelled: bytes | None) -> int:
+    """A hunk side's line count: git leaves out `,1`."""
+    return 1 if spelled is None else int(spelled)
 
 
 def _raw_sides(body: bytes) -> tuple[str | None, str | None, bool]:
@@ -1257,7 +1342,7 @@ def _present(oid: str) -> str | None:
     return None if oid in _NO_FILE else oid
 
 
-def _object_blobs(root: Path, ids: list[str]) -> dict[str, bytes]:
+def object_blobs(root: Path, ids: list[str]) -> dict[str, bytes]:
     """Each object id's bytes, all from one `git cat-file --batch`; {} for
     none. Blobs named by object id; blobs_at reads them by path."""
     if not ids:
@@ -1565,6 +1650,16 @@ class GitFacts:
         self._diffs: dict[str, tuple[str, ...]] = {}
         self._ancestry: dict[tuple[str, str], bool | None] = {}
         self._shallow: bool | None = None
+        self._tracked: tuple[str, ...] | None = None
+
+    def tracked_files(self) -> tuple[str, ...]:
+        """`ls_files`, asked once: verify's claimed-name scan and the
+        inventory both read the tracked files, and one git start costs about
+        15 ms on Windows."""
+        with self._lock:
+            if self._tracked is None:
+                self._tracked = tuple(ls_files(self.root))
+            return self._tracked
 
     def head_commit(self) -> str:
         with self._lock:

@@ -913,17 +913,19 @@ def _refuse_lane_less_verify(cfg) -> None:
                           "declares coverage_optional = true instead")
 
 
-def _claimed_names(root: Path, cfg, dirty: set[str]) -> tuple:
+def _claimed_names(root: Path, cfg, dirty: set[str], git=None) -> tuple:
     """The gate's unreadable-name findings: each tracked file a scope takes
     whose name git gives in bytes that are not UTF-8, handed to the gate whole
     with its `dirty` flag. The gate refuses such a name before it judges
-    anything, so verify stops on them before any lane runs (`_stopped`)."""
+    anything, so verify stops on them before any lane runs (`_stopped`).
+    The tracked files come from `git`, the command's GitFacts, which the
+    inventory reads them from again."""
     from ..gate import WHOLE, ChangedFile, UnreadableName, judge
-    from ..gitio import ls_files
+    from ..gitio import GitFacts
     from ..keys import MarkIndex
     from ..universe import claimed_unreadable
 
-    claimed = claimed_unreadable(ls_files(root), cfg)
+    claimed = claimed_unreadable(list((git or GitFacts(root)).tracked_files()), cfg)
     if not claimed:
         return ()
     return judge([ChangedFile(path, WHOLE, UnreadableName(path, scope, path in dirty))
@@ -1011,7 +1013,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     judged = _judged_marks(root, saved, baseline, cfg.ratchet_file)
     _guard_ratchet_stamp(judged.marks, cfg.ratchet_file, *_seed_hint(store, args, baseline, git))
     _emit_baseline(root, store, baseline, args.emit_baseline)
-    claimed = _claimed_names(root, cfg, dirty)
+    claimed = _claimed_names(root, cfg, dirty, git)
     if claimed:
         return _stopped(args, root, cfg, claimed, _Stop(baseline, git.head_commit(), saved, judged, untracked))
 
