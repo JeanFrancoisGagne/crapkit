@@ -771,30 +771,79 @@ wins, because a mark can only fall and `prune` is re-runnable.
 Two branches that each created the marks file, such as two first seeds, meet in an add/add
 merge, and git hands the driver an empty base. The driver reads an empty or blank base as no
 common ancestor and merges the two files as a union, each mark both sides hold at the lower
-value. OURS and THEIRS must still share one metric stamp and one key format. Before 0.8.1
-the driver read that base as a legacy file and refused with
-`ratchet key identity versions differ`.
+value. OURS and THEIRS must still share one key format, and their stamps merge as below
+against a base that records none. Before 0.8.1 the driver read that base as a legacy file and
+refused with `ratchet key identity versions differ`.
 
 Per key means per twin. One branch tightening `__post_init__` and the other tightening
 `__post_init__#2` in the same file is not a conflict, because those are two keys; the driver
 needs no ordinal knowledge to get that right. The `#` sits in the name field, so a marks line
 never opens with the `#` that introduces the metric stamp.
 
-The driver refuses to merge across metric versions, and git falls back to a normal text
-conflict for you to resolve after re-seeding. When one side's stamp is newer, the refusal
-names that side and the metric to re-seed under, because a seed under the older release
-stamps its own older metric and the next merge refuses again:
+The stamps merge scope by scope, from the three files alone. Each side's `#scope` line is
+compared with BASE's, and the side that moved wins, as it does for a mark:
+
+| A scope's stamp on OURS and THEIRS | The merged file |
+|---|---|
+| Equal to BASE's on both sides | keeps it |
+| Moved on one side only | takes that side's line |
+| Moved the same way on both sides | keeps it |
+| Moved differently on both sides | **refused**, naming the scope |
+| On one side only, which added it | carries it |
+| Removed on one side, unchanged on the other | drops it |
+| Removed on one side, moved on the other | keeps the moved line |
+
+A renamed scope is one drop and one add. A scope the config no longer has refuses nothing in
+verify, and the next plain seed drops its line. The lizard version on the first line merges by
+the same rule, and when both sides moved it differently the refusal names every scope. A
+single-number side (`crapkit-analysis=N lizard=X.Y.Z`) stands for every scope at its one
+analysis number and records no coverage mode. A scope compares on that number alone, its
+lizard merges as the first line's does, and the result is per scope. Three single-number sides
+merge their one stamp by the same rule. An unstamped side merges only with an unstamped one.
+
+Without the config the driver cannot tell which scope a mark sits in. So when a scope's stamp
+came from one side and the other side changed any mark, it prints a line on stderr naming the
+scope and the seed to run if verify names it. The line never prints when the other side changed
+no mark.
+
+```
+$ git merge feature -m "merge feature"
+ratchet merge: 3 mark(s)
+ratchet merge: scope web's stamp came from OURS and THEIRS changed 2 mark(s); if verify names web, run crapkit ratchet seed --scope web
+Auto-merging crapkit-ratchet.tsv
+Merge made by the 'ort' strategy.
+```
+
+A mark the other side tightened under the old rules now sits under the new stamp. The per-key
+merge never loosens it, so when the new rules score that function higher, verify fails it at
+exit 7 and names it; it never passes in silence.
+
+When both sides moved one scope's stamp differently, the driver refuses at exit 3 and leaves
+OURS unchanged, and git falls back to a text conflict. The refusal names each scope, what each
+side recorded for it, and the fix:
+
+```
+$ git merge feature
+crapkit: ratchet merge refused: OURS and THEIRS moved a stamp differently - scope web: OURS records [lizard=1.24.0 analysis typescript=14; coverage istanbul=1] and THEIRS records [lizard=1.24.0 analysis typescript=15; coverage istanbul=1] - run `crapkit coverage` and `crapkit ratchet seed --scope web` on one branch, then merge again; OURS was left unchanged
+Auto-merging crapkit-ratchet.tsv
+CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
+Automatic merge failed; fix conflicts and then commit the result.
+```
+
+Three single-number sides that each moved the stamp refuse the same way. When one side's stamp
+is newer, the refusal names that side and the metric to re-seed under, because a seed under the
+older release stamps its own older metric and the next merge refuses again:
 
 ```
 $ git merge main
-crapkit: ratchet merge refused: ours is [crapkit-analysis=11 lizard=1.24.0] and theirs is [crapkit-analysis=13 lizard=1.24.0] - marks from different metric versions cannot merge; theirs is newer, so with a crapkit that measures [crapkit-analysis=13 lizard=1.24.0], run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline the merged marks with `crapkit ratchet seed`
+crapkit: ratchet merge refused: OURS records [crapkit-analysis=11 lizard=1.24.0] and THEIRS records [crapkit-analysis=13 lizard=1.24.0], and each side moved the stamp away from BASE's; THEIRS is newer, so on this branch, with a crapkit that measures [crapkit-analysis=13 lizard=1.24.0], run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`, then merge again; OURS was left unchanged
 ```
 
-When the stamps do not compare, as with an unstamped side, it asks you to re-seed one side:
+When the stamps do not compare, as with an unstamped side, it asks you to re-seed one branch:
 
 ```
 $ git merge legacy
-crapkit: ratchet merge refused: ours is [crapkit-analysis=8 lizard=1.24.0] and theirs is [unstamped] - marks from different metric versions cannot merge; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline one side with `crapkit ratchet seed`
+crapkit: ratchet merge refused: OURS records [crapkit-analysis=8 lizard=1.24.0] and THEIRS records [unstamped], and the two stamps do not compare; on one branch, run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`, then merge again; OURS was left unchanged
 Auto-merging crapkit-ratchet.tsv
 CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
 Automatic merge failed; fix conflicts and then commit the result.
@@ -803,7 +852,7 @@ Automatic merge failed; fix conflicts and then commit the result.
 The historical example joins stamps from different reader versions. Bring both
 branches through the [upgrade checks](upgrading.md#measure-before-changing-marks)
 and review function identity before restamping. The merge driver also refuses
-different key-format versions; matching metric stamps alone are not enough.
+different key-format versions; stamps that merge are not enough.
 
 `ratchet merge` runs with no `crapkit.toml` in sight, because git invokes it from a temp
 directory. It is the one ratchet subcommand that needs no config.

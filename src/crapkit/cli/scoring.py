@@ -130,8 +130,9 @@ def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int
     """Shared by inventory/coverage: returns (commit, rows, corpus, cache_hits, tool_versions)."""
     lizard, *_ = _analysis_tools()
     from ..analyze import ANALYSIS_VERSION, unread_reasons
-    commit = (git or GitFacts(root)).head_commit()
-    universe = _scan(root, ls_files(root), cfg)
+    facts = git or GitFacts(root)
+    commit = facts.head_commit()
+    universe = _scan(root, list(facts.tracked_files()), cfg)
     _say_left_out(universe.unreadable)
     flat = _present_on_disk(root, _tracked_files(universe.by_scope))
     records_by_path, cache_hits = _analyzed_corpus(

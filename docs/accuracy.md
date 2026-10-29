@@ -173,7 +173,12 @@ or no longer (fixed). `python tools/docs/generate.py` writes this table, the
 | `weekly` | accuracy.yml on Saturdays | Mutation, in 8 shards, of each function in the floors' modules whose stored verdicts do not carry, and a no-cache image rebuild that checks every pin |
 | `release` | The release tool's `accuracy` stage | The push tier, both wheel diffs against the previous release, the store upgrade, the consumer replay, the retro replays, the mutation coverage |
 
-A pull request runs the nightly tier as well while it carries the `accuracy` label.
+accuracy.yml and deploy.yml run on their schedule on main and on a dispatch, never on
+a pull request. To run the nightly tier on a branch, dispatch it:
+`gh workflow run accuracy.yml --ref <branch> -f mode=nightly`; the deploy cells'
+nightly set takes `gh workflow run deploy.yml --ref <branch> -f cadence=nightly`.
+Only a run of main's head (the schedule, or a dispatch on main with no `ref`) files
+a red result on an issue.
 
 ## Run each tier locally
 
@@ -297,7 +302,7 @@ judges anything. A second run at an unchanged tree judges no mutant.
 In CI the receipts carry from run to run through the actions cache:
 `mutation.py env` prints the environment key a run stores, and each mutation
 job restores `.crapkit/accuracy/mutation/*.json` from the newest cache entry
-under that key before it runs. The nightly and label `diff` run saves the
+under that key before it runs. The nightly `diff` run saves the
 receipts it leaves; each weekly shard uploads its receipt as
 `mutation-receipt-N`, and the `mutation-store` job merges them into one entry.
 A new image, or any other change to the key, starts from no receipt. The

@@ -19,8 +19,7 @@ import pytest
 
 from crapkit import config_contract, invocation, keys
 from crapkit.analyze import ANALYSIS_VERSION
-from crapkit.cli import ratchet_cmds
-from crapkit.ratchet import stamp_conflict
+from crapkit.ratchet import SingleNumberStamp, merge_stamps, stamp_conflict
 
 ROOT = Path(__file__).resolve().parents[2]
 AGENT = "docs/agent-json.md"
@@ -188,9 +187,9 @@ def test_the_newer_marks_example_quotes_a_stamp_pair_a_release_prints(console_sc
 
 
 def test_the_merge_refusal_example_is_what_the_driver_prints(console_script):
-    with pytest.raises(Exception) as refused:
-        ratchet_cmds._merge_stamp(["", "# crapkit-analysis=11 lizard=1.24.0\n",
-                                   f"# crapkit-analysis={ANALYSIS_VERSION} lizard=1.24.0\n"])
+    with pytest.raises(ValueError) as refused:
+        merge_stamps(SingleNumberStamp(10, "1.24.0"), SingleNumberStamp(11, "1.24.0"),
+                     SingleNumberStamp(ANALYSIS_VERSION, "1.24.0"))
 
     assert f"crapkit: {refused.value}" in _doc("docs/ratchet.md")
 

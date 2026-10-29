@@ -157,31 +157,32 @@ def marks(path, stamp: str):
     return str(path)
 
 
-@pytest.mark.parametrize("ours, theirs, newer_side", [(OLD, NEW, "theirs"), (NEW, OLD, "ours")])
+@pytest.mark.parametrize("ours, theirs, newer_side", [(OLD, NEW, "THEIRS"), (NEW, OLD, "OURS")])
 def test_the_merge_refusal_names_the_newer_side_and_the_crapkit_that_wrote_it(
         tmp_path, ours, theirs, newer_side):
-    files = [marks(tmp_path / "base", OLD), marks(tmp_path / "ours", ours),
+    """BASE is older than both, so each side moved the stamp."""
+    files = [marks(tmp_path / "base", "crapkit-analysis=10 lizard=1.24.0"), marks(tmp_path / "ours", ours),
              marks(tmp_path / "theirs", theirs)]
 
     with pytest.raises(ConfigError) as refused:
         cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
 
     said = str(refused.value)
-    assert said.startswith(f"ratchet merge refused: ours is [{ours}] and theirs is [{theirs}]"), said
+    assert said.startswith(f"ratchet merge refused: OURS records [{ours}] and THEIRS records [{theirs}]"), said
     assert f"{newer_side} is newer" in said, said
     assert f"a crapkit that measures [{NEW}]" in said, said
-    assert "one side" not in said, said
+    assert "one branch" not in said, said
 
 
 def test_sides_that_differ_only_in_lizard_name_no_newer_side_and_take_the_reseed(tmp_path):
     ours, theirs = "crapkit-analysis=11 lizard=1.24.3", OLD
-    files = [marks(tmp_path / "base", OLD), marks(tmp_path / "ours", ours),
+    files = [marks(tmp_path / "base", "crapkit-analysis=11 lizard=1.17.10"), marks(tmp_path / "ours", ours),
              marks(tmp_path / "theirs", theirs)]
 
     with pytest.raises(ConfigError) as refused:
         cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
 
     said = str(refused.value)
-    assert said.startswith(f"ratchet merge refused: ours is [{ours}] and theirs is [{theirs}]"), said
+    assert said.startswith(f"ratchet merge refused: OURS records [{ours}] and THEIRS records [{theirs}]"), said
     assert "is newer" not in said, said
-    assert said.endswith(coverage_then_seed("re-baseline one side")), said
+    assert said.endswith(f"on one branch, {coverage_then_seed()}, then merge again; OURS was left unchanged"), said

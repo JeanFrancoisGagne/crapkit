@@ -59,14 +59,15 @@ def test_the_unstamped_warning_names_coverage_then_seed(tmp_path, capsys):
 
 
 def test_the_merge_refusal_names_coverage_then_seed(tmp_path):
+    """BASE is older than both sides, so each moved the stamp and the merge refuses."""
     files = [str(marks(tmp_path / name, stamp))
-             for name, stamp in (("base", OLD), ("ours", OLD), ("theirs", NEW))]
+             for name, stamp in (("base", "crapkit-analysis=8 lizard=1.24.0"), ("ours", OLD), ("theirs", NEW))]
 
     with pytest.raises(ConfigError) as refused:
         cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
 
     assert str(refused.value) == (
-        f"ratchet merge refused: ours is [{OLD}] and theirs is [{NEW}] - marks from different "
-        f"metric versions cannot merge; theirs is newer, so with a crapkit that measures [{NEW}], "
-        "run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline the merged "
-        "marks with `crapkit ratchet seed`")
+        f"ratchet merge refused: OURS records [{OLD}] and THEIRS records [{NEW}], and each side "
+        "moved the stamp away from BASE's; THEIRS is newer, so on this branch, with a crapkit that "
+        f"measures [{NEW}], run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline "
+        "with `crapkit ratchet seed`, then merge again; OURS was left unchanged")

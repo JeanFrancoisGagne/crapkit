@@ -856,21 +856,11 @@ measured = 0
 timeout = 10
 measured = 0
 
-# --- the pull-request scope ---------------------------------------------------------
-# A pull request runs the nightly set when its diff touches one of these paths,
-# and every cadence (the release set) when it carries the label.
+# --- the schedules ------------------------------------------------------------------
+# The cadence deploy.yml's scope job runs for each cron of its schedule trigger.
 
 [scope]
-label = "deploy-full"
 schedules = { "17 6 * * *" = "nightly", "17 7 * * 1" = "weekly" }
-paths = [
-    "README.md", "CHANGELOG.md", "AGENTS.md", "Dockerfile", ".dockerignore", "action.yml", "pyproject.toml",
-    "server.json", ".pre-commit-hooks.yaml", ".claude-plugin/", "plugin/", "git-hooks/", "docs/",
-    "tools/action/", "tools/deploy/", "tools/release/", "tests/deploy/", ".github/workflows/deploy.yml",
-    "src/crapkit/__init__.py", "src/crapkit/__main__.py", "src/crapkit/cli/", "src/crapkit/doctor.py",
-    "src/crapkit/scaffold.py", "src/crapkit/hook.py", "src/crapkit/merge.py", "src/crapkit/mcp_server.py",
-    "src/crapkit/_mcp_stdio.py", "src/crapkit/store.py", "src/crapkit/ratchetfile.py",
-]
 
 # --- channels -----------------------------------------------------------------------
 # Each way crapkit reaches a machine or a repo, and the cells that take it.

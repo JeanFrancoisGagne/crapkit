@@ -101,40 +101,52 @@ def test_a_git_read_that_fails_raises_instead_of_answering_nothing(history, read
         read(Path(history["root"]))
 
 
-def test_file_revisions_lists_the_range_oldest_first_with_each_commits_bytes(history):
-    """The deleting commit holds no bytes, and each commit carries the bytes
-    its parent held: the revision it changed."""
+def blob_id(root: Path, commit: str, rel: str = MARKS) -> str:
+    return git(root, "rev-parse", f"{commit}:{rel}")
+
+
+def test_file_revisions_lists_the_range_oldest_first_with_each_commits_ids_and_rows(history):
+    """The created revision is read whole; the next one carries its patch
+    rows and the bytes of neither side; the deleting commit names no blob."""
     root = Path(history["root"])
 
     read = file_revisions(root, MARKS, f"{history['base']}..HEAD")
 
+    first, newer = blob_id(root, history["first"]), blob_id(root, history["newer"])
     assert [r.commit for r in read] == [history["first"], history["newer"], history["gone"]]
-    assert [r.data for r in read] == [marks(12.0).encode(), marks(10.0).encode(), None]
-    assert [r.before for r in read] == [None, marks(12.0).encode(), marks(10.0).encode()]
+    assert [(r.base, r.blob) for r in read] == [(None, first), (first, newer), (newer, None)]
+    assert [r.data for r in read] == [marks(12.0).encode(), None, None]
+    assert [r.before for r in read] == [None, None, None]
     assert [r.merge for r in read] == [False, False, False]
+    changed = [row for row in marks(12.0).encode().split(b"\n")
+               if row not in marks(10.0).encode().split(b"\n")]
+    assert read[1].rows == gitio.PatchRows(tuple(changed), (changed[0].replace(b"12", b"10"),),
+                                           False, False)
     assert file_revisions(root, MARKS) == read, "no range is all of HEAD's history"
 
 
 @pytest.mark.parametrize("length", [1, 3, 7])
 def test_file_revisions_starts_two_processes_for_a_history_of_any_length(tmp_path, monkeypatch,
                                                                          length):
-    """One `git log` with no patch text, one `git cat-file --batch` for every blob."""
+    """One `git log -p -U0`, then one `git cat-file --batch` that asks for one
+    blob: the first revision's, which no patch carries from anything."""
     git(tmp_path, "init", "-q", "-b", "main")
     for day in range(length):
         commit_file(tmp_path, MARKS, marks(30.0 - day), f"mark {day}",
                     f"2026-01-{day + 1:02d}T12:00:00+00:00")
     commit_file(tmp_path, MARKS, None, "delete", "2026-02-01T12:00:00+00:00")
+    first = git(tmp_path, "rev-list", "--reverse", "HEAD").split()[0]
     started = []
     real = subprocess.run
-    monkeypatch.setattr(gitio.subprocess, "run",
-                        lambda argv, *a, **k: started.append(argv) or real(argv, *a, **k))
+    monkeypatch.setattr(gitio.subprocess, "run", lambda argv, *a, **k: started.append(
+        (argv, k.get("input"))) or real(argv, *a, **k))
 
     read = file_revisions(tmp_path, MARKS)
 
     assert len(read) == length + 1 and read[-1].data is None
     assert len(started) == 2
-    assert "log" in started[0] and "-p" not in started[0]
-    assert started[1][1:] == ["cat-file", "--batch"]
+    assert "log" in started[0][0] and "-p" in started[0][0] and "-U0" in started[0][0]
+    assert started[1] == (["git", "cat-file", "--batch"], f"{blob_id(tmp_path, first)}\n".encode())
     assert len(_same_events_both_ways(tmp_path)) == length + 1
 
 
@@ -528,6 +540,7 @@ def _same_events_both_ways(root: Path, rel: str = MARKS, *, resaves: bool = Fals
     alone (`report=False`). Answers the replay's events."""
     from crapkit.cli.ratchet_cmds import _report_basis
 
+    _each_revision_reads_as_its_blob(root, rel)
     replayed = mark_events(marks_history(root, rel))
     assert replayed == _frozen_mark_events(_frozen_patches(root, rel), resaves=resaves)
     if not report:
@@ -539,6 +552,18 @@ def _same_events_both_ways(root: Path, rel: str = MARKS, *, resaves: bool = Fals
     assert [e[3] for e in new if e[2] == "held"] == [e[3] for e in old if e[2] == "held"]
     assert report_from_events(new, working=working) == report_from_events(old, working=working)
     return replayed
+
+
+def _each_revision_reads_as_its_blob(root: Path, rel: str = MARKS) -> int:
+    """The marks the reader carried into each revision equal a whole read of
+    that revision's blob (blob_at, RatchetFile.committed, read_ratchet), under
+    the name the file had at that commit. Answers the revisions checked."""
+    read = marks_history(root, rel)
+    named = _frozen_history(root, rel)
+    assert [revision.commit for revision in read] == [commit for _, (commit, _), _ in named]
+    for revision, (_, (commit, path), _) in zip(read, named):
+        assert revision.marks == _whole_read(root, blob_at(root, commit, path)), commit
+    return len(read)
 
 
 def _utf8(data: bytes) -> bool:
@@ -1453,7 +1478,7 @@ def big_text(rows_: list[bytes]) -> bytes:
     return HEADER + b"".join(rows_)
 
 
-def _row_at(offset: int) -> int:
+def _row_of(offset: int) -> int:
     """The row of BIG_ROWS that holds `offset` of big_text(BIG_ROWS)."""
     ends = [len(big_text(BIG_ROWS[:n + 1])) for n in range(BIG)]
     return next(n for n, end in enumerate(ends) if end > offset)
@@ -1461,7 +1486,7 @@ def _row_at(offset: int) -> int:
 
 # The rows that open and close the file, and the rows that hold its 4 KB and
 # 8 KB offsets.
-EDGES = sorted({0, 1, _row_at(4096), _row_at(4096) + 1, _row_at(8192), BIG - 2, BIG - 1})
+EDGES = sorted({0, 1, _row_of(4096), _row_of(4096) + 1, _row_of(8192), BIG - 2, BIG - 1})
 
 
 def _big_history(root: Path, revisions: list[bytes | None]) -> Path:
@@ -1543,7 +1568,7 @@ def test_a_duplicate_key_reads_its_first_mark(tmp_path, at):
                       (5, big_key(at), "dropped", 5.0)]
 
 
-@pytest.mark.parametrize("at", [0, _row_at(4096), BIG - 1])
+@pytest.mark.parametrize("at", [0, _row_of(4096), BIG - 1])
 def test_a_row_listed_twice_reads_as_one_mark(tmp_path, at):
     events = _read_after_the_base(tmp_path, [big_text(BIG_ROWS),
                                              big_text(_edited(at, BIG_ROWS[at], BIG_ROWS[at])),
@@ -1568,7 +1593,7 @@ def test_a_revision_with_no_marks_repays_every_mark_and_the_next_enters_them_aga
                       + [(2, k, "added", crap[k]) for k in every])
 
 
-@pytest.mark.parametrize("at", [0, _row_at(4096), BIG - 1])
+@pytest.mark.parametrize("at", [0, _row_of(4096), BIG - 1])
 def test_a_crap_that_is_not_finite_holds_no_mark(tmp_path, at):
     """read_ratchet refuses nan and inf (ratchet._finite_mark), so no revision
     holds a mark that does not equal itself: the row reads as no mark."""
@@ -1586,7 +1611,7 @@ def test_a_crap_that_is_not_finite_holds_no_mark(tmp_path, at):
     pytest.param(["lib/a.py"], id="one-row"),
     pytest.param(["lib/a.py", "src/a.py"], id="two-rows"),
 ])
-@pytest.mark.parametrize("at", [0, _row_at(4096), BIG])
+@pytest.mark.parametrize("at", [0, _row_of(4096), BIG])
 def test_a_mark_moved_to_a_path_that_ends_in_its_old_one_enters_and_repays(tmp_path, at,
                                                                             paths):
     """`ratchet move` takes a mark from a.py to lib/a.py, so the old row's text
@@ -1631,7 +1656,7 @@ def test_the_last_row_reads_with_or_without_a_closing_newline(tmp_path):
 
 
 def test_line_endings_a_stamp_and_row_order_change_no_mark(tmp_path):
-    crlf_row = _edited(_row_at(4096), BIG_ROWS[_row_at(4096)].replace(b"\n", b"\r\n"))
+    crlf_row = _edited(_row_of(4096), BIG_ROWS[_row_of(4096)].replace(b"\n", b"\r\n"))
     restamped = big_text(BIG_ROWS).replace(b"analysis=11", b"analysis=12")
 
     events = _read_after_the_base(tmp_path, [
@@ -1720,3 +1745,140 @@ def _every_key_moves(read: list[MarksRevision]) -> list[tuple]:
             found += [(revision.commit, *pair)
                       for pair in keys.pair_moves(path, dropped, added).pairs]
     return found
+
+
+# --- the patch stream: which blobs are read whole, and the carry equals them ----
+# gitio.file_revisions reads one `git log -p -U0 --raw` and reads whole only
+# the blobs no patch carries a revision through. Every revision the reader
+# carries must still equal the whole read of its own blob.
+
+def _step(root: Path, rel: str, data: bytes, day: int) -> str:
+    (root / rel).write_bytes(data)
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", f"day {day}", date=f"2026-01-{day:02d}T12:00:00+00:00")
+    return git(root, "rev-parse", "HEAD")
+
+
+def _mixed_history(root: Path) -> list[str]:
+    """A UTF-8 revision, a PowerShell 5.1 UTF-16 LE resave, a UTF-8 resave,
+    an edit, a merge whose resolution changes the marks file, an edit, a `git
+    mv` and an edit under the new name. Answers the blobs no patch carries."""
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "core.autocrlf", "false")
+    first = _step(root, OLD, rows(*BASE), 1)
+    utf16 = _step(root, OLD, UTF16, 2)
+    utf8 = _step(root, OLD, rows(*BASE, ("d( n )", 12.0)), 3)
+    _step(root, OLD, rows(*BASE, ("d( n )", 11.0)), 4)
+    git(root, "checkout", "-q", "-b", "side")
+    _step(root, "side.txt", b"side\n", 5)
+    git(root, "checkout", "-q", "main")
+    _step(root, OLD, rows(*BASE, ("d( n )", 10.0)), 6)
+    git(root, "merge", "-q", "--no-ff", "--no-commit", "side", date="2026-01-07T12:00:00+00:00")
+    merge = _step(root, OLD, rows(*BASE, ("d( n )", 9.0)), 7)
+    _step(root, OLD, rows(("a( n )", 15.0), *BASE[1:], ("d( n )", 9.0)), 8)
+    git(root, "mv", OLD, MARKS)
+    renaming = _step(root, MARKS, rows(("a( n )", 15.0), *BASE[1:], ("d( n )", 9.0)), 9)
+    _step(root, MARKS, rows(("a( n )", 14.0), *BASE[1:], ("d( n )", 9.0)), 10)
+    return [blob_id(root, first, OLD), blob_id(root, utf16, OLD), blob_id(root, utf8, OLD),
+            blob_id(root, merge, OLD), blob_id(root, renaming)]
+
+
+def test_the_history_reads_whole_only_the_blobs_no_patch_carries(tmp_path, monkeypatch):
+    """The first revision's, the UTF-16 one's and the UTF-8 one's after it
+    (git prints both patches as binary), the merge's and the renaming
+    commit's: every other revision rides its patch."""
+    expected = _mixed_history(tmp_path)
+    asked = []
+    real = gitio._batch_stream
+    monkeypatch.setattr(gitio, "_batch_stream",
+                        lambda root, requests: asked.append(requests) or real(root, requests))
+
+    read = marks_history(tmp_path, MARKS)
+
+    assert sorted(oid for request in asked for oid in request.decode().split()) == sorted(expected)
+    assert [revision.marks[key("d( n )")] for revision in read[2:]] == [
+        12.0, 11.0, 10.0, 9.0, 9.0, 9.0, 9.0]
+    assert _each_revision_reads_as_its_blob(tmp_path) == 9
+
+
+BOM = codecs.BOM_UTF8
+TIGHT = rows(("a( n )", 10.0), *BASE[1:])
+ONE_ROW = b"src/a.py\ta( n )\t5.0\n"
+EDGE_REVISIONS = [
+    rows(*BASE),
+    BOM + rows(*BASE),                                  # line 1 gains a byte-order mark
+    BOM + TIGHT,                                        # an edit under it
+    TIGHT,                                              # line 1 loses it
+    TIGHT.replace(b"\n", b"\r\n"),                      # a CRLF resave
+    TIGHT + b"src/a.py\tcaf\xe9( n )\t5.0\n",           # a cp1252 byte
+    TIGHT[:-1],                                         # no final newline
+    TIGHT,                                              # the same rows with one
+    TIGHT + b"src/a.py\tr\ri( n )\t7.0\n",              # a row holding \r inside it
+    TIGHT + b"src/a.py\ta( n )\t3.0\n",                 # a key listed twice
+    TIGHT + b"src/a.py\tb( n )\t4.0\n",                 # still twice, another key
+    TIGHT,                                              # each key once again
+    ONE_ROW,                                            # a mark on line 1
+    BOM + ONE_ROW,                                      # that row gains a byte-order mark
+    b"src/a.py\tz( n )\t1.0\n" + BOM + ONE_ROW,         # a row above it: the mark reads on line 2
+    BOM + ONE_ROW,                                      # and back on line 1
+    b"\n\n",                                            # blank lines alone
+    b"\n" + ONE_ROW,                                    # a row after them
+    b"\n\n",
+]
+
+
+def test_every_carried_revision_equals_the_whole_read_of_its_blob(tmp_path):
+    read = marks_history(_big_history(tmp_path, EDGE_REVISIONS), MARKS)
+
+    whole = [_whole_read(tmp_path, data) for data in EDGE_REVISIONS]
+    assert [revision.marks for revision in read] == whole
+    assert [revision.before for revision in read] == [None, *whole[:-1]]
+    assert _each_revision_reads_as_its_blob(tmp_path) == len(EDGE_REVISIONS)
+
+
+def test_a_commit_that_changes_only_the_mode_carries_no_row(tmp_path):
+    """git lists a chmod of the marks file in --raw with one blob on both
+    sides and prints no hunk: the revision rides an empty patch and reads no
+    blob."""
+    git(tmp_path, "init", "-q", "-b", "main")
+    git(tmp_path, "config", "core.autocrlf", "false")
+    _step(tmp_path, MARKS, rows(*BASE), 1)
+    git(tmp_path, "update-index", "--chmod=+x", MARKS)
+    git(tmp_path, "commit", "-q", "-m", "chmod", date="2026-01-02T12:00:00+00:00")
+    _step(tmp_path, MARKS, rows(("a( n )", 15.0), *BASE[1:]), 3)
+
+    read = file_revisions(tmp_path, MARKS)
+
+    assert read[1].rows == gitio.PatchRows((), (), False, False)
+    assert (read[1].base, read[1].data) == (read[1].blob, None)
+    assert _each_revision_reads_as_its_blob(tmp_path) == 3
+
+
+def _utf16_resave(data: bytes | None) -> bytes | None:
+    """`data` saved as UTF-16 LE with a byte-order mark and CRLF line ends."""
+    if data is None:
+        return None
+    return b"\xff\xfe" + data.decode("utf-8").replace("\n", "\r\n").encode("utf-16-le")
+
+
+@pytest.mark.parametrize("attribute", ["diff=marks", "diff"])
+def test_no_diff_setting_moves_what_the_history_reads(tmp_path, attribute):
+    """gitio's patch flags hold the stream to one protocol: no prefix,
+    color, diff algorithm, external diff or textconv driver moves a row, and
+    a row both sides hold drops out whichever way git lines them up. The
+    history holds three UTF-16 revisions between UTF-8 ones: a bare `diff`
+    attribute makes git print their patches as text, and they still read
+    as their blobs do."""
+    revisions = _random_revisions(4034, 30)
+    revisions[10:13] = [_utf16_resave(data) for data in revisions[10:13]]
+    root = _big_history(tmp_path, revisions)
+    plain = marks_history(root, MARKS)
+    for name, value in (("diff.noprefix", "true"), ("color.ui", "always"),
+                        ("diff.algorithm", "histogram"), ("diff.external", "false"),
+                        ("diff.marks.textconv", "false")):
+        git(root, "config", name, value)
+    (root / ".gitattributes").write_text(f"{MARKS} {attribute}\n", encoding="utf-8")
+
+    assert marks_history(root, MARKS) == plain
+    assert [revision.marks for revision in plain] == [
+        _whole_read(root, data) for data in revisions]
