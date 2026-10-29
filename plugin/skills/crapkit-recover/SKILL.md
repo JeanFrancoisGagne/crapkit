@@ -236,6 +236,20 @@ function, which is the whole point: deleting the coverage behind an untouched fu
 enough to raise its CRAP. Start at `crapkit explain PATH NAME`, look for the test that
 stopped exercising it, and restore the coverage rather than the code.
 
+## Committing past a marked refusal
+
+The commit hook's "rose past their ratchet mark" block refuses a marked function whose ccn
+alone passed its mark. `CRAPKIT_OVERRIDE_REASON` passes that refusal through the full audit
+(alert line, store row), but it never raises the mark: the receipt line `crapkit: 1 ratchet
+mark kept as it was (a mark only falls)` names each mark it kept, and `crapkit-ratchet.tsv`
+stays out of the commit when the grant added no new mark. So the next `crapkit verify`
+reports the rise as a ratchet regression (exit 6 when the diff touched the function, 7 when
+not), and `verify --override` refuses it: no override grants a ratchet regression. Two ways
+out: bring the function back to its mark or under it, or raise the mark in
+`crapkit-ratchet.tsv` by hand in a commit a reviewer sees.
+
+Owner: [docs: overrides and the audit trail](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#overrides-and-the-audit-trail).
+
 ## Tainted baseline
 
 `run N is not the baseline: verify run M FAILED with K finding(s)` means the newest run never

@@ -1299,8 +1299,9 @@ def _print_clear_the_reason() -> None:
 
 def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) -> None:
     """The audited hook override: alert line, ratchet debt (staged into the
-    pending commit), and a snapshot record — all three or nothing."""
-    from ..gitio import head_commit, stage_path
+    pending commit), and a snapshot record — all three or nothing. A function
+    the marks file already holds keeps its mark's value: a mark only falls."""
+    from ..gitio import head_commit
     from ..override import record_override
     from ..ratchet import metric_version
     from ..ratchetfile import RatchetFile
@@ -1322,9 +1323,40 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
                     alert_command=cfg.alert_command, violations=gate, reason=reason,
                     raise_marks=False, key_version=key_version, identity_rows=records,
                     ratchet_input=saved, metric=metric_version())
-    stage_path(root, cfg.ratchet_file)  # the debt must be IN the commit, not dangling
+    _stage_if_written(root, cfg.ratchet_file, saved)
     print(f"crapkit: override granted with full audit ({reason}).")
+    _print_kept_marks(saved, gate)
     _print_clear_the_reason()
+
+
+def _stage_if_written(root: Path, rel: str, saved) -> None:
+    """Whatever the grant wrote goes IN the commit, not dangling beside it. A
+    grant that only kept marks leaves the file's bytes alone, and staging it
+    then would carry any unstaged edit of the marks into the commit."""
+    from ..gitio import stage_path
+    from ..ratchetfile import RatchetFile
+
+    if RatchetFile.read(root / rel).sha256 != saved.sha256:
+        stage_path(root, rel)
+
+
+def _print_kept_marks(saved, violations) -> None:
+    """One line naming each mark the grant kept at its recorded value, under
+    the key it sits at (`#2` for a second twin). The next `verify` reports
+    each one's rise as a ratchet regression, which no override grants."""
+    from ..keys import MarkIndex, stated_key
+
+    index = MarkIndex(saved.entries)
+    kept = [f"{path} {name} {index.mark((path, name)):.4f}"
+            for path, name in map(stated_key, violations) if (path, name) in index]
+    if kept:
+        print(f"crapkit: {_kept_count(len(kept))} (a mark only falls): {'; '.join(kept)}")
+
+
+def _kept_count(count: int) -> str:
+    if count == 1:
+        return "1 ratchet mark kept as it was"
+    return f"{count} ratchet marks kept as they were"
 
 
 def _warn_unscoped_staged(unscoped: list) -> None:
@@ -1564,10 +1596,10 @@ def _hook_gate(root: Path, shown: str, base: str | None) -> int:
 def _hook_exit(root: Path, cfg, gate, shown: str = "") -> int:
     """The staged rows judged and mapped to the hook's exit: a claimed name
     exits 3 before anything else, an unread file exits 6 before any grant, a
-    marked function whose ccn alone passed its mark exits 6 before any grant,
-    a function over its ceiling no mark covers exits 6 unless granted, a
-    straddling marked function whose ccn rose passes on the warn block, and
-    every other marked breach passes with the count line.
+    function over its ceiling no mark covers and a marked function whose ccn
+    alone passed its mark exit 6 unless granted, a straddling marked function
+    whose ccn rose passes on the warn block, and every other marked breach
+    passes with the count line.
 
     Every line the gate says beside its verdict prints before `judge` runs:
     judging reads the marks file on a breach, and an unreadable one exits 3
@@ -1631,9 +1663,7 @@ def _judge_staged(root: Path, cfg, gate, result, unread: dict, shown: str = "") 
         # commit whatever the grant signed.
         print(f"crapkit: {refusal}")
         return 6
-    if refused.rises:
-        return _refuse_rises(refused.violations, gate.whole)
-    return _grant_or_refuse(root, cfg, refused.violations, gate.records, gate.whole)
+    return _grant_or_refuse(root, cfg, refused, gate.records, gate.whole)
 
 
 def _print_refused(root: Path, cfg, gate, refused: _Refused, shown: str) -> None:
@@ -1682,9 +1712,8 @@ def _warn_unproven_rises(rises, shown: str, judged: str) -> None:
 
 
 def _refuse_rises(violations: list, whole: bool) -> int:
-    """A marked rise refuses the commit before any grant, with the fix for
-    each block printed: CRAPKIT_OVERRIDE_REASON signs for a breach no mark
-    covers, and a mark only falls."""
+    """A marked rise with no grant refuses the commit, with the fix for each
+    block printed: a mark only falls, so the fix for a rise is in the code."""
     if violations:
         _refuse_breaches(whole)
     print(_RISE_FIX)
@@ -1721,16 +1750,21 @@ def _refuse_tracked() -> int:
     return 6
 
 
-def _grant_or_refuse(root: Path, cfg, violations: list, records, whole: bool = False) -> int:
+def _grant_or_refuse(root: Path, cfg, refused: _Refused, records, whole: bool = False) -> int:
     """CRAPKIT_OVERRIDE_REASON is not a bypass: it routes through the full
-    three-record audit and the gate holds unless all three land. Outside a
-    commit nothing is granted: the breach is already committed."""
+    three-record audit and the gate holds unless all three land. A marked
+    rise joins the grant, which keeps its mark (`raise_marks=False`), so the
+    next `verify` still reports the rise. Outside a commit nothing is
+    granted: the breach is already committed."""
+    violations = refused.violations + list(map(_violation, refused.rises))
     if not violations:
         return 0
     reason = _env_override_reason()
     if reason and not whole:
         _grant_env_override(root, cfg, violations, reason, records)
         return 0
+    if refused.rises:
+        return _refuse_rises(refused.violations, whole)
     return _refuse_breaches(whole)
 
 
