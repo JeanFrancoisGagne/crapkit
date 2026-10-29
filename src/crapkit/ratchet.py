@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import math
+import operator
 import re
 from typing import ClassVar, NamedTuple
 
@@ -730,6 +731,197 @@ def merge_ratchets(base: list[RatchetEntry], ours: list[RatchetEntry],
         if crap is not None:
             merged.append(RatchetEntry(key[0], key[1], crap))
     return merged
+
+
+def changed_marks(base: list[RatchetEntry], side: list[RatchetEntry]) -> int:
+    """How many keys `side` marks otherwise than `base`: added, dropped or moved."""
+    b, s = MarkIndex(base), MarkIndex(side)
+    return sum(b.mark(key) != s.mark(key) for key in b.keys() | s.keys())
+
+
+# --- the stamps of a 3-way merge ------------------------------------------------
+# The merge driver runs with no config, so it cannot tell which scope a mark sits
+# in. Each scope's stamp and the lizard version merge as a mark does; the CLI
+# names a scope one side's stamp came from when the other side changed marks.
+
+_SIDES = ("OURS", "THEIRS")
+_OTHER = {"OURS": "THEIRS", "THEIRS": "OURS"}
+
+
+class StampMerge(NamedTuple):
+    """The stamp a merged marks file records, and each (scope, side) whose stamp
+    the merge took from that side, OURS or THEIRS, while the other recorded another."""
+    stamp: MetricStamp
+    came_from: tuple[tuple[str, str], ...] = ()
+
+
+def merge_stamps(base: MetricStamp, ours: MetricStamp, theirs: MetricStamp) -> StampMerge:
+    """The stamp of a 3-way merge, scope by scope, read from the three stamps alone.
+
+    Each scope's stamp and the lizard version merge as a mark does: the side that
+    moved from BASE wins, a scope one side removed drops unless the other moved
+    it, and moves that differ raise ValueError naming every scope they touch. A
+    single-number side stands for every scope at its one number, with no coverage
+    mode. NONE and an unreadable stamp merge only with an equal stamp.
+    """
+    if ours == theirs:
+        return StampMerge(ours)
+    if _per_scope(ours, theirs):
+        return _merge_scopes({"BASE": base, "OURS": ours, "THEIRS": theirs})
+    return StampMerge(_merge_whole(base, ours, theirs))
+
+
+def _per_scope(ours: MetricStamp, theirs: MetricStamp) -> bool:
+    """OURS or THEIRS is per scope, and neither is unstamped or unreadable."""
+    kinds = {type(ours), type(theirs)}
+    return ScopeStamps in kinds and kinds <= {ScopeStamps, SingleNumberStamp}
+
+
+def _merge_whole(base: MetricStamp, ours: MetricStamp, theirs: MetricStamp) -> MetricStamp:
+    """Two different stamps of which neither is per scope merge as one value."""
+    if not (isinstance(ours, SingleNumberStamp) and isinstance(theirs, SingleNumberStamp)):
+        raise ValueError(_whole_refusal(ours, theirs, "the two stamps do not compare"))
+    if base in (ours, theirs):
+        return theirs if base == ours else ours
+    raise ValueError(_whole_refusal(ours, theirs, "each side moved the stamp away from BASE's"))
+
+
+def _whole_refusal(ours: MetricStamp, theirs: MetricStamp, why: str) -> str:
+    return (f"ratchet merge refused: OURS records [{ours.render() or 'unstamped'}] and THEIRS records "
+            f"[{theirs.render() or 'unstamped'}], and {why}; {_merge_remedy(ours, theirs)}, then merge "
+            "again; OURS was left unchanged")
+
+
+def _merge_remedy(ours: MetricStamp, theirs: MetricStamp) -> str:
+    """Re-seed one branch under the newer side's metric: a seed under the older
+    release stamps its own older metric, and the next merge refused again."""
+    if newer_tools(theirs, ours):
+        return (f"THEIRS is newer, so on this branch, with a crapkit that measures [{theirs.render()}], "
+                f"{coverage_then_seed()}")
+    if newer_tools(ours, theirs):
+        return (f"OURS is newer, so on the branch you merge, with a crapkit that measures "
+                f"[{ours.render()}], {coverage_then_seed()}")
+    return f"on one branch, {coverage_then_seed()}"
+
+
+class _Pick(NamedTuple):
+    """One scope's view on each side ({BASE, OURS, THEIRS: view}), and the side
+    the merge keeps it from; None when both sides moved it differently."""
+    views: dict
+    side: str | None
+
+
+def _merge_scopes(sides: dict) -> StampMerge:
+    """`merge_stamps` once OURS or THEIRS is per scope; the result is per scope."""
+    lizard_side = _kept_side({side: _lizard(stamp) for side, stamp in sides.items()}, operator.eq)
+    picks = {name: _scope_pick(sides, name) for name in _scope_names(sides)}
+    clashes = _clashes(picks, lizard_side)
+    if lizard_side is None or clashes:
+        raise ValueError(_scopes_refusal(clashes, sides))
+    stamp = ScopeStamps(sides[lizard_side].lizard, _merged_scopes(picks), _file_name(sides))
+    return StampMerge(stamp, _came_from(stamp, sides))
+
+
+def _lizard(stamp: MetricStamp) -> str | None:
+    return stamp.lizard if isinstance(stamp, (SingleNumberStamp, ScopeStamps)) else None
+
+
+def _scope_names(sides: dict) -> list[str]:
+    return sorted({name for stamp in sides.values() if isinstance(stamp, ScopeStamps) for name in stamp.scopes})
+
+
+def _view(stamp: MetricStamp, name: str):
+    """What `stamp` records for scope `name`: its ScopeStamp or None, or a
+    single-number stamp's analysis number, which stands for every scope. The
+    lizard version merges on its own, so no view holds it."""
+    if isinstance(stamp, ScopeStamps):
+        return stamp.scopes.get(name)
+    return stamp.analysis if isinstance(stamp, SingleNumberStamp) else None
+
+
+def _scope_pick(sides: dict, name: str) -> _Pick:
+    views = {side: _view(stamp, name) for side, stamp in sides.items()}
+    return _Pick(views, _kept_side(views, _same))
+
+
+def _kept_side(views: dict, same) -> str | None:
+    """The side a 3-way merge keeps the value from; None when both sides moved
+    it differently. Equal sides keep the one that records a scope stamp."""
+    if same(views["OURS"], views["THEIRS"]):
+        return "THEIRS" if isinstance(views["OURS"], int) else "OURS"
+    kept = _kept_moves(views, same)
+    return kept[0] if len(kept) == 1 else None
+
+
+def _kept_moves(views: dict, same) -> list[str]:
+    """The sides that moved the value from BASE's. Of two, one that removed it
+    gives way to one that moved it; a removal alone is a move that drops it."""
+    moved = [side for side in _SIDES if not same(views[side], views["BASE"])]
+    return [*filter(views.get, moved)] or moved
+
+
+def _same(a, b) -> bool:
+    """Two views of one scope record the same rules. A single-number view
+    records no coverage mode, so it matches a scope stamp on its numbers alone."""
+    if isinstance(a, int):
+        a, b = b, a
+    return a == _seen_as(b, a)
+
+
+def _seen_as(view, other):
+    """`view` beside `other`: a single-number view read as a ScopeStamp holds
+    `other`'s languages at its one number and `other`'s coverage mode."""
+    if isinstance(view, int) and isinstance(other, ScopeStamp):
+        return ScopeStamp(dict.fromkeys(other.analysis, view), other.coverage)
+    return view
+
+
+def _clashes(picks: dict, lizard_side: str | None) -> list[str]:
+    """The scopes both sides moved differently: every scope when the lizard version is one."""
+    return list(picks) if lizard_side is None else [name for name, pick in picks.items() if pick.side is None]
+
+
+def _merged_scopes(picks: dict) -> dict:
+    """{scope: the ScopeStamp the merge keeps}, less the scopes it drops."""
+    scopes = {name: _kept_scope(pick) for name, pick in picks.items()}
+    return {name: scope for name, scope in scopes.items() if scope is not None}
+
+
+def _kept_scope(pick: _Pick):
+    """The kept side's view. A single-number view that won takes the languages and
+    coverage mode of the scope stamp it was compared with: the other side's, else BASE's."""
+    other = pick.views[_OTHER[pick.side]]
+    return _seen_as(pick.views[pick.side], other if isinstance(other, ScopeStamp) else pick.views["BASE"])
+
+
+def _file_name(sides: dict) -> str | None:
+    """The marks file the first per-scope line read names: OURS's, else THEIRS's, else BASE's."""
+    return next((sides[side]._parts[2] for side in ("OURS", "THEIRS", "BASE")
+                 if isinstance(sides[side], ScopeStamps) and sides[side]._parts[2]), None)
+
+
+def _came_from(stamp: ScopeStamps, sides: dict) -> tuple[tuple[str, str], ...]:
+    """(scope, the side its merged stamp came from) for each scope the other side
+    records otherwise: under another lizard, or with another scope stamp or none."""
+    return tuple((name, _OTHER[side]) for name in stamp.scopes for side in _SIDES
+                 if not (_lizard(sides[side]) == stamp.lizard
+                         and _same(_view(sides[side], name), stamp.scopes[name])))
+
+
+def _scopes_refusal(names: list[str], sides: dict) -> str:
+    said = "; ".join(f"scope {name}: OURS records [{_recorded(sides['OURS'], name)}] and THEIRS "
+                     f"records [{_recorded(sides['THEIRS'], name)}]" for name in names)
+    steps = [f"`{_self()} coverage`", *(f"`{_self()} ratchet seed --scope {name}`" for name in names)]
+    return (f"ratchet merge refused: OURS and THEIRS moved a stamp differently - {said} - run "
+            f"{', '.join(steps[:-1])} and {steps[-1]} on one branch, then merge again; OURS was left unchanged")
+
+
+def _recorded(stamp: MetricStamp, name: str) -> str:
+    """What `stamp` records for scope `name`, as the refusal quotes it."""
+    if isinstance(stamp, SingleNumberStamp):
+        return stamp.render()
+    scope = stamp.scopes.get(name)
+    return f"lizard={stamp.lizard} {scope.render() if scope else 'and no line for this scope'}"
 
 
 def seed_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: int,

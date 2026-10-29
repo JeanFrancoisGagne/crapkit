@@ -299,6 +299,16 @@ which names no problem in either file. Run `git merge --abort`, upgrade crapkit,
 again: 0.8.1 merges the two files as a union, each mark both sides hold at the lower value.
 
 Owner: [docs: the git merge driver](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-git-merge-driver).
-When the driver itself refuses (`marks from different metric versions cannot merge`),
-run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline one side with
-`crapkit ratchet seed`, and merge again.
+The driver merges the stamps scope by scope and refuses only a scope both branches moved
+differently. Its refusal opens like this, then names the fix:
+
+    crapkit: ratchet merge refused: OURS and THEIRS moved a stamp differently - scope web: OURS records [lizard=1.24.0 analysis typescript=14; coverage istanbul=1] and THEIRS records [lizard=1.24.0 analysis typescript=15; coverage istanbul=1] - run ...
+
+Run `git merge --abort`. On one branch, run `crapkit coverage`, then `ratchet seed --scope NAME`
+for each scope the line names, commit, and merge again. A refusal that names no scope (an
+unstamped side, or two single-number stamps) asks for `crapkit coverage`,
+`crapkit ratchet prune` and `crapkit ratchet seed` on one branch instead.
+
+A merge that goes through can print `ratchet merge: scope NAME's stamp came from OURS and
+THEIRS changed N mark(s)`. It is no failure: if the next verify names that scope, run
+`ratchet seed --scope NAME`.

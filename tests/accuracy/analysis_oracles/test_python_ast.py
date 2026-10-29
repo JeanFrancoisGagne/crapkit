@@ -139,8 +139,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # The per-scope stamp's reader and writer and keys.expression_language
 # (metric-stamp-04) added 35 on 090/metric-stamp, and the sync met at 3,927.
 # 090/mission-3 reached 3,898 once claude-hook spoke on marked functions
-# (mission-3-06), and the sync met at 3,933.
-SRC_DEFS = 3933
+# (mission-3-06), and the sync met at 3,933. The per-scope stamp merge
+# (metric-stamp-09) added 22 on 090/metric-stamp.
+SRC_DEFS = 3955
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
