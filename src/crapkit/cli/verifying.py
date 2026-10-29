@@ -352,10 +352,10 @@ def _named_seed(named: dict) -> str:
     Seed stamps the metric of the run it reads, so a run another metric measured
     needs a coverage run first, and that run is the one to name.
     """
-    from ..ratchet import metric_version, run_stamp
+    from ..ratchet import metric_version, run_metric_version
 
     run_id = named["id"]
-    if run_stamp(named["tool_versions"]) == metric_version():
+    if run_metric_version(named["tool_versions"]) == metric_version():
         return f"re-baseline from run {run_id} with `{_self()} ratchet seed --baseline {run_id}`"
     return (f"run {run_id} was measured under another metric too, so run `{_self()} coverage`, "
             f"then re-baseline from the run it writes with `{_self()} ratchet seed --baseline ID`")
@@ -815,8 +815,10 @@ def _receipt(tool_versions: dict, saved, judged: _JudgedMarks,
     the commit that held them and their digest), and the tighten's counts, null
     when this run's tighten wrote nothing (a failed run, --no-tighten, nothing
     to move). An override's grant is its own write and is an `overridden`
-    findings item, not counted here."""
-    return {"tool_versions": tool_versions, "ratchet_sha256": saved.sha256,
+    findings item, not counted here. The run's store-only stamp keys stay out:
+    the payload prints the three versions it declares."""
+    printed = {key: tool_versions[key] for key in ("analysis_version", "crapkit", "lizard")}
+    return {"tool_versions": printed, "ratchet_sha256": saved.sha256,
             "ratchet_source": "committed" if judged.commit else "tree",
             "ratchet_source_commit": judged.commit,
             "ratchet_source_sha256": judged.marks.sha256,

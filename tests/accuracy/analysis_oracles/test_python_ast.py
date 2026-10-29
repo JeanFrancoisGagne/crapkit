@@ -146,7 +146,7 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # added 22 on 090/metric-stamp, and the landing met at 3,959. 090/integration
 # reached 3,943 once the marks history read one patch stream (mission-3-11),
 # and the sync met at 3,965.
-SRC_DEFS = 3965
+SRC_DEFS = 3969
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

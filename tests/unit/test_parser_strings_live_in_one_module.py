@@ -24,6 +24,8 @@ FORMAT_NAMES = frozenset({"coveragepy", "istanbul"})
 ALLOWED_READS = {
     ("lanes.py", "_run_owned_lane"): "provenance: the run records the parser the lane declared",
     ("packet.py", "lane_record"): "the brief packet echoes the lane as crapkit.toml declares it",
+    ("ratchet.py", "_coverage_mode"): "a run's scope stamp records each measuring lane's parser "
+                                      "with its reader number; READER_VERSIONS is keyed by parser",
     ("scaffold.py", "_lane_stanza"): "init writes the parser into the config it generates",
     ("scaffold.py", "_live_lanes"): "init leaves out the commented template of each parser a "
                                     "lane it writes already uses; _TEMPLATES is keyed by parser",

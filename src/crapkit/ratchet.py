@@ -242,11 +242,48 @@ def _scope_line(name: str, text: str) -> str:
 
 
 def run_stamp(tool_versions: dict) -> MetricStamp:
-    """The metric a stored run was measured under; NONE for a run that recorded none."""
+    """The metric a stored run was measured under: the per-scope stamp a run
+    that recorded `scope_stamps` holds, else the single number 0.8.x recorded;
+    NONE for a run that recorded neither."""
+    scopes = tool_versions.get("scope_stamps")
+    if scopes is None:
+        return run_metric_version(tool_versions)
+    return ScopeStamps(tool_versions["lizard"],
+                       {name: ScopeStamp(**stamp) for name, stamp in scopes.items()})
+
+
+def run_metric_version(tool_versions: dict) -> MetricStamp:
+    """The single-number stamp a run's `analysis_version` and `lizard` spell,
+    the form `metric_version()` gives, for the callers that still compare a run
+    with it; NONE for a run that recorded either one not."""
     analysis, lizard = tool_versions.get("analysis_version"), tool_versions.get("lizard")
     if not (analysis and lizard):
         return MetricStamp.NONE
     return MetricStamp.parse(stamp_text(analysis, lizard))
+
+
+def running_stamp(cfg) -> ScopeStamps:
+    """The stamp a run of this crapkit on `cfg` records: each scope's declared
+    languages at their analysis number, and its coverage mode, which the
+    config sets, not the lanes a run happened to execute."""
+    # Imported here, as in metric_version: the merge driver imports none of them.
+    import lizard
+
+    from .analyze import ANALYSIS_VERSIONS
+    from .coverage_format import READER_VERSIONS
+    return ScopeStamps(lizard.version, {
+        scope.name: ScopeStamp({language: ANALYSIS_VERSIONS[language] for language in scope.languages},
+                               _coverage_mode(cfg, scope.name, READER_VERSIONS))
+        for scope in cfg.scopes})
+
+
+def _coverage_mode(cfg, scope: str, readers: dict) -> str | dict:
+    """`cc-only` for a `coverage_optional` scope, `no-lane` for one no lane
+    measures, else {parser: reader number} of the lanes that measure it."""
+    if scope in cfg.coverage_optional_scopes:
+        return "cc-only"
+    parsers = sorted({lane.parser for lane in cfg.lanes if scope in lane.scopes})
+    return {parser: readers[parser] for parser in parsers} if parsers else "no-lane"
 
 
 def metric_version() -> MetricStamp:
