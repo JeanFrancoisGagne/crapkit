@@ -366,13 +366,47 @@ def test_two_kept_marks_share_one_line(marked, capsys):
 STORE = ".crapkit/crap.sqlite"
 
 
-def read_only(path) -> None:
+def read_only(repo, monkeypatch) -> None:
     # On Windows os.chmod sets the file's read-only attribute, on POSIX its mode.
-    path.chmod(stat.S_IREAD)
+    stored(repo).chmod(stat.S_IREAD)
 
 
-def cut_short(path) -> None:
+def cut_short(repo, monkeypatch) -> None:
+    path = stored(repo)
     path.write_bytes(path.read_bytes()[:3000])
+
+
+def not_sqlite(repo, monkeypatch) -> None:
+    stored(repo).write_bytes(b"x" * 8192)
+
+
+def read_only_folder(repo, monkeypatch) -> None:
+    """A .crapkit folder that holds no store and takes no new file."""
+    (repo / ".crapkit").mkdir()
+    (repo / ".crapkit").chmod(stat.S_IREAD | stat.S_IEXEC)
+
+
+def read_only_root(repo, monkeypatch) -> None:
+    """A root that holds no .crapkit folder and takes no new one."""
+    repo.chmod(stat.S_IREAD | stat.S_IEXEC)
+
+
+def perm_refused(repo, monkeypatch) -> None:
+    """SQLITE_PERM comes from a lock call the OS refused with EPERM, which no
+    test can set up, so SQLite's open raises it here as SQLite would."""
+    def refuse(*args, **kwargs):
+        exc = sqlite3.OperationalError("access permission denied")
+        exc.sqlite_errorcode = sqlite3.SQLITE_PERM
+        raise exc
+
+    monkeypatch.setattr(sqlite3, "connect", refuse)
+
+
+def writable_again(repo) -> None:
+    """Undo a spoil's modes, so the asserts and the temp folder's removal can write."""
+    for path in (repo, repo / ".crapkit", repo / STORE):
+        if path.exists():
+            path.chmod(stat.S_IRWXU if path.is_dir() else stat.S_IREAD | stat.S_IWRITE)
 
 
 def stored(repo):
@@ -404,33 +438,42 @@ def assert_no_part_granted(repo, before: bytes) -> None:
 
 ROOT_WRITES = pytest.mark.skipif(os.name != "nt" and os.geteuid() == 0,
                                  reason="root on POSIX writes a file whose mode refuses writes")
+FOLDER_MODES = pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0,
+                                  reason="only a POSIX folder's mode refuses a new entry, and not to root")
 STORE_FIX = "the override records its audit there, so nothing was granted; {fix}, then commit again"
+WRITABLE = "make the store and its folder writable"
+RESTORE = "restore it from a backup, or move it aside so the next run starts a new one"
 
 
 @pytest.mark.parametrize(("spoil", "cause", "fix"), [
-    pytest.param(read_only, "is read only (attempt to write a readonly database)",
-                 "make the store and its folder writable", id="read-only", marks=ROOT_WRITES),
-    pytest.param(cut_short, "is damaged (database disk image is malformed)",
-                 "restore it from a backup, or move it aside so the next run starts a new one",
-                 id="cut-short")])
+    pytest.param(read_only, "is read only (attempt to write a readonly database)", WRITABLE,
+                 id="read-only", marks=ROOT_WRITES),
+    pytest.param(perm_refused, "is read only (access permission denied)", WRITABLE, id="perm"),
+    pytest.param(read_only_folder, "is read only (unable to open database file)", WRITABLE,
+                 id="read-only-folder", marks=FOLDER_MODES),
+    pytest.param(read_only_root, "is read only (unable to open database file)", WRITABLE,
+                 id="read-only-root", marks=FOLDER_MODES),
+    pytest.param(cut_short, "is damaged (database disk image is malformed)", RESTORE, id="cut-short"),
+    pytest.param(not_sqlite, "is damaged (file is not a database)", RESTORE, id="not-sqlite")])
 def test_a_store_the_grant_cannot_write_stops_it_at_exit_5_before_any_side_effect(
-        marked, capsys, spoil, cause, fix):
-    """A store read only, or cut short, cannot take the audit: one line names
-    the store, the cause and the fix at exit 5, crapkit's tool fault, and the
-    grant takes none of its three parts. No alert line, the store's bytes as
-    they were, the marks file unwritten and unstaged."""
+        marked, capsys, monkeypatch, spoil, cause, fix):
+    """A store read only, refused, in a folder or a root that takes no file,
+    cut short, or holding bytes that are not SQLite cannot take the audit: one
+    line names the store, the cause and the fix at exit 5, crapkit's tool
+    fault, and the grant takes none of its three parts. No alert line, the
+    store's bytes as they were, the marks file unwritten and unstaged."""
     before = mixed_grant(marked)
-    store = stored(marked)
-    spoil(store)
-    held = store.read_bytes()
+    store = marked / STORE
+    spoil(marked, monkeypatch)
+    held = store.read_bytes() if store.exists() else None
     try:
         code, out, err = run(["hook-precommit"], marked, capsys)
     finally:
-        store.chmod(stat.S_IREAD | stat.S_IWRITE)
+        writable_again(marked)
 
     assert code == 5, out + err
     assert err.splitlines()[-1] == f"crapkit: the store {STORE} {cause}: {STORE_FIX.format(fix=fix)}", err
-    assert store.read_bytes() == held
+    assert (store.read_bytes() if store.exists() else None) == held
     assert_no_part_granted(marked, before)
 
 
