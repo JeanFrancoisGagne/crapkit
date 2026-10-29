@@ -2,7 +2,8 @@
 
 docs/ratchet.md (The git merge driver): per key, the side that changed wins
 over the side that did not; when both changed, the lower value wins; the
-result is written over OURS; sides under different metric stamps are refused.
+result is written over OURS. The stamp merges by the same rule, and two sides
+that moved it differently, or an unstamped side against a stamped one, refuse.
 The outside oracle is git itself: `git merge-file` on one key's one-line
 files says whether the key merges cleanly and to what. Where git reports a
 conflict, the docs' rule (the lower surviving value) decides.
@@ -20,6 +21,7 @@ from accuracy.verdict_model import model_verdict as model
 
 STAMP = "crapkit-analysis=11 lizard=1.24.0"
 OTHER = "crapkit-analysis=10 lizard=1.24.0"
+THIRD = "crapkit-analysis=9 lizard=1.24.0"
 
 
 def marks_text(marks: dict, stamp: str | None = STAMP, keys: str | None = "1") -> str:
@@ -135,12 +137,12 @@ def test_random_files_merge_as_git_merge_file_and_the_docs_resolve_them(tmp_path
 # --- refusals -------------------------------------------------------------------------------
 
 @pytest.mark.process
-@pytest.mark.parametrize("stamps", [{"theirs": OTHER}, {"theirs": None}, {"ours": OTHER}],
-                         ids=["other-metric", "unstamped", "ours-other"])
-def test_sides_under_different_metric_stamps_refuse_and_leave_ours(tmp_path, stamps):
-    """docs/ratchet.md: the driver refuses to merge across metric versions, and
-    git falls back to a text conflict; README exit codes: a metric-stamp
-    mismatch is a config error, 3."""
+@pytest.mark.parametrize("stamps", [{"theirs": None}, {"ours": None}, {"base": THIRD, "ours": OTHER}],
+                         ids=["unstamped-theirs", "unstamped-ours", "both-moved-apart"])
+def test_sides_whose_stamps_cannot_merge_refuse_and_leave_ours(tmp_path, stamps):
+    """docs/ratchet.md: an unstamped side merges only with an unstamped one, and
+    two sides that each moved the stamp differently refuse; git falls back to a
+    text conflict. README exit codes: a metric-stamp mismatch is a config error, 3."""
     marks = {("src/a.py", "f( )"): d("30.0000")}
     paths = sides(tmp_path, marks, marks, {("src/a.py", "f( )"): d("20.0000")}, stamps)
     before = paths[1].read_bytes()
@@ -150,6 +152,21 @@ def test_sides_under_different_metric_stamps_refuse_and_leave_ours(tmp_path, sta
     assert result.code == 3, result.stdout + result.stderr
     assert "ratchet merge refused" in result.stderr
     assert paths[1].read_bytes() == before
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("stamps", [{"theirs": OTHER}, {"ours": OTHER}], ids=["theirs-moved", "ours-moved"])
+def test_the_one_side_that_moved_the_stamp_gives_the_merged_file_its_stamp(tmp_path, stamps):
+    """docs/ratchet.md: the stamp merges as a mark does, so the side that moved
+    it from BASE wins over the side that did not."""
+    marks = {("src/a.py", "f( )"): d("30.0000")}
+    paths = sides(tmp_path, marks, marks, {("src/a.py", "f( )"): d("20.0000")}, stamps)
+
+    result = merge(tmp_path, paths)
+
+    assert result.code == 0, result.stdout + result.stderr
+    parsed = model.parse_marks(paths[1].read_bytes().decode("utf-8"))
+    assert (parsed.stamp, parsed.marks) == (OTHER, {("src/a.py", "f( )"): d("20.0000")})
 
 
 @pytest.mark.process
