@@ -87,6 +87,38 @@ def test_hook_override_never_raises_an_existing_mark(tmp_path):
     assert entries[("src/a.ts", "f( )")].crap == 12.0, "the prior tighter mark must survive"
 
 
+KEPT_MARKS = f"# {metric_version()}\n# crapkit-keys=1\npath\tlong_name\tcrap\nsrc/a.ts\tf( )\t12.0000\n"
+# A file a release before 0.8.1 wrote, then edited by hand: no key-format line, the mark typed as 12.
+HAND_KEPT_MARKS = f"# {metric_version()}\npath\tlong_name\tcrap\nsrc/a.ts\tf( )\t12\n"
+
+
+@pytest.mark.parametrize("marks", [pytest.param(KEPT_MARKS, id="current"),
+                                   pytest.param(HAND_KEPT_MARKS, id="pre-0.8.1")])
+@pytest.mark.parametrize("encode", [
+    pytest.param(lambda text: text.encode("utf-8"), id="utf-8"),
+    pytest.param(lambda text: b"\xff\xfe" + text.encode("utf-16-le"), id="utf-16-le-bom"),
+    pytest.param(lambda text: text.replace("\n", "\r\n").encode("utf-8"), id="crlf"),
+])
+def test_a_hook_grant_that_only_keeps_marks_leaves_the_file_byte_identical(tmp_path, encode, marks):
+    """The hook's grant of a marked function keeps the mark's value and adds
+    no mark, so the file is not rewritten, in any encoding or line ending the
+    marks file reads in, with or without a key-format line, and with a mark
+    typed by hand. The audit still lands."""
+    store = SnapshotStore(tmp_path / "db.sqlite")
+    run_id = store.write_run(commit="c", tool_versions={}, rows=[])
+    before = encode(marks)
+    (tmp_path / "ratchet.tsv").write_bytes(before)
+    alert_cmd, log = ok_alert(tmp_path)
+
+    record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
+                    alert_command=alert_cmd, violations=[VIOLATION], reason="prod down",
+                    raise_marks=False, key_version=1, metric=metric_version())
+
+    assert (tmp_path / "ratchet.tsv").read_bytes() == before
+    assert store.read_overrides(run_id) == [("src/a.ts", "f( )", 90.0, "prod down")]
+    assert "src/a.ts:3 f( )" in log.read_text(encoding="utf-8")
+
+
 def test_an_override_reads_a_marks_file_that_starts_with_a_bom(tmp_path):
     """PowerShell 5.1 writes a BOM in front of a file it saves as UTF-8; every
     other reader of the marks file tolerates it, and the override's own read
