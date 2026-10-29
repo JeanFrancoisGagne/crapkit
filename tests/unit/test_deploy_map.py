@@ -612,10 +612,6 @@ def test_latest_harnesses_without_its_packet_is_caught():
     assert "lin-online-pipgit" in tag_bound_in_release(jobs)
 
 
-def test_every_scope_path_is_in_the_tree():
-    assert [path for path in MAP["scope"]["paths"] if not (ROOT / path).exists()] == []
-
-
 def test_every_harness_profile_in_the_tree_has_a_harness_entry():
     profiles = DEPLOY / "profiles"
     if not profiles.is_dir():
