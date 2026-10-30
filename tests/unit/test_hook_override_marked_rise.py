@@ -8,8 +8,12 @@ next verify still reports the rise as a ratchet regression: a mark only falls.
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
+import os
+import sqlite3
+import stat
 
 from cli_inproc_repo import add_knotty, commit_all, git, repo, seed_artifacts, template_repo  # noqa: F401
 
@@ -355,3 +359,138 @@ def test_two_kept_marks_share_one_line(marked, capsys):
     assert kept in out.splitlines(), out
     assert (marked / MARKS).read_bytes() == before
     assert staged_names(marked) == ["src/app.ts"]
+
+
+# --- a store the grant cannot write -------------------------------------------------
+
+STORE = ".crapkit/crap.sqlite"
+
+
+def read_only(repo, monkeypatch) -> None:
+    # On Windows os.chmod sets the file's read-only attribute, on POSIX its mode.
+    stored(repo).chmod(stat.S_IREAD)
+
+
+def cut_short(repo, monkeypatch) -> None:
+    path = stored(repo)
+    path.write_bytes(path.read_bytes()[:3000])
+
+
+def not_sqlite(repo, monkeypatch) -> None:
+    stored(repo).write_bytes(b"x" * 8192)
+
+
+def read_only_folder(repo, monkeypatch) -> None:
+    """A .crapkit folder that holds no store and takes no new file."""
+    (repo / ".crapkit").mkdir()
+    (repo / ".crapkit").chmod(stat.S_IREAD | stat.S_IEXEC)
+
+
+def read_only_root(repo, monkeypatch) -> None:
+    """A root that holds no .crapkit folder and takes no new one."""
+    repo.chmod(stat.S_IREAD | stat.S_IEXEC)
+
+
+def perm_refused(repo, monkeypatch) -> None:
+    """SQLITE_PERM comes from a lock call the OS refused with EPERM, which no
+    test can set up, so SQLite's open raises it here as SQLite would."""
+    def refuse(*args, **kwargs):
+        exc = sqlite3.OperationalError("access permission denied")
+        exc.sqlite_errorcode = sqlite3.SQLITE_PERM
+        raise exc
+
+    monkeypatch.setattr(sqlite3, "connect", refuse)
+
+
+def writable_again(repo) -> None:
+    """Undo a spoil's modes, so the asserts and the temp folder's removal can write."""
+    for path in (repo, repo / ".crapkit", repo / STORE):
+        if path.exists():
+            path.chmod(stat.S_IRWXU if path.is_dir() else stat.S_IREAD | stat.S_IWRITE)
+
+
+def stored(repo):
+    """A store holding one run, as any earlier command leaves one."""
+    path = repo / STORE
+    path.parent.mkdir(exist_ok=True)
+    store = SnapshotStore(path)
+    store.write_run(commit="0" * 40, tool_versions={}, rows=[], kind="hook")
+    store.close()
+    return path
+
+
+def mixed_grant(repo) -> bytes:
+    """A marked rise beside a new breach, staged: a grant would add a mark and
+    stage the marks file. Returns the marks file's bytes."""
+    before = committed(repo, ("src/app.ts", KNOTTY, "7.3333"))
+    grow(repo)
+    add_scope_and_knotty(repo, "src/fresh.ts")
+    git(repo, "add", "crapkit.toml", "src/fresh.ts")
+    return before
+
+
+def assert_no_part_granted(repo, before: bytes) -> None:
+    """No alert line, the marks file unwritten and unstaged."""
+    assert alerts(repo) == []
+    assert (repo / MARKS).read_bytes() == before
+    assert MARKS not in staged_names(repo)
+
+
+ROOT_WRITES = pytest.mark.skipif(os.name != "nt" and os.geteuid() == 0,
+                                 reason="root on POSIX writes a file whose mode refuses writes")
+FOLDER_MODES = pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0,
+                                  reason="only a POSIX folder's mode refuses a new entry, and not to root")
+STORE_FIX = "the override records its audit there, so nothing was granted; {fix}, then commit again"
+WRITABLE = "make the store and its folder writable"
+RESTORE = "restore it from a backup, or move it aside so the next run starts a new one"
+
+
+@pytest.mark.parametrize(("spoil", "cause", "fix"), [
+    pytest.param(read_only, "is read only (attempt to write a readonly database)", WRITABLE,
+                 id="read-only", marks=ROOT_WRITES),
+    pytest.param(perm_refused, "is read only (access permission denied)", WRITABLE, id="perm"),
+    pytest.param(read_only_folder, "is read only (unable to open database file)", WRITABLE,
+                 id="read-only-folder", marks=FOLDER_MODES),
+    pytest.param(read_only_root, "is read only (unable to open database file)", WRITABLE,
+                 id="read-only-root", marks=FOLDER_MODES),
+    pytest.param(cut_short, "is damaged (database disk image is malformed)", RESTORE, id="cut-short"),
+    pytest.param(not_sqlite, "is damaged (file is not a database)", RESTORE, id="not-sqlite")])
+def test_a_store_the_grant_cannot_write_stops_it_at_exit_5_before_any_side_effect(
+        marked, capsys, monkeypatch, spoil, cause, fix):
+    """A store read only, refused, in a folder or a root that takes no file,
+    cut short, or holding bytes that are not SQLite cannot take the audit: one
+    line names the store, the cause and the fix at exit 5, crapkit's tool
+    fault, and the grant takes none of its three parts. No alert line, the
+    store's bytes as they were, the marks file unwritten and unstaged."""
+    before = mixed_grant(marked)
+    store = marked / STORE
+    spoil(marked, monkeypatch)
+    held = store.read_bytes() if store.exists() else None
+    try:
+        code, out, err = run(["hook-precommit"], marked, capsys)
+    finally:
+        writable_again(marked)
+
+    assert code == 5, out + err
+    assert err.splitlines()[-1] == f"crapkit: the store {STORE} {cause}: {STORE_FIX.format(fix=fix)}", err
+    assert (store.read_bytes() if store.exists() else None) == held
+    assert_no_part_granted(marked, before)
+
+
+def test_a_store_error_it_cannot_name_passes_through_as_sqlite_raised_it(marked, capsys, monkeypatch):
+    """A store another connection holds locked past the busy timeout is
+    neither read only nor damaged, so the grant does not call it either:
+    SQLite's own error comes through, and the grant takes none of its parts."""
+    before = mixed_grant(marked)
+    holder = sqlite3.connect(stored(marked), isolation_level=None)
+    holder.execute("BEGIN EXCLUSIVE")
+    # No busy wait, where the default waits 5 s: the held lock refuses at once.
+    monkeypatch.setattr(sqlite3, "connect", functools.partial(sqlite3.connect, timeout=0))
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="^database is locked$"):
+            run(["hook-precommit"], marked, capsys)
+    finally:
+        holder.rollback()
+        holder.close()
+
+    assert_no_part_granted(marked, before)
