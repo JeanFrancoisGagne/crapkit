@@ -102,7 +102,8 @@ The contract for the caller (analyze.py owns the wiring):
   1. call `register()` at module scope, before any `FileAnalyzer` runs
   2. call it from the module the process pool imports, so spawned workers
      register in their own interpreter
-  3. bump `ANALYSIS_VERSION`, because cached Rust records predate the fix
+  3. raise `ANALYSIS_VERSIONS['rust']` and `ANALYSIS_VERSION`, because cached
+     Rust records predate the fix
 
 A `//` comment
 --------------

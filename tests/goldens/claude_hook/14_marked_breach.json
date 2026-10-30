@@ -1,6 +1,6 @@
 {
   "case": "marked_breach",
-  "why": "Same breach as scoped_breach, with a ratchet mark on the function. A mark is a recorded decision to carry that function as it stands; without this exemption the advisory fires on debt the repo already signed for, on every edit. Existence decides it, not the numeric high-water rule, because crap needs coverage and coverage needs the store this hook never opens.",
+  "why": "Same breach as scoped_breach, with a ratchet mark of 72.0 on the function. The working-tree file carries no coverage, so its CRAP is a range: from ccn 8, every branch run, up to 8^2 + 8 = 72, none run. The whole range sits at or under the mark, so the mark pardons it, as the commit gate pardons the same staged blob, and the HEAD copy is never read. A mark inside the range leaves the number to verify; one under the ccn draws the marked block.",
   "fixture": "marked_breach",
   "argv": ["claude-hook", "--protocol", "1"],
   "payload": {

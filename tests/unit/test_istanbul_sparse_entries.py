@@ -17,7 +17,7 @@ import pytest
 
 from coverage_readers import parse_istanbul, parse_istanbul_missing
 from crapkit import coverage_istanbul
-from crapkit.coverage_istanbul import FnCoverage
+from crapkit.score import FnCoverage
 from crapkit.errors import ToolError
 
 ROOT = "C:/repo"

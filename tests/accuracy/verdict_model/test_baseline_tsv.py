@@ -174,11 +174,25 @@ def _emitted_clone(sc, tmp_path, name: str, columns: int = 17) -> vw.Scenario:
     return copy
 
 
+def _findings(payload: dict) -> dict[str, list]:
+    """verify --json's gate, ratchet and new-failure findings by kind, a new
+    failure as its test id. A crapkit before 0.9.0, which a retro replay runs,
+    printed one list per kind instead of `findings`."""
+    if "findings" not in payload:
+        return {"gate_violation": payload["gate_violations"],
+                "ratchet_regression": payload["ratchet_regressions"], "new_failure": payload["new_failures"]}
+    found: dict[str, list] = {"gate_violation": [], "ratchet_regression": [], "new_failure": []}
+    for item in payload["findings"]:
+        if item["kind"] in found:
+            found[item["kind"]].append(item["test"] if item["kind"] == "new_failure" else item)
+    return found
+
+
 def _verdict(result) -> tuple:
-    payload = result.json()
-    return (result.code, sorted((v["path"], v["long_name"]) for v in payload["gate_violations"]),
-            sorted((r["path"], r["long_name"]) for r in payload["ratchet_regressions"]),
-            sorted(payload["new_failures"]))
+    found = _findings(result.json())
+    return (result.code, sorted((v["path"], v["long_name"]) for v in found["gate_violation"]),
+            sorted((r["path"], r["long_name"]) for r in found["ratchet_regression"]),
+            sorted(found["new_failure"]))
 
 
 CHANGES = {"nothing": lambda w: w, "gate": lambda w: w.with_fn("app", WORSE),
@@ -218,7 +232,7 @@ def test_a_failure_the_baseline_had_is_not_new_under_the_record(make_repo, tmp_p
     store = sc.run("verify", "--no-tighten", "--json")
     copy = _emitted_clone(sc, tmp_path, "clone")
     record = copy.run("verify", "--baseline-tsv", "b.tsv", "--no-tighten", "--json")
-    assert (store.code, store.json()["new_failures"]) == (0, [])
-    said = f"exit {record.code}, new {','.join(record.json()['new_failures']) or 'none'}"
+    assert (store.code, _findings(store.json())["new_failure"]) == (0, [])
+    said = f"exit {record.code}, new {','.join(_findings(record.json())['new_failure']) or 'none'}"
     rulings.pin_ruling("V8", crapkit=said, oracle="exit 0, new none")
 

@@ -26,12 +26,13 @@ from crapkit.churn import parse_git_log_lines
 from crapkit.cli.parser import main
 from crapkit.cli.reports import _function_commits
 from crapkit.errors import GitError
-from crapkit.gitio import (config_value, file_log, merge_base, worktree_add, worktree_reset,
+from crapkit.gitio import (config_value, file_revisions, merge_base, worktree_add, worktree_reset,
                            worktree_root)
 from crapkit.marks_history import marks_history
 from crapkit.procs import own_processes, run_owned
 from crapkit.ratchet_report import mark_events, report_from_events
 from name_bytes import NOT_UTF8_NAMES
+from test_marks_history import _same_events_both_ways, _utf8
 
 LATIN1 = b"Ren\xe9"
 REPLACED = "Ren�"
@@ -207,6 +208,8 @@ def test_every_past_revision_of_the_marks_file_reads_into_the_burn_down(tmp_path
 
     assert report["open"] == 1
     assert report["oldest"] == [{"path": "src/app.py", "long_name": "f( x )", "age_days": age}]
+    if _utf8(past):  # Check 3; a CRLF revision resaved as LF is C37's clock tick
+        assert _same_events_both_ways(root, resaves=b"\r\n" in past)
 
 
 G5 = "src/app.py\tgĊ( )\t5.0\n".encode()  # U+010A is 0A 01 in UTF-16 LE: git splits there
@@ -245,13 +248,14 @@ def test_a_utf16_revision_keeps_each_marks_entry_date(tmp_path, revisions, ages,
 
 
 @pytest.mark.parametrize("revisions, reads", [
-    ([STAMPED + MARK, STAMPED + b"# caf\xe9\n" + MARK, (STAMPED + MARK).replace(b"\n", b"\r\n")], 0),
+    ([STAMPED + MARK, STAMPED + b"# caf\xe9\n" + MARK, (STAMPED + MARK).replace(b"\n", b"\r\n")], 1),
     ([_utf16(STAMPED + MARK), _utf16(STAMPED + MARK.replace(b"9.0", b"8.0")), STAMPED + MARK], 1),
 ], ids=["utf8-and-cp1252-history", "utf16-history"])
-def test_only_a_patch_holding_a_nul_costs_a_whole_revision_read(tmp_path, monkeypatch, revisions,
-                                                                reads):
-    """The -U0 stream stays the whole read for a history with no NUL in it,
-    and every whole revision a UTF-16 history needs comes from one process."""
+def test_every_history_reads_its_revisions_in_one_batch(tmp_path, monkeypatch, revisions, reads):
+    """Whatever its encoding, every blob a history reads whole comes from one
+    `cat-file --batch` process: the created revision's, and each UTF-16
+    revision's, whose patch git prints as binary. A UTF-8 revision with a
+    cp1252 byte or CRLF rows rides its patch."""
     from crapkit import gitio
 
     root = repository(tmp_path)
@@ -261,7 +265,7 @@ def test_only_a_patch_holding_a_nul_costs_a_whole_revision_read(tmp_path, monkey
     real = gitio._batch_stream
     monkeypatch.setattr(gitio, "_batch_stream", lambda *args: calls.append(args) or real(*args))
 
-    file_log(root, MARKS)
+    file_revisions(root, MARKS)
 
     assert len(calls) == reads
 
@@ -306,6 +310,7 @@ def test_a_marks_commit_whose_author_and_subject_are_not_utf8_reads(tmp_path, ca
 
     assert main(["ratchet", "report", "--repo", str(root)]) == 0
     assert "      2d  src/app.py  f( x )" in capsys.readouterr().out
+    assert _same_events_both_ways(root), "Check 3: the marks file's revisions are UTF-8"
 
 
 CAFE_SOURCE = "def café(n):\n" + "".join(f"    if n == {i}:\n        n += {i}\n" for i in range(1, 8)) \

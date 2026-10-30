@@ -2,8 +2,8 @@
 
 Every next-step and every refusal names the command the reader runs next, and
 they all used to spell it `crapkit`. That is the console script, and two
-documented ways of running crapkit put no such name on PATH: `python -m crapkit`
-from a source checkout (README), and `exec python -m crapkit hook-precommit`,
+documented ways of running crapkit put no such name on PATH: `python -P -m crapkit`
+from a source checkout (README), and `exec python -P -m crapkit hook-precommit`,
 the line README's git hook falls back to when the hook's PATH holds neither
 `crapkit` nor `uvx`. In both, `init` finished by telling the reader to run `crapkit
 coverage` and the shell answered 127.
@@ -12,7 +12,11 @@ So the message names `crapkit` only when PATH resolves it to a console script
 of the interpreter running this process, which is the crapkit that wrote the
 message. Otherwise it names that interpreter: `sys.executable`, never bare
 `python`, since on Windows a bare `python` reaches the WindowsApps stub, a venv
-that has no crapkit, or the base interpreter a venv wraps.
+that has no crapkit, or the base interpreter a venv wraps. That form carries
+`-P`: a reader pastes it in a repo root, and without the flag `-m` puts that
+directory first on sys.path, so a `crapkit.py` there ran in place of crapkit.
+An installed crapkit still resolves through site-packages, and a source run
+through PYTHONPATH.
 
 pipx and uv tool put the console script in a bin dir of their own. On POSIX
 that is a symlink into the tool's environment, which counts where it points.
@@ -25,8 +29,8 @@ Windows is Git Bash, which drops every backslash of `C:\\venv\\Scripts\\python.e
 and answers 127; `C:/venv/Scripts/python.exe` runs in Git Bash, cmd.exe and
 PowerShell alike. A path that holds a space is quoted, and PowerShell reads a
 line that opens with a quoted string as an expression: there the reader types
-`& ` first (README). The MCP server's children run as `python -m crapkit`, so
-every next step an agent reads from a tool result goes through here.
+`& ` first (README). The MCP server's children run as `python -P -m crapkit`,
+so every next step an agent reads from a tool result goes through here.
 
 uvx starts the console script too, the README's route for a repo that is not
 Python, and the same 127 followed: the launcher sits in an environment in uv's
@@ -57,10 +61,11 @@ from __future__ import annotations
 import os
 import re
 import shlex
-import shutil
 import sys
 import sysconfig
 from pathlib import Path
+
+from .programs import find
 
 _CONSOLE_SCRIPT = "crapkit"
 _CACHE_TAG = "CACHEDIR.TAG"
@@ -76,7 +81,7 @@ def _self() -> str:
     running in, read from any shell."""
     if runs_from_cache():
         return console_script() if os.environ.get("UV") else _module_form()
-    if _runs_here(shutil.which(_CONSOLE_SCRIPT)):
+    if _runs_here(find(_CONSOLE_SCRIPT)):
         return _CONSOLE_SCRIPT
     return _module_form()
 
@@ -90,7 +95,7 @@ def console_script() -> str:
 
 
 def _module_form() -> str:
-    return f"{interpreter_word(sys.executable)} -m {_CONSOLE_SCRIPT}"
+    return f"{interpreter_word(sys.executable)} -P -m {_CONSOLE_SCRIPT}"
 
 
 def _runs_here(found: str | None) -> bool:

@@ -17,6 +17,7 @@ decompose before committing, because there the commit really is refused.
 """
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -24,6 +25,7 @@ import pytest
 
 import crapkit
 from conftest import cli_runner
+from name_bytes import ANY_BYTE_NAMES
 
 # PYTHONPATH shims reach only a new interpreter, so this file keeps the child.
 run_cli = cli_runner(spawn=True)
@@ -53,9 +55,9 @@ def write(repo: Path, rel: str, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def tangled(name: str) -> str:
-    """ccn 8: seven decisions plus one, over the target of 6."""
-    body = "".join(f"    if n > {i}:\n        n = n + 1\n" for i in range(1, 8))
+def tangled(name: str, ccn: int = 8) -> str:
+    """ccn 8 by default: seven decisions plus one, over the target of 6."""
+    body = "".join(f"    if n > {i}:\n        n = n + 1\n" for i in range(1, ccn))
     return f"def {name}(n):\n{body}    return n\n"
 
 
@@ -74,23 +76,27 @@ def _child_overrides() -> dict:
             "CRAPKIT_OVERRIDE_REASON": None}
 
 
-@pytest.fixture()
-def repo(tmp_path: Path) -> Path:
+def seeded(root: Path, marks: str = MARKS) -> Path:
     """ccn-8 `legacy` beside ccn-8 `newer`, committed, with `legacy` marked.
 
     Both are already over the ceiling at HEAD, which is what a repo looks like
     the day after `ratchet seed`. Only one of them carries a mark.
     """
-    root = tmp_path / "repo"
     root.mkdir()
     git(root, "init", "-q", "-b", "main")
     git(root, "config", "core.autocrlf", "false")
     write(root, "crapkit.toml", CONFIG)
-    write(root, "crapkit-ratchet.tsv", MARKS)
+    write(root, "crapkit-ratchet.tsv", marks)
     write(root, "src/mod.py", tangled("legacy") + "\n" + tangled("newer"))
     git(root, "add", "-A")
     git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
     return root
+
+
+@pytest.fixture()
+def repo(tmp_path: Path) -> Path:
+    """`legacy` marked 63.6: its range, ccn 8 to 72, straddles the mark."""
+    return seeded(tmp_path / "repo")
 
 
 def stage(repo: Path, source: str) -> None:
@@ -99,12 +105,13 @@ def stage(repo: Path, source: str) -> None:
     git(repo, "add", "src/mod.py")
 
 
-def advisory(repo: Path, tmp_path: Path) -> subprocess.CompletedProcess:
-    """`claude-hook` on a PostToolUse payload for the edited file, run from
-    outside the repo: its root comes from the file path, never from cwd."""
+def advisory(repo: Path, tmp_path: Path, edited: Path | None = None) -> subprocess.CompletedProcess:
+    """`claude-hook` on a PostToolUse payload for the edited file (src/mod.py
+    unless named), run from outside the repo: its root comes from the file
+    path, never from cwd."""
     payload = json.dumps({"hook_event_name": "PostToolUse", "tool_name": "Edit",
                           "cwd": str(repo),
-                          "tool_input": {"file_path": str(repo / "src/mod.py")}})
+                          "tool_input": {"file_path": str(edited or repo / "src/mod.py")}})
     return run_cli(tmp_path, "claude-hook", "--protocol", "1", stdin=payload,
                    timeout=300, encoding="utf-8", errors="replace",
                    env_extra=_child_overrides())
@@ -115,19 +122,24 @@ def gate(repo: Path) -> subprocess.CompletedProcess:
                    errors="replace", env_extra=_child_overrides())
 
 
+# A listed function: `  ccn N  path:line  name`, `ccn B -> N` on a warn row, and
+# `  mark M.MMMM` after the name on a marked row. Both surfaces print all three.
+_ROW = re.compile(r"^  ccn (?:\S+ -> )?\s*\d+  \S+:\d+  (.+?)(?:  mark \d+\.\d{4})?$")
+
+
 def named(text: str) -> set[str]:
-    """The functions a breach listing names. Both surfaces print the long name
-    last on a `  ccn N  path:line  name` line, so one reader serves both."""
-    return {line.rsplit("  ", 1)[-1] for line in text.splitlines()
-            if line.startswith("  ccn ")}
+    """The functions a breach, marked or warn listing names, one reader for both surfaces."""
+    return {row.group(1) for row in map(_ROW.match, text.splitlines()) if row}
 
 
 # --- the same edit, both surfaces --------------------------------------------
 
 def test_a_marked_function_is_green_on_both_surfaces(repo: Path, tmp_path: Path):
-    """Debt the repo already signed for. The advisory subtracts marks because
-    otherwise it fires on every edit in a seeded repo; the gate subtracts them
-    for the same reason, and this is the pair that says they agree."""
+    """A comment edit inside debt the repo already signed for: the range
+    straddles the mark and the ccn did not move from HEAD, so neither surface
+    says anything. The advisory stays quiet because otherwise it fires on every
+    edit in a seeded repo; the gate passes for the same reason, and this is the
+    pair that says they agree."""
     stage(repo, commented("legacy") + "\n" + tangled("newer"))
 
     mid_session, at_commit = advisory(repo, tmp_path), gate(repo)
@@ -177,6 +189,52 @@ def test_the_marks_file_is_what_makes_the_difference(tmp_path: Path):
 
     assert (mid_session.returncode, at_commit.returncode) == (2, 6)
     assert named(mid_session.stderr) == named(at_commit.stdout) == {"legacy( n )"}
+
+
+def test_a_function_past_its_mark_is_red_on_both_surfaces(tmp_path: Path):
+    """`legacy` marked 7.0 at ccn 8: CRAP is never under ccn, so the mark rose
+    at any coverage. A comment edit touches it: exit 2 here, exit 6 at the
+    commit, and both name `legacy`."""
+    root = seeded(tmp_path / "repo", MARKS.replace("63.6000", "7.0000"))
+    stage(root, commented("legacy") + "\n" + tangled("newer"))
+
+    mid_session, at_commit = advisory(root, tmp_path), gate(root)
+
+    assert (mid_session.returncode, at_commit.returncode) == (2, 6), mid_session.stderr + at_commit.stdout
+    assert named(mid_session.stderr) == named(at_commit.stdout) == {"legacy( n )"}
+    assert "rose past their ratchet mark" in mid_session.stderr
+
+
+def test_a_ccn_rise_across_the_mark_warns_on_both_surfaces(repo: Path, tmp_path: Path):
+    """`legacy` grows from ccn 8 to 9 under its mark of 63.6: the range 9 to
+    90 straddles it. The commit goes through with the warn on stderr, exit 0;
+    the advisory says the same with exit 2, and both name `legacy`."""
+    stage(repo, tangled("legacy", 9) + "\n" + tangled("newer"))
+
+    mid_session, at_commit = advisory(repo, tmp_path), gate(repo)
+
+    assert (mid_session.returncode, at_commit.returncode) == (2, 0), mid_session.stderr + at_commit.stderr
+    assert named(mid_session.stderr) == named(at_commit.stderr) == {"legacy( n )"}
+    assert "ccn 8 -> 9" in mid_session.stderr and "ccn 8 -> 9" in at_commit.stderr
+
+
+@ANY_BYTE_NAMES
+def test_a_claimed_name_is_refused_on_both_surfaces(repo: Path, tmp_path: Path):
+    """A file scope `src` takes whose name git gives in bytes that are not
+    UTF-8: no function in it can be keyed, so both adapters hand the name to
+    the gate, which refuses it before judging anything. Exit 2 mid-session,
+    exit 3 at the commit, and neither names a function."""
+    claimed = repo / os.fsdecode(b"src/caf\xe9.py")
+    claimed.write_text(tangled("odd"), encoding="utf-8", newline="\n")
+    git(repo, "add", "-A")
+
+    mid_session, at_commit = advisory(repo, tmp_path, claimed), gate(repo)
+
+    assert (mid_session.returncode, at_commit.returncode) == (2, 3), \
+        mid_session.stderr + at_commit.stdout + at_commit.stderr
+    assert "src/caf\\xe9.py is in scope 'src'" in mid_session.stderr
+    assert "src/caf\\xe9.py is in scope 'src'" in at_commit.stderr
+    assert named(mid_session.stderr) == named(at_commit.stdout) == set()
 
 
 # --- what stays different, on purpose ----------------------------------------

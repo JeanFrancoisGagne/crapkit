@@ -5,31 +5,33 @@ sha256, so a docs edit that moves or rewrites one fails the kit contract until
 this model is read against the new text again. No crapkit import: the tests
 compare what crapkit prints with what these functions say it should print.
 
-doc: README.md:1379-1471 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aacfd8e862acadfae30
-doc: README.md:1473-1500 sha256=2a0ca63518c599c9ed7c425b5b85bfc1bea28854e6aed403ccc5f0f04938601f
-doc: README.md:1285-1285 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
-doc: CONTEXT.md:30-37 sha256=f7baa578e3f82045a5588991a9c2a408ee7995faa7f12e682342b60295ef2987
-doc: CONTEXT.md:83-154 sha256=e4fbb26a3289f62d24e9a749dadceba60667205c477c3109c4585b56bd00149a
-doc: docs/ratchet.md:20-89 sha256=c632bda254159ea7a636a8959cac9f4eda6e27f71bb32729d05aefde1eda14c2
-doc: docs/ratchet.md:118-142 sha256=8bc7df912a11fc8893505b9bc766fcbd08a2c4d0cc14f911dafb66bbe139a5cb
-doc: docs/ratchet.md:189-252 sha256=e4ca95739a264be11a9e79d98b2d4b7f8792124bfc6fd2ec223f371b8ec08729
-doc: docs/ratchet.md:337-395 sha256=c7885067090b5f114ae7ea9ebc2911bba938f9edfee98cb20cf84862e53df96d
-doc: docs/ratchet.md:485-504 sha256=8962538fcb9660a65b4db6bbabf4066b59d1dca7806438a783db076fc1a7df9b
-doc: docs/ratchet.md:596-687 sha256=61b5a7c38b473dba2247a67d3974d07c9848cebd4210166c4b224c1f2726b435
-doc: docs/ratchet.md:823-959 sha256=28a98789e1c287e6ae12af9136d2ccff9513a692533c37555852c93bb1c665c9
-doc: docs/ratchet.md:961-1039 sha256=7a31937dfa217b07387c20a6015e185465ff73512772c72686f85b7cefd33871
-doc: docs/ratchet.md:1083-1085 sha256=0b0353f91de49806c816e6fbb56a8ce38494cd5d093a357a4feb9420e0c9250e
+doc: README.md:1383-1475 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aacfd8e862acadfae30
+doc: README.md:1477-1504 sha256=374689f0fb536f3116a2bc9b2820b3c7ef6eed0062f4dfdfc7453da57e00f9fa
+doc: README.md:1289-1289 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
+doc: CONTEXT.md:34-41 sha256=f7baa578e3f82045a5588991a9c2a408ee7995faa7f12e682342b60295ef2987
+doc: CONTEXT.md:91-173 sha256=395c91466b52dc512219d14a40c3b5d7bddb59b5fbdd50c6093a94d2bfec8469
+doc: docs/ratchet.md:20-108 sha256=ea4a39929b56820608dc20b72a86865470153eea4c7b9da53845b9d95c5a596c
+doc: docs/ratchet.md:137-233 sha256=d5cf4828c9bde2e5ad519564b8b38b1c5bf1156e6dc15df24ca93f5d5b1bf104
+doc: docs/ratchet.md:276-280 sha256=0b862f815fe45a0f42c3d20e9280662fe954b8f170ada1654b49b04a0ec2e45a
+doc: docs/ratchet.md:284-347 sha256=e4ca95739a264be11a9e79d98b2d4b7f8792124bfc6fd2ec223f371b8ec08729
+doc: docs/ratchet.md:432-490 sha256=8d2696391b13c366a5391e68c5176445dad8a97c9b781b263ea622dd864d67f4
+doc: docs/ratchet.md:580-599 sha256=8962538fcb9660a65b4db6bbabf4066b59d1dca7806438a783db076fc1a7df9b
+doc: docs/ratchet.md:691-782 sha256=074d297059bb6c6e6c119f145582140aca9252b9f9119c9112b31d2131e2bcd8
+doc: docs/ratchet.md:967-1103 sha256=28a98789e1c287e6ae12af9136d2ccff9513a692533c37555852c93bb1c665c9
+doc: docs/ratchet.md:1105-1183 sha256=6320ef299e20d824d65626afe13746328b0bb5fefde690a6c327dbf9eedcac79
+doc: docs/ratchet.md:1272-1274 sha256=0b0353f91de49806c816e6fbb56a8ce38494cd5d093a357a4feb9420e0c9250e
 doc: docs/agent-json.md:306-330 sha256=46e36bc36e895f6379112955a0182505cc361f45c214960ea48d2ee35003f40e
-doc: docs/agent-json.md:923-943 sha256=6121159d5349fe87111b46ce443da89c2393bbf2a467f54d931be8132be01f94
+doc: docs/agent-json.md:991-1004 sha256=bb81843c03ec9a8c4437527fd0fa5f6ed6230797e856bf9b6a792b8442907a7d
+doc: docs/agent-json.md:929-989 sha256=f413627ee32a4ebc15b9502445bb4a02a280622bd106ee28fc6571cf80b33680
 doc: docs/configuration.md:220-220 sha256=e6dc43339c7ab96208524957553d2995e11fc3bd1349d4f7d3b7aa6647f33d5f
-doc: docs/lanes.md:1540-1578 sha256=964831502d735a929aaae499fd2404f9f8d39a2827e02cc7ee3ddcca513ca08e
-doc: docs/lanes.md:1714-1727 sha256=c80c08b87c893b48a67c8dc8b92f1d37f947e41bee1efafb8670fe670064689c
-doc: docs/ratchet.md:1103-1107 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
+doc: docs/lanes.md:1622-1660 sha256=c3d344ab7101f3cc4a9e8bb17b1380fc491582dbc0237aa859faa2e29822694c
+doc: docs/lanes.md:1796-1809 sha256=c80c08b87c893b48a67c8dc8b92f1d37f947e41bee1efafb8670fe670064689c
+doc: docs/ratchet.md:1292-1296 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
 doc: docs/agent-json.md:593-613 sha256=64d6cb9b71322533826e0516f0eb3a3646b001c9636575730dc41313cfd76acf
-doc: docs/lanes.md:1215-1372 sha256=7d28889683d759dc2dc72783fd1428ceb32951db241a9b8735352e65a8fa1c9e
-doc: docs/lanes.md:1374-1435 sha256=9562d770e19872b412caf2ed5a4dbf8760c219d517f71ae90efa2d54b7f5c8a0
-doc: docs/lanes.md:1972-2073 sha256=6b2e585c08bcc87c7abc8d6bd58a0038fa702579d1bac4837b7de1698f70b532
-doc: README.md:1321-1328 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
+doc: docs/lanes.md:1297-1454 sha256=7d28889683d759dc2dc72783fd1428ceb32951db241a9b8735352e65a8fa1c9e
+doc: docs/lanes.md:1456-1517 sha256=9562d770e19872b412caf2ed5a4dbf8760c219d517f71ae90efa2d54b7f5c8a0
+doc: docs/lanes.md:2054-2155 sha256=6b2e585c08bcc87c7abc8d6bd58a0038fa702579d1bac4837b7de1698f70b532
+doc: README.md:1325-1332 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
 doc: docs/portable-records.md:9-24 sha256=e4e06a93b5a1fd4569a93b1673493be0fcdd6e7eb3b04c0d0bc507b5dd3867c9
 """
 from __future__ import annotations
@@ -115,12 +117,41 @@ def named_baseline(runs: list[Run], wanted: int) -> tuple[Run | None, str | None
 
 # --- verdict exit (README.md:961-988) ----------------------------------------------------
 
-EXIT_ORDER = ((6, "gate"), (7, "ratchet"), (8, "failures"), (9, "diff_uncovered"))
+# README.md:1480 and 1483: a file a scope takes whose name is not UTF-8 exits 3,
+# before any lane runs and so before every other finding; a changed file no reader
+# could read is refused at 6 beside the gate violation.
+EXIT_ORDER = ((3, "unreadable_name"), (6, "gate"), (6, "unread"), (7, "ratchet"),
+              (8, "failures"), (9, "diff_uncovered"))
 
 
 def exit_code(findings: frozenset) -> int:
-    """verify reports the first of 6, 7, 8, 9 that fires, in that order; 0 when none."""
+    """verify reports the first of 6, 7, 8, 9 that fires, in that order; 0 when none.
+    A claimed name that is not UTF-8 comes before all of them with 3."""
     return next((code for code, name in EXIT_ORDER if name in findings), 0)
+
+
+# --- verify's findings list (docs/agent-json.md:949-1008) ---------------------------------
+
+# The kind each finding is listed under. The kinds come in their exit order, and an
+# override's grant, which fires no exit, comes last.
+FINDING_KIND = {"unreadable_name": "unreadable_name", "gate": "gate_violation",
+                "unread": "unread_file", "ratchet": "ratchet_regression",
+                "failures": "new_failure", "diff_uncovered": "diff_uncovered"}
+
+
+def findings(present: frozenset, *, uncovered_listed: bool = False,
+             overridden: bool = False) -> list[tuple[str, bool, int | None]]:
+    """(kind, fails, exit_code) of the item each finding in PRESENT lists, one
+    finding of each, in the order verify lists them. A failing item names the exit
+    its kind fires, so the first one names verify's exit. Uncovered lines under no
+    ceiling (`uncovered_listed`) are listed and fail nothing, and so is a gate
+    violation an override granted (`overridden`): neither names an exit."""
+    items = [(FINDING_KIND[name], True, code) for code, name in EXIT_ORDER if name in present]
+    if uncovered_listed and "diff_uncovered" not in present:
+        items.append(("diff_uncovered", False, None))
+    if overridden:
+        items.append(("overridden", False, None))
+    return items
 
 
 # --- keys, twins and handles (docs/ratchet.md:20-59, CONTEXT.md:26-33) --------------------
@@ -295,10 +326,67 @@ def verify_gate(row: Row, touched: bool, ceiling: int, mark: Decimal | None) -> 
     return touched and row.crap > ceiling and not within_mark(row.crap, mark)
 
 
-def hook_gate(ccn: int, ceiling: int, marked: bool) -> bool:
-    """The pre-commit hook and the advisory see a staged blob: ccn, no
-    coverage. They skip a function on its mark's existence."""
-    return ccn > ceiling and not marked
+def hook_range(ccn: int, cc_only: bool = False) -> tuple[Fraction, Fraction]:
+    """What a staged blob says of a function's CRAP (docs/ratchet.md, the
+    commit gate): from its ccn, every branch run, up to its CRAP with none
+    run, ccn^2 + ccn, or ccn in a coverage_optional scope."""
+    return exact.crap(ccn, 1), Fraction(ccn) if cc_only else exact.crap(ccn, 0)
+
+
+# The base ccn a caller passes when it models no diff base, as a gate handed
+# no base fetch judges: an unproven function stays unproven.
+UNASKED = "unasked"
+
+
+def hook_finding(ccn: int, ceiling: int, mark: Decimal | None, cc_only: bool = False,
+                 base_ccn: int | None | str = UNASKED) -> str | None:
+    """The pre-commit hook on one staged function: nothing at or under its
+    ceiling; over it, unmarked, or else its range held against the mark at
+    the mark's 4 places: the whole range at or under it is pardoned, a ccn
+    above it is a marked rise, and a range across it is unproven. An unproven
+    function whose ccn rose above `base_ccn`, its ccn at the diff base, or
+    that the base holds no function for (`base_ccn` None) is an unproven rise."""
+    if ccn <= ceiling:
+        return None
+    if mark is None:
+        return "over_ceiling"
+    low, high = hook_range(ccn, cc_only)
+    if mark_value(high) <= mark:
+        return "pardoned"
+    if mark_value(low) > mark:
+        return "marked_rise"
+    return "unproven_rise" if rose(ccn, base_ccn) else "unproven"
+
+
+def rose(ccn: int, base_ccn: int | None | str) -> bool:
+    """docs/ratchet.md, the commit gate: the ccn rose above its ccn at the diff
+    base, or the base holds no function under its key."""
+    return base_ccn is None or (base_ccn != UNASKED and ccn > base_ccn)
+
+
+def hook_gate(ccn: int, ceiling: int, mark: Decimal | None, cc_only: bool = False,
+              base_ccn: int | None | str = UNASKED) -> bool:
+    """The pre-commit hook refuses a staged function over its ceiling that no
+    mark covers, and a marked one whose ccn alone puts its CRAP past the mark
+    at any coverage. A pardoned or unproven function passes, a warned one
+    (an unproven rise) too: the warn changes no exit code."""
+    return hook_finding(ccn, ceiling, mark, cc_only, base_ccn) in ("over_ceiling", "marked_rise")
+
+
+def hook_warns(ccn: int, ceiling: int, mark: Decimal | None, base_ccn: int | None,
+               cc_only: bool = False) -> bool:
+    """The hook names the function in its warn block on stderr, and it leaves
+    the count line."""
+    return hook_finding(ccn, ceiling, mark, cc_only, base_ccn) == "unproven_rise"
+
+
+def advisory_gate(ccn: int, ceiling: int, mark: Decimal | None, cc_only: bool = False,
+                  base_ccn: int | None | str = UNASKED) -> bool:
+    """claude-hook sees the edited file: ccn, no coverage, and the ccn at
+    HEAD. It holds the file's range against the mark by the commit gate's
+    rule (docs/ratchet.md:276-280, the advisory hook), and speaks on every
+    function the hook refuses and every one it warns about."""
+    return hook_finding(ccn, ceiling, mark, cc_only, base_ccn) in ("over_ceiling", "marked_rise", "unproven_rise")
 
 
 def regression(crap, mark: Decimal | None) -> bool:

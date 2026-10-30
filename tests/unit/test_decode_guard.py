@@ -73,7 +73,7 @@ ALLOWED = {
         "the hex object id git hash-object prints",
     ("gitio.py", "_file_text", "read_text"):
         "a ref file git wrote; a UnicodeDecodeError falls back to asking git",
-    ("gitio.py", "_patch_sides", "decode"):
+    ("gitio.py", "_raw_sides", "decode"):
         "hex object ids a regular expression matched",
     ("gitio.py", "_log_entry", "decode"):
         "a hex commit id a regular expression matched",

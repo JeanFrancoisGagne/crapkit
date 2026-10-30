@@ -5,10 +5,11 @@ recorded values, and report ages and repayment from the marks file's history."""
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import os
 import sys
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from ..errors import ConfigError, CrapkitError
 from ..invocation import _self
@@ -16,6 +17,9 @@ from ..named import first_few
 from ..store import SnapshotStore, anywhere
 from ._shared import (_command_root, _load_ratchet_or_die, _load_repo_config, _open_store,
                       _print_json, _ratchet_or_die, _repo_relative, _stand, behind_head)
+
+if TYPE_CHECKING:
+    from ..ratchet import MetricStamp, StampMerge
 
 
 def _is_failed_verify(run: dict) -> bool:
@@ -167,38 +171,6 @@ def _newer_note(newer: dict | None) -> str:
     return f" and the newer run {newer['id']} (pass `--baseline {newer['id']}` to read it)"
 
 
-def _merge_stamp(texts: list[str]) -> None:
-    """Refuse two sides that do not share one metric stamp; the merge keeps it.
-
-    Reconciling marks across metrics means picking a minimum between numbers
-    produced by different rules, which is not a comparison at all.
-    """
-    from ..ratchet import read_stamp
-
-    ours, theirs = read_stamp(texts[1]), read_stamp(texts[2])
-    if ours != theirs:
-        raise ConfigError(
-            f"ratchet merge refused: ours is [{ours or 'unstamped'}] and theirs is "
-            f"[{theirs or 'unstamped'}] - marks from different metric versions cannot "
-            f"merge; {_merge_remedy(ours, theirs)}")
-
-
-def _merge_remedy(ours: str, theirs: str) -> str:
-    """Re-seed under the newer side's metric. "re-baseline one side" said neither
-    which side nor under which crapkit, and a seed under the older release
-    stamps its own older metric, so the next merge refused again."""
-    from ..ratchet import coverage_then_seed, newer_tools
-
-    if newer_tools(theirs, ours):
-        side, stamp = "theirs", theirs
-    elif newer_tools(ours, theirs):
-        side, stamp = "ours", ours
-    else:
-        return coverage_then_seed("re-baseline one side")
-    return (f"{side} is newer, so with a crapkit that measures [{stamp}], "
-            f"{coverage_then_seed('re-baseline the merged marks')}")
-
-
 def _ratchet_merge(files: list) -> int:
     from ..ratchet import merge_ratchets
     from ..ratchetfile import RatchetFile
@@ -209,28 +181,62 @@ def _ratchet_merge(files: list) -> int:
     # BOM, which read strictly hid its stamp (`ours is [unstamped]`, exit 3),
     # or as UTF-16, which OURS stays when it is written back.
     saved = [RatchetFile.read(Path(f), required=True) for f in files]
-    texts = _mergeable_texts(saved)
-    merged = merge_ratchets(*(_ratchet_or_die(t, f) for t, f in zip(texts, files)))
-    # Merging adds no number: OURS keeps the stamps all three sides share.
-    # THEIRS's rows reach OURS, so a byte its read replaced refuses the write;
-    # BASE only tells the two changes apart, and a name it misread keys nothing.
-    saved[1].publish(saved[1].kept(merged, read_with=(saved[2],)))
+    texts, stamps = _mergeable_texts(saved)
+    sides = [_ratchet_or_die(t, f) for t, f in zip(texts, files)]
+    merged = merge_ratchets(*sides)
+    saved[1].publish(_merged_text(saved, merged, stamps.stamp))
     print(f"ratchet merge: {len(merged)} mark(s)")
+    _print_stamp_notes(stamps.came_from, sides)
     return 0
 
 
-def _mergeable_texts(saved: list) -> list[str]:
-    """The three sides' texts, once they share one metric stamp and one key format.
+def _merged_text(saved: list, merged: list, stamp: MetricStamp) -> str:
+    """OURS's new text: the merged marks under the merged stamp. Merging adds no
+    number, so a stamp OURS already records stays as its lines read. A stamp the
+    merge took in part from THEIRS is one OURS does not record, so OURS is written
+    as a file that records none yet, which takes it. THEIRS's rows reach OURS, so a
+    byte its read replaced refuses the write; BASE only tells the changes apart."""
+    from ..ratchet import read_key_version
+
+    ours, theirs = saved[1], saved[2]
+    if stamp == ours.metric_stamp:
+        return ours.kept(merged, read_with=(theirs,))
+    return replace(ours, text=None).kept(merged, keys=read_key_version(ours.text or ""),
+                                         new_file_metric=stamp, read_with=(theirs,))
+
+
+def _print_stamp_notes(came_from: tuple, sides: list) -> None:
+    """One stderr line per scope whose stamp came from one side while the other
+    side changed marks. The driver cannot tell which scope a mark sits in, and a
+    mark that side tightened under the old rules now sits under the new stamp."""
+    from ..ratchet import changed_marks
+
+    changed = {"OURS": changed_marks(sides[0], sides[1]), "THEIRS": changed_marks(sides[0], sides[2])}
+    for scope, side in came_from:
+        other = "THEIRS" if side == "OURS" else "OURS"
+        if changed[other]:
+            print(f"ratchet merge: scope {scope}'s stamp came from {side} and {other} changed "
+                  f"{changed[other]} mark(s); if verify names {scope}, run {_self()} ratchet seed "
+                  f"--scope {scope}", file=sys.stderr)
+
+
+def _mergeable_texts(saved: list) -> tuple[list[str], StampMerge]:
+    """The three sides' texts once they share one key format, and the stamp their merge records.
 
     A blank BASE is no common ancestor. Two branches that each created the file
     (two first seeds) meet in an add/add merge, and git hands the driver an empty
     %O. Read as a file, it had key version 0 and refused the merge as a legacy
     mapping. Out of the checks, it merges OURS and THEIRS as a union, each shared
-    key at the lower mark."""
+    key at the lower mark, and BASE records no stamp."""
+    from ..ratchet import merge_stamps, read_stamp
+
     texts = [side.text or "" for side in saved]
-    _merge_stamp(texts)
+    try:
+        stamps = merge_stamps(*(read_stamp(text) for text in texts))
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     _merge_key_version(texts[1:] if saved[0].blank else texts)
-    return texts
+    return texts, stamps
 
 
 def _merge_key_version(texts: list[str]) -> None:
@@ -473,37 +479,27 @@ def _working_marks(root: Path, ratchet_file: str) -> dict:
     """The marks on disk, keyed (path, key name) -> crap. Ages come from the
     file's git history, but which marks are OPEN is a question about now, and a
     seed prints "added 1" long before anybody commits the TSV."""
-    entries = _load_ratchet_or_die(root / ratchet_file, ratchet_file)
-    return {(e.path, e.long_name): e.crap for e in entries}
+    from ..ratchet_report import crap_by_key
+
+    return crap_by_key(_load_ratchet_or_die(root / ratchet_file, ratchet_file))
 
 
 def _report_basis(root: Path, ratchet_file: str) -> tuple[list, dict | None]:
-    """The history the report replays and the marks it reads as open.
+    """The revisions the report replays and the marks it reads as open.
 
     A marks file that is missing or holds only blank lines is not a repo that
     repaid every mark: the report reads the marks the newest commit that held
     any held as open (working None, the committed state), and the commit that
     deleted or emptied the file repays none (held_history). verify reads the
-    same marks only while its baseline run comes from before that commit."""
+    same marks only while its baseline run comes from before that commit.
+    Otherwise HEAD's revision is the committed state, so the report counts as
+    uncommitted only the marks the working tree and HEAD disagree on."""
     from ..marks_history import held_history, marks_history
     from ..ratchetfile import RatchetFile
 
     if RatchetFile.read(root / ratchet_file).blank:
         return held_history(root, ratchet_file), None
-    history = _with_head_revision(root, ratchet_file, marks_history(root, ratchet_file))
-    return history, _working_marks(root, ratchet_file)
-
-
-def _with_head_revision(root: Path, ratchet_file: str, history: list) -> list:
-    """The newest entry also carries the text HEAD's revision of the file holds,
-    read as a "held" event, so the report counts as uncommitted only the marks
-    the working tree and HEAD disagree on. The replay of the patches cannot
-    stand in for HEAD: `git log -p` prints no patch for a merge, and a mark a
-    conflicted merge repaid replays as open."""
-    from ..marks_history import head_revision
-
-    text = head_revision(root, ratchet_file) if history else None
-    return history if text is None else history[:-1] + [history[-1] + (text,)]
+    return marks_history(root, ratchet_file), _working_marks(root, ratchet_file)
 
 
 def _warn_marks_stand_in(root: Path, ratchet_file: str, report: dict, working) -> None:
@@ -571,12 +567,12 @@ def _warn_history(shallow: bool) -> None:
 
 def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
     from ..gitio import shallow_checkout
-    from ..ratchet_report import mark_events, report_from_events
+    from ..ratchet_report import held_event, mark_events, report_from_events
 
     shallow = shallow_checkout(root)
     _refuse_a_cut_history(cfg, enforce, shallow)
-    patches, working = _report_basis(root, cfg.ratchet_file)
-    report = report_from_events(mark_events(patches), working=working)
+    revisions, working = _report_basis(root, cfg.ratchet_file)
+    report = report_from_events(mark_events(revisions) + held_event(revisions), working=working)
     violations = _policy_findings(cfg, report, enforce)
     _warn_history(shallow)
     _warn_marks_stand_in(root, cfg.ratchet_file, report, working)
@@ -643,7 +639,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None) -> in
     else:
         entries, note = _pruned(root, store, marks, fresh)
         text = saved.kept(entries, keys=key_version, new_file_metric=metric_version())
-    _publish_checked(saved, text, entries, fresh, latest["tool_versions"].get("analysis_version"))
+    _publish_checked(saved, text, entries, fresh, latest["tool_versions"])
     metric_note = _metric_note(work, action, created=saved.text is None)
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(work.skipped, work.newer)}{metric_note}")
@@ -665,16 +661,17 @@ def _refuse_newer_marks(saved, work: _WorkRun, action: str) -> None:
     ways to get there: this install is older than the marks (upgrade it), or a
     failed verify pins seed and prune to a run an older release measured (read
     a newer run)."""
-    from ..ratchet import metric_version, newer_tools, run_stamp
+    from ..ratchet import metric_version, newer_tools, run_metric_version
 
     recorded = saved.metric_stamp
     newer = newer_tools(recorded, metric_version())
     if newer:
         raise ConfigError(_newer_than_install(saved, action, newer))
-    measured = run_stamp(work.run["tool_versions"])
+    measured = run_metric_version(work.run["tool_versions"])
     if newer_tools(recorded, measured):
         raise ConfigError(f"ratchet {action} refused: {saved.path.name} was recorded under "
-                          f"[{recorded}] and run {work.run['id']} under the older [{measured}]; "
+                          f"[{recorded.render()}] and run {work.run['id']} under the older "
+                          f"[{measured.render()}]; "
                           f"{_BACKWARDS[action]}; {_way_off(work.newer)}")
 
 
@@ -682,7 +679,8 @@ def _newer_than_install(saved, action: str, newer: list[str]) -> str:
     from ..ratchet import metric_version, upgrade_remedy
 
     return (f"ratchet {action} refused: {saved.path.name} was recorded under "
-            f"[{saved.metric_stamp}] and this crapkit measures [{metric_version()}] - "
+            f"[{saved.metric_stamp.render()}] and this crapkit measures "
+            f"[{metric_version().render()}] - "
             f"{upgrade_remedy(newer)}; {_BACKWARDS[action]}. A team going back to this release "
             f"on purpose restores the {saved.path.name} it last wrote from git history")
 
@@ -761,10 +759,11 @@ def _refuse_unkeyable_twins(name: str, work: _WorkRun, prior: list, entries: lis
 
 
 def _prune_first(name: str, work: _WorkRun, prior: list, fresh: list, twins: set) -> str:
+    from ..keys import mark_key
     from ..ratchet import unseen_marks
 
     run_id = work.run["id"]
-    unseen = [(entry.path, entry.long_name) for entry in unseen_marks(prior, fresh)]
+    unseen = [mark_key(entry) for entry in unseen_marks(prior, fresh)]
     flag = f" --baseline {run_id}" if work.named else ""
     return (f"{name}: {len(unseen)} mark(s) name functions run {run_id} does not hold, "
             f"first {_first_key(unseen)}, so the file keeps the start-only key format, which "
@@ -779,15 +778,15 @@ def _first_key(keys) -> str:
     return f"{path}: {key_name}"
 
 
-def _seed_metric(run: dict) -> str:
+def _seed_metric(run: dict) -> MetricStamp:
     """The stamp seed signs with: the metric its run was measured under.
 
     A run from before crapkit recorded one cannot vouch for any metric, and
     stamping the running one is how old numbers passed for new ones.
     """
-    from ..ratchet import run_stamp
+    from ..ratchet import run_metric_version
 
-    metric = run_stamp(run["tool_versions"])
+    metric = run_metric_version(run["tool_versions"])
     if not metric:
         raise ConfigError(f"ratchet seed: run {run['id']} recorded no metric (analysis version "
                           "and lizard), so the marks it measured cannot be stamped; run "
@@ -797,14 +796,14 @@ def _seed_metric(run: dict) -> str:
 
 def _metric_note(work: _WorkRun, action: str, *, created: bool) -> str:
     """Said only when the run seed or prune read is not this crapkit's metric."""
-    from ..ratchet import metric_version, run_stamp
+    from ..ratchet import metric_version, run_metric_version
 
     run = work.run
-    measured, running = run_stamp(run["tool_versions"]), metric_version()
+    measured, running = run_metric_version(run["tool_versions"]), metric_version()
     if measured == running:
         return ""
-    said = f"[{measured}]" if measured else "an unrecorded metric"
-    return (f"; run {run['id']} was measured under {said}, not this crapkit's [{running}]"
+    said = f"[{measured.render()}]" if measured else "an unrecorded metric"
+    return (f"; run {run['id']} was measured under {said}, not this crapkit's [{running.render()}]"
             f"{_stamp_consequence(work, action, created)}")
 
 
@@ -833,19 +832,22 @@ def _restamping_seed(work: _WorkRun) -> str:
 
 def _measured_here(run: dict | None) -> dict | None:
     """`run` when this crapkit measured it, so a seed from it signs the running metric."""
-    from ..ratchet import metric_version, run_stamp
+    from ..ratchet import metric_version, run_metric_version
 
-    if run is not None and run_stamp(run["tool_versions"]) == metric_version():
+    if run is not None and run_metric_version(run["tool_versions"]) == metric_version():
         return run
     return None
 
 
-def _publish_checked(saved, text: str, entries: list, fresh: list, analysis_version) -> None:
-    """Refuse to write `text`, which holds `entries`, when its marks cannot be keyed."""
-    from ..ratchet import check_reader_version, checked_key_version
+def _publish_checked(saved, text: str, entries: list, fresh: list, tool_versions: dict) -> None:
+    """Refuse to write `text`, which holds `entries`, when its marks cannot be
+    keyed: the stamp of the run that measured them and the text's own stamp
+    each prove the expression reader for every JavaScript-family mark's
+    language."""
+    from ..ratchet import check_reader_version, checked_key_version, run_stamp
 
     try:
-        check_reader_version(entries, analysis_version)
+        check_reader_version(entries, run_stamp(tool_versions))
         checked_key_version(text, fresh, entries=entries)
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc

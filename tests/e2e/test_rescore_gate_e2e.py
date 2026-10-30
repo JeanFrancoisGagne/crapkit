@@ -6,6 +6,8 @@ applies the hook's own ccn-only policy to the rescored functions and exits 6.
 The hermetic istanbul generator stands in for a coverage tool.
 """
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -13,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner
+from name_bytes import NOT_UTF8_NAMES
 
 PY = sys.executable
 GEN = "gen_cov.py"
@@ -305,3 +308,89 @@ def test_a_breach_prints_no_passing_line(breached: Path):
 
     assert res.returncode == 6
     assert "gate:" not in res.stdout, "the verdict on a breach is the stderr GATE block"
+
+
+# --- a name that is not UTF-8: the 0.8.1 answers, byte for byte -----------------
+#
+# A POSIX shell hands such a name over as its own bytes; a Windows argv cannot
+# carry it, and NTFS cannot hold the file.
+
+POSIX_NAME = pytest.mark.skipif(
+    sys.platform == "win32", reason="needs a POSIX argv and file system that carry any byte in a name")
+REFUSAL = ("src/caf\\xe9.py is named in bytes that are not UTF-8, and crapkit reads every path as "
+           "UTF-8: rename it (git mv) to a UTF-8 name")
+UNREAD_NAME_REASON = ("its name is not UTF-8, and crapkit reads every path as UTF-8: rename it "
+                      "(git mv) to a UTF-8 name")
+
+
+def measured_with_a_name(tmp_path: Path, name: bytes) -> Path:
+    """A scored run over a clean tree, then an untracked file under `name`."""
+    repo = new_repo(tmp_path, "named")
+    write(repo, "src/mod.py", clean_src("alpha"))
+    write(repo, "crapkit.toml", config("src/mod.py"))
+    commit_all(repo, "init")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    path = repo / os.fsdecode(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(tangled_src("beta"), encoding="utf-8")
+    return repo
+
+
+@POSIX_NAME
+@NOT_UTF8_NAMES
+def test_a_scoped_name_that_is_not_utf8_is_refused_at_the_argument(tmp_path: Path):
+    repo = measured_with_a_name(tmp_path, b"src/caf\xe9.py")
+
+    text = run_cli(repo, "rescore", "--gate", os.fsdecode(b"src/caf\xe9.py"))
+    as_json = run_cli(repo, "rescore", "--gate", "--json", os.fsdecode(b"src/caf\xe9.py"))
+
+    assert (text.returncode, text.stdout, text.stderr) == (3, "", f"crapkit: {REFUSAL}\n")
+    assert (as_json.returncode, as_json.stderr) == (3, f"crapkit: {REFUSAL}\n")
+    assert json.loads(as_json.stdout) == {"error": {
+        "exit": 3, "kind": "config", "message": REFUSAL,
+        "unread_files": [{"path": "src/caf\\xe9.py", "reason": UNREAD_NAME_REASON, "dirty": True}]},
+        "schema": 1}
+
+
+@POSIX_NAME
+@NOT_UTF8_NAMES
+def test_a_name_no_scope_takes_is_left_out_and_the_gate_judges_nothing(tmp_path: Path):
+    repo = measured_with_a_name(tmp_path, b"docs/caf\xe9.md")
+
+    res = run_cli(repo, "rescore", "--gate", "--json", os.fsdecode(b"docs/caf\xe9.md"))
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert res.stderr == ("crapkit: left out docs/caf\\xe9.md: its name is not UTF-8 and no scope "
+                          "takes it, so nothing in it is scored\n")
+    assert json.loads(res.stdout)["gate"] == {"ok": True, "judged": 0, "ceilings": {}, "breaches": [],
+                                              "untracked": [], "unread_files": []}
+
+
+# --- rescore --gate and verify name one breach set ------------------------------
+
+FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
+TANGLED = "\n\ndef tangled(n):\n" + "".join(
+    f"    if n > {i}:\n        n = n + 1\n" for i in range(1, 8)) + "    return n\n"
+
+
+def test_the_breaches_rescore_gate_names_are_the_ones_verify_fails_on(tmp_path: Path):
+    """On the mini repo, a ccn-8 function no test runs appended to a measured
+    file: its coverage is 0 before and after, so its stale CRAP is its CRAP,
+    and both gates name it alone."""
+    repo = tmp_path / "mini"
+    shutil.copytree(FIXTURES / "mini_repo", repo)
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "core.autocrlf", "false")
+    commit_all(repo, "init")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    mod = repo / "pylib" / "mod.py"
+    mod.write_text(mod.read_text(encoding="utf-8") + TANGLED, encoding="utf-8", newline="\n")
+
+    rescored = run_cli(repo, "rescore", "--gate", "--json", "pylib/mod.py")
+    verified = run_cli(repo, "verify", "--json")
+
+    assert (rescored.returncode, verified.returncode) == (6, 6), rescored.stderr + verified.stderr
+    gate = {(b["path"], b["key_name"]) for b in json.loads(rescored.stdout)["gate"]["breaches"]}
+    violations = {(v["path"], v["key_name"]) for v in json.loads(verified.stdout)["findings"]
+                  if v["kind"] == "gate_violation"}
+    assert gate == violations == {("pylib/mod.py", "tangled( n )")}

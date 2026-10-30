@@ -180,11 +180,12 @@ def test_the_harness_page_says_install_tests_where_it_said_cells():
 
 
 def test_the_changelog_moves_a_pinned_codex_marketplace_by_hand():
-    unreleased = " ".join(_doc("CHANGELOG.md").split("\n## ", 2)[1].split())
+    """Read by heading: a newer release's section can sit above 0.8.1's."""
+    notes = " ".join(_doc("CHANGELOG.md").split("\n## 0.8.1 ", 1)[1].split("\n## ", 1)[0].split())
 
-    assert "Codex refreshes git marketplaces each time it starts" not in unreleased
-    assert "a marketplace added at a tag stays at that tag" in unreleased
-    assert "`codex plugin marketplace remove crapkit`" in unreleased
+    assert "Codex refreshes git marketplaces each time it starts" not in notes
+    assert "a marketplace added at a tag stays at that tag" in notes
+    assert "`codex plugin marketplace remove crapkit`" in notes
 
 
 # --- docs/comparison.md -------------------------------------------------------------------

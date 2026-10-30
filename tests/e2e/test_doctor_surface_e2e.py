@@ -181,6 +181,46 @@ def test_doctor_json_separates_lane_rot_from_a_stale_artifact(measured_repo: Pat
     assert gone["commit"] == head, "the stamp outlives the artifact it describes"
 
 
+# --- the runner each lane runs ------------------------------------------------
+
+UNKNOWN_RUNNER = (f"note lane 'unit': runner unknown (python {GEN} {ARTIFACT} src/measured.py "
+                  "names none crapkit knows); runner-specific hints and refusals are off for it")
+
+
+def test_doctor_says_the_generator_lane_names_no_runner_and_what_that_turns_off(measured_repo: Path):
+    """A python script that is not pytest: unknown, a note, and doctor still passes."""
+    res = run_cli(measured_repo, "doctor")
+    (lane,) = json.loads(run_cli(measured_repo, "doctor", "--json").stdout)["lanes"]
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert UNKNOWN_RUNNER in res.stdout.splitlines(), res.stdout
+    assert lane["toolchain"] == {"name": None, "source": None}
+
+
+def test_doctor_reads_the_runner_from_the_command_init_wrote(py_repo: Path):
+    assert run_cli(py_repo, "init").returncode == 0
+
+    res = run_cli(py_repo, "doctor")
+    (lane,) = json.loads(run_cli(py_repo, "doctor", "--json").stdout)["lanes"]
+
+    assert "ok   lane 'py': runs pytest (named in its command)" in res.stdout.splitlines()
+    assert lane["toolchain"] == {"name": "pytest", "source": "command"}
+
+
+def test_a_package_json_doctor_cannot_read_warns_and_doctor_still_passes(measured_repo: Path):
+    """init refuses an unreadable root package.json; doctor names it and goes on."""
+    (measured_repo / "package.json").write_bytes("﻿{}".encode("utf-16-le"))
+    git(measured_repo, "add", "package.json")
+
+    res = run_cli(measured_repo, "doctor")
+
+    warns = [line for line in repo_warns(res.stdout) if "package.json" in line]
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert warns == ["WARN package.json: it is not UTF-8 (first bytes ff fe = UTF-16, the "
+                     "PowerShell 5.1 Out-File default); save it as UTF-8; doctor read the runner "
+                     "of each lane under it from the lane's command alone"], res.stdout
+
+
 # --- doctor --json: the refusal reuse reads --------------------------------
 
 FAILING = "command = 'python -c \"raise SystemExit(1)\"'"

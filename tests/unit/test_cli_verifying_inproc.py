@@ -38,6 +38,16 @@ def run(argv: list[str], repo, capsys) -> tuple[int, str, str]:
     return code, out.out, out.err
 
 
+def found(payload: dict, kind: str) -> list[dict]:
+    """verify --json's findings items of one kind."""
+    return [item for item in payload["findings"] if item["kind"] == kind]
+
+
+def new_failure_ids(payload: dict) -> list[str]:
+    """The test ids of verify --json's new_failure items."""
+    return [item["test"] for item in found(payload, "new_failure")]
+
+
 def store_of(repo) -> SnapshotStore:
     return SnapshotStore(repo / ".crapkit" / "crap.sqlite")
 
@@ -251,7 +261,7 @@ def test_a_failure_the_baseline_had_is_forgiven_under_its_portable_record(failin
     payload = json.loads(out)
 
     assert code == 0, payload
-    assert payload["new_failures"] == []
+    assert new_failure_ids(payload) == []
     assert payload["forgiven_failures"] == ["src/app.test.ts::renders"]
 
 
@@ -382,21 +392,21 @@ def test_the_json_verdict_carries_the_receipt_that_dates_it(baselined, capsys):
     assert payload["tool_versions"]["crapkit"]
     assert len(payload["ratchet_sha256"]) == 64
     assert payload["committed_findings"] == 0 and payload["dirty_findings"] == 0
-    assert payload["diff_uncovered_count"] == 0
+    assert payload["counts"]["diff_uncovered_count"] == 0
 
 
 def test_the_json_verdict_carries_the_diff_coverage_ceiling(baselined, capsys):
     """The count alone cannot say whether exit 9 is near: the ceiling it is
     judged against travels with it, null when the repo set none (warn only)."""
     _, out, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
-    assert json.loads(out)["diff_uncovered_max"] is None
+    assert json.loads(out)["counts"]["diff_uncovered_max"] is None
 
     text = (baselined / "crapkit.toml").read_text(encoding="utf-8")
     (baselined / "crapkit.toml").write_text(
         text.replace("target = 6", "target = 6\ndiff_uncovered_max = 1"), encoding="utf-8")
 
     _, out, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
-    assert json.loads(out)["diff_uncovered_max"] == 1
+    assert json.loads(out)["counts"]["diff_uncovered_max"] == 1
 
 
 def test_a_function_this_tree_pushed_over_the_ceiling_fails_the_verdict(baselined, capsys):
@@ -572,15 +582,15 @@ def test_a_granted_override_names_the_mark_it_wrote_and_asks_for_git_add(baselin
 
 
 def test_a_granted_override_keeps_ratchet_changes_null_under_json(baselined, capsys):
-    """`ratchet_changes` counts what a tighten did; a grant is listed under
-    `overridden` and is not counted twice."""
+    """`ratchet_changes` counts what a tighten did; a grant is listed as an
+    `overridden` findings item and is not counted twice."""
     code, out, _ = run(["verify", "--reuse-artifacts", "--override", "shipping the spike",
                         "--json"], _knotty(baselined), capsys)
 
     payload = json.loads(out)
     assert code == 0
     assert payload["ratchet_changes"] is None
-    assert [v["long_name"] for v in payload["overridden"]] == ["knotty ( n )"]
+    assert [v["long_name"] for v in found(payload, "overridden")] == ["knotty ( n )"]
 
 
 def test_an_override_never_grants_a_ratchet_regression(baselined, capsys):
@@ -924,7 +934,7 @@ def test_a_clean_tree_does_not_walk_the_artifacts_for_diff_coverage(
     code, out, err = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
 
     assert (code, err) == (0, "")
-    assert json.loads(out)["diff_uncovered_count"] == 0
+    assert json.loads(out)["counts"]["diff_uncovered_count"] == 0
 
 
 def test_an_empty_diff_cannot_breach_the_diff_coverage_ceiling(repo, capsys):
@@ -1045,7 +1055,7 @@ def test_a_rerun_that_leaves_no_readable_result_keeps_every_failure(baselined, c
 
     payload = json.loads(out)
     assert code == 8, (out, err)
-    assert payload["new_failures"] == ["src/app.test.ts::renders"]
+    assert new_failure_ids(payload) == ["src/app.test.ts::renders"]
     assert payload["retried_passes"] == []
 
 
@@ -1183,9 +1193,9 @@ def test_a_fix_the_developer_forgot_to_stage_is_named_as_such(repo, capsys):
 
 
 def test_a_staged_function_the_repo_already_signed_for_is_not_gated(repo, capsys):
-    """Existence, not the numeric rule: a blob carries no coverage, so the only
-    question the hook can answer is whether the repo already signed for this
-    function. `verify` keeps the numeric check."""
+    """A blob carries no coverage, so the hook reads knotty's CRAP as the range
+    from ccn 8 to 72, its CRAP untested. A mark of 72 holds the whole range,
+    so the repo already signed for it. `verify` keeps the numeric check."""
     add_knotty(repo)
     stage(repo, "src/app.ts")
     write_marks(repo, ("src/app.ts", "knotty ( n )", 72.0))
@@ -1194,6 +1204,33 @@ def test_a_staged_function_the_repo_already_signed_for_is_not_gated(repo, capsys
 
     assert (code, out) == (0, "")
     assert "1 staged function(s) carry a ratchet mark and were not gated" in err, err
+
+
+def test_a_staged_function_whose_ccn_passed_its_mark_refuses_the_commit(repo, capsys):
+    """ccn 8 against a mark of 7.5: CRAP is never under ccn, so the mark rose
+    at any coverage and the hook refuses, naming the mark it passed."""
+    add_knotty(repo)
+    stage(repo, "src/app.ts")
+    write_marks(repo, ("src/app.ts", "knotty ( n )", 7.5))
+
+    code, out, err = run(["hook-precommit"], repo, capsys)
+
+    assert (code, err) == (6, "")
+    assert "crapkit gate: 1 staged function(s) rose past their ratchet mark:" in out, out
+    assert "ccn   8  src/app.ts:" in out and "knotty ( n )  mark 7.5000" in out, out
+    assert "bring each one's ccn back to its mark or under it" in out, out
+
+
+def test_a_marked_rise_whose_fix_was_never_staged_is_named_as_such(repo, capsys):
+    add_knotty(repo)
+    stage(repo, "src/app.ts")
+    add_knotty(repo, "src/app.ts")
+    write_marks(repo, ("src/app.ts", "knotty ( n )", 7.5))
+
+    code, out, _ = run(["hook-precommit"], repo, capsys)
+
+    assert code == 6
+    assert "note: src/app.ts differs from the working tree" in out, out
 
 
 def test_staged_source_no_scope_claims_is_named_and_not_gated(repo, capsys):
@@ -1335,7 +1372,7 @@ def test_a_refused_override_under_json_keeps_stdout_one_object(baselined, capsys
                          _knotty(baselined), capsys)
 
     assert code == 6
-    assert json.loads(out)["overridden"] == []
+    assert found(json.loads(out), "overridden") == []
     assert REFUSED_REGRESSION in err, err
 
 

@@ -476,35 +476,29 @@ def _load_ratchet_or_die(ratchet_path: Path, name: str) -> list:
     return _ratchet_or_die(_marks_file_text(ratchet_path), name)
 
 
-def _dirty_tag(dirty: bool) -> str:
-    return "  [dirty]" if dirty else ""
-
-
 def _gate_line(v, unmeasured: bool = False) -> str:
-    """One gate violation, however it was decided; verify and `rescore --gate`
-    report the same finding, so they must read the same. `unmeasured` prints
-    `cov -` for a cov no measurement stands behind: the GATE line said 0% where
-    the rescore table under it said `-` and `coverage not measured`."""
-    cov = "-" if unmeasured else f"{v.cov:.0%}"
-    return (f"  GATE  crap {v.crap:8.1f}  ccn {v.ccn:>3} cov {cov}  "
-            f"{v.path}:{v.start}  {v.long_name}  -> {v.remedy}{_dirty_tag(v.dirty)}")
+    """One gate violation as verify's gate_violation row prints it; `rescore
+    --gate` passes `unmeasured` to print `cov -` for a cov no measurement
+    stands behind."""
+    from ..verify import gate_line
 
-
-def _unread_line(path: str, reason: str, dirty: bool = False) -> str:
-    """One changed file a gate refused because no reader could read it; every
-    gate prints it the same way."""
-    return f"  UNREAD  {path}: {reason}{_dirty_tag(dirty)}"
+    return gate_line(v, v.dirty, unmeasured)
 
 
 def _print_unread(unread: dict[str, str], what: str, file=None) -> None:
     """The changed files a gate refuses, `what` saying which ("staged",
-    "changed"), and what to do; nothing when every file was read."""
+    "changed"), and what to do; nothing when every file was read. Each file's
+    line is verify's unread_file row."""
+    from ..gate import Unread
+    from ..verify import lines_of
+
     if not unread:
         return
     print(f"crapkit gate: {len(unread)} {what} file(s) could not be read, so no function in "
           "them was judged:", file=file)
-    for path, reason in sorted(unread.items()):
-        print(_unread_line(path, reason), file=file)
+    files = [Unread(path, reason) for path, reason in sorted(unread.items())]
+    for line in lines_of("unread_file", files):
+        print(line, file=file)
     print(UNREAD_ADVICE, file=file)
 
 

@@ -398,15 +398,24 @@ def test_the_gate_prints_no_verdict_over_a_row_off_the_remedy_table(repo: Path, 
 
 def test_the_commit_hook_prints_no_verdict_over_a_violation_under_its_ceiling(repo: Path,
                                                                              monkeypatch):
-    from crapkit import hook
+    from crapkit import gate, hook
 
     write(repo, "src/calc.py", CALC.replace("n = n + 1", "n = n + 5", 1))
     git(repo, "add", "src/calc.py")
-    monkeypatch.setattr(hook, "_file_violations", lambda rel, records, ranges, ceiling: [
-        hook.Violation(rel, "alpha( n )", 1, 2, "alpha( n )")])
+    # Every staged function judged over the ceiling while its ccn stays 2.
+    monkeypatch.setattr(hook, "_function", lambda record, scope, flag: gate.Function(
+        record.long_name, record.start, record.end, gate.CrapBound(99.0, 99.0), scope, record.occurrence, record))
     done = run_cli(repo, "hook-precommit")
     stopped(done, "a gate violation has ccn over its file's ceiling")
     assert "crapkit gate:" not in done.stdout + done.stderr
+
+
+def _all_over(change):
+    """A ChangedFile whose every function the gate reads at CRAP 99."""
+    from crapkit import gate
+
+    return change._replace(content=tuple(function._replace(bound=gate.CrapBound(99.0, 99.0))
+                                         for function in change.content))
 
 
 def test_claude_hook_turns_the_stop_into_its_documented_silence(repo: Path, monkeypatch):
@@ -420,8 +429,11 @@ def test_claude_hook_turns_the_stop_into_its_documented_silence(repo: Path, monk
                           "tool_input": {"file_path": str(repo / "src" / "calc.py")}})
     advised = run_cli(repo, "claude-hook", "--protocol", "1", stdin=payload)
     assert advised.returncode == 2 and "crapkit advisory:" in advised.stderr, advised.stderr
-    monkeypatch.setattr(claude_hook, "_breaches", lambda records, ranges, ceiling: records)
-    monkeypatch.setattr(claude_hook, "_marks_for", lambda *args, **kwargs: set())
+    # The gate judges the whole file, every function over the ceiling at CRAP
+    # 99 while each ccn stays as read: calc.py's ccn-2 functions breach.
+    handed = claude_hook._change
+    monkeypatch.setattr(claude_hook, "_change", lambda cfg, scope, rel, records, ranges: _all_over(
+        handed(cfg, scope, rel, records, None)))
     silent = run_cli(repo, "claude-hook", "--protocol", "1", stdin=payload)
     assert (silent.returncode, silent.stdout, silent.stderr) == (0, "", "")
 
@@ -464,10 +476,10 @@ def test_nonfinite_crap_stops(repo: Path, monkeypatch):
     """R27 (c24e6a4): a NaN covered-branch count reached the score and the
     store. The readers refuse such a count now; past them, a coverage that is
     not a number from 0 to 1 still stops the run before its rows are stored."""
-    from crapkit import coverage_istanbul
+    from crapkit import score
 
     before = runs(repo), marks(repo)
-    monkeypatch.setattr(coverage_istanbul.FnCoverage, "coverage",
+    monkeypatch.setattr(score.FnCoverage, "coverage",
                         property(lambda fn: float("nan")))
     done = run_cli(repo, "coverage", "--json")
     stopped(done, "coverage must be a number from 0 to 1")

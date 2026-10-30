@@ -18,11 +18,12 @@ import pytest
 from crapkit.cli.parser import build_parser
 from crapkit.cli import main
 from crapkit.cli import claude_hook
-from crapkit.cli.claude_hook import (_advise, _advisory_lines, _breaches, _command_event,
+from crapkit.cli.claude_hook import (_advise, _advisory_lines, _command_event,
                                      _edited_files, _edited_path, _fresh, _fresh_python,
                                      _judgeable, _marks_for, _measured, _repo_root,
                                      _sequencing, _status_records, cmd_claude_hook)
 from crapkit.merge import FunctionRecord
+import claude_hook_repo as repo_kit
 from name_bytes import NOT_UTF8_NAMES
 
 EVENT = {"hook_event_name": "PostToolUse", "tool_name": "Edit",
@@ -384,30 +385,91 @@ def test_a_settled_checkout_carries_no_marker(tmp_path):
     assert _sequencing(tmp_path) is False
 
 
-# --- rung 8: the verdict -----------------------------------------------------
+# --- rung 8: the gate's case rows for claude-hook ------------------------------
+#
+# claude-hook hands the edited file to the gate module as one ChangedFile: the
+# spans the edit changed, `WHOLE` for an untracked file, and each function
+# bounded as the commit gate bounds a staged one. These rows pin what the gate
+# then judges, through the advisory's own lines.
 
-def test_only_a_function_the_edit_touched_and_over_the_ceiling_breaches():
+GATE_TOML = ('[crapkit]\ntarget = 6\n\n'
+             '[[scope]]\nname = "calc"\npaths = ["calc"]\nlanguages = ["python"]\n')
+IN_SCOPE = {"calc": ["calc/grade.py"]}
+
+
+def _cfg(root: Path):
+    from crapkit.config import load_config_text
+
+    return load_config_text(GATE_TOML, root=root)
+
+
+def _answered(root: Path, records, ranges) -> list[str]:
+    return claude_hook._answer(root, _cfg(root), IN_SCOPE, "calc/grade.py", records, ranges)
+
+
+def _named(lines: list[str]) -> list[str]:
+    return [line.rsplit("  ", 1)[-1] for line in lines if line.startswith("  ccn ")]
+
+
+def test_an_untracked_file_is_handed_to_the_gate_whole(tmp_path):
+    """git diff cannot see a file it never recorded, so `None` ranges become
+    the gate's `WHOLE` span, which keeps an empty diff from passing every
+    function in it."""
+    from crapkit.gate import WHOLE
+
+    records = [record("sprawl( n )", 8), record("wide( n )", 7, start=20, end=30)]
+    change = claude_hook._change(_cfg(tmp_path), "calc", "calc/grade.py", records, None)
+
+    assert change.spans == WHOLE
+    assert [f.long_name for f in change.content] == ["sprawl( n )", "wide( n )"]
+    assert _named(_answered(tmp_path, records, None)) == ["sprawl( n )", "wide( n )"]
+
+
+def test_each_function_carries_the_commit_gates_bound(tmp_path):
+    """No coverage stands behind a working-tree file: CRAP at least ccn, at
+    most what an untested function scores, the bound hook-precommit gives a
+    staged one."""
+    change = claude_hook._change(_cfg(tmp_path), "calc", "calc/grade.py", [record("sprawl( n )", 8)],
+                                 [(1, 3)])
+
+    assert [(f.bound.low, f.bound.high, f.scope) for f in change.content] == [(8, 72.0, "calc")]
+
+
+def test_only_a_function_the_edit_touched_and_over_the_ceiling_breaches(tmp_path):
     records = [record("sprawl( n )", 8), record("calm( n )", 3, start=20, end=24)]
 
-    assert [r.long_name for r in _breaches(records, [(1, 3)], 6)] == ["sprawl( n )"]
+    assert _named(_answered(tmp_path, records, [(1, 3)])) == ["sprawl( n )"]
 
 
-def test_an_over_ceiling_function_the_edit_missed_is_not_a_breach():
-    assert _breaches([record("sprawl( n )", 8)], [(40, 41)], 6) == []
+def test_an_over_ceiling_function_the_edit_missed_is_not_a_breach(tmp_path):
+    assert _answered(tmp_path, [record("sprawl( n )", 8)], [(40, 41)]) == []
 
 
-def test_an_untracked_file_is_judged_in_full():
-    """git diff cannot see a file it never recorded, so `None` ranges are what
-    keeps an empty diff from passing every function in it."""
-    records = [record("sprawl( n )", 8), record("wide( n )", 7, start=20, end=30)]
-
-    assert [r.long_name for r in _breaches(records, None, 6)] == ["sprawl( n )", "wide( n )"]
-
-
-def test_breaches_come_out_worst_first():
+def test_breaches_come_out_worst_first(tmp_path):
     records = [record("mild( n )", 7), record("sprawl( n )", 9, start=20, end=30)]
 
-    assert [r.ccn for r in _breaches(records, None, 6)] == [9, 7]
+    lines = _answered(tmp_path, records, None)
+
+    assert [line.split()[1] for line in lines if line.startswith("  ccn ")] == ["9", "7"]
+    assert lines[0].startswith("crapkit advisory: 2 function(s) over ceiling 6 in calc/grade.py")
+
+
+def test_a_claimed_name_is_refused_before_any_function_is_judged(tmp_path, monkeypatch):
+    """A name a scope takes that is not UTF-8 goes to the gate as an
+    UnreadableName: the advisory names it and the rename, and the file is
+    never read, so no function in it is judged."""
+    (tmp_path / "crapkit.toml").write_text(GATE_TOML, encoding="utf-8")
+    monkeypatch.setattr(claude_hook, "_read", lambda root, rel: pytest.fail("the file was read"))
+
+    lines = claude_hook._judge(tmp_path, "calc/caf\udce9.py", claude_hook._Memory(None))
+
+    assert lines == [UNREAD, RENAME]
+
+
+def test_a_name_no_scope_takes_stays_silent_whatever_its_bytes(tmp_path):
+    (tmp_path / "crapkit.toml").write_text(GATE_TOML, encoding="utf-8")
+
+    assert claude_hook._judge(tmp_path, "docs/caf\udce9.md", claude_hook._Memory(None)) == []
 
 
 # --- rung 8: the ratchet exemption ------------------------------------------
@@ -422,18 +484,132 @@ def test_a_mark_is_found_by_path_and_function_name(tmp_path):
     marks = tmp_path / "crapkit-ratchet.tsv"
     marks.write_text(RATCHET, encoding="utf-8")
 
-    assert _marks_for(marks, "calc/grade.py") == {"sprawl( n )"}
+    assert _marks_for(marks, "calc/grade.py").mark(("calc/grade.py", "sprawl( n )")) == 72.0
 
 
 def test_another_files_mark_never_covers_this_one(tmp_path):
     marks = tmp_path / "crapkit-ratchet.tsv"
     marks.write_text(RATCHET, encoding="utf-8")
 
-    assert "wide( n )" not in _marks_for(marks, "calc/grade.py")
+    assert list(_marks_for(marks, "calc/grade.py").keys()) == [("calc/grade.py", "sprawl( n )")]
 
 
 def test_a_repo_with_no_marks_file_carries_no_marks(tmp_path):
-    assert _marks_for(tmp_path / "crapkit-ratchet.tsv", "calc/grade.py") == set()
+    assert list(_marks_for(tmp_path / "crapkit-ratchet.tsv", "calc/grade.py").keys()) == []
+
+
+PAST_MARK = ["crapkit advisory: 1 marked function(s) rose past their ratchet mark in calc/grade.py "
+             "(the edit landed; nothing was blocked)",
+             "  ccn 8  calc/grade.py:1  sprawl( n )  mark 3.0000",
+             "the commit gate refuses a ccn past its mark, and a mark only falls: bring the ccn back to its "
+             "mark or under it"]
+NEW_RISE = ["crapkit advisory: 1 marked function(s) rose in ccn and may pass their ratchet mark in "
+            "calc/grade.py (the edit landed; nothing was blocked)",
+            "  ccn new -> 8  calc/grade.py:1  sprawl( n )  mark 40.0000",
+            "`crapkit verify` judges the mark with coverage: add tests that run the new branches, or decompose"]
+
+
+@pytest.mark.parametrize(("crap", "lines"), [("72.0000", []), ("40.0000", NEW_RISE), ("3.0000", PAST_MARK)],
+                         ids=["pardoned", "straddling-new", "past-the-mark"])
+def test_a_marked_breach_is_held_to_its_mark_by_the_range_rule(tmp_path, crap, lines):
+    """A working-tree file has no coverage, so its CRAP is a range, ccn 8 up to
+    72. A mark at the high end pardons it; one inside the range, on a file HEAD
+    does not hold, is a rise from nothing and warns; one under the ccn is past
+    the mark at any coverage and draws the marked block."""
+    (tmp_path / "crapkit-ratchet.tsv").write_text(
+        f"# crapkit-analysis=5 lizard=1.24.0\npath\tlong_name\tcrap\ncalc/grade.py\tsprawl( n )\t{crap}\n",
+        encoding="utf-8")
+
+    assert _answered(tmp_path, [record("sprawl( n )", 8)], None) == lines
+
+
+# --- the adapter mapping: one row per finding kind ----------------------------
+
+def _breach(ccn: int, mark: float | None = None, base_ccn: int | None = None, name: str = "sprawl( n )",
+            start: int = 1):
+    """A gate breach on calc/grade.py, its function bounded as the commit gate bounds a blob."""
+    from crapkit.gate import Breach, CrapBound, Function
+
+    rec = record(name, ccn, start=start, end=start + 15)
+    return Breach("calc/grade.py", name, Function(name, start, start + 15, CrapBound(ccn, ccn * ccn + ccn),
+                                                  "calc", 0, rec), 6, mark, base_ccn)
+
+
+UNMARKED = ["crapkit advisory: 1 function(s) over ceiling 6 in calc/grade.py "
+            "(the edit landed; nothing was blocked)",
+            "  ccn 8  calc/grade.py:1  sprawl( n )",
+            "the commit gate enforces this; decompose there or mark the debt"]
+MAPPING = {
+    "over_ceiling": (_breach(8), UNMARKED),
+    "marked_rise": (_breach(8, mark=3.0), PAST_MARK),
+    "unproven_rise": (_breach(8, mark=40.0), NEW_RISE),
+    "pardoned": (_breach(8, mark=72.0), []),
+    "unproven": (_breach(8, mark=40.0, base_ccn=8), []),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(MAPPING))
+def test_each_finding_kind_maps_to_its_own_block_or_to_silence(kind):
+    """claude-hook maps every kind the gate finds: the unmarked block for an
+    over-ceiling function, the marked block for a ccn past its mark, the warn
+    block for a rise across it, and silence for a pardon or an unproven
+    function whose ccn did not rise. No kind is dropped beside the pardon."""
+    from crapkit.gate import GateResult
+
+    breach, lines = MAPPING[kind]
+
+    assert claude_hook._worded("calc/grade.py", GateResult(**{kind: (breach,)}), 6) == lines
+
+
+def test_the_unmarked_block_comes_first_then_the_marked_then_the_warn():
+    """One file can hold all three. The unmarked block keeps its 0.8.1 lines,
+    and the marked blocks follow, each with its own closing line."""
+    from crapkit.gate import GateResult
+
+    result = GateResult(over_ceiling=(_breach(8),), marked_rise=(_breach(8, mark=3.0),),
+                        unproven_rise=(_breach(8, mark=40.0),))
+
+    assert claude_hook._worded("calc/grade.py", result, 6) == [*UNMARKED, *PAST_MARK, *NEW_RISE]
+
+
+def test_a_marked_block_lists_its_functions_worst_ccn_first_under_their_handles():
+    """The handle is the key the mark sits under, `#2` for a second twin, as
+    the commit gate prints it."""
+    from crapkit.gate import GateResult
+
+    rises = (_breach(7, mark=6.5, start=1), _breach(9, mark=6.5, name="sprawl( n )#2", start=20))
+
+    rows = claude_hook._worded("calc/grade.py", GateResult(marked_rise=rises), 6)[1:3]
+
+    assert rows == ["  ccn 9  calc/grade.py:20  sprawl( n )#2  mark 6.5000",
+                    "  ccn 7  calc/grade.py:1  sprawl( n )  mark 6.5000"]
+
+
+def test_a_warn_row_names_the_ccn_head_held():
+    from crapkit.gate import GateResult
+
+    result = GateResult(unproven_rise=(_breach(9, mark=40.0, base_ccn=7),))
+
+    assert claude_hook._worded("calc/grade.py", result, 6)[1] == "  ccn 7 -> 9  calc/grade.py:1  sprawl( n )  mark 40.0000"
+
+
+# --- one bound builder for both hooks ------------------------------------------
+
+@pytest.mark.parametrize("optional", [False, True], ids=["measured", "cc-only"])
+def test_the_advisory_and_the_commit_gate_build_one_bound(tmp_path, optional):
+    """claude-hook bounds a working-tree function with the function
+    hook-precommit bounds a staged one, so the same scope and ccn give the same
+    CrapBound: ccn to ccn^2 + ccn measured, ccn to ccn cc-only."""
+    from crapkit.config import load_config_text
+    from crapkit.hook import _changed_file
+
+    cfg = load_config_text(GATE_TOML + ("coverage_optional = true\n" if optional else ""), root=tmp_path)
+    rows = [record("sprawl( n )", 8)]
+
+    advised = claude_hook._change(cfg, "calc", "calc/grade.py", rows, [(1, 3)]).content
+    staged = _changed_file("calc/grade.py", rows, [(1, 3)], "calc", cfg, {}).content
+
+    assert [f.bound for f in advised] == [f.bound for f in staged] == [(8, 8 if optional else 72)]
 
 
 # --- rung 9: the advisory ----------------------------------------------------
@@ -659,10 +835,10 @@ def test_an_unread_file_is_advised_only_when_the_edit_changed_it(ranges, advised
     one; a tracked file whose diff against HEAD is empty holds no change."""
     from crapkit.merge import UnanalyzableFile
 
-    unread = claude_hook._unjudged("src/a.ts", UnanalyzableFile("why"), ranges)
+    unread = _answered(Path("."), UnanalyzableFile("why"), ranges)
 
-    assert unread == (claude_hook._unread_advisory("src/a.ts", "why") if advised else [])
-    assert claude_hook._unjudged("src/a.ts", [], ranges) == []
+    assert unread == (claude_hook._unread_advisory("calc/grade.py", "why") if advised else [])
+    assert _answered(Path("."), [], ranges) == []
 # --- every shape of the PostToolUse payload, through the whole subcommand -----
 #
 # A field null, absent, of another type or not UTF-8 either still names the
@@ -856,3 +1032,133 @@ def test_a_clean_edit_prints_nothing_on_either_channel(payload, tmp_path, capsys
     edited.write_text("def calm(n):\n    return n\n", encoding="utf-8")
 
     assert _run(_aimed(payload, edited, tmp_path), capsys, monkeypatch) == (0, "", "")
+
+
+# --- marked functions on real trees ---------------------------------------------
+#
+# A straddling marked function's ccn is compared with its ccn at HEAD, read by
+# hook.ccn_at, the fetch hook-precommit reads at its staged diff's basis.
+
+def _fn(name: str, ccn: int) -> str:
+    """`def NAME(n)` at `ccn`: ccn - 1 ifs, 2 * ccn lines."""
+    ifs = "".join(f"    if n == {i}:\n        n += {i}\n" for i in range(1, ccn))
+    return f"def {name}(n):\n{ifs}    return n\n"
+
+
+def _marks(*rows: tuple[str, float]) -> str:
+    return "path\tlong_name\tcrap\n" + "".join(f"calc/grade.py\t{key}\t{mark:.4f}\n" for key, mark in rows)
+
+
+def _marked_repo(tmp_path: Path, head: str | None, edited: str, marks: str, *, born: bool = True) -> Path:
+    """calc/grade.py holds `head` at HEAD (no file when None) and `edited` on
+    disk, beside `marks`; `born` False leaves the repo with no commit."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    repo_kit.git(root, "init", "-q", "-b", "main")
+    repo_kit.write(root, "crapkit.toml", TOML)
+    repo_kit.write(root, "crapkit-ratchet.tsv", marks)
+    if head is not None:
+        repo_kit.write(root, "calc/grade.py", head)
+    if born:
+        repo_kit.git(root, "add", "-A")
+        repo_kit.git(root, "commit", "-q", "-m", "base")
+    repo_kit.write(root, "calc/grade.py", edited)
+    return root
+
+
+def _advised(root: Path, monkeypatch, capsys) -> tuple[int, list[str]]:
+    return repo_kit.hook(monkeypatch, capsys, repo_kit.edit_event(root / "calc" / "grade.py", session=None))
+
+
+def _warn(rows: list[str], count: int = 1) -> list[str]:
+    return [f"crapkit advisory: {count} marked function(s) rose in ccn and may pass their ratchet mark in "
+            "calc/grade.py (the edit landed; nothing was blocked)", *rows, NEW_RISE[-1]]
+
+
+def test_a_mark_the_whole_range_sits_under_never_reads_head(tmp_path, monkeypatch, capsys):
+    """Golden 14's tree: ccn 8 under a mark of 72.0 is pardoned before any
+    base is asked for, so the HEAD blob is never read."""
+    import crapkit.gitio
+    import crapkit.hook
+
+    asked = []
+    monkeypatch.setattr(crapkit.hook, "ccn_at", lambda *args: asked.append(args) or {})
+    monkeypatch.setattr(crapkit.gitio, "blobs_at", lambda *args: asked.append(args) or {})
+    root = _marked_repo(tmp_path, repo_kit.CLEAN, repo_kit.BREACH, _marks(("sprawl( n )", 72.0)))
+
+    assert (*_advised(root, monkeypatch, capsys), asked) == (0, [], [])
+
+
+def test_an_unmarked_breach_prints_its_0_8_1_block_before_the_marked_block(tmp_path, monkeypatch, capsys):
+    root = _marked_repo(tmp_path, repo_kit.CLEAN, _fn("wide", 8) + "\n\n" + _fn("sprawl", 8),
+                        _marks(("sprawl( n )", 7.0)))
+
+    code, err = _advised(root, monkeypatch, capsys)
+
+    assert code == 2
+    assert err == [*_advisory_lines("calc/grade.py", [record("wide( n )", 8)], 6),
+                   PAST_MARK[0], "  ccn 8  calc/grade.py:19  sprawl( n )  mark 7.0000", PAST_MARK[-1]]
+
+
+def test_an_untracked_marked_file_has_no_head_ccn_so_a_straddling_function_warns(
+        tmp_path, monkeypatch, capsys):
+    root = _marked_repo(tmp_path, None, _fn("sprawl", 8), _marks(("sprawl( n )", 10.0)))
+
+    assert _advised(root, monkeypatch, capsys) == (
+        2, _warn(["  ccn new -> 8  calc/grade.py:1  sprawl( n )  mark 10.0000"]))
+
+
+def test_before_the_first_commit_every_straddling_function_warns(tmp_path, monkeypatch, capsys):
+    """No HEAD to read: every function is new, and the unborn HEAD reaches the
+    gate as an answer, never as a GitError the catch-all would turn to silence."""
+    root = _marked_repo(tmp_path, None, _fn("sprawl", 8) + "\n" + _fn("wide", 9),
+                        _marks(("sprawl( n )", 10.0), ("wide( n )", 10.0)), born=False)
+
+    assert _advised(root, monkeypatch, capsys) == (2, _warn(
+        ["  ccn new -> 9  calc/grade.py:18  wide( n )  mark 10.0000",
+         "  ccn new -> 8  calc/grade.py:1  sprawl( n )  mark 10.0000"], count=2))
+
+
+def test_a_twin_is_judged_by_its_own_mark_against_its_own_head_counterpart(tmp_path, monkeypatch, capsys):
+    """The first sprawl fell from 9 to 8, the second rose from 7 to 8, both
+    across a mark of 10.0. Only the second warns, under its `#2` handle. The
+    reader's twin note comes first, as it does on any edit to a twin file."""
+    root = _marked_repo(tmp_path, _fn("sprawl", 9) + "\n" + _fn("sprawl", 7),
+                        _fn("sprawl", 8) + "\n" + _fn("sprawl", 8),
+                        _marks(("sprawl( n )", 10.0), ("sprawl( n )#2", 10.0)))
+
+    code, err = _advised(root, monkeypatch, capsys)
+
+    assert err[0].startswith("crapkit: calc/grade.py defines sprawl( n ) more than once")
+    assert (code, err[1:]) == (2, _warn(["  ccn 7 -> 8  calc/grade.py:18  sprawl( n )#2  mark 10.0000"]))
+
+
+def test_a_utf16_source_is_judged_on_its_text_lines_against_its_head_ccn(tmp_path, monkeypatch, capsys):
+    """上 is 0A 4E in UTF-16LE, a line git counts and the text does not. The
+    edit on the function's last line lands inside it, and HEAD's ccn comes
+    from the UTF-16 blob."""
+    import codecs
+
+    def utf16(source: str) -> bytes:
+        return codecs.BOM_UTF16_LE + f"# 上\n{source}print(sprawl(1))\n".encode("utf-16-le")
+
+    head = _fn("sprawl", 7)
+    root = _marked_repo(tmp_path, None, "", _marks(("sprawl( n )", 10.0)))
+    grade = root / "calc" / "grade.py"
+    grade.write_bytes(utf16(head))
+    repo_kit.git(root, "add", "-A")
+    repo_kit.git(root, "commit", "-q", "-m", "utf-16")
+    grade.write_bytes(utf16(head.replace("    return n\n", "    return n if n else 0\n")))
+
+    assert _advised(root, monkeypatch, capsys) == (
+        2, _warn(["  ccn 7 -> 8  calc/grade.py:2  sprawl( n )  mark 10.0000"]))
+
+
+def test_an_unread_file_keeps_its_advisory_beside_a_marks_file(tmp_path, monkeypatch, capsys):
+    """The unread block decides first, as in 0.8.1: a marks file changes nothing about it."""
+    root = _marked_repo(tmp_path, repo_kit.CLEAN, "def sprawl(n:\n    return n\n", _marks(("sprawl( n )", 7.0)))
+
+    code, err = _advised(root, monkeypatch, capsys)
+
+    assert (code, err[0], err[-1]) == (2, "crapkit advisory: calc/grade.py could not be read, so no function in "
+                                          "it was judged (the edit landed; nothing was blocked)", UNREAD_TAIL)

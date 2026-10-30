@@ -1,5 +1,76 @@
 # Changelog
 
+## 0.9.0 — unreleased
+
+<!-- 0.9.0:gate-group -->
+- `verify --json` gains `findings`, one item per finding with `kind`, `fails`, `exit_code`, `overridable`, `dirty` and `rule`, and `counts` (`diff_uncovered_count`, `diff_uncovered_max`). A file a scope takes whose name is not UTF-8 is now a `findings` item of kind `unreadable_name` with `exit_code` 3, where 0.8.1 printed an error object, and `--sarif` reports it under `crapkit/unreadable-name` (accuracy change C48). [The findings list](docs/agent-json.md#the-findings-list)
+- The Action's comment reads verify's `findings` list and `counts`, and no 0.8.1 per-kind key. A file a scope takes whose name is not UTF-8 now gets a verdict, `**verify failed, exit 3: unreadable name.**`, with a `- unreadable name:` bullet that names the file as `\xNN`, its scope and the `git mv` rename to a UTF-8 name, where 0.8.1 said verify wrote no verdict. Each function an `--override` passed gets a `- overridden:` bullet, on a failing verdict and after the pass line, where 0.8.1 left it out. [What the comment looks like](README.md#what-the-comment-looks-like)
+- Security: crapkit starts git and the other programs it runs itself (the `claude` that doctor asks for its version, and `taskkill`, which it takes from the Windows system directory first) from PATH's absolute entries only, never from the working directory or an empty or relative PATH entry. doctor asks a launcher it found for its version from that launcher's own folder, with cmd.exe's search of the current directory off, so an interpreter the launcher starts by name, such as npm's `node`, never comes from the repo either. On Windows, a repo holding a planted `git.exe` at its root could make crapkit 0.8.1 and every earlier version run that file, whether a user, a pre-commit hook or the Claude Code hook started crapkit there. crapkit's own Python children, each MCP tool call, the rescore `crapkit watch` runs, the process owner and the analysis pool's workers, now start with `-P` or with `PYTHONSAFEPATH=1` in their environment, so none imports a module from its working directory. Through 0.8.1, Python put that directory first on `sys.path`: a `crapkit.py` at the root of the repo an MCP server served ran in place of crapkit on every tool call, which answered empty with `isError` false, and a `json.py` or `multiprocessing.py` in crapkit's working directory ran inside the process owner and the analysis workers. The git hook's last line and the merge driver that README, the handbook, AGENTS.md and CONTRIBUTING.md give, both of which git runs from the worktree root, and the next step crapkit prints when no `crapkit` command is on PATH now spell `python -P -m crapkit` (accuracy change C57). A hook, merge driver or pasted line copied from an earlier page runs `python -m crapkit`, so a `crapkit.py` at the repo root runs in place of crapkit there: add `-P` to it. A `python` older than 3.11 then stops the hook with `Unknown option: -P` and exit 2. The pip lines crapkit prints, the pytest-cov, coverage.py and lizard installs and doctor's upgrade and reinstall of the CLI, now spell `<python> -P -m pip install`: through 0.8.1 they spelled `<python> -m pip install`, so a `pip.py` at the repo root ran in place of pip when a reader pasted one there. The Action installs crapkit with `python -P -m pip install -e`, since it runs pip in the consumer's checkout.
+- Breaking: `verify --json` drops `gate_violations`, `ratchet_regressions`, `overridden`, `new_failures`, `diff_uncovered`, `unread_files`, `diff_uncovered_count` and `diff_uncovered_max`; read `findings` and `counts` (accuracy change C61). [Upgrading to 0.9.0](docs/upgrading.md#verify---json-drops-the-081-per-kind-keys) maps each old key to its place.
+<!-- /0.9.0:gate-group -->
+
+<!-- 0.9.0:m1-foundations -->
+- Library API: `FnCoverage` and `coverage_count` import from `crapkit.score`; `crapkit.coverage_istanbul` no longer exports them.
+- doctor names each lane's runner, read from its command, the package.json script it runs, or devDependencies, and `doctor --json` carries it as `lanes[].toolchain` (accuracy change C42). [How crapkit reads a lane's runner](docs/lanes.md#how-crapkit-reads-a-lanes-runner)
+- A lane that runs pytest as `pytest.exe` or `pytest.cmd` is read as running pytest, so doctor's pytest notes reach it.
+- Library API: `parse_istanbul_both_file` and `parse_coveragepy_both_file` return per-file `FileEvidence` as their second value.
+- Runner refusals and hints follow the runner a lane's command names, not its coverage format: the vitest file-filter, pytest narrowing and container refusals fire only on a command that names vitest or pytest, and doctor's junit hint follows the named runner. A wrapped command gets the hints when the package.json script it runs names the runner (`npm test` running `vitest run`), and no refusal: only a runner named in the command itself turns them on, so name it there to keep them. `make cov` gets neither. [Upgrading to 0.9.0](docs/upgrading.md#runner-refusals-and-hints-follow-the-runner-the-command-names)
+- `crapkit init` writes a JS lane's report flags for the runner its `test` script runs, read as doctor reads it, and reads devDependencies only when that script names none. 0.8.1 read devDependencies alone, so a script running jest or pytest beside vitest in devDependencies got vitest's flags, and a script running vitest beside devDependencies that name neither runner or both got none. The same reading decides which workspace of a monorepo gets the lane. [Where artifacts live](docs/lanes.md#where-artifacts-live)
+<!-- /0.9.0:m1-foundations -->
+
+<!-- 0.9.0:mission-3 -->
+- `hook-precommit` refuses a marked function whose staged ccn passed its mark, with exit 6 and a block naming the function, its ccn and its mark: CRAP is never under ccn, so that mark rose at any coverage. Through 0.8.1 it passed any marked function. A marked function whose ccn sits at or under its mark still passes, counted on the stderr line. [The commit gate](docs/ratchet.md#the-commit-gate-skips-marked-functions)
+- check_gate's MCP description now says the commit hook refuses a marked function whose ccn passed its mark. It said the hook pardoned any marked function. The tool, its schemas and the server instructions are unchanged.
+- `hook-precommit` warns on stderr when a marked function's ccn rose since the diff base while its mark may still hold: its CRAP range straddles the mark, so only `verify`, with coverage, can say whether the rise broke it. The warn names each function with its base and staged ccn and its mark, and the commit still goes through. A function added in the commit, or in a first commit, warns too, and a comment edit or a ccn that fell stays on the count line. [The commit gate](docs/ratchet.md#the-commit-gate-skips-marked-functions)
+- `claude-hook` speaks on marked functions, exit 2, each block with its own closing line: a marked block for a function whose ccn passed its mark, which says the commit gate refuses it and a mark only falls, and a warn block for one whose ccn rose since HEAD while its CRAP range straddles the mark, which sends the agent to tests or a decomposition before `verify` judges it. Through 0.8.1 it stayed silent on any marked function. A comment edit or a ccn that fell stays silent, and the advisory for an unmarked breach is unchanged. [claude-hook](docs/agent-json.md#claude-hook)
+- `CRAPKIT_OVERRIDE_REASON` passes the hook's refusal of a marked function whose staged ccn passed its mark, through the audit every hook grant takes: one alert line names the function, and the store records the hook run and an override row at the high end of its CRAP range. The mark keeps its value byte for byte, so the next `verify` reports the rise as a ratchet regression, which no override grants. A grant that adds no new mark leaves `crapkit-ratchet.tsv` unwritten and out of the commit, and the receipt names each mark it kept. [Overrides and the audit trail](docs/ratchet.md#overrides-and-the-audit-trail)
+- A `CRAPKIT_OVERRIDE_REASON` grant whose store cannot take the audit, a `.crapkit/crap.sqlite` that is read only or damaged, stops the commit at exit 5 before the alert, with one line naming the store, SQLite's cause and the fix, and grants nothing. Through 0.8.1 the hook ended such a grant in a Python traceback at exit 1. [What a refusal looks like](README.md#what-a-refusal-looks-like)
+<!-- /0.9.0:mission-3 -->
+
+<!-- 0.9.0:metric-stamp -->
+- The analysis version is now one number per language (`analyze.ANALYSIS_VERSIONS`, each starting at 13) and one per coverage reader (`coverage_format.READER_VERSIONS`, each starting at 1), and a change raises only the numbers it moves. The analysis cache keys each file on its language's number, so a change to one language's reader re-reads only that language's files. `ANALYSIS_VERSION` stays 13 and counts the tables' revisions, so the marks-file stamp and every JSON field read as in 0.8.1.
+- Marks a newer lizard stamped, as every marks file seeded on a fresh 0.8.1 install since 2026-10-05 is, now ask for `crapkit coverage`, `crapkit ratchet prune` and `crapkit ratchet seed`, and seed and prune accept them, where 0.8.1 sent the user to upgrade lizard and seed and prune refused. 0.9.0 pins lizard exactly, so only a newer `crapkit-analysis` asks for an upgrade, and that refusal names crapkit alone. `crapkit doctor` lists these marks as a WARN, not a FAIL. A teammate still on 0.8.1 upgrades crapkit, or each of their reseeds moves the marks back. [Upgrading to 0.9.0](docs/upgrading.md#marks-a-newer-lizard-stamped-take-one-reseed)
+- The marks-file merge driver merges the stamps scope by scope, as it merges marks: the side that moved a scope's stamp wins, and it refuses only a scope both sides moved differently, naming each scope, what each side recorded and the seed to run. A stamp one branch moved no longer makes every merge with another branch a hand resolution. When one side moved a scope's stamp and the other side changed marks, the driver names that scope on stderr. [The git merge driver](docs/ratchet.md#the-git-merge-driver)
+- Each coverage and verify run records, in the store, every scope's analysis numbers (one per language it declares) and its coverage mode: `cc-only`, `no-lane`, or the reader number of each lane parser that measures it. The mode comes from `crapkit.toml`, so a run of one lane records the same modes as a full run. No `--json` payload or MCP result changes.
+- Change control checks the analysis-bump rule per number: a moved golden needs the number of its language (`ANALYSIS_VERSIONS`, for a ccn, cognitive or nesting cell) or of its coverage reader (`READER_VERSIONS`, for a cov cell) raised with `ANALYSIS_VERSION`, and a rise of another number no longer excuses it. A new language, extension or reader adds goldens and raises nothing. CHANGES.tsv rows record both tables in two new columns, and a declare refusal names the number to raise.
+<!-- /0.9.0:metric-stamp -->
+
+<!-- 0.9.0:mission-4 -->
+<!-- /0.9.0:mission-4 -->
+
+<!-- 0.9.0:m1-readers -->
+<!-- /0.9.0:m1-readers -->
+
+<!-- 0.9.0:m5-comment-fixture -->
+<!-- /0.9.0:m5-comment-fixture -->
+
+<!-- 0.9.0:mission-9 -->
+<!-- /0.9.0:mission-9 -->
+
+<!-- 0.9.0:mission-2 -->
+<!-- /0.9.0:mission-2 -->
+
+<!-- 0.9.0:lanes-visible -->
+<!-- /0.9.0:lanes-visible -->
+
+<!-- 0.9.0:schema-2 -->
+<!-- /0.9.0:schema-2 -->
+
+<!-- 0.9.0:criterion -->
+<!-- /0.9.0:criterion -->
+
+<!-- 0.9.0:m6-step-coverage -->
+<!-- /0.9.0:m6-step-coverage -->
+
+<!-- 0.9.0:release-bytes -->
+<!-- /0.9.0:release-bytes -->
+
+<!-- 0.9.0:protocol-2-step -->
+<!-- /0.9.0:protocol-2-step -->
+
+<!-- 0.9.0:hash-cost -->
+<!-- /0.9.0:hash-cost -->
+
 ## 0.8.1 — 2026-10-01
 
 0.8.1 fixes what two new test suites found in 0.8.0: one installs crapkit the way the

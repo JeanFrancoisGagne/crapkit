@@ -13,6 +13,12 @@ started (kit/sandbox.py harness_stamps): a harness that updates itself
 mid-run would make two cells of one run test different releases. And it
 records every deploy test that is neither a kit test nor a cell, which no
 run.py job selects (test_kit_isolation fails on any).
+
+run.py passes --deploy-cadence beside its -m expression. A nightly run drops
+the items of a `core` every-harness row (MAP.toml [every_harness]) on the full
+image and the images built on it, where the 14 non-core harnesses run; every
+other cadence keeps them (kit/cells.py nightly_keeps). An item whose row
+MAP.toml lacks fails the collection, naming the row.
 """
 from __future__ import annotations
 
@@ -38,6 +44,9 @@ def pytest_addoption(parser):
     group.addoption("--deploy-packet", default=None, help="run only the cells of this packet")
     group.addoption("--deploy-shard", type=cells.shard, default=None, metavar="PART/PARTS",
                     help="run part PART of PARTS of the selected tests (run.py --shard)")
+    group.addoption("--deploy-cadence", default=None, metavar="CADENCE",
+                    help="the run.py cadence of this run; nightly drops a core every-harness row's items on the "
+                         "full image and those built on it (run.py --cadence)")
 
 
 def pytest_configure(config):
@@ -71,17 +80,29 @@ def pytest_sessionfinish(session, exitstatus):
 @pytest.hookimpl(wrapper=True)
 def pytest_collection_modifyitems(config, items):
     """Wraps -m. Before it deselects anything, the loose-test record sees every
-    collected deploy test and --deploy-cell / --deploy-packet narrow the run.
+    collected deploy test, --deploy-cell / --deploy-packet narrow the run and
+    --deploy-cadence drops what a nightly run leaves to the release run.
     After it, --deploy-shard takes its part of what -m left, so the parts split
     the selected tests evenly."""
     config.stash[cells.LOOSE] = cells.loose(items, Path(__file__).resolve().parent)
     wanted, packet = config.getoption("--deploy-cell"), config.getoption("--deploy-packet")
     _narrow(config, items, cells.partition(items, lambda item: cells.selected(cells.cell_meta(item), wanted, packet,
                                                                                cells.module_packet(item))))
+    _narrow(config, items, _by_row(config.getoption("--deploy-cadence"), items))
     yield
     part = config.getoption("--deploy-shard")
     if part:
         _narrow(config, items, cells.in_shard(items, *part))
+
+
+def _by_row(cadence, items):
+    """(kept, dropped) by each item's every-harness row; a row MAP.toml lacks
+    is a usage error that names it, whatever the cadence."""
+    rows = cells.every_harness()
+    try:
+        return cells.partition(items, lambda item: cells.nightly_keeps(cells.cell_meta(item), cadence, rows))
+    except ValueError as error:
+        raise pytest.UsageError(f"tests/deploy collection: {error}") from None
 
 
 def _narrow(config, items, split) -> None:

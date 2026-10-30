@@ -173,7 +173,12 @@ or no longer (fixed). `python tools/docs/generate.py` writes this table, the
 | `weekly` | accuracy.yml on Saturdays | Mutation, in 8 shards, of each function in the floors' modules whose stored verdicts do not carry, and a no-cache image rebuild that checks every pin |
 | `release` | The release tool's `accuracy` stage | The push tier, both wheel diffs against the previous release, the store upgrade, the consumer replay, the retro replays, the mutation coverage |
 
-A pull request runs the nightly tier as well while it carries the `accuracy` label.
+accuracy.yml and deploy.yml run on their schedule on main and on a dispatch, never on
+a pull request. To run the nightly tier on a branch, dispatch it:
+`gh workflow run accuracy.yml --ref <branch> -f mode=nightly`; the deploy cells'
+nightly set takes `gh workflow run deploy.yml --ref <branch> -f cadence=nightly`.
+Only a run of main's head (the schedule, or a dispatch on main with no `ref`) files
+a red result on an issue.
 
 ## Run each tier locally
 
@@ -238,7 +243,7 @@ faster. Under Git Bash, set `MSYS_NO_PATHCONV=1` before `-e VAR=/path`.
 
 Mutation testing runs in the accuracy image, since mutmut forks and runs on Linux
 only. Both runs mutate the calculation modules a `suite_strength/mutation/floors.tsv`
-group names (the core and readers groups today, 18 modules), since the floors
+group names (the core, readers and gate groups today, 19 modules), since the floors
 are the only reader of their verdicts; the other calculation modules held
 22,008 of the 31,691 mutants of the weekly run at c3fa1d42, and no gate read
 them. One shard of the weekly run, and the run over all of them under a cap:
@@ -297,15 +302,16 @@ judges anything. A second run at an unchanged tree judges no mutant.
 In CI the receipts carry from run to run through the actions cache:
 `mutation.py env` prints the environment key a run stores, and each mutation
 job restores `.crapkit/accuracy/mutation/*.json` from the newest cache entry
-under that key before it runs. The nightly and label `diff` run saves the
+under that key before it runs. The nightly `diff` run saves the
 receipts it leaves; each weekly shard uploads its receipt as
 `mutation-receipt-N`, and the `mutation-store` job merges them into one entry.
 A new image, or any other change to the key, starts from no receipt. The
 `diff` cap is 78 minutes: the nightly run of 2026-10-01 spent 47.6 minutes
 before its first mutant (mutmut's stats pass 32.1, its clean pass 14.8), and
 the cap leaves 30 minutes of judging on top. A run that judges every function
-of the 18 modules (9,627 mutants) needs hours more than that and reports
-`incomplete`; mutmut judges the mutants whose tests are cheapest first.
+of the 19 modules (9,627 mutants in the 18 of 2026-10-01, 118 in gate.py)
+needs hours more than that and reports `incomplete`; mutmut judges the
+mutants whose tests are cheapest first.
 
 `--cold` carries nothing and compares what it judges with what would have
 carried. A difference fails the run, and the receipts older than it carry

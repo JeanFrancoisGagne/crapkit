@@ -29,6 +29,7 @@ import pytest
 
 import crapkit
 from conftest import child_env, cli_runner
+from name_bytes import ANY_BYTE_NAMES
 
 # The hook is a process Claude Code starts per edit: stdin payload, start
 # time and PYTHONPATH shims all need the real child.
@@ -59,6 +60,16 @@ languages = ["python"]
 MARK = ("# crapkit-analysis=5 lizard=1.24.0\n"
         "path\tlong_name\tcrap\n"
         "calc/grade.py\tsprawl( n )\t72.0000\n")
+# ccn 7, one branch short of BREACH: what HEAD holds before a rise.
+SEVEN = BREACH.replace("    if n == 7:\n        n += 7\n", "")
+# BREACH with a comment inside the function, then that comment reworded.
+NOTED = BREACH.replace("def sprawl(n):\n", "def sprawl(n):\n    # a note\n")
+NOTE_EDITED = NOTED.replace("# a note", "# a different note")
+
+
+def marks(value: str) -> str:
+    """The marks file with one mark, `value`, on `sprawl( n )`."""
+    return MARK.replace("72.0000", value)
 
 
 def git(repo: Path, *args: str) -> None:
@@ -153,6 +164,37 @@ def fx_marked_breach(repo: Path) -> None:
     write(repo, "crapkit-ratchet.tsv", MARK)
 
 
+def fx_marked_past_mark(repo: Path) -> None:
+    """The measured_breach edit under a mark of 7.0: ccn 8 alone passes it."""
+    measured(repo)
+    write(repo, "crapkit-ratchet.tsv", marks("7.0000"))
+
+
+def committed_marked(repo: Path, head: str, edited: str) -> None:
+    """HEAD holds `head` and a mark of 10.0 on sprawl( n ); the working tree holds `edited`."""
+    init(repo)
+    write(repo, "crapkit.toml", TOML)
+    write(repo, "crapkit-ratchet.tsv", marks("10.0000"))
+    write(repo, "calc/grade.py", head)
+    commit(repo)
+    write(repo, "calc/grade.py", edited)
+
+
+def fx_marked_rise(repo: Path) -> None:
+    """ccn 7 at HEAD, 8 after the edit: the range 8 to 72 straddles 10.0."""
+    committed_marked(repo, SEVEN, BREACH)
+
+
+def fx_marked_comment_edit(repo: Path) -> None:
+    """ccn 8 at HEAD and after the edit, which rewords a comment inside the function."""
+    committed_marked(repo, NOTED, NOTE_EDITED)
+
+
+def fx_bash_marked_rise(repo: Path) -> None:
+    """The marked_past_mark tree, written just now, as a shell heredoc leaves it."""
+    fx_marked_past_mark(repo)
+
+
 def fx_measured_clean(repo: Path) -> None:
     """Everything committed: the tree a Bash command that wrote nothing leaves."""
     init(repo)
@@ -177,6 +219,16 @@ def fx_unborn_staged_breach(repo: Path) -> None:
     git(repo, "add", "-A")
 
 
+def fx_claimed_non_utf8_name(repo: Path) -> None:
+    """Scope `src` takes src/caf\\xe9.py, a name in Latin-1 bytes that git
+    names as it is stored. Only a file system that stores any byte holds it."""
+    init(repo)
+    write(repo, "crapkit.toml", TOML.replace('"calc"', '"src"'))
+    write(repo, "src/grade.py", CLEAN)
+    commit(repo)
+    (repo / os.fsdecode(b"src/caf\xe9.py")).write_text(BREACH, encoding="utf-8", newline="\n")
+
+
 FIXTURES = {
     "measured_breach": fx_measured_breach,
     "broken_syntax": fx_broken_syntax,
@@ -187,10 +239,18 @@ FIXTURES = {
     "comment_only": fx_comment_only,
     "untracked_breach": fx_untracked_breach,
     "marked_breach": fx_marked_breach,
+    "marked_past_mark": fx_marked_past_mark,
+    "marked_rise": fx_marked_rise,
+    "marked_comment_edit": fx_marked_comment_edit,
+    "bash_marked_rise": fx_bash_marked_rise,
     "measured_clean": fx_measured_clean,
     "stale_breach": fx_stale_breach,
     "unborn_staged_breach": fx_unborn_staged_breach,
+    "claimed_non_utf8_name": fx_claimed_non_utf8_name,
 }
+# What a golden's `needs` asks of the machine: a name that is not UTF-8 is a
+# file only where the file system stores any byte (not NTFS, not APFS).
+NEEDS = {"any_byte_names": ANY_BYTE_NAMES}
 
 
 def _goldens() -> list[dict]:
@@ -200,7 +260,8 @@ def _goldens() -> list[dict]:
 
 
 CASES = _goldens()
-IDS = [g["case"] for g in CASES]
+PARAMS = [pytest.param(g, id=g["case"], marks=[NEEDS[g["needs"]]] if "needs" in g else [])
+          for g in CASES]
 
 
 def _resolved(value, repo: str):
@@ -247,7 +308,7 @@ def _built(golden: dict, tmp_path: Path) -> Path:
     return repo
 
 
-@pytest.mark.parametrize("golden", CASES, ids=IDS)
+@pytest.mark.parametrize("golden", PARAMS)
 def test_the_recorded_payload_draws_the_recorded_verdict(golden: dict, tmp_path):
     done = run_hook(golden, _built(golden, tmp_path), tmp_path)
 
@@ -255,7 +316,7 @@ def test_the_recorded_payload_draws_the_recorded_verdict(golden: dict, tmp_path)
     assert done.returncode == golden["expect"]["exit"], golden["why"]
 
 
-@pytest.mark.parametrize("golden", CASES, ids=IDS)
+@pytest.mark.parametrize("golden", PARAMS)
 def test_stdout_carries_only_the_json_the_harness_reads(golden: dict, tmp_path):
     """Claude Code parses stdout JSON on exit 0, so a stray print there is a
     protocol break. The one thing stdout may carry is the single JSON object a
@@ -311,12 +372,30 @@ def test_a_no_toml_run_opens_no_store_and_imports_no_analysis_stack(tmp_path):
         "code": 0, "store": False, "lizard": False, "analyze": False}
 
 
-def test_even_a_breach_run_never_reaches_the_store(tmp_path):
+def test_importing_the_hook_module_loads_no_gate_and_no_analysis(tmp_path):
+    """The module scope stays stdlib-only: the gate module, the key and scope
+    rules and lizard are imported inside the judging functions, so an edit in
+    a repo crapkit never measures pays for none of them."""
+    done = subprocess.run([PY, "-X", "importtime", "-c", "import crapkit.cli.claude_hook"], cwd=tmp_path,
+                          capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=300, env=child_env(_child_overrides()))
+    imported = {line.rsplit("|", 1)[-1].strip() for line in done.stderr.splitlines() if "|" in line}
+
+    assert done.returncode == 0, done.stderr
+    assert "crapkit.cli.claude_hook" in imported, done.stderr
+    assert imported & {"crapkit.gate", "crapkit.keys", "crapkit.universe", "crapkit.gitio", "crapkit.hook",
+                       "lizard"} == set()
+
+
+@pytest.mark.parametrize("fixture", [fx_measured_breach, fx_marked_past_mark, fx_marked_rise],
+                         ids=["breach", "marked_past_mark", "marked_rise"])
+def test_even_a_breach_run_never_reaches_the_store(fixture, tmp_path):
     """The analysis path runs in full (lizard imported, verdict rendered, exit 2)
-    and the store still never appears. Coverage, and the crap score that needs
-    it, stay `verify`'s job."""
+    and the store still never appears, the marks file and the HEAD blob a
+    marked run reads included. Coverage, and the crap score that needs it,
+    stay `verify`'s job."""
     repo = tmp_path / "repo"
-    fx_measured_breach(repo)
+    fixture(repo)
 
     probed = _probe(repo, "calc/grade.py", tmp_path)
 
@@ -332,11 +411,13 @@ def _tree(repo: Path) -> dict:
             if path.is_file() and ".git" not in path.relative_to(repo).parts}
 
 
-def test_a_breach_run_leaves_the_repo_byte_identical(tmp_path):
+@pytest.mark.parametrize("name", ["scoped_breach", "marked_past_mark", "marked_rise"])
+def test_a_breach_run_leaves_the_repo_byte_identical(name, tmp_path):
     """No .crapkit/ to create, no cache.json to tear (a bare open("w") there has
     a 33 ms window, and load_cache swallows the corruption as a silently cold
-    cache), no ratchet staging, no store. The hook reads."""
-    golden = _case("scoped_breach")
+    cache), no ratchet staging, no store. The hook reads, the marks file and
+    the HEAD blob a marked run asks for included."""
+    golden = _case(name)
     repo = _built(golden, tmp_path)
     before = _tree(repo)
 
@@ -381,8 +462,10 @@ def test_a_touch_after_a_bash_advisory_repeats_nothing_in_the_next_process(tmp_p
 
 _STRICT = pytest.mark.skipif(os.environ.get("CRAPKIT_STRICT_TIMING") != "1",
                              reason="strict latency budget: set CRAPKIT_STRICT_TIMING=1")
-# name -> (absolute hard ceiling, milliseconds allowed above the interpreter floor)
-BUDGETS = {"no_toml": (500.0, 40.0), "scoped_breach": (2000.0, 140.0)}
+# name -> (absolute hard ceiling, milliseconds allowed above the interpreter floor).
+# marked_rise reads the marks file and the HEAD blob on top of the breach path,
+# so it gets 50 ms more above the floor than scoped_breach.
+BUDGETS = {"no_toml": (500.0, 40.0), "scoped_breach": (2000.0, 140.0), "marked_rise": (2000.0, 190.0)}
 
 
 def _case(name: str) -> dict:
@@ -436,12 +519,30 @@ def _excuse_a_saturated_box() -> None:
                     "29.3 ms: this box is too busy to measure a wall-clock ceiling, and CI enforces it")
 
 
+def _budget_miss(name: str, warm: float, hard: float, floor: float) -> str:
+    """What a miss says: the warm figure, the ceiling, and the bare interpreter's
+    start on the same box, so a reader can tell whether Python or the hook moved."""
+    return (f"{name}: warm path {warm:.2f} ms against the {hard:.0f} ms ceiling; "
+            f"python -c pass took {floor:.2f} ms here in the same test")
+
+
 @pytest.mark.parametrize("name", sorted(BUDGETS))
 def test_the_warm_path_stays_inside_the_ci_budget(name: str, tmp_path):
     hard, _ = BUDGETS[name]
     _excuse_a_saturated_box()
 
-    assert _warm_ms(name, tmp_path) < hard
+    warm = _warm_ms(name, tmp_path)
+
+    assert warm < hard, _budget_miss(name, warm, hard, _floor_ms())
+
+
+def test_a_budget_miss_names_the_warm_figure_the_ceiling_and_the_floor():
+    """A miss of 503.36 ms against 500 said only that, so nobody could tell a
+    slow interpreter from a slow hook."""
+    said = _budget_miss("no_toml", 503.36, 500.0, 41.5)
+
+    assert ("503.36 ms" in said, "500 ms ceiling" in said, "python -c pass took 41.50 ms" in said) == (
+        True, True, True)
 
 
 def test_a_saturated_box_is_excused_from_the_wall_clock_ceiling(monkeypatch):
@@ -473,7 +574,8 @@ def test_the_warm_path_costs_little_more_than_starting_python(name: str, tmp_pat
     crapkit import, so an unmeasured repo pays for the interpreter and almost
     nothing else. scoped_breach: the scoped `git diff` started before the lizard
     import and finishing inside it, and the ratchet answered off the TSV's own
-    lines rather than through 40,303 parsed entries.
+    lines rather than through 40,303 parsed entries. marked_rise: that path,
+    plus the one `git cat-file --batch` that reads the HEAD blob.
     """
     _, allowed = BUDGETS[name]
 

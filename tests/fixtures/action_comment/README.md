@@ -10,10 +10,17 @@ crapkit 0.4.15 recorded `verify.json`, as its `tool_versions` says. The keys
 `verify --json` gained since (`changed_paths`, `forgiven_failures`,
 `lanes_without_baseline_results`, `lanes_without_results`, `ratchet_source`,
 `ratchet_source_commit`, `ratchet_source_sha256`, `retried_passes`,
-`unmarked_over_target`, `unread_files`, `unreadable_names` and `untracked_in_scope`)
-were added by hand with this pull request's values, and the suite fails when
-verify prints a key this payload lacks, so the fence shows what the current
-release renders.
+`unmarked_over_target`, `unreadable_names` and `untracked_in_scope`) were added by
+hand with this pull request's values, and the suite fails when verify prints a key
+this payload lacks, so the fence shows what the current release renders.
+
+The payload carries `findings` and `counts`, the verdict as 0.9.0's `verify --json`
+prints it: one item per finding, each with its `kind` and its `rule` label, and the
+uncovered-line count and ceiling beside them. The comment reads those and no other
+finding key, so the payload leaves out the per-kind lists 0.8.1 printed
+(`gate_violations`, `unread_files`, `ratchet_regressions`, `new_failures`,
+`overridden`, `diff_uncovered`, `diff_uncovered_count` and `diff_uncovered_max`), and
+the suite's check of verify's keys skips those eight.
 
 Regenerate the fence with:
 

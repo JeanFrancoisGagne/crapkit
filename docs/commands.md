@@ -40,8 +40,8 @@ artifact with, or `null`.
 - a `coveragepy` or `istanbul` lane with no `results_artifact`: the crashed-worker and
   no-new-failures checks are off for it, whichever runner the lane spells;
 - a committed hook under `core.hooksPath` that is not executable in the index;
-- a `coveragepy` lane with no `container_ok` inside a container, which the lane runner
-  refuses with exit 5;
+- a lane whose command names pytest and that has no `container_ok`, inside a container,
+  which the lane runner refuses with exit 5;
 - a hook that runs crapkit's gate while git runs another: Route 1 under a global
   `core.hooksPath`, Route 2 in a clone that skipped its `git config` line, or either one
   after husky took `core.hooksPath` back;
@@ -208,8 +208,9 @@ nothing.
 
 `crapkit claude-hook` reads one PostToolUse payload from stdin, as Claude Code, Copilot
 CLI, Cursor or VS Code sends it, and judges each file it edited: ccn against the
-scope ceiling, on the functions the edit changed, minus the functions a ratchet mark
-already covers. It is advisory only: the edit has landed, and `hook-precommit` stays the
+scope ceiling, on the functions the edit changed, minus those a ratchet mark pardons. A
+marked function is held to its mark as `hook-precommit` holds it, its ccn read against
+HEAD's. It is advisory only: the edit has landed, and `hook-precommit` stays the
 enforcement point.
 
 ### What it prints
@@ -223,8 +224,17 @@ edit goes unjudged, because this build cannot know what the flag asks for. For
 crapkit claude-hook: this crapkit does not know `--budget 5`; the hook was written for a newer crapkit, so this edit went unchecked. Upgrade crapkit, then run `crapkit doctor --plugin-root`
 ```
 
-The advisory prints one block per judged file: a head line, one line per breaching
-function and a closing line. For a file a scope takes whose
+The advisory prints up to three blocks per judged file, in this order and under one
+exit 2, each a head line, one line per function and a closing line of its own:
+
+- the functions over the ceiling no mark covers, the block 0.8.1 printed;
+- the marked block: each marked function whose ccn passed its mark, which the commit
+  gate refuses, closing on the rule that a mark only falls;
+- the warn block: each marked function whose CRAP range straddles its mark and whose ccn
+  rose since HEAD (`ccn new -> 8` where HEAD holds no function under its key), closing on
+  `crapkit verify`, which judges the mark with coverage.
+
+For a file a scope takes whose
 name git gives in bytes that are not UTF-8, the block is two lines naming it and the
 rename. For a changed file it could not judge, the block names the file and the reason:
 
@@ -240,7 +250,9 @@ with exit 0 for Copilot CLI, Cursor and VS Code, which read exit 2 otherwise.
 
 A file type crapkit does not measure, no `crapkit.toml` above the edited file, an
 unscoped file, a rebase or merge in progress, a `--protocol` other than 1, a file that
-holds no function, and any internal failure all exit 0 in silence.
+holds no function, and any internal failure all exit 0 in silence. So does a marked
+function whose CRAP range sits at or under its mark, and a straddling one whose ccn did
+not rise, as after a comment edit.
 
 ### Which functions count as changed
 

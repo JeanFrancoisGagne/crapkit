@@ -28,7 +28,8 @@ from tempfile import NamedTemporaryFile
 
 from .errors import ConfigError, ToolError
 from .locks import exclusive_lock
-from .ratchet import dump_ratchet, load_ratchet, read_key_version, read_stamp, stamp_conflict
+from .ratchet import (MetricStamp, dump_ratchet, load_ratchet, read_key_version, read_stamp,
+                      stamp_conflict)
 from .repotext import marks_bytes, marks_codec, marks_text, unreadable_byte
 
 
@@ -124,19 +125,21 @@ class RatchetFile:
             raise ConfigError(f"unreadable ratchet file {self.path.name}: {exc}") from exc
 
     @property
-    def metric_stamp(self) -> str:
-        """The metric the recorded marks were measured under; "" when none is recorded."""
+    def metric_stamp(self) -> MetricStamp:
+        """The metric the recorded marks were measured under; NONE when none is recorded."""
         return read_stamp(self.text or "")
 
-    def stamp_conflict(self, metric: str) -> str | None:
+    def stamp_conflict(self, metric: MetricStamp) -> str | None:
         """Verify's refusal when these marks and numbers `metric` produced cannot be
         compared; None when they can, or when no metric is recorded."""
         return stamp_conflict(self.metric_stamp, metric)
 
-    def kept(self, entries: list, *, keys: int | None = None, new_file_metric: str = "",
+    def kept(self, entries: list, *, keys: int | None = None,
+             new_file_metric: MetricStamp = MetricStamp.NONE,
              read_with: tuple[RatchetFile, ...] = ()) -> str:
         """The text for a write that adds no measured number: both recorded stamps stay.
 
+        A per-scope file keeps its first line and every scope line as they read.
         A file that does not exist yet records nothing, so it takes the metric its
         first numbers came from. `keys` is a key format identity proof just
         established; without one the recorded format stays. `read_with` are the
@@ -145,7 +148,7 @@ class RatchetFile:
         metric = new_file_metric if self.text is None else self.metric_stamp
         return self._dump(entries, metric, keys, read_with)
 
-    def measured(self, entries: list, metric: str, *, keys: int | None = None) -> str:
+    def measured(self, entries: list, metric: MetricStamp, *, keys: int | None = None) -> str:
         """The text for a write that adds numbers `metric` produced.
 
         Marks another metric recorded refuse it with the refusal verify gives
@@ -157,14 +160,14 @@ class RatchetFile:
             raise ConfigError(conflict)
         return self._dump(entries, metric, keys)
 
-    def reseeded(self, entries: list, metric: str, *, keys: int | None = None) -> str:
+    def reseeded(self, entries: list, metric: MetricStamp, *, keys: int | None = None) -> str:
         """seed's text, stamped with the metric of the run it read."""
         return self._dump(entries, self._vouched(metric), keys)
 
-    def _vouched(self, metric: str) -> str:
+    def _vouched(self, metric: MetricStamp) -> MetricStamp:
         """A write that stamps numbers names the metric that produced them.
 
-        An empty one used to fall through to whatever stamp was there, so the
+        NONE used to fall through to whatever stamp was there, so the
         new numbers took a label nobody had checked.
         """
         if not metric:
@@ -172,12 +175,12 @@ class RatchetFile:
                               "metric, so it cannot vouch for them; the file was left unchanged")
         return metric
 
-    def _dump(self, entries: list, metric: str, keys: int | None, read_with=()) -> str:
+    def _dump(self, entries: list, metric: MetricStamp, keys: int | None, read_with=()) -> str:
         """The text a write would publish, refused here when it changes a file
         whose read replaced a byte: the override renders it before its alert
         fires, so a refusal leaves no alert and no audit row behind."""
         version = read_key_version(self.text or "") if keys is None else keys
-        text = dump_ratchet(entries, stamp=metric, key_version=version)
+        text = dump_ratchet(entries, stamp=metric, key_version=version, file_name=self.path.name)
         if _lf(text) != _lf(self.text):
             _refuse_replaced((self, *read_with))
         return text

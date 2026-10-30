@@ -7,8 +7,8 @@ question: *has this function got worse than the day we agreed to live with it?*
 it; it fails the build instead. New debt enters only through `ratchet seed` or an audited
 override, both of which are visible in a diff.
 
-The pre-commit gate pardons any marked function; `crapkit verify` fails a mark
-that rises. See [the commit-gate rule](#the-commit-gate-skips-marked-functions).
+The pre-commit gate refuses a marked function once its ccn alone passes the mark;
+`crapkit verify` fails any mark that rises. See [the commit-gate rule](#the-commit-gate-skips-marked-functions).
 When upgrading, review [function identity](#same-line-function-identity) before
 reseeding marks recorded by an older reader.
 
@@ -30,6 +30,25 @@ calc/report.py	render( rows , wide , totals , header )	56.0000
 Comments carrying the metric and key-format stamps, a header, then one row per mark:
 path, key name, CRAP to four decimals. Rows are sorted by that pair, so the file is
 diffable and merge conflicts are local.
+
+That is the single-number stamp crapkit 0.8.x wrote, and crapkit still reads it. The form a
+0.9.0 seed writes stamps each scope on a line of its own:
+
+```
+# crapkit-stamp=2 lizard=1.24.0: crapkit-ratchet.tsv holds one stamp per scope, which crapkit 0.9.0 or later reads
+# crapkit-keys=1
+#scope	calc	analysis python=13; coverage coveragepy=1
+#scope	web	analysis tsx=13 typescript=13; coverage istanbul=1
+path	long_name	crap
+calc/grade.py	classify( score , attempts , late , bonus )	66.0714
+calc/report.py	render( rows , wide , totals , header )	56.0000
+```
+
+The first line names the file and the release that reads it, so crapkit 0.8.x, which cannot
+read this form, refuses to judge or rewrite the file and names it. Each `#scope` line, sorted
+by scope name, gives the analysis number of each of the scope's languages and its coverage mode:
+`cc-only`, `no-lane`, or each coverage parser with its reader number. The header and the
+rows are the same in both forms.
 
 Rows containing delimiters use the shared [portable record encoding](portable-records.md).
 Ordinary three-column rows retain their bytes.
@@ -114,15 +133,32 @@ that twin, wherever it sits in the file. Twins whose CRAP is equal to 4 decimal 
 resolve to the first in the file.
 
 ---
-
-## The commit gate skips marked functions
+<a id="the-commit-gate-skips-marked-functions"></a>
+## The commit gate refuses a marked function whose ccn passed its mark
 
 New in 0.4.0, and it decides which commits get refused. Read it before you seed a repo.
 
-`hook-precommit` judges staged blobs. A blob carries no coverage, so a staged violation has
-a ccn and no CRAP, and there is nothing to compare a mark against. The hook asks the one
-question it can answer: does a `(path, key name)` mark exist? If it does, that function is
-not gated, whatever the edit did to it. One stderr line reports the count, never a list:
+`hook-precommit` judges staged blobs. A blob carries no coverage, so the hook knows a staged
+function's CRAP only as a range: from its ccn, the CRAP with every branch run, up to its CRAP
+with none run, ccn^2 + ccn (ccn in a `coverage_optional` scope). For a function over its
+ceiling that a `(path, key name)` mark covers, it holds that range against the mark at the
+mark's 4 decimal places:
+
+- The whole range at or under the mark: the function is not gated.
+- The range across the mark: not gated either. Only coverage can say which side the CRAP
+  sits on, and `verify` reads the coverage. When the function's ccn rose above its ccn at
+  the diff base, or the base holds no function under its key, the hook names it in a warn
+  block on stderr and still exits 0: the rise may have taken the CRAP past the mark. The
+  diff base is HEAD, or with `--base REF` the merge base of REF and HEAD. A commit that
+  adds a marked function, and a first commit, have no base ccn for it, so they warn too.
+  Since 0.9.0.
+- The ccn above the mark: CRAP is never under ccn, so the CRAP is past the mark at any
+  coverage and the mark rose. The hook refuses the commit with exit 6. Since 0.9.0;
+  through 0.8.1 it passed any marked function whatever its ccn.
+
+The functions it passes without a warn are counted on one stderr line, never a list. A
+comment edit leaves the ccn where the base had it, and a ccn that fell can only lower the
+CRAP, so both stay on this line:
 
 ```
 crapkit gate: 1 staged function(s) carry a ratchet mark and were not gated - `crapkit verify` fails a mark that rises
@@ -132,9 +168,64 @@ The three gates read the file differently:
 
 | Gate | What it holds | What a mark does there |
 |---|---|---|
-| `hook-precommit` | a staged blob: ccn, no coverage | skips the function on the mark's **existence** |
+| `hook-precommit` | a staged blob: ccn, no coverage | skips the function while its **ccn** sits at or under the mark, and warns on stderr when that ccn rose since the diff base; a ccn above the mark is **exit 6** |
 | `rescore --gate` | a scored row: ccn and CRAP | skips the function **at or under** the recorded value |
 | `verify` | a full run | skips a touched function **at or under** the mark, as `rescore --gate` does; above the mark it is **exit 6** when the diff touched the function and **exit 7** when it did not |
+
+On the demo repo (`tools/demo` in the crapkit repo), seeded, with the hook installed:
+`read_row` carries the mark 7.3333, at ccn 6 with 67% of its branches run. Two more
+branches take it to ccn 8, so its CRAP is at least 8 however the tests run it:
+
+```
+$ crapkit ratchet seed
+crapkit-ratchet.tsv: added 3, tightened 0 - 3 mark(s) vs run 1 (f9dd0c270ae)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
+
+$ git commit -m "read two more fields"
+crapkit gate: 1 staged function(s) rose past their ratchet mark:
+  ccn   8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+bring each one's ccn back to its mark or under it (a mark only falls, so no commit raises it).
+EXIT=1
+```
+
+The hook exits 6 and git reports 1. Each row names the function's ccn, its place, its
+handle (`#2` for a second twin) and the mark at its 4 places. The fix is in the code: no
+seed raises a mark, so take the ccn back to the mark or under it. Moving the three defaults
+into a helper of their own takes `read_row` back to ccn 5, and the next commit goes through.
+
+A rise whose ccn stays at or under the mark gets a warn instead. In another repo,
+`classify` carries the mark 110.0000 at ccn 10, and no test reaches it, so the mark is its
+untested CRAP, 10^2 + 10. Two more branches take it to ccn 12: its CRAP now sits somewhere
+from 12 to 156, across the mark, and its ccn rose from 10. Edit, commit, read the warn,
+run `verify`:
+
+```
+$ git commit -m "take ten more points off a fifth attempt"
+crapkit gate: 1 staged marked function(s) rose in ccn and may pass their ratchet mark; `crapkit verify` judges them with coverage:
+  ccn 10 -> 12  calc/grade.py:1  classify( score , attempts , late )  mark 110.0000
+[main 9d3e094] take ten more points off a fifth attempt
+ 1 file changed, 4 insertions(+)
+EXIT=0
+
+$ crapkit verify
+warning: 4 changed line(s) have no coverage
+  uncovered calc/grade.py:11
+  uncovered calc/grade.py:12
+  uncovered calc/grade.py:13
+  uncovered calc/grade.py:14
+verify FAILED @ 9d3e0949f88 vs baseline 1ebf9a01311 (2 changed files)
+  changed files: calc/grade.py, crapkit-ratchet.tsv
+  GATE  crap    156.0  ccn  12 cov 0%  calc/grade.py:1  classify( score , attempts , late )  -> decompose
+  RATCHET  calc/grade.py  classify( score , attempts , late ): 110.0 -> 156.0
+  findings: 2 committed / 0 dirty (uncommitted edits and untracked files)
+EXIT=6
+```
+
+The commit went through: the warn changes no exit code. Each row names the ccn at the base
+(`new` where the base holds no function under the key), the staged ccn, the place, the
+handle and the mark. A function the warn names leaves the count line. The warn is the
+moment to add tests that run the new branches, or to decompose, before `verify` judges the
+CRAP with coverage. Here no test runs `classify`, so its CRAP is 156 and `verify` refuses.
 
 The ratchet check in `verify` is unchanged: it still compares the numbers, and it is still
 where a real regression is caught. Its gate reads a mark the way `rescore --gate` does
@@ -177,12 +268,16 @@ EXIT=6
 
 Both findings are on one function and the verdict is **6**, because 6 beats 7. Exit 7 is
 what is left for a function the diff never touched, which is the case further down under
-[How `verify` uses the ratchet](#how-verify-uses-the-ratchet).
+[How `verify` uses the ratchet](#how-verify-uses-the-ratchet). `hook-precommit` lets that
+commit through: ccn 17 sits under 51.5698, so the range 17 to 306 straddles the mark, and
+only the coverage `verify` reads can settle it. Its ccn rose from 13, so the hook warns
+about it, as it warned about the other `classify` above.
 
-The looseness is deliberate. Before it, a comment added inside a marked function refused the
-commit. On a repo carrying 40,303 marks that meant a seeded tree could not be touched, while
-`rescore --gate` on the same tree passed. The advisory hook `crapkit claude-hook` pardons on
-existence too, so a session of green advisories no longer ends at a red commit.
+The pass on a straddling range is deliberate. Before 0.4.0, a comment added inside a marked function
+refused the commit: on a repo carrying 40,303 marks a seeded tree could not be touched, while `rescore --gate`
+on the same tree passed. The advisory hook `crapkit claude-hook` holds the edited file's range against the
+mark by the same rule, its ccn read against HEAD's: a ccn past the mark draws its marked block, a ccn rise
+across the mark its warn block, and the rest stays silent, so a session of green advisories no longer ends at a red commit.
 
 ---
 
@@ -345,8 +440,8 @@ Four cases:
 | Recorded stamp | Behavior |
 |---|---|
 | Matches the running metric | Compare normally. |
-| Older than the running metric | **Refused**, exit 3: run `coverage`, then `ratchet prune`, then re-seed. |
-| Newer: a newer crapkit or lizard wrote the marks | **Refused**, exit 3: upgrade this install. `ratchet seed` and `ratchet prune` refuse these marks too. |
+| Older than the running metric, or stamped by a newer lizard | **Refused**, exit 3: run `coverage`, then `ratchet prune`, then re-seed. |
+| Newer: a newer crapkit wrote the marks (a higher `crapkit-analysis`) | **Refused**, exit 3: upgrade this install. `ratchet seed` and `ratchet prune` refuse these marks too. |
 | Absent (a file written before stamping) | Warn, then apply the function-identity checks below. Anonymous JavaScript/TypeScript marks need reader proof. |
 
 ```
@@ -369,12 +464,12 @@ crapkit prints that line from 0.8.1 on; the example is a 0.8.1 reader meeting ma
 later release stamped 14. A 0.8.0 reader meeting 0.8.1's marks prints the older line, which
 asks for a seed; upgrade that reader instead.
 
-The versions compare field by field, as numbers: `crapkit-analysis` is crapkit's, and
-`lizard` names a newer lizard when only that field moved. Seed and prune refuse the same
-file rather than write it: a seed from an older run restamped the whole file backwards, and
-a prune dropped every mark whose function the older reader names differently. A team going
-back to an older release on purpose restores the marks file that release last wrote from git
-history.
+The versions compare as numbers, so lizard 1.9.0 is older than 1.24.0. Only `crapkit-analysis`
+marks a newer release. crapkit pins lizard exactly, so marks a newer lizard stamped, which a
+release that let lizard float (0.8.1 and earlier) writes, ask for `coverage`, `ratchet prune`
+and `ratchet seed` like older marks. Seed and prune refuse marks a newer crapkit stamped: a seed
+would restamp them backwards, and a prune would drop every mark whose function the older reader
+names differently. A team going back to an older release restores its marks from git history.
 
 ```
 $ crapkit verify
@@ -676,30 +771,79 @@ wins, because a mark can only fall and `prune` is re-runnable.
 Two branches that each created the marks file, such as two first seeds, meet in an add/add
 merge, and git hands the driver an empty base. The driver reads an empty or blank base as no
 common ancestor and merges the two files as a union, each mark both sides hold at the lower
-value. OURS and THEIRS must still share one metric stamp and one key format. Before 0.8.1
-the driver read that base as a legacy file and refused with
-`ratchet key identity versions differ`.
+value. OURS and THEIRS must still share one key format, and their stamps merge as below
+against a base that records none. Before 0.8.1 the driver read that base as a legacy file and
+refused with `ratchet key identity versions differ`.
 
 Per key means per twin. One branch tightening `__post_init__` and the other tightening
 `__post_init__#2` in the same file is not a conflict, because those are two keys; the driver
 needs no ordinal knowledge to get that right. The `#` sits in the name field, so a marks line
 never opens with the `#` that introduces the metric stamp.
 
-The driver refuses to merge across metric versions, and git falls back to a normal text
-conflict for you to resolve after re-seeding. When one side's stamp is newer, the refusal
-names that side and the metric to re-seed under, because a seed under the older release
-stamps its own older metric and the next merge refuses again:
+The stamps merge scope by scope, from the three files alone. Each side's `#scope` line is
+compared with BASE's, and the side that moved wins, as it does for a mark:
+
+| A scope's stamp on OURS and THEIRS | The merged file |
+|---|---|
+| Equal to BASE's on both sides | keeps it |
+| Moved on one side only | takes that side's line |
+| Moved the same way on both sides | keeps it |
+| Moved differently on both sides | **refused**, naming the scope |
+| On one side only, which added it | carries it |
+| Removed on one side, unchanged on the other | drops it |
+| Removed on one side, moved on the other | keeps the moved line |
+
+A renamed scope is one drop and one add. A scope the config no longer has refuses nothing in
+verify, and the next plain seed drops its line. The lizard version on the first line merges by
+the same rule, and when both sides moved it differently the refusal names every scope. A
+single-number side (`crapkit-analysis=N lizard=X.Y.Z`) stands for every scope at its one
+analysis number and records no coverage mode. A scope compares on that number alone, its
+lizard merges as the first line's does, and the result is per scope. Three single-number sides
+merge their one stamp by the same rule. An unstamped side merges only with an unstamped one.
+
+Without the config the driver cannot tell which scope a mark sits in. So when a scope's stamp
+came from one side and the other side changed any mark, it prints a line on stderr naming the
+scope and the seed to run if verify names it. The line never prints when the other side changed
+no mark.
+
+```
+$ git merge feature -m "merge feature"
+ratchet merge: 3 mark(s)
+ratchet merge: scope web's stamp came from OURS and THEIRS changed 2 mark(s); if verify names web, run crapkit ratchet seed --scope web
+Auto-merging crapkit-ratchet.tsv
+Merge made by the 'ort' strategy.
+```
+
+A mark the other side tightened under the old rules now sits under the new stamp. The per-key
+merge never loosens it, so when the new rules score that function higher, verify fails it at
+exit 7 and names it; it never passes in silence.
+
+When both sides moved one scope's stamp differently, the driver refuses at exit 3 and leaves
+OURS unchanged, and git falls back to a text conflict. The refusal names each scope, what each
+side recorded for it, and the fix:
+
+```
+$ git merge feature
+crapkit: ratchet merge refused: OURS and THEIRS moved a stamp differently - scope web: OURS records [lizard=1.24.0 analysis typescript=14; coverage istanbul=1] and THEIRS records [lizard=1.24.0 analysis typescript=15; coverage istanbul=1] - run `crapkit coverage` and `crapkit ratchet seed --scope web` on one branch, then merge again; OURS was left unchanged
+Auto-merging crapkit-ratchet.tsv
+CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
+Automatic merge failed; fix conflicts and then commit the result.
+```
+
+Three single-number sides that each moved the stamp refuse the same way. When one side's stamp
+is newer, the refusal names that side and the metric to re-seed under, because a seed under the
+older release stamps its own older metric and the next merge refuses again:
 
 ```
 $ git merge main
-crapkit: ratchet merge refused: ours is [crapkit-analysis=11 lizard=1.24.0] and theirs is [crapkit-analysis=13 lizard=1.24.0] - marks from different metric versions cannot merge; theirs is newer, so with a crapkit that measures [crapkit-analysis=13 lizard=1.24.0], run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline the merged marks with `crapkit ratchet seed`
+crapkit: ratchet merge refused: OURS records [crapkit-analysis=11 lizard=1.24.0] and THEIRS records [crapkit-analysis=13 lizard=1.24.0], and each side moved the stamp away from BASE's; THEIRS is newer, so on this branch, with a crapkit that measures [crapkit-analysis=13 lizard=1.24.0], run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`, then merge again; OURS was left unchanged
 ```
 
-When the stamps do not compare, as with an unstamped side, it asks you to re-seed one side:
+When the stamps do not compare, as with an unstamped side, it asks you to re-seed one branch:
 
 ```
 $ git merge legacy
-crapkit: ratchet merge refused: ours is [crapkit-analysis=8 lizard=1.24.0] and theirs is [unstamped] - marks from different metric versions cannot merge; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline one side with `crapkit ratchet seed`
+crapkit: ratchet merge refused: OURS records [crapkit-analysis=8 lizard=1.24.0] and THEIRS records [unstamped], and the two stamps do not compare; on one branch, run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`, then merge again; OURS was left unchanged
 Auto-merging crapkit-ratchet.tsv
 CONFLICT (content): Merge conflict in crapkit-ratchet.tsv
 Automatic merge failed; fix conflicts and then commit the result.
@@ -708,7 +852,7 @@ Automatic merge failed; fix conflicts and then commit the result.
 The historical example joins stamps from different reader versions. Bring both
 branches through the [upgrade checks](upgrading.md#measure-before-changing-marks)
 and review function identity before restamping. The merge driver also refuses
-different key-format versions; matching metric stamps alone are not enough.
+different key-format versions; stamps that merge are not enough.
 
 `ratchet merge` runs with no `crapkit.toml` in sight, because git invokes it from a temp
 directory. It is the one ratchet subcommand that needs no config.
@@ -1001,7 +1145,7 @@ EXIT=0
 
 The grant is the override's own write to the marks file, so the OK line ends with the same
 `git add` a tighten's does; `ratchet_changes` stays `null` in the JSON receipt, the grant
-being listed under `overridden`.
+being an `overridden` item in `findings`.
 
 ```
 $ crapkit overrides
@@ -1061,6 +1205,51 @@ repayment. The worst case is the CRAP the function's scope scores with no covera
 ccn where a lane measures the scope, and ccn in a `coverage_optional` scope, which scores
 CRAP = ccn. Before 0.8.1 the hook wrote ccn^2 + ccn there too, 72 for a ccn-8 function, and
 verify let the function grow to ccn 72 before its mark failed.
+
+The reason also passes a marked refusal: a marked function whose ccn passed its mark (see
+[the commit gate](#the-commit-gate-refuses-a-marked-function-whose-ccn-passed-its-mark)).
+The commit goes through with the same three records, the alert line names the function, and
+the override row carries the high end of its CRAP range, as for any hook grant. The mark keeps
+its value byte for byte: **marks only fall**. A grant that adds no new mark leaves
+`crapkit-ratchet.tsv` unwritten and out of the commit, and the receipt names each mark it
+kept. On the demo repo, with `read_row` marked 7.3333 and taken to ccn 8 as above:
+
+```
+$ CRAPKIT_OVERRIDE_REASON="hotfix 412, decompose in the follow-up" git commit -m "read two more fields"
+crapkit gate: 1 staged function(s) rose past their ratchet mark:
+  ccn   8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+crapkit: override granted with full audit (hotfix 412, decompose in the follow-up).
+crapkit: 1 ratchet mark kept as it was (a mark only falls): calc/parse.py read_row( line , cols ) 7.3333
+crapkit: clear CRAPKIT_OVERRIDE_REASON now (`unset CRAPKIT_OVERRIDE_REASON`) - while set it grants again on every commit.
+crapkit: a CI job or a launcher that exported it is not cleared by any command here - clear it where it was set.
+[main e1d11b8] read two more fields
+ 1 file changed, 2 insertions(+)
+EXIT=0
+```
+
+The mark did not move, so the next `verify` reports the rise as a ratchet regression, and no
+override grants a ratchet regression:
+
+```
+$ crapkit verify
+warning: 1 changed line(s) have no coverage
+  uncovered calc/parse.py:27
+verify FAILED @ e1d11b8668b vs baseline 79b4063dbfb (2 changed files)
+  changed files: calc/parse.py, crapkit-ratchet.tsv
+  GATE  crap     11.4  ccn   8 cov 62%  calc/parse.py:16  read_row( line , cols )  -> decompose
+  RATCHET  calc/parse.py  read_row( line , cols ): 7.3333 -> 11.375
+  findings: 2 committed / 0 dirty (uncommitted edits and untracked files)
+EXIT=6
+
+$ crapkit verify --override "hotfix 412, decompose in the follow-up"
+...
+override refused: 1 ratchet regression (calc/parse.py read_row( line , cols ) 7.3333 -> 11.375) never qualifies for an override; raise the mark by hand and commit it
+EXIT=6
+```
+
+The override let one commit through and paid nothing back. The ways out are the two a
+ratchet regression always has: bring the function back under its mark, or raise the mark in
+`crapkit-ratchet.tsv` by hand in a commit a reviewer sees.
 
 The hook refuses the override before it writes anything when a staged file went unread,
 with the same `override refused` line verify prints; the commit fails on the file either

@@ -41,6 +41,7 @@ from time import perf_counter_ns
 from typing import NoReturn
 
 from .errors import InternalCheckError
+from .keys import highest_marks
 
 ISSUES = "https://github.com/JeanFrancoisGagne/crapkit/issues"
 RECEIPT_ENV = "CRAPKIT_INVARIANT_RECEIPT"
@@ -282,11 +283,7 @@ def check_rows(rows, ceiling_of=None, *, kept: str = STORED, site: str = "write_
 
 def _highest(prior) -> dict:
     """Each key's mark before the write; the higher one when a file lists a key twice."""
-    marks: dict = {}
-    for e in prior:
-        key = (e.path, e.long_name)
-        marks[key] = max(e.crap, marks.get(key, e.crap))
-    return marks
+    return highest_marks(prior)
 
 
 def _rise(entry, before, adds: bool) -> str | None:

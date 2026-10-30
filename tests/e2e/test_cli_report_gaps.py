@@ -416,5 +416,6 @@ def test_verify_warns_about_a_changed_line_that_never_ran(scored_repo: Path):
     assert "warning: 1 changed line(s) have no coverage" in res.stderr
     assert "  uncovered src/app.ts:4" in res.stderr
     out = json.loads(res.stdout)
-    assert out["diff_uncovered"] == [{"path": "src/app.ts", "line": 4}]
-    assert out["diff_uncovered_count"] == 1
+    assert [{"path": item["path"], "line": item["line"]} for item in out["findings"]
+            if item["kind"] == "diff_uncovered"] == [{"path": "src/app.ts", "line": 4}]
+    assert out["counts"]["diff_uncovered_count"] == 1

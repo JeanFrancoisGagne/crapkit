@@ -12,7 +12,7 @@ Two audiences, two sections. Read the one that matches the repo you are in:
   itself.
 
 Every command below runs as `crapkit <sub>` (console script) or
-`python -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
+`python -P -m crapkit <sub>`. Every subcommand takes `--repo PATH`; without it the root is the
 nearest `crapkit.toml` at or above the working directory
 (docs/adr/0002-configuration-is-found-upward-nearest-wins.md), except `claude-hook`, which
 reads its root from the hook payload on stdin. A leading `~` in PATH is your home directory
@@ -189,8 +189,10 @@ Three rules decide what it judges:
 - **Metric**: ccn against the file's scope ceiling, coverage ignored. Same question the
   pre-commit hook asks.
 - **Pardon**: a function carrying a ratchet mark it has not exceeded passes. Push it
-  past its mark and it fails here, ahead of verify's exit 6. Verify keeps exit 7 for a
-  mark that rose in a function the diff never touched.
+  past its mark and it fails here, ahead of verify's exit 6. The commit hook sees no
+  coverage and refuses it only once its staged ccn alone passes the mark, so
+  `rescore --gate` still fails first. Verify keeps exit 7 for a mark that rose in a
+  function the diff never touched.
   The marks file is read only when a changed function is over its ceiling, so a clean
   gate never reports a marks file it cannot parse; the next gate that breaches does.
 
@@ -332,10 +334,30 @@ arrive as added context instead, and the hook exits 0:
     the commit gate enforces this; decompose there or mark the debt
 
 Nothing was blocked and nothing in your tree was written. Read it as the earliest warning
-that step 3 will fail, not as a rejected edit. A function the committed ratchet already
-marks never triggers it, and a repo with no `crapkit.toml` never hears from the hook at
-all. Before the repo's first commit there is no HEAD to diff against, so every function in
-the edited file counts as changed.
+that step 3 will fail, not as a rejected edit. A repo with no `crapkit.toml` never hears
+from the hook at all. Before the repo's first commit there is no HEAD to diff against, so
+every function in the edited file counts as changed.
+
+A function the ratchet marks is held to its mark the way the commit gate holds it. Your
+file has no coverage, so its CRAP is a range from its ccn up to its untested CRAP. While
+that range sits at or under the mark, the hook says nothing. A ccn past the mark is past
+it at any coverage, and the commit gate will refuse it, so the hook prints the marked
+block:
+
+    crapkit advisory: 1 marked function(s) rose past their ratchet mark in calc/parse.py (the edit landed; nothing was blocked)
+      ccn 8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+    the commit gate refuses a ccn past its mark, and a mark only falls: bring the ccn back to its mark or under it
+
+Decompose until the ccn sits at or under the mark; no seed raises it. A range across the
+mark whose ccn rose since HEAD may have passed it. The commit goes through with a warn,
+and the hook prints the warn block, with the ccn at HEAD (`new` for none) and now:
+
+    crapkit advisory: 1 marked function(s) rose in ccn and may pass their ratchet mark in calc/grade.py (the edit landed; nothing was blocked)
+      ccn 10 -> 12  calc/grade.py:1  classify( score , attempts , late )  mark 110.0000
+    `crapkit verify` judges the mark with coverage: add tests that run the new branches, or decompose
+
+Add tests that run the new branches before step 5, or decompose. A comment edit, or a
+ccn that fell, stays silent.
 
 The same exit 2 comes with a different head line when the hook could not judge the edit.
 An edit that leaves a file no reader can read (a TypeScript arrow body the reader refuses,
@@ -661,7 +683,7 @@ Twelve tools, every one the CLI command's `--json` form:
 | `list_duplicate_functions` | `similarity` | JSON |
 | `get_ratchet_report` | none | JSON |
 | `list_claims` | none | JSON (`claims list --json`) |
-| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it; `ok` false on a breach or on a changed file no reader could read (`gate.unread_files`), exit 6, answered as a result, not a tool error |
+| `check_gate` | `path` | JSON: `rescore PATH --gate --json`, whose `gate` block says whether the edited file clears `rescore --gate`, which is stricter than the commit hook: a ratchet mark pardons only while the function's CRAP is at or under it, and the hook refuses a marked function only once its staged ccn alone passes the mark; `ok` false on a breach or on a changed file no reader could read (`gate.unread_files`), exit 6, answered as a result, not a tool error |
 
 Arguments are checked against the served schema before the CLI spawns. `tools/list`
 carries `required` from each tool's positionals, and a missing positional, an undeclared
@@ -713,7 +735,7 @@ run. The store fills missing per-run rollups when `trend` or `report` asks for t
     pip install -e ".[dev,accuracy-push]"
     npm ci --prefix tools/accuracy/node/push
     git config core.hooksPath git-hooks
-    git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+    git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"
 
 The driver line makes git merge `crapkit-ratchet.tsv` through `crapkit ratchet merge`,
 so a land or a worktree merge combines the marks instead of leaving a conflict for a
@@ -781,10 +803,13 @@ python tools/deploy/run.py --native --os windows        # Windows or macOS, afte
 ```
 
 ci.yml runs the push set in `deploy-linux`, `deploy-linux-native`, `deploy-windows` and
-`deploy-action`. deploy.yml runs the nightly, weekly, release and published sets, and runs
-on a pull request only when it changes an install surface or carries the `deploy-full`
-label. Before a release, push HEAD (the commit stage 1 will bump), dispatch the release
-set with `gh workflow run deploy.yml --ref main -f cadence=release` and wait for it to
+`deploy-action`. deploy.yml runs the nightly, weekly, release and published sets: the
+nightly and weekly on their schedule on main, any set on a dispatch, and none on a pull
+request. accuracy.yml runs its tiers the same way. To run a set on a branch, dispatch it:
+`gh workflow run deploy.yml --ref <branch> -f cadence=nightly` for the deploy cells,
+`gh workflow run accuracy.yml --ref <branch> -f mode=nightly` for the accuracy suite's
+nightly tier. Before a release, push HEAD (the commit stage 1 will bump), dispatch the
+release set with `gh workflow run deploy.yml --ref main -f cadence=release` and wait for it to
 pass: `python tools/release/release.py check VERSION` refuses until a release-cadence run
 at HEAD is green. `tests/deploy/MAP.toml` maps every documented install command, channel,
 harness and upgrade source to its cells, and `tests/unit/test_deploy_map.py` fails on a
@@ -855,6 +880,15 @@ run does gets a fresh build. A copy's lane artifacts still key files by the buil
 staging dir, which is gone, so a test that reads dark lines or reuses artifacts runs
 `coverage` in its copy first, or builds fresh.
 
+Every coverage reader in `coverage_format._FORMATS` passes one conformance suite,
+`tests/unit/test_coverage_reader_contract.py`, through its `read()`. A new reader adds
+its field rows to `FIELDS` and its minimal-artifact builder in
+`tests/unit/coverage_fields.py`: one row per field it reads, with the field's type,
+whether it is required and what the reader makes of it when it is absent. The suite
+drops and retypes each field in turn, and fails naming a format that has no rows.
+Rules that tie two fields together, such as covered at most total or a count without
+its partner, stay in the reader's own test file.
+
 ## Where code goes
 
 `src/crapkit/` is the pure core: analysis, scoring, the store, git, the ratchet, the
@@ -875,7 +909,9 @@ Shared rules belong to these modules:
 | `logs.py` | how active command output drains into bounded rotating logs without hiding progress |
 | `lanes.py` | which measurement outputs a command owns. `measurement_owner` holds resolved artifacts, logs and stamps through execution and parsing, with a helper process retaining locks until surviving commands stop |
 | `lane_command.py` | how a lane's command reads and how its child starts. `shell_words` and `shell_segments` read the line the way the shell that runs it reads it; `command_steps` also reads the script of a `bash -c` or `sh -c` step with sh's rules and marks one sh cannot split; `launch_spec` gives the cwd and merged env that the lane run, the flake retest and doctor's probes all start from; `pytest_python` names the python heading the pytest step, for the missing pytest-cov hint and doctor's probe alike; `child_environment` builds every lane, flake-retest and mutation child's environment; `expand_launchers` reads the launcher token (`{python}`, `{python:DIR}`) for this OS, and config calls it once as it builds the Lane |
-| `repopath.py` | which file git names by a path that did not come from git. One entry per source: `typed` and `typed_path` for a path a person or agent typed (arguments, `--repo`, writer flags, hook payloads), `declared` for one crapkit.toml holds, `Reported` for one a runner wrote, `fragment` for a piece to match; `inside` is the one placing rule for an absolute path |
+| `toolchain.py` | which runner a lane runs and what that runner needs. `TOOLCHAINS` holds one `Toolchain` row per runner, keyed by its name: the words that spell it in a command, the devDependency that names it, and the command, report flags, junit reporter, junit hint and scoped-tests template init writes for it. These are the runner facts: init, the runner refusals, the container guard and doctor's runner probes read them for the runner a command spells (`infer`, `step_runner`, `command_spells`), never off a lane's `parser`. At module scope it imports the standard library only: config and lane_command import it at module scope, so its readers import `config.SHELL_IS_CMD`, lane_command's tokenizer and `is_python` where they are called. It never imports a cli module |
+| `coverage_format.py` | which adapter reads a lane's artifact, looked up once from its `parser` (`lane_format`), and the producer facts that hold whatever runner starts the producer: `data_file` (where the lane's data file lands, for doctor's shared data-file finding), `SHARD_GLOB` and `COMBINE_RECIPE` (the shards a killed parallel run leaves and the commands that combine them, for the missing-artifact refusal) and `DROPPINGS` (what a run leaves in the tree, for init's .gitignore). A format without one leaves it empty. No other module compares parser strings, and `tests/unit/test_parser_strings_live_in_one_module.py` fails on one that does |
+| `repopath.py` | which file git names by a path that did not come from git. One entry per source: `typed` and `typed_path` for a path a person or agent typed (arguments, `--repo`, writer flags, hook payloads), `declared` for one crapkit.toml holds, `Reported` for one a runner wrote, `fragment` for a piece to match. `place` is the one placing rule for an absolute path: the root-relative path, or the `Unplaced` reason (`ANOTHER_TREE`, `UNOPENABLE`); `inside` answers it as the path or None, and `Reported.unplaced` records each key the reported entry left unplaced with its reason |
 | `lane_results.py` | which run's record of a lane's test results a comparison reads. `read_results` parses a lane's record into `LaneResults`, where a lane with no junit this run has no count and no failure list (None), never 0 tests or no failures, and a list a verify older than 0.8.0 stored is not trusted; a comparison reads the run it compares against, else the newest run behind it that recorded one, else says it cannot compare. verify's baseline and coverage's `suite_drops` both walk it. No other module reads `failures`, `tests_total` or `tests_skipped` off a lane record, and `tests/unit/test_lane_results.py` fails on one that does |
 | `marks_history.py` | what the marks file held in the past: the history `ratchet report` and `brief` read mark ages off, followed back through every `git mv` of the marks file, and the newest committed marks verify judges a missing or emptied marks file against. A git read under it that fails raises `GitError`; none answers an empty history |
 | `agent_fields.py` | every field of every agent JSON payload (each `--json` command's, `next-item`'s, `brief --batch`'s, `--version --json` and the error object), declared once: its payload, key, JSON types (null among them only where it may be null) and meaning. `ADDED` names the fields a release adds. The MCP tools serve these declarations as their outputSchema, and `tests/unit/test_agent_fields.py` prints every payload and checks it, the MCP schemas and docs/agent-json.md against them. Add a field there first; JSON schema 1 never changes an existing field's meaning |
@@ -889,6 +925,7 @@ Shared rules belong to these modules:
 | `named.py` | how a message names a list of files or functions: `first_few` gives the first three in the caller's order and a count of the rest. The GitHub Action's comment builder (`tools/action/comment.py`) calls it too, for its verdict line and for the changed-files step's log line, and `tests/unit/test_named_lists.py` fails on a copy in src, tools or `action.yml` |
 | `sourcelines.py` | where a source's lines end: LF, CRLF and a lone CR, as the scores number them. Split source text with `source_lines`; `str.splitlines` also ends a line at a form feed and seven other characters. `line_starts` numbers a text by the reader's rule or by `LF_ONLY` and `ECMASCRIPT`, the rules git and the JavaScript coverage producers use |
 | `istanbul_lines.py` | which of the reader's lines an istanbul record's positions sit on. `on_reader_lines` runs on every record before attribution; a file with a lone CR, U+2028 or U+2029 is read and renumbered from the rule its producer used |
+| `score.py` | the coverage join: which coverage record scores a function. It owns `FnCoverage`, the record every coverage reader hands the join; `coverage_count`, which admits a producer's count as a nonnegative whole number or refuses it; and `span_owners`, the innermost-span rule that gives each position to the innermost span holding it. It also owns the coverage evidence join: `join_evidence` gives each line and branch of a `FileEvidence` (what an artifact without function records reports) to the innermost inventory span holding it and builds one `FnCoverage` per span that owns evidence, and `score_rows(evidence_by_path=...)` adds those records to the candidates it selects from, so a reader without function records writes no attribution of its own. It imports no coverage adapter: the istanbul and coverage.py readers import these from it |
 | `diffparse.py` | which lines a diff changed, on the lines a function span or a coverage report numbers. git ends a line at LF only and the reader also ends one at a lone CR, so `worktree_ranges` (a diff against the working tree) and `reader_ranges` (any other new side, such as the staged blobs) place each range by the new side's bytes. `changed_ranges` alone answers in git's numbers, and `git_span` turns a function's span into git's numbers before it goes to git |
 | `coupling_cache.py` | which files keep landing in the same commits. `coupling`, `brief` and `worklist --batches` all read this one door, and it caches the ranked pairs in `.crapkit/coupling-cache-v2.json` beside the churn caches |
 
@@ -962,11 +999,18 @@ else, usually later, usually as a plausible wrong number.
   gate refuses the rest; the section below says what a refusal means.
 - **Register a new command once, in the parser.** Import helpers directly from their
   owning family module. Keep `crapkit.cli.main` as the public process entry point.
-- **Change what a metric measures and bump `ANALYSIS_VERSION` in `analyze.py`.** The
+- **Change what a metric measures and raise the number of each language or coverage
+  reader the change moves, and `ANALYSIS_VERSION` by one, in the same change.** The
+  numbers live in `ANALYSIS_VERSIONS` in `analyze.py`, one per language, and
+  `READER_VERSIONS` in `coverage_format.py`, one per coverage reader; `ANALYSIS_VERSION`
+  is their revision. A new language enters at 13 (`FIRST_ANALYSIS_VERSION`) and a new
+  reader at 1 (`FIRST_READER_VERSION`), and neither raises a number. The analysis cache
+  keys each file on its language's number, so a Go fix re-reads the Go files alone. The
   ratchet stamps every marks file with the version that produced it, and `verify` refuses
   to weigh fresh scores against marks another version signed. 0.4.5 bumped it to 8,
-  because shell blocks now nest. Without the bump nothing refuses, and 40k marks are
-  quietly compared against numbers they never described. Then re-measure `GOLDEN_RECORDS`
+  because shell blocks now nest. Without the raise nothing refuses, and 40k marks are
+  quietly compared against numbers they never described. Update the pinned literal in
+  `tests/unit/test_analysis_versions.py`, then re-measure `GOLDEN_RECORDS`
   in `tests/unit/test_analysis_cache_identity.py` on every Python the CI runs and set
   `GOLDEN_ANALYSIS_VERSION` to the new version; a test fails until you do. Declare the
   change too: `python tools/accuracy/change_control.py declare` appends the
@@ -997,7 +1041,7 @@ that fails on the parent commit. A bug fix lands with the test that reproduces i
 
 Every function you add or edit must sit at or under its scope's `target` in this repo's
 own `crapkit.toml`: 6 for `src` and `tools`, 5 for `tools/accuracy`. The pre-commit hook
-runs `python -m crapkit hook-precommit` over the staged blobs:
+runs `python -P -m crapkit hook-precommit` over the staged blobs:
 
     crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
       ccn   7  calc/report.py:39  tally( rows , low , high , invert , label , pad , strict )
@@ -1010,16 +1054,18 @@ The hook pardons a function the committed ratchet already carries a mark for, an
 reports the count on stderr. Touching signed debt does not refuse the commit; `crapkit
 verify` is what fails a mark that rises.
 
-Two gates, two pardons, and the difference is on purpose. The pre-commit hook pardons
-a marked function whatever its fresh score, because it reads staged blobs and a staged
-blob has no coverage behind it: the hook cannot tell a mark that held from one that
-rose. `crapkit rescore --gate` and `crapkit verify` pardon only a touched function whose
-fresh CRAP sits at or under its mark. So an edit that pushes signed debt past its mark
-still commits, and verify then refuses it with exit 6. Exit 7 stays for a mark that rose
-in a function the diff never touched.
+One pardon, over the CRAP range each gate knows. A mark pardons a function while that
+range sits at or under it. `crapkit verify` knows the exact CRAP and `crapkit rescore
+--gate` the fresh ccn over the last run's coverage. Both hooks read a blob or a working
+tree with no coverage, so their range runs from the ccn up to the untested CRAP: a ccn
+past the mark is refused at the commit, and a range across it passes, with a warn when
+its ccn rose. So an edit that pushes signed debt past its mark by coverage alone still
+commits, and verify then refuses it with exit 6. Exit 7 stays for a mark that rose in a
+function the diff never touched.
 
 `CRAPKIT_OVERRIDE_REASON` is a human granting audited debt (alert, ratchet entry and
-snapshot record, all three or nothing). Leave it alone.
+snapshot record, all three or nothing). On a marked function whose ccn passed its mark it
+passes the commit and keeps the mark, so `crapkit verify` still fails the rise. Leave it alone.
 
 ## Determinism is the product
 
@@ -1053,7 +1099,7 @@ fails, not a reader.
 
 `crapkit.toml` and `crapkit-ratchet.tsv` at the repo root are live.
 
-    python -m crapkit coverage
-    python -m crapkit verify
+    python -P -m crapkit coverage
+    python -P -m crapkit verify
 
 must stay green on your branch.

@@ -298,7 +298,7 @@ def _packet_keys(monkeypatch) -> set[str]:
                          ("_brief_versions", {"crapkit": "0"})):
         monkeypatch.setattr(queue, name, lambda *a, _v=answer, **k: _v)
     for module, name in ((crapkit.coupling_cache, "load_coupling"),
-                         (crapkit.dup, "twins_in"), (crapkit.marks_history, "file_log")):
+                         (crapkit.dup, "twins_in"), (crapkit.marks_history, "file_revisions")):
         monkeypatch.setattr(module, name, lambda *a, **k: [])
     store = SimpleNamespace(read_rows=lambda *a, **k: [row],
                             read_scored=lambda *a, **k: [row],

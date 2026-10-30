@@ -133,7 +133,7 @@ def test_a_coverage_run_cannot_retire_a_failed_verifys_finding(laundered: Path):
     assert res.returncode == 6, res.stdout + res.stderr
     payload = json.loads(res.stdout)
     assert payload["baseline_run"] == 1, "run 3 scored the tree run 2 refused"
-    assert [g["long_name"] for g in payload["gate_violations"]] == \
+    assert [g["long_name"] for g in payload["findings"] if g["kind"] == "gate_violation"] == \
         ["legacy_router( n )"], "the finding run 3 would have buried"
 
 

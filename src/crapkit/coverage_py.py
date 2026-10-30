@@ -10,8 +10,12 @@ end line.
 
 This module is also the coverage.py adapter (coverage_format looks it up from a
 lane's `parser`): it walks the report's "files" member through covstream's
-framing, keys each file with the lane's path_prefix, takes that prefix back off
-for the wrong-tree check, and owns the runner advice a refusal gives.
+framing, keys each relative file with the lane's path_prefix, records each
+absolute key with the placing step's reason for the wrong-tree check, and owns
+the runner advice a refusal gives. It owns coverage.py's producer facts too,
+which hold whatever runner starts it: where the data file lands, the shards a
+killed parallel run leaves with the recipe that combines them, and what a run
+drops in the tree.
 
 Under a POSIX locale that is not UTF-8 the lane's own Python names files in that
 locale's encoding, so its report keys `pkg/café.py` as `pkg/cafÃ©.py`. The
@@ -24,16 +28,18 @@ import codecs
 import locale
 import os
 import sys
-from collections.abc import Callable
+from array import array
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from . import covstream
-from .coverage_istanbul import FnCoverage, coverage_count
 from .errors import ToolError
-from .repopath import Reported, file_separators
+from .lane_command import command_steps
+from .repopath import Placing, Reported, Unplaced, absolute, file_separators
 from .repotext import json_kind, utf8_spelling
 from .named import first_few
+from .score import FileEvidence, FnCoverage, coverage_count
 
 if TYPE_CHECKING:
     from .config import Lane
@@ -310,20 +316,12 @@ def lane_prefix(path_prefix: str) -> str:
 def measured_key(prefix: str, raw_path: str) -> str:
     """The repository path one report file key names, under a lane_prefix.
 
-    The one spelling of the forward rule. The reader prepends the prefix to
-    EVERY key, an absolute one included, which is why as_reported exists."""
-    return prefix + file_separators(raw_path)
-
-
-def as_reported(lane: Lane, key: str) -> str:
-    """One coverage key with this lane's own `path_prefix` taken back off, which
-    is the path the runner actually wrote.
-
-    `backend/` + `/other/checkout/a.py` starts with neither `/` nor a drive
-    letter, so asked of the key, the wrong-tree check answers no on every lane
-    that declares the knob: the monorepo shape the check was written for."""
-    prefix = lane_prefix(lane.path_prefix)
-    return key[len(prefix):] if prefix and key.startswith(prefix) else key
+    The one spelling of the forward rule. The prefix goes onto a relative key
+    only: glued onto `/other/checkout/a.py`, it made `backend//other/...`, a
+    key a `backend` scope claimed. An absolute key stays as written, and the
+    reader records it with its reason (`read`)."""
+    key = file_separators(raw_path)
+    return key if absolute(key) else prefix + key
 
 
 # --- reading the report --------------------------------------------------------
@@ -348,16 +346,19 @@ class _Files:
 
     def __init__(self) -> None:
         self.per_file: dict[str, list[FnCoverage]] = {}
-        self.dead: dict[str, set[int]] = {}
+        self.evidence: dict[str, FileEvidence] = {}
         self.regionless: list[str] = []
         self.total = 0
         self.branch_counted = 0
         self.branchless: list[str] = []
+        self.absolute: list[str] = []
 
     def add(self, prefix: str, raw_path: str, data: object) -> None:
         self.total += 1
         path = measured_key(prefix, raw_path)
-        self.dead[path] = _dead_lines(path, data)
+        if absolute(path):
+            self.absolute.append(path)
+        self.evidence[path] = _missed_only(_dead_lines(path, data))
         if not has_regions(data):
             self.regionless.append(raw_path)
             return
@@ -371,6 +372,18 @@ def _dead_lines(path: str, data: object) -> set[int]:
     """The lines one file entry says never ran, refused by the file's name
     when the entry or its missing_lines is not the shape coverage.py writes."""
     return set(_line_list(path, _file_entry(path, data), "missing_lines"))
+
+
+# The largest line number array("I") holds. A line past it, or below 1, sits in
+# no span a function or a changed range names, so the evidence leaves it out.
+_LAST_LINE = 2 ** 32 - 1
+
+
+def _missed_only(lines: set[int]) -> FileEvidence:
+    """A file's dead lines as its evidence. hit_lines is None: this reader
+    keeps its own function records, so the join builds none from it and only
+    the dead-line fold reads missed_lines."""
+    return FileEvidence(None, array("I", sorted(n for n in lines if 0 < n <= _LAST_LINE)))
 
 
 def _file_entry(path: str, data: object) -> dict:
@@ -397,10 +410,12 @@ def _branchless(path: str, data: dict) -> list[str]:
             if name and "num_branches" not in fn["summary"]]
 
 
-def _coveragepy_both(w, prefix: str, label: str) -> tuple[dict, dict]:
-    """path -> function coverage, salvaging the same way the whole-document
-    parser does: a statement-based downgrade with no branch data, and files with
-    no regions skipped rather than fatal."""
+def _coveragepy_both(w, prefix: str, label: str,
+                     written: list[str] | None = None) -> tuple[dict, dict]:
+    """path -> function coverage and path -> FileEvidence, salvaging the same
+    way the whole-document parser does: a statement-based downgrade with no
+    branch data, and files with no regions skipped rather than fatal. `written`
+    takes each absolute key."""
     files, branch = _Files(), False
     for key, value, kind in covstream.walk_report(w, "files"):
         if kind == "member":
@@ -411,17 +426,25 @@ def _coveragepy_both(w, prefix: str, label: str) -> tuple[dict, dict]:
     # cannot answer one report differently.
     judge_regions(files.regionless, files.total, label)
     _judge_branch_counts(branch, files, label)
-    return files.per_file, files.dead
+    if written is not None:
+        written.extend(files.absolute)
+    return files.per_file, files.evidence
 
 
 def parse_coveragepy_both_file(path: Path | str, *, path_prefix: str,
-                               chunk: int = covstream.CHUNK, label: str = ""
-                               ) -> tuple[dict, dict, str]:
-    """Function coverage, missing lines, and byte digest from one report walk."""
+                               chunk: int = covstream.CHUNK, label: str = "",
+                               absolute_keys: list[str] | None = None
+                               ) -> tuple[dict[str, list[FnCoverage]],
+                                          dict[str, FileEvidence], str]:
+    """Function coverage, each file's FileEvidence (its missing lines as
+    missed_lines, hit_lines None), and byte digest from one report walk.
+    `absolute_keys` takes each absolute key the report wrote, `/` between
+    directories and no prefix on it."""
     prefix = lane_prefix(path_prefix)
-    (per_file, dead), digest = covstream.read_walk(
-        path, lambda w: _coveragepy_both(w, prefix, label), f"{_BAD_REPORT} {path}", chunk)
-    return per_file, dead, digest
+    (per_file, evidence), digest = covstream.read_walk(
+        path, lambda w: _coveragepy_both(w, prefix, label, absolute_keys),
+        f"{_BAD_REPORT} {path}", chunk)
+    return per_file, evidence, digest
 
 
 def _coveragepy_missing(w, prefix: str) -> dict[str, set[int]]:
@@ -484,6 +507,45 @@ ABSOLUTE_FIX = ("Make the runner write relative paths: `relative_files = true` "
                 "under `[tool.coverage.run]` in pyproject.toml, or "
                 "`[run] relative_files = true` in .coveragerc, then rerun the lane")
 UNMEASURED_READING = "or the runner reports paths this lane needs path_prefix to rebase"
+TAKES_PATH_PREFIX = True
+
+# Producer facts: what coverage.py writes and leaves whichever runner starts it,
+# pytest-cov, `coverage run` or a `make cov` that wraps either.
+# A run in parallel mode writes one shard per process and combines them at the end.
+SHARD_GLOB = ".coverage.*"
+# Two commands, never one `&&` chain: Windows PowerShell 5.1 has no `&&`, and the
+# shard hint hands them to whatever shell the operator stands in.
+COMBINE_RECIPE = ("coverage combine", "coverage json -o {target}")
+# coverage's data file, and the bytecode caches Python leaves on every run.
+DROPPINGS = (".coverage", "__pycache__/")
+
+
+def data_file(lane: Lane) -> str:
+    """Where the lane's data file lands, as far as the config says: the
+    command's own `--data-file`, else COVERAGE_FILE from the lane's env, else
+    coverage.py's default, in the directory the lane starts in."""
+    name = (_data_file_flag(lane.command) or dict(lane.env).get("COVERAGE_FILE")
+            or ".coverage")
+    return os.path.normcase(os.path.normpath(os.path.join(lane.cwd or ".", name)))
+
+
+def _data_file_flag(command: str) -> str:
+    """The first `--data-file` a step of the command hands coverage, "" when
+    none does. Read as the shell reads the line, a `bash -c` payload included: a
+    regex stopped at the first space or quote, so `"cov a/.coverage"` and
+    `"cov b/.coverage"` both read as `cov`."""
+    values = (value for step in command_steps(command).steps
+              for value in _flag_values(step.words, "--data-file"))
+    return next(values, "")
+
+
+def _flag_values(words: tuple[str, ...], flag: str) -> Iterator[str]:
+    """Every value `flag` takes in one argv: `--flag=value` or `--flag value`."""
+    for at, word in enumerate(words):
+        if word.startswith(flag + "="):
+            yield word[len(flag) + 1:]
+        elif word == flag and at + 1 < len(words):
+            yield words[at + 1]
 
 
 def _speller(root: Path) -> Callable[[str], str]:
@@ -499,7 +561,7 @@ def _speller(root: Path) -> Callable[[str], str]:
 
     def spell(key: str) -> str:
         key = in_utf8(key)
-        return key if os.path.isabs(key) else relative(key)
+        return key if absolute(key) else relative(key)
     return spell
 
 
@@ -507,12 +569,35 @@ def _respelled(per_key: dict, spell: Callable[[str], str]) -> dict:
     return {spell(key): value for key, value in per_key.items()}
 
 
-def read(lane: Lane, root: Path, artifact: Path) -> tuple[dict, dict, str]:
-    """The lane's function coverage, dead lines and artifact digest, one walk."""
-    per_file, dead, digest = parse_coveragepy_both_file(
-        artifact, path_prefix=lane.path_prefix, label=f"lane {lane.name!r}")
+def read(lane: Lane, root: Path, artifact: Path, *,
+         unplaced: dict[str, Unplaced] | None = None
+         ) -> tuple[dict[str, list[FnCoverage]], dict[str, FileEvidence], str]:
+    """The lane's function coverage, each file's FileEvidence (its dead lines)
+    and the artifact digest, one walk.
+    `unplaced` takes each absolute key, under the measured key it reads as,
+    with the placing step's reason: KEPT_ABSOLUTE for one in this checkout,
+    because this reader never rebases an absolute key (relative_files is the
+    runner's own switch). The placing step is asked once a folder, and not at
+    all for a report whose keys are all relative."""
+    written: list[str] = []
+    per_file, evidence, digest = parse_coveragepy_both_file(
+        artifact, path_prefix=lane.path_prefix, label=f"lane {lane.name!r}",
+        absolute_keys=written)
     spell = _speller(root)
-    return _respelled(per_file, spell), _respelled(dead, spell), digest
+    if unplaced is not None:
+        unplaced.update(_reasons(root, written, spell))
+    return _respelled(per_file, spell), _respelled(evidence, spell), digest
+
+
+def _reasons(root: Path, written: list[str], spell: Callable[[str], str]) -> dict:
+    placing = Placing(root)
+    return {spell(key): _kept(placing.placed(key)) for key in written}
+
+
+def _kept(placed: str | Unplaced) -> Unplaced:
+    """The reason an absolute key stays as written: the placing step's, or
+    KEPT_ABSOLUTE when it lands in this checkout."""
+    return placed if isinstance(placed, Unplaced) else Unplaced.KEPT_ABSOLUTE
 
 
 def missing(lane: Lane, root: Path, artifact: Path) -> dict[str, set[int]]:

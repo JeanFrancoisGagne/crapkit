@@ -12,15 +12,17 @@ Refill boundaries a small chunk reaches are covstream's seam and are tested in
 test_covstream.py.
 """
 import codecs
+import copy
 import hashlib
 import json
+from array import array
 from pathlib import Path
 
 import pytest
 
 from crapkit import coverage_format
 from crapkit.config import Lane
-from crapkit.coverage_istanbul import FnCoverage
+from crapkit.score import FileEvidence, FnCoverage
 from crapkit.errors import ToolError
 
 FORMATS = sorted(coverage_format._FORMATS)
@@ -68,6 +70,9 @@ KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py"}
 # (coverage_istanbul._instrumented; test_coverage_istanbul pins both readings).
 ROWS = {"istanbul": [FnCoverage("f", 1, 6, True, 2, 1, 3, 2, full_listing=True)],
         "coveragepy": [FnCoverage("f", 1, 5, True, 2, 1, 3, 2)]}
+# read()'s second value: the control's one file, its dead line 5 as missed_lines.
+# Both formats keep their own function records, so hit_lines is None.
+DEAD = FileEvidence(hit_lines=None, missed_lines=array("I", [5]))
 
 
 def _ist(doc: dict) -> dict:
@@ -123,10 +128,10 @@ def _holds(text: str, words) -> None:
 def test_every_format_reads_its_control_in_one_walk_with_the_digest_of_its_bytes(tmp_path, fmt):
     raw = _bytes(tmp_path, fmt)
 
-    per_file, dead, digest = _read(tmp_path, fmt, raw)
+    per_file, evidence, digest = _read(tmp_path, fmt, raw)
 
     assert per_file == {KEYS[fmt]: ROWS[fmt]}
-    assert dead == {KEYS[fmt]: {5}}
+    assert evidence == {KEYS[fmt]: DEAD}
     assert digest == hashlib.sha256(raw).hexdigest()
 
 
@@ -136,7 +141,7 @@ def test_every_format_reads_its_control_in_one_walk_with_the_digest_of_its_bytes
 def test_the_same_document_laid_out_another_way_reads_the_same(tmp_path, fmt, layout):
     raw = json.dumps(CONTROLS[fmt](tmp_path), **layout).encode("utf-8")
 
-    assert _read(tmp_path, fmt, raw)[:2] == ({KEYS[fmt]: ROWS[fmt]}, {KEYS[fmt]: {5}})
+    assert _read(tmp_path, fmt, raw)[:2] == ({KEYS[fmt]: ROWS[fmt]}, {KEYS[fmt]: DEAD})
 
 
 @pytest.mark.parametrize("fmt", FORMATS)
@@ -146,10 +151,10 @@ def test_a_utf8_byte_order_mark_is_read_past(tmp_path, fmt):
     stays the file's own bytes, mark included."""
     raw = codecs.BOM_UTF8 + _bytes(tmp_path, fmt)
 
-    per_file, dead, digest = _read(tmp_path, fmt, raw)
+    per_file, evidence, digest = _read(tmp_path, fmt, raw)
 
     assert per_file == {KEYS[fmt]: ROWS[fmt]}
-    assert dead == {KEYS[fmt]: {5}}
+    assert evidence == {KEYS[fmt]: DEAD}
     assert digest == hashlib.sha256(raw).hexdigest()
 
 
@@ -464,3 +469,338 @@ def test_a_coveragepy_lane_reads_the_contexts_of_one_file_through_its_adapter(tm
 
     assert adapter.contexts(_lane("coveragepy"), tmp_path, artifact, "src/a.py") == {2: ["test_f"]}
     assert adapter.contexts(_lane("coveragepy"), tmp_path, artifact, "absent.py") == {}
+
+
+# --- every field each format reads: coverage_fields.FIELDS ------------------------
+#
+# One row per field an adapter reads (tests/unit/coverage_fields.py). Each field
+# is dropped and retyped in turn on the format's minimal artifact, and every
+# field a recorded artifact holds is removed once, so a reader added to _FORMATS
+# is checked field by field the day it lands.
+
+from coverage_fields import FIELDS, MAPS, WRONG, field_paths, generic, minimal_artifact  # noqa: E402
+from crapkit.repotext import json_kind  # noqa: E402
+
+RECORDED = Path(__file__).parents[1] / "accuracy" / "coverage_oracles" / "recorded"
+RECORDINGS = {"istanbul": ["c8-12.0.0", "nyc-18.0.0", "jest-babel-30.5.2", "jest-v8-30.5.2",
+                           "vitest-istanbul-5.0.1", "vitest-v8-5.0.1"],
+              "coveragepy": ["coveragepy-7.10.6", "coveragepy-7.13.0", "coveragepy-7.16.1"]}
+
+# What read() does today where the ticket's lines ask for more. Each set is a
+# strict xfail on the one claim it breaks, never on the whole case, so a case
+# keeps every claim that does hold and turns red the day an adapter changes.
+# test_a_listed_shortfall_reads_as_it_does_today holds each listed case to the
+# reading or the refusal read() gives instead, so it turns red when anything
+# else about the case changes. The wording is the adapters' own
+# (coverage_istanbul._decl_line, _fn_end, _branch_line and _fn_span;
+# coverage_py's _admit_summary and judge_regions; covstream's framing of 'files').
+#
+# Retyped, these fields are refused as if a field were absent: the refusal
+# names the field but not the type it found. Each maps to the field whose drop
+# gives that same refusal. 'files' maps to None: no drop of it refuses, and it
+# refuses every wrong value in the words it gives null.
+TYPE_UNNAMED = {
+    **{("istanbul", locator): locator for locator in (
+        "*.fnMap.*.decl", "*.fnMap.*.decl.start", "*.fnMap.*.decl.start.line",
+        "*.fnMap.*.loc", "*.fnMap.*.loc.end", "*.fnMap.*.loc.end.line",
+        "*.branchMap.0.loc", "*.branchMap.0.loc.start", "*.branchMap.0.loc.start.line",
+        "*.branchMap.1.line")},
+    ("istanbul", "*.fnMap.*"): "*.fnMap.*.decl",
+    ("istanbul", "*.branchMap.0"): "*.branchMap.0.loc",
+    ("istanbul", "*.branchMap.1"): "*.branchMap.1.line",
+    ("coveragepy", "files"): None,
+    ("coveragepy", "files.*.functions.*"): "files.*.functions.*.summary",
+    ("coveragepy", "files.*.functions.*.summary"): "files.*.functions.*.summary",
+}
+# Retyped to anything but null, these optional fields read as if they were left
+# out, with no refusal.
+READ_AS_ABSENT = {
+    ("istanbul", locator) for locator in (
+        "*.fnMap.*.decl.start.column", "*.fnMap.*.loc.start", "*.fnMap.*.loc.start.line",
+        "*.fnMap.*.loc.start.column", "*.fnMap.*.loc.end.column",
+        "*.statementMap.*.start.column", "*.branchMap.0.loc.start.column",
+        "*.branchMap.0.locations")} | {
+    ("coveragepy", locator) for locator in ("meta", "meta.branch_coverage")}
+# null on these optional fields reads as the field left out, with no refusal:
+# its row's `reads`. null on any other optional field must be refused.
+NULL_READS_AS_LEFT_OUT = {
+    ("istanbul", locator) for locator in (
+        "*.fnMap.*.name", "*.fnMap.*.decl.start.column", "*.fnMap.*.loc.start",
+        "*.fnMap.*.loc.start.line", "*.fnMap.*.loc.start.column", "*.fnMap.*.loc.end.column",
+        "*.statementMap.*.start.line", "*.statementMap.*.start.column",
+        "*.branchMap.0.loc.start.column", "*.branchMap.0.locations")} | {
+    ("coveragepy", locator) for locator in ("meta", "meta.branch_coverage")}
+# `{}` on these optional fields reads as the field left out too: an empty start
+# has no line, which leaves its statement out, and an empty name is (anonymous).
+EMPTY_READS_AS_LEFT_OUT = {("istanbul", "*.statementMap.*.start"),
+                           ("istanbul", "*.fnMap.*.name")}
+# A name that is not a string is kept as the function's name (coverage_istanbul._fn_span).
+KEPT_AS_WRITTEN = {("istanbul", "*.fnMap.*.name")}
+# null on these required fields is refused in the words of the field left out,
+# which do not say null.
+NULL_AS_ABSENT = {("coveragepy", locator) for locator in (
+    "files.*.functions", "files.*.functions.*.start_line")}
+# Dropped, refused for the whole report in these words, which name neither the
+# artifact nor a file key (coverage_py.judge_regions).
+FILE_UNNAMED = {("coveragepy", "files.*.functions"):
+                "coverage.py report has no function regions for any of its 1 file(s)"
+                " - needs coverage>=7.13.1"}
+
+
+def _row_id(row) -> str:
+    return f"{row.format}:{row.locator}"
+
+
+def _outcome(root: Path, fmt: str, raw: bytes):
+    """read()'s function coverage and per-file FileEvidence, or its refusal's text."""
+    try:
+        return _read(root, fmt, raw)[:2]
+    except ToolError as refused:
+        return str(refused)
+
+
+def _kinds(value) -> set[str]:
+    """Each way a refusal can name what it found: the JSON kind or the value,
+    and for an array, the kind of each entry."""
+    found = {json_kind(value), repr(value)}
+    for entry in value if isinstance(value, list) else ():
+        found.add("a decimal number" if type(entry) is float else json_kind(entry))
+    return found
+
+
+def _xfail(gap: bool, reason: str) -> list:
+    return [pytest.mark.xfail(strict=True, reason=reason)] if gap else []
+
+
+def _emptied(row, value) -> bool:
+    """`{}` on an object row empties it and keeps its type, so a refusal has no
+    wrong type to name. On a row of any other type `{}` is a retype."""
+    return row.type == "object" and value == {}
+
+
+def _retypes(row) -> list:
+    """Every wrong value for the row's type. An object member or a map emptied
+    is a valid artifact (no function, an empty map), so `{}` is no retype for
+    it. A count or an array member set to `{}` is retyped like any other row."""
+    is_map = row.locator.split(".")[-1] in MAPS[row.format]
+    valid_empty = row.absent is None or is_map
+    return [value for value in WRONG[row.type] if not (valid_empty and _emptied(row, value))]
+
+
+def _left_out(row, value) -> bool:
+    """A retype the lists above hold to the reading of the field left out, the
+    `reads` its row writes."""
+    key = (row.format, row.locator)
+    if value is None:
+        return key in NULL_READS_AS_LEFT_OUT
+    return key in READ_AS_ABSENT or (value == {} and key in EMPTY_READS_AS_LEFT_OUT)
+
+
+def _unrefused(row, value) -> bool:
+    """A retype the lists above hold to a reading with no refusal."""
+    return _left_out(row, value) or (row.format, row.locator) in KEPT_AS_WRITTEN
+
+
+def _refused_case(row, value):
+    return pytest.param(row, value, id=f"{_row_id(row)}={value!r}",
+                        marks=_xfail(_unrefused(row, value), "reads with no refusal"))
+
+
+def _typed_case(row, value):
+    key = (row.format, row.locator)
+    gap = (key in TYPE_UNNAMED or _unrefused(row, value)
+           or (key in NULL_AS_ABSENT and value is None))
+    return pytest.param(row, value, id=f"{_row_id(row)}={value!r}",
+                        marks=_xfail(gap, "not named by the type it found"))
+
+
+REQUIRED = [row for row in FIELDS if row.absent is not None and row.required]
+DROPPED = [pytest.param(row, id=_row_id(row)) for row in REQUIRED]
+DROPPED_IN_A_FILE = [pytest.param(row, id=_row_id(row), marks=_xfail(
+    (row.format, row.locator) in FILE_UNNAMED, "names no file")) for row in REQUIRED]
+OPTIONAL = [pytest.param(row, id=_row_id(row))
+            for row in FIELDS if row.absent is not None and not row.required]
+RETYPED = [_refused_case(row, value) for row in FIELDS for value in _retypes(row)]
+RETYPED_TO_A_KIND = [_typed_case(row, value)
+                     for row in FIELDS for value in _retypes(row) if not _emptied(row, value)]
+
+
+def test_every_format_has_rows_in_the_field_table():
+    rowless = sorted(set(coverage_format._FORMATS) - {row.format for row in FIELDS})
+
+    assert not rowless, f"coverage_fields.FIELDS has no rows for {rowless}"
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_the_minimal_artifact_reads_one_function_with_its_branches_and_a_dead_line(tmp_path, fmt):
+    per_file, evidence = _outcome(tmp_path, fmt, minimal_artifact(fmt))
+
+    (row,) = per_file[KEYS[fmt]]
+    assert (row.name, row.start, row.invoked, row.statements_covered) == ("f", 1, True, 2)
+    assert row.branches_total > row.branches_covered > 0
+    assert evidence == {KEYS[fmt]: DEAD}
+
+
+@pytest.mark.parametrize("row", [pytest.param(row, id=_row_id(row)) for row in FIELDS])
+def test_every_row_names_a_field_the_minimal_artifact_holds(row):
+    """A builder that leaves the field in, or a locator that names nothing,
+    writes the control: its drop and retype cases would test nothing."""
+    control = minimal_artifact(row.format)
+
+    assert b'"__retyped__"' in minimal_artifact(row.format, retype=(row.locator, "__retyped__"))
+    if row.absent is not None:
+        assert minimal_artifact(row.format, drop=row.locator) != control
+
+
+@pytest.mark.parametrize("row", DROPPED)
+def test_dropping_a_required_field_refuses_naming_it(tmp_path, row):
+    text = _refusal(tmp_path, row.format, minimal_artifact(row.format, drop=row.locator))
+
+    _holds(text, [row.named, *row.absent])
+    assert any(fix in text for fix in FIXES), text
+
+
+@pytest.mark.parametrize("row", DROPPED_IN_A_FILE)
+def test_dropping_a_required_field_names_the_artifact_and_the_file_key(tmp_path, row):
+    text = _refusal(tmp_path, row.format, minimal_artifact(row.format, drop=row.locator))
+
+    _holds(text, ["cov.json", KEYS[row.format]])
+
+
+@pytest.mark.parametrize("row", OPTIONAL)
+def test_dropping_an_optional_field_reads_as_its_row_documents(tmp_path, row):
+    """The field left out, and the field set to the value its row documents,
+    each read as the row's written `reads`, never as another read."""
+    dropped = _outcome(tmp_path, row.format, minimal_artifact(row.format, drop=row.locator))
+    documented = _outcome(tmp_path, row.format,
+                          minimal_artifact(row.format, retype=(row.locator, row.absent.value)))
+
+    assert dropped == row.absent.reads, row.absent.means
+    assert documented == row.absent.reads, row.absent.means
+
+
+@pytest.mark.parametrize("row, value", RETYPED)
+def test_a_retyped_field_is_refused_naming_it(tmp_path, row, value):
+    """Every wrong value, null included, is refused naming the field. A case
+    that reads instead is listed above and held to its reading by
+    test_a_listed_shortfall_reads_as_it_does_today."""
+    retyped = _outcome(tmp_path, row.format,
+                       minimal_artifact(row.format, retype=(row.locator, value)))
+
+    assert isinstance(retyped, str), f"{row.locator} = {value!r} read as {retyped}"
+    _holds(retyped, [row.named])
+
+
+@pytest.mark.parametrize("row, value", RETYPED_TO_A_KIND)
+def test_a_retyped_fields_refusal_names_what_it_found(tmp_path, row, value):
+    """The refusal names the type or the value found after the file, null
+    included."""
+    retyped = _outcome(tmp_path, row.format,
+                       minimal_artifact(row.format, retype=(row.locator, value)))
+
+    assert isinstance(retyped, str), f"{row.locator} = {value!r} read as {retyped}"
+    _holds(retyped, ["cov.json"])
+    said = retyped.split("cov.json", 1)[1]
+    assert any(kind in said for kind in _kinds(value)), retyped
+
+
+def _listed(row, value) -> bool:
+    """A retype the lists above hold short of a claim. An emptied object has no
+    type to name, so it is held here only where it reads as the field left out."""
+    key = (row.format, row.locator)
+    if _left_out(row, value):
+        return True
+    return not _emptied(row, value) and (key in TYPE_UNNAMED or key in KEPT_AS_WRITTEN
+                                         or (key in NULL_AS_ABSENT and value is None))
+
+
+LISTED = [pytest.param(row, value, id=f"{_row_id(row)}={value!r}")
+          for row in FIELDS for value in _retypes(row) if _listed(row, value)]
+
+
+def _today(root: Path, row, value):
+    """What read() gives today for a listed retype: the field left out's written
+    reading, that reading with the name kept as written, or a refusal built from
+    another artifact (a drop's, or null's)."""
+    key = (row.format, row.locator)
+    if _left_out(row, value):
+        return row.absent.reads
+    if key in KEPT_AS_WRITTEN:
+        per_file, dead = row.absent.reads
+        return {path: [fn._replace(name=value) for fn in fns] for path, fns in per_file.items()}, dead
+    if key in TYPE_UNNAMED and TYPE_UNNAMED[key] is None:
+        return _outcome(root, row.format, minimal_artifact(row.format, retype=(row.locator, None)))
+    return _outcome(root, row.format,
+                    minimal_artifact(row.format, drop=TYPE_UNNAMED.get(key, row.locator)))
+
+
+@pytest.mark.parametrize("row, value", LISTED)
+def test_a_listed_shortfall_reads_as_it_does_today(tmp_path, row, value):
+    """Outside any xfail: a listed case gives the reading or the refusal it gives
+    today, so a change to anything but its one short claim turns the suite red."""
+    retyped = _outcome(tmp_path, row.format,
+                       minimal_artifact(row.format, retype=(row.locator, value)))
+
+    assert retyped == _today(tmp_path, row, value)
+
+
+@pytest.mark.parametrize("row", [pytest.param(row, id=_row_id(row)) for row in FIELDS
+                                 if (row.format, row.locator) in FILE_UNNAMED])
+def test_a_listed_drop_is_refused_as_it_is_today(tmp_path, row):
+    text = _refusal(tmp_path, row.format, minimal_artifact(row.format, drop=row.locator))
+
+    assert text == FILE_UNNAMED[(row.format, row.locator)]
+
+
+def _at_path(doc: dict, path: tuple, value=None, drop: bool = False) -> bytes:
+    """`doc` with the field at `path` dropped or set to `value`, as bytes."""
+    copied = copy.deepcopy(doc)
+    node = copied
+    for key in path[:-1]:
+        node = node[key]
+    if drop:
+        del node[path[-1]]
+    else:
+        node[path[-1]] = copy.deepcopy(value)
+    return json.dumps(copied).encode("utf-8")
+
+
+def _unexplained(root: Path, fmt: str, doc: dict, locator: str, path: tuple, base) -> str | None:
+    """Why removing one field breaks the table's promise, or None when it keeps it."""
+    rows = [row for row in FIELDS if row.format == fmt and generic(fmt, row.locator) == locator]
+    removed = _outcome(root, fmt, _at_path(doc, path, drop=True))
+    if removed == base:
+        return None
+    if isinstance(removed, str):
+        if any(row.named in removed for row in rows):
+            return None
+        return f"{locator}: refused with no row naming it: {removed}"
+    if any(removed == _outcome(root, fmt, _at_path(doc, path, row.absent.value))
+           for row in rows if not row.required):
+        return None
+    return f"{locator}: removing it changed the reading, and no optional row documents it"
+
+
+RECORDED_CASES = [pytest.param(fmt, name, id=name)
+                  for fmt, names in RECORDINGS.items() for name in names]
+
+
+@pytest.mark.parametrize("fmt, name", RECORDED_CASES)
+def test_removing_each_field_a_recorded_artifact_holds_refuses_or_reads_as_documented(
+        tmp_path, fmt, name):
+    """One removal per distinct field, from the first file entry that holds it."""
+    doc = json.loads((RECORDED / name / "call.json").read_text(encoding="utf-8"))
+    base = _outcome(tmp_path, fmt, json.dumps(doc).encode("utf-8"))
+
+    broken = [why for locator, path in field_paths(fmt, doc).items()
+              if (why := _unexplained(tmp_path, fmt, doc, locator, path, base))]
+
+    assert not broken, "\n".join(broken)
+
+
+def test_every_recording_is_one_of_its_formats():
+    """A recording added under recorded/ in a format that has rows joins the
+    completeness check; its producer's name says which format it is."""
+    listed = {name for names in RECORDINGS.values() for name in names}
+
+    assert listed <= {path.name for path in RECORDED.iterdir()}

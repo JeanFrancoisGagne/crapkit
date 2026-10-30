@@ -2,10 +2,11 @@
 
 check_gate's description says a ratchet mark pardons a changed function only
 while its crap is at or under the mark, which is stricter than the commit hook,
-and that the marks are read only on a breach. AGENTS.md still said the tool
-answers whether a file "clears the commit gate", and the README called
-`rescore --gate` the commit gate's verdict on demand, so an agent expected the
-hook's looser pardon and met a breach it could not explain.
+and that a clean gate reads no marks. AGENTS.md said the tool answered whether
+a file "clears the commit gate", and the README called `rescore --gate` the
+commit gate's verdict on demand, so an agent expected the hook's looser pardon
+and met a breach it could not explain. The hook refuses a marked function once
+its staged ccn passes the mark, so no row may say any mark pardons.
 """
 from pathlib import Path
 
@@ -15,6 +16,13 @@ from crapkit import mcp_server
 
 ROOT = Path(__file__).resolve().parents[2]
 PARDON = "at or under"
+ROWS = [
+    ("AGENTS.md", "`check_gate`"),
+    ("docs/agent-json.md", "`check_gate`"),
+    ("README.md", "`crapkit rescore FILE --gate`"),
+]
+# The hook's rule before 0.9.0, each spelling a page used for it.
+ANY_MARK_PARDONS = ("pardons any marked function", "where any mark pardons", "exempts on the mark's existence")
 
 
 def _tool(name: str) -> dict:
@@ -32,11 +40,7 @@ def test_the_tool_itself_states_the_pardon_rule():
     assert PARDON in _tool("check_gate")["description"]
 
 
-@pytest.mark.parametrize(("page", "first_cell"), [
-    ("AGENTS.md", "`check_gate`"),
-    ("docs/agent-json.md", "`check_gate`"),
-    ("README.md", "`crapkit rescore FILE --gate`"),
-])
+@pytest.mark.parametrize(("page", "first_cell"), ROWS)
 def test_the_row_states_the_pardon_rule(page, first_cell):
     assert PARDON in _row(page, first_cell)
 
@@ -54,6 +58,12 @@ def test_the_handbook_rows_state_the_pardon_rule():
 
     assert len(rows) == 2
     assert [PARDON in row and "same verdict" not in row for row in rows] == [True, True]
+
+
+def test_no_row_says_the_hook_pardons_any_marked_function():
+    rows = [_row(page, first_cell) for page, first_cell in ROWS] + _handbook_rows()
+
+    assert [(row, old) for row in rows for old in ANY_MARK_PARDONS if old in row] == []
 
 
 def test_the_handbook_walkthrough_does_not_call_it_the_same_verdict():

@@ -9,19 +9,26 @@ name is the function's long_name, plus a `#N` ordinal when the file gives that
 name to more than one function — see `keys`. The first twin keeps the bare name,
 so a marks file written before the ordinal reads unchanged.
 
-The file opens with a metric stamp comment naming the analysis version and the
-lizard that produced the numbers. Marks measured under different rules are not
-comparable, and without the stamp that reads as a clean run.
+The file opens with a metric stamp naming the rules that produced the numbers.
+Marks measured under different rules are not comparable, and without the stamp
+that reads as a clean run. It has two forms: the single-number line 0.8.x wrote,
+`crapkit-analysis=N lizard=X.Y.Z`, and the per-scope form, a first line naming
+the file and the release that reads it, then one `#scope` line per scope.
+`MetricStamp` is the stamp's one parsed form: `read_stamp`, `run_stamp` and
+`metric_version` hand it out, and every caller compares and renders that value
+instead of reading the lines itself.
 """
 from __future__ import annotations
 
+import json
 import math
+import operator
 import re
-from typing import NamedTuple
+from typing import ClassVar, NamedTuple
 
 from .invariants import check_dump, check_marks_kept
 from .invocation import _self
-from .keys import split_ordinal
+from .keys import MarkIndex, mark_key, rows_by_key, split_ordinal
 from .score import ScoredRow, over_ceiling
 from .records import decode_record, encode_record, record_lines
 
@@ -49,27 +56,374 @@ def stamp_text(analysis_version: int | str, lizard_version: str) -> str:
     return f"crapkit-analysis={analysis_version} lizard={lizard_version}"
 
 
-def run_stamp(tool_versions: dict) -> str:
-    """The metric a stored run was measured under; "" for a run that recorded none."""
+_SINGLE_NUMBER = re.compile(r"crapkit-analysis=([0-9]+) lizard=(\S+)")
+_ANALYSIS = re.compile(r"crapkit-analysis=([0-9]+)(?= |$)")
+
+
+class MetricStamp(str):
+    """The metric a marks file or a stored run was measured under, parsed once.
+
+    Three members: `SingleNumberStamp`, one analysis number and the lizard
+    version; `UnreadableStamp`, a stamp line crapkit cannot parse, kept as it
+    was so a refusal can quote it and a write that adds no number writes it
+    back; and `MetricStamp.NONE`, a file or run that recorded none, which is
+    falsy. A stamp is a str of the text after the `# ` that opens its line, so
+    it prints and serializes as that text, and a caller that still holds the
+    text compares equal to it. Two stamps are equal when they render the same
+    line: for two `SingleNumberStamp`s, the same analysis number and the same
+    lizard version.
+    """
+    __slots__ = ()
+    NONE: ClassVar[MetricStamp]
+
+    @classmethod
+    def parse(cls, text: str) -> MetricStamp:
+        """`text` as the stamp it spells. A line that would not render back as
+        itself is unreadable, so a write never respells a committed stamp."""
+        if not text:
+            return cls.NONE
+        found = _SINGLE_NUMBER.fullmatch(text)
+        stamp = SingleNumberStamp(int(found[1]), found[2]) if found else None
+        return stamp if stamp == text else UnreadableStamp(text)
+
+    @property
+    def analysis(self) -> int | None:
+        """The number after the `crapkit-analysis=` that opens the line, with or
+        without a lizard field after it; None when the line opens with none."""
+        found = _ANALYSIS.match(self)
+        return int(found[1]) if found else None
+
+    def render(self) -> str:
+        """The stamp's line without its `# `, as a plain str; "" for no stamp."""
+        return str(self)
+
+    def language_number(self, language: str) -> int | None:
+        """The analysis number `language`'s functions were read under: the one
+        number every language shares here; None when the stamp records none."""
+        return self.analysis
+
+
+class SingleNumberStamp(MetricStamp):
+    """`crapkit-analysis=N lizard=X.Y.Z`: one analysis number for every language."""
+
+    def __new__(cls, analysis: int, lizard: str) -> SingleNumberStamp:
+        stamp = super().__new__(cls, stamp_text(analysis, lizard))
+        stamp._versions = (analysis, lizard)
+        return stamp
+
+    def __getnewargs__(self) -> tuple[int, str]:
+        # A copy or a pickle rebuilds the stamp from its two versions, not its text.
+        return self._versions
+
+    @property
+    def lizard(self) -> str:
+        return self._versions[1]
+
+
+class UnreadableStamp(MetricStamp):
+    """A stamp line that is not one crapkit writes. It compares unequal to every
+    other stamp, so verify refuses the marks instead of reading them as unstamped."""
+    __slots__ = ()
+
+
+class _Unstamped(MetricStamp):
+    __slots__ = ()
+
+
+MetricStamp.NONE = _Unstamped("")
+
+# The per-scope form. Line 1 is what 0.8.x reads as its stamp, compares unequal
+# and quotes, so it names the marks file and the release that reads it; every
+# `#scope` line holds a tab and a third field that is no number, so 0.8.x reads
+# it as a mark it cannot parse and refuses the file before it rewrites it.
+_SCOPE = "#scope"
+_SCOPES_TAIL = "holds one stamp per scope, which crapkit 0.9.0 or later reads"
+_SCOPES_HEAD = re.compile(rf"crapkit-stamp=2 lizard=([^\s:]+): (.+) {re.escape(_SCOPES_TAIL)}")
+_PAIR = r"[^\s=;]+=[0-9]+"
+_SCOPE_BODY = re.compile(rf"analysis((?: {_PAIR})*); coverage (cc-only|no-lane|{_PAIR}(?: {_PAIR})*)")
+_PAIRS = re.compile(r"([^\s=;]+)=([0-9]+)")
+_NO_READER = ("cc-only", "no-lane")
+
+
+def _pairs(numbers: dict) -> str:
+    """` name=N` per entry, sorted by name."""
+    return "".join(f" {name}={number}" for name, number in sorted(numbers.items()))
+
+
+def _coverage_text(mode) -> str:
+    return mode if isinstance(mode, str) else _pairs(mode)[1:]
+
+
+def _coverage(text: str) -> str | dict:
+    return text if text in _NO_READER else _numbers(text)
+
+
+def _numbers(text: str) -> dict:
+    return {name: int(number) for name, number in _PAIRS.findall(text)}
+
+
+class ScopeStamp(NamedTuple):
+    """One scope's rules: the analysis number of each of its languages
+    ({language: N}), and its coverage mode: `cc-only`, `no-lane`, or
+    {parser: reader number} for the lanes that measure it."""
+    analysis: dict
+    coverage: str | dict
+
+    def render(self) -> str:
+        """`analysis python=13; coverage coveragepy=1`, languages and parsers sorted."""
+        return f"analysis{_pairs(self.analysis)}; coverage {_coverage_text(self.coverage)}"
+
+    @classmethod
+    def parse(cls, text: str) -> ScopeStamp | None:
+        """The stamp `text` spells; None when it spells none, or one that would
+        not render back as itself, so a write never respells a committed line."""
+        found = _SCOPE_BODY.fullmatch(text)
+        stamp = cls(_numbers(found[1]), _coverage(found[2])) if found else None
+        return stamp if stamp and stamp.render() == text else None
+
+
+class ScopeStamps(MetricStamp):
+    """`crapkit-stamp=2`: the lizard version and one `ScopeStamp` per scope name.
+
+    The file holds it as a first line naming the file, then one `#scope` line
+    per scope, sorted by name. Its text holds the lizard version and every
+    scope's line but never the file's name, so two are equal exactly when they
+    write the same scope lines. `file_name` is the name the first line of the
+    file it came from recorded: a write that adds no number writes that line
+    back, even into the temporary file git hands the merge driver as OURS.
+    """
+
+    def __new__(cls, lizard: str, scopes: dict, file_name: str | None = None) -> ScopeStamps:
+        ordered = dict(sorted(scopes.items()))
+        lines = json.dumps({name: scope.render() for name, scope in ordered.items()},
+                           ensure_ascii=False)
+        stamp = super().__new__(cls, f"crapkit-stamp=2 lizard={lizard} {lines}")
+        stamp._parts = (lizard, ordered, file_name)
+        return stamp
+
+    def __getnewargs__(self) -> tuple:
+        return self._parts
+
+    @property
+    def lizard(self) -> str:
+        return self._parts[0]
+
+    @property
+    def scopes(self) -> dict:
+        """{scope name: ScopeStamp}, sorted by name."""
+        return self._parts[1]
+
+    def language_number(self, language: str) -> int | None:
+        """The lowest number any scope records for `language`; None when none
+        does. A reader that holds no config cannot place a mark in a scope."""
+        return min((scope.analysis[language] for scope in self.scopes.values()
+                    if language in scope.analysis), default=None)
+
+    def head(self, file_name: str | None) -> str:
+        """Line 1, naming the file its own first line named, else `file_name`."""
+        name = self._parts[2] or file_name
+        if not name:
+            raise ValueError("a per-scope stamp's first line names its marks file, and none was given")
+        return f"# crapkit-stamp=2 lizard={self.lizard}: {name} {_SCOPES_TAIL}"
+
+    def scope_lines(self) -> list[str]:
+        return [_scope_line(name, scope.render()) for name, scope in self.scopes.items()]
+
+
+def _scope_line(name: str, text: str) -> str:
+    """`#scope`, the name and the scope's stamp, tab-separated. A name holding a
+    tab or a line break takes the record encoding, as a mark's name does:
+    encode_record encodes every line that opens with `#`, so it judges the line
+    without its `#`."""
+    raw = f"{_SCOPE}\t{name}\t{text}"
+    if encode_record((_SCOPE[1:], name, text)) == raw[1:]:
+        return raw
+    return encode_record((_SCOPE, name, text))
+
+
+def run_stamp(tool_versions: dict) -> MetricStamp:
+    """The metric a stored run was measured under: the per-scope stamp a run
+    that recorded `scope_stamps` holds, else the single number 0.8.x recorded;
+    NONE for a run that recorded neither."""
+    scopes = tool_versions.get("scope_stamps")
+    if scopes is None:
+        return run_metric_version(tool_versions)
+    return ScopeStamps(tool_versions["lizard"],
+                       {name: ScopeStamp(**stamp) for name, stamp in scopes.items()})
+
+
+def run_metric_version(tool_versions: dict) -> MetricStamp:
+    """The single-number stamp a run's `analysis_version` and `lizard` spell,
+    the form `metric_version()` gives, for the callers that still compare a run
+    with it; NONE for a run that recorded either one not."""
     analysis, lizard = tool_versions.get("analysis_version"), tool_versions.get("lizard")
-    return stamp_text(analysis, lizard) if analysis and lizard else ""
+    if not (analysis and lizard):
+        return MetricStamp.NONE
+    return MetricStamp.parse(stamp_text(analysis, lizard))
 
 
-def metric_version() -> str:
+def running_stamp(cfg) -> ScopeStamps:
+    """The stamp a run of this crapkit on `cfg` records: each scope's declared
+    languages at their analysis number, and its coverage mode, which the
+    config sets, not the lanes a run happened to execute."""
+    # Imported here, as in metric_version: the merge driver imports none of them.
+    import lizard
+
+    from .analyze import ANALYSIS_VERSIONS
+    from .coverage_format import READER_VERSIONS
+    return ScopeStamps(lizard.version, {
+        scope.name: ScopeStamp({language: ANALYSIS_VERSIONS[language] for language in scope.languages},
+                               _coverage_mode(cfg, scope.name, READER_VERSIONS))
+        for scope in cfg.scopes})
+
+
+def _coverage_mode(cfg, scope: str, readers: dict) -> str | dict:
+    """`cc-only` for a `coverage_optional` scope, `no-lane` for one no lane
+    measures, else {parser: reader number} of the lanes that measure it."""
+    if scope in cfg.coverage_optional_scopes:
+        return "cc-only"
+    parsers = sorted({lane.parser for lane in cfg.lanes if scope in lane.scopes})
+    return {parser: readers[parser] for parser in parsers} if parsers else "no-lane"
+
+
+def metric_version() -> MetricStamp:
     # Imported here, not at module scope: the git merge driver runs this module
     # in a temp dir with no analysis stack, and it passes its own stamp through.
     import lizard
 
     from .analyze import ANALYSIS_VERSION
-    return stamp_text(ANALYSIS_VERSION, lizard.version)
+    return SingleNumberStamp(ANALYSIS_VERSION, lizard.version)
 
 
-def read_stamp(text: str) -> str:
-    """The metric a marks file was written under; "" for one written before stamping."""
-    for line in record_lines(text):
-        if line.strip() and not _key_stamp(line):
-            return line[1:].strip() if comment_line(line) else ""
-    return ""
+def read_stamp(text: str) -> MetricStamp:
+    """The metric a marks file was written under; NONE for one written before stamping.
+
+    The stamp line is the first line that is neither blank, the key stamp nor a
+    scope stamp, when it is a comment. With no scope stamp line it holds the
+    single-number form, or a line crapkit cannot read. Scope stamp lines,
+    wherever they stand, make the per-scope form, which the stamp line opens.
+    A file that holds both forms, in any order, and one whose scope stamps
+    cannot stand read as unreadable, and `read_ratchet` names the line.
+    """
+    return _file_stamp(text)[0]
+
+
+_STAMP_2 = "crapkit-stamp=2"
+_SINGLE_FIELD = "crapkit-analysis="
+
+
+def _file_stamp(text: str) -> tuple[MetricStamp, str | None]:
+    """The stamp `text` records, and the complaint a file whose scope stamp
+    lines cannot stand earns; None when they stand or it holds none."""
+    head = _stamp_line(text)
+    # Two scans in C: a single-number file of 40k marks never walks its lines here.
+    if _SCOPE not in text and _STAMP_2 not in text:
+        return _single_number(head), None
+    return _scoped_file_stamp(text, head)
+
+
+def _single_number(head: tuple[int, str] | None) -> MetricStamp:
+    return MetricStamp.parse(head[1] if head else "")
+
+
+def _scoped_file_stamp(text: str, head: tuple[int, str] | None) -> tuple[MetricStamp, str | None]:
+    """`_file_stamp` of a file that may hold per-scope lines. One whose only
+    `crapkit-stamp=2` sits in a mark or a stray comment, with no scope stamp
+    line, reads as its stamp line says."""
+    rows = _scope_rows(text)
+    found = head and _SCOPES_HEAD.fullmatch(head[1])
+    mixed = _both_forms(text, rows)
+    if mixed:
+        return mixed
+    if not (rows or found):
+        return _single_number(head), None
+    return _scope_stamps(head, found, rows)
+
+
+def _both_forms(text: str, rows: list) -> tuple[MetricStamp, str] | None:
+    """The unreadable stamp and the complaint of a file that holds a
+    `crapkit-analysis=` line and a per-scope line (a per-scope first line or a
+    readable scope stamp line), in either order; None for one that does not.
+    The complaint names the later line, since a write would keep one form only."""
+    comments = _comments(text)
+    single, scoped = _first_single(comments), _first_scoped(comments, rows)
+    if not (single and scoped):
+        return None
+    said = {single: f"[{single[1]}]", scoped: "per scope"}
+    first, later = sorted((single, scoped))
+    return UnreadableStamp(scoped[1]), (
+        f"ratchet line {later[0]} stamps the file {said[later]}, but line {first[0]} stamps it "
+        f"{said[first]}; a marks file holds one stamp form, single-number or per scope")
+
+
+def _comments(text: str) -> list[tuple[int, str]]:
+    """(line number, text after its `#`) of each comment line other than the
+    key stamp and the scope stamps."""
+    return [(number, line[1:].strip()) for number, line in enumerate(record_lines(text), 1)
+            if comment_line(line) and not _key_stamp(line) and _scope_row(line) is None]
+
+
+def _first_single(comments: list[tuple[int, str]]) -> tuple[int, str] | None:
+    return next((comment for comment in comments if comment[1].startswith(_SINGLE_FIELD)), None)
+
+
+def _first_scoped(comments: list[tuple[int, str]], rows: list) -> tuple[int, str] | None:
+    """(line number, line) of the first per-scope first line or readable scope stamp line."""
+    heads = [comment for comment in comments if _SCOPES_HEAD.fullmatch(comment[1])]
+    return min(heads[:1] + _readable_rows(rows)[:1], default=None)
+
+
+def _readable_rows(rows: list) -> list[tuple[int, str]]:
+    """(line number, line) of each scope stamp line that spells a scope stamp."""
+    return [(number, line) for number, line, fields in rows if _scope_stamp(fields)]
+
+
+def _stamp_line(text: str) -> tuple[int, str] | None:
+    """(line number, text after its `#`) of the stamp line; None when the first
+    line that is neither blank, the key stamp nor a scope stamp is no comment."""
+    for number, line in enumerate(record_lines(text), 1):
+        if line.strip() and not _key_stamp(line) and _scope_row(line) is None:
+            return (number, line[1:].strip()) if comment_line(line) else None
+    return None
+
+
+def _scope_rows(text: str) -> list[tuple[int, str, list[str]]]:
+    """(line number, line, fields) of each scope stamp line, readable or not."""
+    if _SCOPE not in text:  # one scan in C: a file of 40k marks and no scope line
+        return []
+    return [(number, line, fields) for number, line in enumerate(record_lines(text), 1)
+            if (fields := _scope_row(line)) is not None]
+
+
+def _scope_stamps(head, found, rows) -> tuple[MetricStamp, str | None]:
+    """The per-scope stamp the stamp line and `rows` make. A file whose stamp
+    line is not the per-scope one, a scope stamped twice, and a line that
+    spells no scope stamp read as unreadable, quoting that line; the last one
+    earns no complaint here, since read_ratchet names that line on its own."""
+    if not found:
+        return _unopened(head, rows)
+    scopes = {}
+    for number, line, fields in rows:
+        stamp = _scope_stamp(fields)
+        if stamp is None:
+            return UnreadableStamp(line), None
+        if fields[1] in scopes:
+            return UnreadableStamp(line), f"ratchet line {number} stamps scope {fields[1]!r} a second time"
+        scopes[fields[1]] = stamp
+    return ScopeStamps(found[1], scopes, found[2]), None
+
+
+def _unopened(head: tuple[int, str] | None, rows: list) -> tuple[MetricStamp, str | None]:
+    """A file of scope stamp lines that the per-scope stamp line does not open.
+    It reads as unreadable, and its first readable scope stamp line earns the
+    complaint; an unreadable one earns none, since read_ratchet names it."""
+    readable = _readable_rows(rows)
+    if not readable:
+        return UnreadableStamp(rows[0][1]), None
+    opened = f"line {head[0]} stamps the file [{head[1]}]" if head else "no stamp line opens the file"
+    return UnreadableStamp(readable[0][1]), (
+        f"ratchet line {readable[0][0]} is a scope stamp, but {opened}; a marks file holds one "
+        "stamp form, single-number or per scope")
 
 
 def read_key_version(text: str) -> int:
@@ -99,24 +453,35 @@ def parsed_marks(text: str, entries=None) -> list:
 def check_reader_keys(text: str, entries=None) -> None:
     """Old expression readers lost callbacks, so their anonymous ordinals lack proof.
     `entries` is `read_ratchet(text)[0]` when the caller already holds it."""
-    stamp = read_stamp(text)
-    prefix = "crapkit-analysis="
-    version = stamp[len(prefix):].partition(" ")[0] if stamp.startswith(prefix) else None
-    check_reader_version(parsed_marks(text, entries), version)
+    check_reader_version(parsed_marks(text, entries), read_stamp(text))
 
 
-def check_reader_version(entries, version) -> None:
-    """Admit expression keys only when their source reader enumerated every callback."""
-    from .keys import expression_group, expression_reader_current
+def check_reader_version(entries, stamp: MetricStamp) -> None:
+    """Admit expression keys only when their source reader enumerated every callback.
 
-    if expression_reader_current(version):
+    Each JavaScript-family mark asks `stamp` for its own language's number
+    (`keys.expression_language`): a single-number stamp's one number, or the
+    lowest number any scope of a per-scope stamp records for that language.
+    """
+    from .keys import expression_group, expression_language
+
+    stale = _stale_expression_languages(stamp)
+    if not stale:
         return
-    affected = sorted({entry.path for entry in entries
-                       if expression_group(entry.path, entry.long_name)})
+    affected = sorted({entry.path for entry in entries if expression_group(entry.path, entry.long_name)
+                       and expression_language(entry.path) in stale})
     if affected:
         raise ValueError("expression reader 10 changed anonymous function ordinals in "
                          f"{', '.join(affected)}; refresh coverage and reconcile any saved "
                          "marks with their original functions before reseeding")
+
+
+def _stale_expression_languages(stamp: MetricStamp) -> set[str]:
+    """The JavaScript-family languages whose number in `stamp` does not prove expression reader 10."""
+    from .keys import EXPRESSION_LANGUAGES, expression_reader_current
+
+    return {language for language in EXPRESSION_LANGUAGES
+            if not expression_reader_current(stamp.language_number(language))}
 
 
 def check_key_groups(text: str, present: set, collisions: set, entries=None) -> int:
@@ -169,13 +534,14 @@ def marked_collisions(entries, rows) -> set:
     return {_marked_group(entry, present) for entry in entries} & ambiguous_groups(rows)
 
 
-def stamp_conflict(recorded: str, current: str) -> str | None:
+def stamp_conflict(recorded: MetricStamp, current: MetricStamp) -> str | None:
     """The refusal when marks and the running metric disagree; None when they compare.
 
-    An unstamped file has nothing to disagree with — the caller warns instead.
-    Marks a newer crapkit or lizard wrote are sent to an upgrade: the stock
+    An unstamped file has nothing to disagree with: the caller warns instead.
+    Marks a newer crapkit wrote are sent to an upgrade: the stock
     coverage-then-seed would restamp them under this older metric, and every
-    teammate on the newer release would then be refused.
+    teammate on the newer release would then be refused. Marks a newer lizard
+    stamped take that reseed, since the exact lizard pin admits no upgrade.
     """
     if not recorded or recorded == current:
         return None
@@ -189,21 +555,24 @@ def stamp_conflict(recorded: str, current: str) -> str | None:
 
 
 def upgrade_remedy(tools: list[str]) -> str:
-    """What to do about marks a newer install measured: upgrade this one. Every
-    caller says what its own write would have done to them instead."""
-    where = (" (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike)"
-             if "crapkit" in tools else "")
-    return (f"the marks come from a newer {' and a newer '.join(tools)} than this install; "
-            f"upgrade {'both' if len(tools) > 1 else 'it'} to the version that wrote them{where}")
+    """What to do about marks a newer crapkit measured: upgrade this one, everywhere
+    it runs. `tools` is what `newer_tools` returned, which names crapkit alone.
+    Every caller says what its own write would have done to them instead."""
+    return ("the marks come from a newer crapkit than this install; upgrade it to the "
+            "version that wrote them (the CLI, the Action's `uses:` pin and the pre-commit "
+            "`rev` alike)")
 
 
-# The stamp's fields, and the tool each one is the version of.
-_STAMP_TOOLS = (("crapkit-analysis", "crapkit"), ("lizard", "lizard"))
+# The stamp fields that mark a newer release, and the tool each is the version of.
+# lizard is not one: crapkit pins it exactly and moves the analysis version with
+# it, so a newer lizard in a stamp comes from a release that let lizard float, and
+# the reseed that moves those marks to the pinned lizard is their remedy.
+_STAMP_TOOLS = (("crapkit-analysis", "crapkit"),)
 
 
-def newer_tools(recorded: str, current: str) -> list[str]:
-    """The tools `recorded` names at a newer version than `current` does: `crapkit`
-    for the analysis version, `lizard` for lizard's. [] when neither is newer, or
+def newer_tools(recorded: MetricStamp, current: MetricStamp) -> list[str]:
+    """`["crapkit"]` when `recorded` names a newer analysis version than `current`
+    does, the one field that marks a newer release. [] when it is not newer, or
     when a stamp does not read as `crapkit-analysis=N lizard=X.Y.Z`."""
     then, now = _stamp_versions(recorded), _stamp_versions(current)
     return [tool for field, tool in _STAMP_TOOLS if _is_newer(then.get(field), now.get(field))]
@@ -236,9 +605,10 @@ def coverage_then_seed(rebaseline: str = "re-baseline") -> str:
 
 
 def comment_line(line: str) -> bool:
-    """A format comment: the metric stamp or the key stamp. A `#` line that holds
-    a tab is a legacy raw mark whose path starts with `#`, not a comment."""
-    return line.startswith("#") and "\t" not in line
+    """A format comment: the metric stamp line, the key stamp, or a scope stamp
+    line crapkit can read. Any other `#` line that holds a tab is a legacy raw
+    mark whose path starts with `#`, not a comment."""
+    return line.startswith("#") and ("\t" not in line or _readable_scope(line))
 
 
 def _key_stamp(line: str) -> bool:
@@ -246,8 +616,42 @@ def _key_stamp(line: str) -> bool:
 
 
 def _is_skippable(line: str) -> bool:
-    """Blank lines, the header and comment lines (the metric stamp) carry no mark."""
-    return not line.strip() or line == _HEADER or comment_line(line)
+    """Blank lines, the header and the stamp lines carry no mark: the comment
+    lines, and a readable scope stamp line in the record encoding."""
+    return (not line.strip() or line == _HEADER or comment_line(line)
+            or (line.startswith("@") and _readable_scope(line)))
+
+
+def _scope_row(line: str) -> list[str] | None:
+    """The fields of a scope stamp line, raw or in the record encoding: its
+    first field is `#scope` and its third is no finite number. The rule reads
+    the line alone, so a reader of whole revisions and one of single rows
+    agree, and a legacy mark whose path is `#scope` still reads as a mark."""
+    if not line.startswith((_SCOPE + "\t", "@")):
+        return None
+    try:
+        fields = decode_record(line)
+    except ValueError:
+        return None
+    return None if fields[:1] != [_SCOPE] or _number_in(fields[2:3]) else fields
+
+
+def _number_in(fields: list[str]) -> bool:
+    """True when `fields` holds one finite number."""
+    try:
+        return bool(fields) and math.isfinite(float(fields[0]))
+    except ValueError:
+        return False
+
+
+def _scope_stamp(fields: list[str]) -> ScopeStamp | None:
+    """The scope's stamp a scope stamp line's fields spell; None for none."""
+    return ScopeStamp.parse(fields[2]) if len(fields) == 3 else None
+
+
+def _readable_scope(line: str) -> bool:
+    fields = _scope_row(line)
+    return fields is not None and _scope_stamp(fields) is not None
 
 
 def _finite_mark(text: str) -> float:
@@ -270,7 +674,8 @@ def _read_mark(line: str, number: int) -> RatchetEntry:
     try:
         return RatchetEntry(parts[0], parts[1], _finite_mark(parts[2]))
     except ValueError as exc:
-        raise ValueError(f"ratchet line {number} has an unreadable mark: {line!r}") from exc
+        what = "scope stamp" if parts[0] == _SCOPE else "mark"
+        raise ValueError(f"ratchet line {number} has an unreadable {what}: {line!r}") from exc
 
 
 def read_ratchet(text: str) -> tuple[list[RatchetEntry], list[str]]:
@@ -293,7 +698,15 @@ def read_ratchet(text: str) -> tuple[list[RatchetEntry], list[str]]:
             entries.append(_read_mark(line, i + 1))
         except ValueError as exc:
             complaints.append(str(exc))
-    return entries, complaints
+    return entries, complaints + _stamp_complaints(text)
+
+
+def _stamp_complaints(text: str) -> list[str]:
+    """The complaint a file whose stamp lines cannot stand earns: one that
+    holds both stamp forms, or stamps a scope twice. A history reader parses
+    one row at a time, so a row with neither form's marker skips the walk."""
+    complaint = _file_stamp(text)[1] if _SCOPE in text or _STAMP_2 in text else None
+    return [complaint] if complaint else []
 
 
 def load_ratchet(text: str) -> list[RatchetEntry]:
@@ -307,32 +720,30 @@ def load_ratchet(text: str) -> list[RatchetEntry]:
     return entries
 
 
-def mark_for(entries: list[RatchetEntry], path: str, long_name: str) -> float | None:
-    """One function's recorded high-water mark, or None when it carries no mark.
-
-    `long_name` is the KEY name: bare for a name only one function in the file
-    holds, `name#2` for the second function holding it. `keys.key_names` builds
-    it from the rows; passing a raw long_name for a twin asks about twin #1.
-    """
-    for e in entries:
-        if e.path == path and e.long_name == long_name:
-            return e.crap
-    return None
-
-
-def dump_ratchet(entries: list[RatchetEntry], *, stamp: str, key_version: int = 0) -> str:
-    """`stamp` is written verbatim, and "" writes none. No default: a writer that
-    stamped by omission relabeled marks another metric recorded, so the choice
-    belongs to `ratchetfile.RatchetFile`'s stamp rules. Every mark must read back
-    as the number it is (`invariants.check_dump`): the file holds four decimals."""
+def dump_ratchet(entries: list[RatchetEntry], *, stamp: MetricStamp, key_version: int = 0,
+                 file_name: str | None = None) -> str:
+    """`stamp` is written as the lines it renders, and NONE writes none. No
+    default: a writer that stamped by omission relabeled marks another metric
+    recorded, so the choice belongs to `ratchetfile.RatchetFile`'s stamp
+    rules. A per-scope stamp writes its first line above the key stamp and its
+    scope lines below it, and that first line names `file_name` unless the
+    stamp was read from a file whose first line named one. Every mark must
+    read back as the number it is (`invariants.check_dump`): the file holds
+    four decimals."""
     check_dump(entries)
-    lines = [f"# {stamp}"] if stamp else []
-    if key_version:
-        lines.append(f"{_KEY_STAMP}{key_version}")
-    lines.append(_HEADER)
-    for e in sorted(entries, key=lambda e: (e.path, e.long_name)):
-        lines.append(encode_record((e.path, e.long_name, f"{e.crap:.4f}")))
+    head, scopes = _stamp_lines(stamp, file_name)
+    keys = [f"{_KEY_STAMP}{key_version}"] if key_version else []
+    lines = [*head, *keys, *scopes, _HEADER]
+    lines += [encode_record((e.path, e.long_name, f"{e.crap:.4f}"))
+              for e in sorted(entries, key=lambda e: (e.path, e.long_name))]
     return "\n".join(lines) + "\n"
+
+
+def _stamp_lines(stamp: MetricStamp, file_name: str | None) -> tuple[list[str], list[str]]:
+    """The stamp's lines above the key stamp, and those between it and the header."""
+    if isinstance(stamp, ScopeStamps):
+        return [stamp.head(file_name)], stamp.scope_lines()
+    return [f"# {stamp}"] if stamp else [], []
 
 
 def _merge_key(b: float | None, o: float | None, t: float | None) -> float | None:
@@ -350,25 +761,212 @@ def _merge_key(b: float | None, o: float | None, t: float | None) -> float | Non
 
 def merge_ratchets(base: list[RatchetEntry], ours: list[RatchetEntry],
                    theirs: list[RatchetEntry]) -> list[RatchetEntry]:
-    b = {(e.path, e.long_name): e.crap for e in base}
-    o = {(e.path, e.long_name): e.crap for e in ours}
-    t = {(e.path, e.long_name): e.crap for e in theirs}
+    b, o, t = MarkIndex(base), MarkIndex(ours), MarkIndex(theirs)
     merged = []
-    for key in sorted(set(b) | set(o) | set(t)):
-        crap = _merge_key(b.get(key), o.get(key), t.get(key))
+    for key in sorted(b.keys() | o.keys() | t.keys()):
+        crap = _merge_key(b.mark(key), o.mark(key), t.mark(key))
         if crap is not None:
             merged.append(RatchetEntry(key[0], key[1], crap))
     return merged
+
+
+def changed_marks(base: list[RatchetEntry], side: list[RatchetEntry]) -> int:
+    """How many keys `side` marks otherwise than `base`: added, dropped or moved."""
+    b, s = MarkIndex(base), MarkIndex(side)
+    return sum(b.mark(key) != s.mark(key) for key in b.keys() | s.keys())
+
+
+# --- the stamps of a 3-way merge ------------------------------------------------
+# The merge driver runs with no config, so it cannot tell which scope a mark sits
+# in. Each scope's stamp and the lizard version merge as a mark does; the CLI
+# names a scope one side's stamp came from when the other side changed marks.
+
+_SIDES = ("OURS", "THEIRS")
+_OTHER = {"OURS": "THEIRS", "THEIRS": "OURS"}
+
+
+class StampMerge(NamedTuple):
+    """The stamp a merged marks file records, and each (scope, side) whose stamp
+    the merge took from that side, OURS or THEIRS, while the other recorded another."""
+    stamp: MetricStamp
+    came_from: tuple[tuple[str, str], ...] = ()
+
+
+def merge_stamps(base: MetricStamp, ours: MetricStamp, theirs: MetricStamp) -> StampMerge:
+    """The stamp of a 3-way merge, scope by scope, read from the three stamps alone.
+
+    Each scope's stamp and the lizard version merge as a mark does: the side that
+    moved from BASE wins, a scope one side removed drops unless the other moved
+    it, and moves that differ raise ValueError naming every scope they touch. A
+    single-number side stands for every scope at its one number, with no coverage
+    mode. NONE and an unreadable stamp merge only with an equal stamp.
+    """
+    if ours == theirs:
+        return StampMerge(ours)
+    if _per_scope(ours, theirs):
+        return _merge_scopes({"BASE": base, "OURS": ours, "THEIRS": theirs})
+    return StampMerge(_merge_whole(base, ours, theirs))
+
+
+def _per_scope(ours: MetricStamp, theirs: MetricStamp) -> bool:
+    """OURS or THEIRS is per scope, and neither is unstamped or unreadable."""
+    kinds = {type(ours), type(theirs)}
+    return ScopeStamps in kinds and kinds <= {ScopeStamps, SingleNumberStamp}
+
+
+def _merge_whole(base: MetricStamp, ours: MetricStamp, theirs: MetricStamp) -> MetricStamp:
+    """Two different stamps of which neither is per scope merge as one value."""
+    if not (isinstance(ours, SingleNumberStamp) and isinstance(theirs, SingleNumberStamp)):
+        raise ValueError(_whole_refusal(ours, theirs, "the two stamps do not compare"))
+    if base in (ours, theirs):
+        return theirs if base == ours else ours
+    raise ValueError(_whole_refusal(ours, theirs, "each side moved the stamp away from BASE's"))
+
+
+def _whole_refusal(ours: MetricStamp, theirs: MetricStamp, why: str) -> str:
+    return (f"ratchet merge refused: OURS records [{ours.render() or 'unstamped'}] and THEIRS records "
+            f"[{theirs.render() or 'unstamped'}], and {why}; {_merge_remedy(ours, theirs)}, then merge "
+            "again; OURS was left unchanged")
+
+
+def _merge_remedy(ours: MetricStamp, theirs: MetricStamp) -> str:
+    """Re-seed one branch under the newer side's metric: a seed under the older
+    release stamps its own older metric, and the next merge refused again."""
+    if newer_tools(theirs, ours):
+        return (f"THEIRS is newer, so on this branch, with a crapkit that measures [{theirs.render()}], "
+                f"{coverage_then_seed()}")
+    if newer_tools(ours, theirs):
+        return (f"OURS is newer, so on the branch you merge, with a crapkit that measures "
+                f"[{ours.render()}], {coverage_then_seed()}")
+    return f"on one branch, {coverage_then_seed()}"
+
+
+class _Pick(NamedTuple):
+    """One scope's view on each side ({BASE, OURS, THEIRS: view}), and the side
+    the merge keeps it from; None when both sides moved it differently."""
+    views: dict
+    side: str | None
+
+
+def _merge_scopes(sides: dict) -> StampMerge:
+    """`merge_stamps` once OURS or THEIRS is per scope; the result is per scope."""
+    lizard_side = _kept_side({side: _lizard(stamp) for side, stamp in sides.items()}, operator.eq)
+    picks = {name: _scope_pick(sides, name) for name in _scope_names(sides)}
+    clashes = _clashes(picks, lizard_side)
+    if lizard_side is None or clashes:
+        raise ValueError(_scopes_refusal(clashes, sides))
+    stamp = ScopeStamps(sides[lizard_side].lizard, _merged_scopes(picks), _file_name(sides))
+    return StampMerge(stamp, _came_from(stamp, sides))
+
+
+def _lizard(stamp: MetricStamp) -> str | None:
+    return stamp.lizard if isinstance(stamp, (SingleNumberStamp, ScopeStamps)) else None
+
+
+def _scope_names(sides: dict) -> list[str]:
+    return sorted({name for stamp in sides.values() if isinstance(stamp, ScopeStamps) for name in stamp.scopes})
+
+
+def _view(stamp: MetricStamp, name: str):
+    """What `stamp` records for scope `name`: its ScopeStamp or None, or a
+    single-number stamp's analysis number, which stands for every scope. The
+    lizard version merges on its own, so no view holds it."""
+    if isinstance(stamp, ScopeStamps):
+        return stamp.scopes.get(name)
+    return stamp.analysis if isinstance(stamp, SingleNumberStamp) else None
+
+
+def _scope_pick(sides: dict, name: str) -> _Pick:
+    views = {side: _view(stamp, name) for side, stamp in sides.items()}
+    return _Pick(views, _kept_side(views, _same))
+
+
+def _kept_side(views: dict, same) -> str | None:
+    """The side a 3-way merge keeps the value from; None when both sides moved
+    it differently. Equal sides keep the one that records a scope stamp."""
+    if same(views["OURS"], views["THEIRS"]):
+        return "THEIRS" if isinstance(views["OURS"], int) else "OURS"
+    kept = _kept_moves(views, same)
+    return kept[0] if len(kept) == 1 else None
+
+
+def _kept_moves(views: dict, same) -> list[str]:
+    """The sides that moved the value from BASE's. Of two, one that removed it
+    gives way to one that moved it; a removal alone is a move that drops it."""
+    moved = [side for side in _SIDES if not same(views[side], views["BASE"])]
+    return [*filter(views.get, moved)] or moved
+
+
+def _same(a, b) -> bool:
+    """Two views of one scope record the same rules. A single-number view
+    records no coverage mode, so it matches a scope stamp on its numbers alone."""
+    if isinstance(a, int):
+        a, b = b, a
+    return a == _seen_as(b, a)
+
+
+def _seen_as(view, other):
+    """`view` beside `other`: a single-number view read as a ScopeStamp holds
+    `other`'s languages at its one number and `other`'s coverage mode."""
+    if isinstance(view, int) and isinstance(other, ScopeStamp):
+        return ScopeStamp(dict.fromkeys(other.analysis, view), other.coverage)
+    return view
+
+
+def _clashes(picks: dict, lizard_side: str | None) -> list[str]:
+    """The scopes both sides moved differently: every scope when the lizard version is one."""
+    return list(picks) if lizard_side is None else [name for name, pick in picks.items() if pick.side is None]
+
+
+def _merged_scopes(picks: dict) -> dict:
+    """{scope: the ScopeStamp the merge keeps}, less the scopes it drops."""
+    scopes = {name: _kept_scope(pick) for name, pick in picks.items()}
+    return {name: scope for name, scope in scopes.items() if scope is not None}
+
+
+def _kept_scope(pick: _Pick):
+    """The kept side's view. A single-number view that won takes the languages and
+    coverage mode of the scope stamp it was compared with: the other side's, else BASE's."""
+    other = pick.views[_OTHER[pick.side]]
+    return _seen_as(pick.views[pick.side], other if isinstance(other, ScopeStamp) else pick.views["BASE"])
+
+
+def _file_name(sides: dict) -> str | None:
+    """The marks file the first per-scope line read names: OURS's, else THEIRS's, else BASE's."""
+    return next((sides[side]._parts[2] for side in ("OURS", "THEIRS", "BASE")
+                 if isinstance(sides[side], ScopeStamps) and sides[side]._parts[2]), None)
+
+
+def _came_from(stamp: ScopeStamps, sides: dict) -> tuple[tuple[str, str], ...]:
+    """(scope, the side its merged stamp came from) for each scope the other side
+    records otherwise: under another lizard, or with another scope stamp or none."""
+    return tuple((name, _OTHER[side]) for name in stamp.scopes for side in _SIDES
+                 if not (_lizard(sides[side]) == stamp.lizard
+                         and _same(_view(sides[side], name), stamp.scopes[name])))
+
+
+def _scopes_refusal(names: list[str], sides: dict) -> str:
+    said = "; ".join(f"scope {name}: OURS records [{_recorded(sides['OURS'], name)}] and THEIRS "
+                     f"records [{_recorded(sides['THEIRS'], name)}]" for name in names)
+    steps = [f"`{_self()} coverage`", *(f"`{_self()} ratchet seed --scope {name}`" for name in names)]
+    return (f"ratchet merge refused: OURS and THEIRS moved a stamp differently - {said} - run "
+            f"{', '.join(steps[:-1])} and {steps[-1]} on one branch, then merge again; OURS was left unchanged")
+
+
+def _recorded(stamp: MetricStamp, name: str) -> str:
+    """What `stamp` records for scope `name`, as the refusal quotes it."""
+    if isinstance(stamp, SingleNumberStamp):
+        return stamp.render()
+    scope = stamp.scopes.get(name)
+    return f"lizard={stamp.lizard} {scope.render() if scope else 'and no line for this scope'}"
 
 
 def seed_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: int,
                  scope_targets: dict[str, int] | None = None) -> tuple[list[RatchetEntry], int, int]:
     """First-class mark entry: record every over-ceiling function at its current
     CRAP. A mark never rises, seeding included — an existing lower mark stays."""
-    from .verify import rows_by_key
-
     ceilings = scope_targets or {}
-    marks = {(e.path, e.long_name): e for e in prior}
+    marks = MarkIndex(prior).working_copy()
     added = tightened = 0
     for key, row in rows_by_key(fresh).items():
         if not over_ceiling(row.crap, ceilings.get(row.scope, target)):
@@ -426,7 +1024,7 @@ def _rename_target(entry: RatchetEntry, present: set, renames: dict[str, str]) -
     git calls that path renamed, and the SAME key name exists at the new one. A
     copy fails the first (the source survives), so its mark never travels.
     """
-    if (entry.path, entry.long_name) in present:
+    if mark_key(entry) in present:
         return None
     dest = renames.get(entry.path)
     if dest is None or (dest, entry.long_name) not in present:
@@ -438,8 +1036,6 @@ def follow_renames(prior: list[RatchetEntry], fresh: list[ScoredRow],
                    renames: dict[str, str]) -> tuple[list[RatchetEntry], int]:
     """Marks for renamed files, re-pathed. Runs BEFORE prune so a rename reads as a
     move, not as code that left the repo and forfeits its high-water mark."""
-    from .verify import rows_by_key
-
     present = set(rows_by_key(fresh))
     return _repath(prior, lambda e: _rename_target(e, present, renames))
 
@@ -449,10 +1045,8 @@ def prune_ratchet(prior: list[RatchetEntry],
     """Deliberate mark exit: drop entries whose function is absent from the run.
     The automatic update keeps them (an exclude glob or a lane outage also removes
     rows); prune is the human confirming the code is really gone."""
-    from .verify import rows_by_key
-
     present = set(rows_by_key(fresh))
-    kept = [e for e in prior if (e.path, e.long_name) in present]
+    kept = [e for e in prior if mark_key(e) in present]
     return kept, len(prior) - len(kept)
 
 
@@ -478,12 +1072,10 @@ def unstable_marks(prior: list[RatchetEntry], fresh: list[ScoredRow],
     unchanged tree. Only marked functions can be tightened, so only they are
     walked; a key the earlier run never scored has nothing to disagree with.
     """
-    from .verify import rows_by_key
-
     worst = rows_by_key(fresh)
     refusals = []
-    for entry in prior:
-        key = (entry.path, entry.long_name)
+    for entry in MarkIndex(prior).entries():
+        key = mark_key(entry)
         row, was = worst.get(key), previous.get(key)
         if row is None or was is None or not _jumped(was, round(row.crap, 4), max_jump):
             continue
@@ -497,14 +1089,17 @@ def update_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target:
     """`hold` names keys whose mark this run may not move — `unstable_marks`
     picks them. A held mark keeps its recorded value, drop included: leaving the
     file is the deepest tighten there is. No mark rises and none is added
-    (`invariants.check_marks_kept`)."""
-    from .verify import rows_by_key
+    (`invariants.check_marks_kept`).
 
+    The update rewrites lines, not keys: a key the file lists twice keeps both
+    lines in the order they came, each tightened or dropped against the same
+    fresh row. The first line stays the one `keys.MarkIndex` answers, and
+    `ratchet_delta` counts the key once."""
     fresh_by_key = rows_by_key(fresh)
     ceilings = scope_targets or {}
     updated = []
     for entry in prior:
-        key = (entry.path, entry.long_name)
+        key = mark_key(entry)
         kept = _updated_mark(entry, fresh_by_key.get(key), key in hold,
                              lambda scope: ceilings.get(scope, target))
         if kept is not None:
@@ -547,7 +1142,8 @@ def _mark_move(entry: RatchetEntry, fresh: float | None) -> str:
 def ratchet_delta(prior: list[RatchetEntry], updated: list[RatchetEntry]) -> RatchetDelta:
     """The two counts a green verify reports. A mark never rises and an update
     adds none, so dropped plus tightened is the whole difference between the
-    two lists; a mark that kept its value counts as neither."""
-    after = {(e.path, e.long_name): e.crap for e in updated}
-    moves = [_mark_move(e, after.get((e.path, e.long_name))) for e in prior]
+    two lists; a mark that kept its value counts as neither. Each key counts
+    once, under the mark `keys.MarkIndex` answers for it."""
+    after = MarkIndex(updated)
+    moves = [_mark_move(e, after.mark(mark_key(e))) for e in MarkIndex(prior).entries()]
     return RatchetDelta(moves.count("dropped"), moves.count("tightened"))

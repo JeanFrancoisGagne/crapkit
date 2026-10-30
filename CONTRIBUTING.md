@@ -8,7 +8,7 @@ cd crapkit
 pip install -e ".[dev,accuracy-push]"
 npm ci --prefix tools/accuracy/node/push
 git config core.hooksPath git-hooks
-git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"
+git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"
 ```
 
 Quote `".[dev,accuracy-push]"`: zsh globs the bare form and the install fails before pip
@@ -36,8 +36,10 @@ for `crapkit-ratchet.tsv`. git never takes a driver command from a committed fil
 each clone runs the line once. Without it git merges the marks file as text, and a
 hand-resolved conflict is where a mark gets raised
 ([docs/ratchet.md](docs/ratchet.md#the-git-merge-driver)). The line starts crapkit with
-`python -m`, through the same `python` both hooks run, where docs/ratchet.md gives a
-repo that installs crapkit as a tool the `crapkit` console script.
+`python -P -m`, through the same `python` both hooks run, where docs/ratchet.md gives a
+repo that installs crapkit as a tool the `crapkit` console script. git runs the driver
+and both hooks from the checkout's root, and `-P` keeps Python from importing a
+`crapkit.py` there in place of crapkit.
 
 ## Tests
 
@@ -135,7 +137,7 @@ so no global Git configuration is required.
 - **The complexity gate is real.** Every function you add or touch must sit at or under
   its scope's `target` in this repo's own `crapkit.toml`: 6 for `src` and `tools`, 5 for
   `tools/accuracy`. Comprehension `for`/`if` clauses, ternaries, and `and`/`or` all count. `git-hooks/pre-commit` runs
-  `python -m crapkit hook-precommit` over your staged blobs, which exits 6 on a breach and
+  `python -P -m crapkit hook-precommit` over your staged blobs, which exits 6 on a breach and
   turns into a git exit 1. Decompose; never widen the gate. A refusal is design feedback.
 - **Tests first.** A behavior change starts with the failing test that proves it: unit
   tests in `tests/unit/` for the pure core, e2e tests in `tests/e2e/` that drive
@@ -164,9 +166,9 @@ so no global Git configuration is required.
 ## Running crapkit on crapkit
 
 ```
-python -m crapkit coverage
-python -m crapkit worklist
-python -m crapkit verify
+python -P -m crapkit coverage
+python -P -m crapkit worklist
+python -P -m crapkit verify
 ```
 
 ## How a change gets reviewed
@@ -174,7 +176,7 @@ python -m crapkit verify
 Two gates, and the first one is yours.
 
 **Before you push.** `git-hooks/pre-commit` refuses the commit on a staged function over
-ccn 6. Then `python -m crapkit verify` on the branch: it reruns the lane, gates the
+ccn 6. Then `python -P -m crapkit verify` on the branch: it reruns the lane, gates the
 functions your diff touched, and checks that no ratchet mark rose and no test that passed
 in the baseline fails now. `git-hooks/pre-push` runs change control on every pushed
 commit and the accuracy checks of each calculation whose module the branch touches;

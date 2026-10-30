@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 from crapkit.analyze import analyze_source
-from crapkit.coverage_istanbul import FnCoverage
+from crapkit.score import FnCoverage
 from crapkit.coverage_py import parse_coveragepy_both_file
 from crapkit.score import SharedSpanFold, score_rows
 from crapkit.snapshot import build_inventory_rows

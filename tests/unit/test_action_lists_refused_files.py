@@ -7,6 +7,11 @@ the comment quoted the message alone: a pull request with two such names showed
 one and "(and 1 more)", and the job log's stderr line named no more. The
 comment now gives each refused file a bullet under the no-verdict line, the way
 it gives each unread file a bullet under a failed verdict.
+
+Since 0.9.0 verify meets such a name with a verdict, not an error object: exit 3,
+run_id null and one `unreadable_name` item per name in `findings`. The comment
+gives each its own bullet under `verify failed, exit 3: unreadable name`. An
+error object still renders as the line that wrote no verdict.
 """
 from __future__ import annotations
 
@@ -15,8 +20,11 @@ import subprocess
 from functools import lru_cache
 from pathlib import Path
 
-from cli_inproc_repo import KNOTTY, repo, seed_artifacts, template_repo  # noqa: F401
+import pytest
+from cli_inproc_repo import (KNOTTY, add_knotty, commit_all, repo, seed_artifacts,  # noqa: F401
+                             template_repo)
 
+from crapkit import universe
 from crapkit.cli import main
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -58,6 +66,43 @@ def test_the_no_verdict_line_lists_every_file_coverage_refused(repo, capsys):
     assert lines[0].startswith("**no verdict: `crapkit coverage` exited 3 (src/caf\\xe9.ts (and 1 more)")
     assert lines[1:] == ["", f"- refused: `src/caf\\xe9.ts`: {REASON}",
                          f"- refused: `src/o\\x92brien.ts`: {REASON}"]
+
+
+@pytest.fixture()
+def measured(repo, capsys):
+    """A trusted baseline run, so verify has a baseline to stop against."""
+    add_knotty(repo)
+    commit_all(repo, "knotty")
+    seed_artifacts(repo)
+    assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
+    capsys.readouterr()
+    return repo
+
+
+def test_a_claimed_name_reaches_the_comment_as_a_verdict_with_its_own_bullet(measured, capsys):
+    """The payload comes from the real command: verify stops before any lane
+    runs, so the counts line says nothing was measured."""
+    _staged(measured, (b"src/caf\xe9.ts",))
+    assert main(["verify", "--reuse-artifacts", "--json", "--repo", str(measured)]) == 3
+    verify = json.loads(capsys.readouterr().out)
+    sentence = universe.claimed_text([("src/caf\udce9.ts", "src")])
+
+    lines = _builder().verdict_line(verify, 3).splitlines()
+
+    assert lines == ["**verify failed, exit 3: unreadable name.**", "",
+                     f"- unreadable name: `src/caf\\xe9.ts`: {sentence}", "",
+                     "Nothing was measured against baseline 1: 1 unreadable name, 0 gate violations, "
+                     "0 ratchet regressions, 0 new test failures, 0 uncovered changed lines."]
+
+
+def test_a_verify_config_refusal_at_exit_3_still_wrote_no_verdict():
+    """A config error at exit 3 is an error object, not a claimed name: no
+    verdict, and no count of anything."""
+    verify = {"error": {"exit": 3, "kind": "config", "message": "crapkit.toml: unknown language 'cobol'\n"},
+              "schema": 1}
+
+    assert _builder().verdict_line(verify, 3) == (
+        "**`crapkit verify` exited 3 and wrote no verdict: crapkit.toml: unknown language 'cobol'.**")
 
 
 def test_a_verify_that_refused_lists_every_file_under_its_line():

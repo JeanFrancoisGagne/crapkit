@@ -5,7 +5,7 @@ with it rounded to 4 places, and equal scores at 4 places list by path.
 """
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
-from crapkit.verify import (UncoveredViolation, _ratchet_regressions, _within_mark, dirty_failure_ids,
+from crapkit.verify import (UncoveredViolation, _ratchet_regressions, dirty_failure_ids,
                             evaluate, parse_baseline_tsv, unmarked_over_ceiling, with_diff_coverage)
 
 
@@ -35,7 +35,9 @@ def test_unmarked_debt_is_judged_against_the_scope_s_own_ceiling():
 def test_a_score_is_within_its_mark_only_at_or_under_it_at_4_places():
     marks = {("src/a.py", "f( )"): 12.0}
 
-    assert [_within_mark(row("src/a.py", crap), ("src/a.py", "f( )"), marks)
+    assert [not evaluate(fresh=[row("src/a.py", crap)], changed_ranges={"src/a.py": [(1, 9)]},
+                         ratchet=[RatchetEntry(*key, mark) for key, mark in marks.items()],
+                         baseline_failures=set(), fresh_failures=set(), target=6).gate_violations
             for crap in (12.00004, 12.3, 11.9)] == [True, False, True]
 
 
