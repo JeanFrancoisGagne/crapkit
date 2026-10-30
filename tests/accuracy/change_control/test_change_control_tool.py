@@ -1110,11 +1110,12 @@ def test_a_table_written_from_nothing_gets_its_header(tmp_path):
               "digest": "d", "change": "C3"}
     plan = cc.Plan(request, [], {"x.tsv": ("ab", "C3")}, ["x.tsv"], digest, "11")
 
-    cc.write_plan(tmp_path, plan, cc.Running("12", "1.24.0"))
+    cc.write_plan(tmp_path, plan, cc.Running("12", "1.24.0", "go=12;python=12", "coveragepy=1"))
 
     assert (tmp_path / cc.CHANGES).read_text() == (
-        "id\tdate\tkind\tcalcs\tanalysis_version\tlizard_version\tchangelog\treason\n"
-        "C3\t2026-09-25\tfix\tCRAP score\t12\t1.24.0\t\tf1 fixed.\n")
+        "id\tdate\tkind\tcalcs\tanalysis_version\tlizard_version\tchangelog\treason\t"
+        "analysis_versions\treader_versions\n"
+        "C3\t2026-09-25\tfix\tCRAP score\t12\t1.24.0\t\tf1 fixed.\tgo=12;python=12\tcoveragepy=1\n")
     assert (tmp_path / cc.LOCK).read_text() == "path\tsha256\tchange\nx.tsv\tab\tC3\n"
     assert (tmp_path / cc.DIGESTS).read_text() == (
         "analysis_version\tlizard_version\tcorpus\tdigest\tchange\n12\t1.24.0\tc\td\tC3\n")
@@ -1157,12 +1158,13 @@ def test_the_first_lock_writes_each_table_s_header_into_a_tree_without_it(tmp_pa
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).write_bytes(text.encode("utf-8"))
 
-    cc.lock_initial(tmp_path, cc.Running("11", "1.24.0"), "2026-09-25", {"score_model": 3})
+    cc.lock_initial(tmp_path, cc.Running("11", "1.24.0", "python=11", "coveragepy=1"),
+                    "2026-09-25", {"score_model": 3})
 
     assert (tmp_path / cc.CHANGES).read_text().splitlines() == [
         "\t".join(cc.CHANGE_COLUMNS),
         "C1\t2026-09-25\tnone\t\t11\t1.24.0\t\tthe first lock over every golden and "
-        "expected-value file"]
+        "expected-value file\tpython=11\tcoveragepy=1"]
     metrics = cc.metric_digest(seeds._tree_bytes(tree))
     assert (tmp_path / cc.DIGESTS).read_text().splitlines() == [
         "\t".join(cc.DIGEST_COLUMNS),
