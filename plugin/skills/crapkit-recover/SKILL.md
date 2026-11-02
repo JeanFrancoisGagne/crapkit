@@ -23,6 +23,7 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 | "crapkit doctor: checking PATH", then nothing | You ran `--plugin-root` with no PATH, or named a directory above the plugin root, and doctor found the install (one line per install it checks). The line says which tree the verdict is about | Nothing. Exit 0 means the plugin and the CLI agree |
 | "WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it", from `crapkit doctor` | The lane measures coverage exactly as before. What it cannot feed are the two checks that read a test-results file | Add the junit flag and `results_artifact` the WARN prints. Until then exit 8 can never fire for that lane's scopes: [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start) |
 | "note lane 'js': runner unknown (npm run cov names none crapkit knows); runner-specific hints and refusals are off for it", from `crapkit doctor` | Not a failure, and doctor's exit code does not change. crapkit read no runner from the lane's command, the package.json script it runs, or devDependencies, so the hints and refusals that key on one runner skip this lane. The lane measures as before | Nothing, or name the runner in the command to turn those checks back on: `npx vitest run --coverage` in place of `npm run cov`: [docs: how crapkit reads a lane's runner](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#how-crapkit-reads-a-lanes-runner) |
+| "warning: crapkit-ratchet.tsv records one analysis number and no coverage mode, so verify read scope(s) NAME as measured by the coverage readers 0.8.x read for their lanes", from `crapkit verify` | A marks file 0.8.x wrote records no coverage mode, so verify inferred each marked scope's mode from its lanes and compared on. Not a failure | Nothing. The next seed or passing verify records each scope's mode, and the warning stops: [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp) |
 | "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping)", from `crapkit verify` | The marks file predates stamping, so nothing can be compared against it | Run `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`: seed stamps the metric of the run it reads: [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp) |
 | "crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact - add --cov-branch to the lane command to measure branches", from `crapkit coverage` | The lane scored on statements instead of branches, so CRAP is understated on branchy functions. A report carrying neither branches nor statements is still exit 5 | Add `--cov-branch` to the lane command, then rerun `crapkit coverage`: [docs: pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) |
 | "crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) - those files are skipped and the rest of the report is scored", from `crapkit coverage` | A plugin reporter, django or jinja templates, declares no code regions for those files. Every other file in the report scored. A report where no file carries regions is still exit 5 | Nothing, unless you expected those files measured: [docs: a file the report carries no regions for](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-file-the-report-carries-no-regions-for) |
@@ -94,20 +95,24 @@ the OOM killer: rerun.
 
 Exit 3 fires before any lane runs, so nothing was measured and nothing was written.
 
-`ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] but this run
-measures [crapkit-analysis=13 lizard=1.24.0]` is the 0.8.1 upgrade, not a break. Version 13
+`ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] in crapkit-ratchet.tsv,
+and the rules have moved since in 1 scope(s): web (typescript analysis 11 to 13)` is the
+0.8.1 upgrade, not a break. Version 13
 moves numbers in every language but Python, and some of Python's cognitive and nesting, so
 CRAP scores from the two versions are not comparable:
 [docs: analysis version 13](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-13).
-Run `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`: prune
-drops a mark whose key the new analysis moved, and seed stamps the metric of the run it
-reads, so a seed from a run the older crapkit measured keeps the old stamp and verify keeps
-refusing. When a failed verify pins the baseline, plain prune and plain seed both read the
+The refusal names only the scopes that hold marks and whose rules moved, each with what
+moved: a language's `analysis` number, a parser's `reader` number, `lizard`, the `coverage`
+mode, or `no stamp recorded for this scope`, which is how a renamed scope reads. Run
+`crapkit coverage`, then `crapkit ratchet prune`, then the seed the refusal names for each
+scope: prune drops a mark whose key the new analysis moved, and seed stamps
+the metric of the run it reads, so a seed from a run the older crapkit measured keeps the old
+stamp and verify keeps refusing. When a failed verify pins the baseline, plain prune and plain seed both read the
 pinned run. Name the newer one to each: `crapkit ratchet prune --baseline N`, then
 `crapkit ratchet seed --baseline N`. On such a store a plain `crapkit verify` prints N in the
 taint warning above its refusal, and the refusal ends by saying a failed verify pins the plain
-seed; `crapkit verify --baseline N` ends with that seed itself. When the first bracket is the
-newer one, a newer crapkit or lizard wrote the marks (`the marks come from a newer crapkit
+seed; `crapkit verify --baseline N` ends with that seed itself. When a scope's old number is the
+higher one, a newer crapkit wrote the marks (`the marks come from a newer crapkit
 than this install`): upgrade this install, and never seed, since seed and prune refuse those
 marks and a seed would restamp the team's marks backwards:
 [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp).

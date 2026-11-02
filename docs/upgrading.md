@@ -188,6 +188,32 @@ commit the marks file.
 Every teammate upgrades crapkit as well, the Action's `uses:` pin and the pre-commit `rev`
 included. A teammate still on 0.8.1 measures under the newer lizard, so their verify asks
 for a reseed too, and each reseed they run moves the marks back.
+
+### verify names the scopes whose rules moved
+
+0.9.0 checks the marks scope by scope. A marks file 0.8.1 seeded holds one analysis
+number, 13, and no coverage mode. Its first `crapkit verify` under 0.9.0 compares that
+number with each language of each scope that holds marks, infers each scope's coverage
+mode from its lanes, and prints one warning naming the scopes it inferred, on stderr
+below its `verify OK` line:
+
+```
+warning: crapkit-ratchet.tsv records one analysis number and no coverage mode, so verify read scope(s) api, web as measured by the coverage readers 0.8.x read for their lanes; nothing to do: the next seed or passing verify records each scope's mode
+```
+
+Nothing to do. A scope whose lanes use only a parser 0.8.x never read was cc-only when
+0.8.x seeded it, so verify refuses it as the move to measured and names its
+`crapkit ratchet seed --scope NAME`.
+
+From a release older than 0.8.1, such as 0.7.6 at analysis 11, the first `crapkit verify`
+refuses before any lane runs. It names every scope that holds marks, each language old
+number to new, and a seed for each:
+
+```
+crapkit: ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 2 scope(s): api (python analysis 11 to 13), web (typescript analysis 11 to 13) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope api`, then `crapkit ratchet seed --scope web`
+```
+
+[The metric stamp](ratchet.md#the-metric-stamp) lists each kind of move a refusal names.
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->
@@ -1807,7 +1833,7 @@ today:
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 1 scope(s): src (python analysis 7 to 8) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope src`
 ```
 
 That transition changed cognitive complexity, not `ccn` or the CRAP formula. Later

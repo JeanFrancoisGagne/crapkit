@@ -34,6 +34,8 @@ ALLOWED_READS = {
 # Each spelling of a format name outside coverage_format.py: none is compared.
 ALLOWED_NAMES = {
     ("config_contract.py", "<module>"): "the config enum a lane's parser is checked against",
+    ("ratchet.py", "<module>"): "SINGLE_NUMBER_PARSERS: the parsers 0.8.x read, each at the reader "
+                                "number a single-number marks file stands for",
     ("scaffold.py", "<module>"): "init's commented templates, one per parser",
     ("scaffold.py", "_pytest_lane"): "init writes parser = coveragepy for the lane it detects",
     ("scaffold.py", "_js_routed_lane"): "init writes parser = istanbul for the lane it detects",

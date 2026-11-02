@@ -431,22 +431,43 @@ After the prune every mark names a function run 3 holds, and the seed writes
 
 ## The metric stamp
 
-Scores measured under different rules are not comparable. The file's first line records the
-analysis version and the lizard behind the numbers, so crapkit can refuse instead of
-comparing them silently.
+Scores measured under different rules are not comparable. The file's first lines record the
+rules behind the numbers: the lizard version, and for each scope the analysis number of each
+of its languages and its coverage mode (cc-only, no lane, or the reader number of each parser
+its lanes use). A file 0.8.x wrote records one analysis number for every language instead.
+Before any lane runs, verify places each mark in the scope the config gives its path and
+compares each scope that holds marks with what this crapkit runs. It refuses naming only the
+scopes whose rules moved, so a raise in one language's analysis or in one coverage reader
+leaves the marks of every scope that does not use it alone. A mark no scope claims counts
+toward no scope.
 
-Four cases:
-
-| Recorded stamp | Behavior |
+| What moved in a scope that holds marks | Behavior |
 |---|---|
-| Matches the running metric | Compare normally. |
-| Older than the running metric, or stamped by a newer lizard | **Refused**, exit 3: run `coverage`, then `ratchet prune`, then re-seed. |
-| Newer: a newer crapkit wrote the marks (a higher `crapkit-analysis`) | **Refused**, exit 3: upgrade this install. `ratchet seed` and `ratchet prune` refuse these marks too. |
-| Absent (a file written before stamping) | Warn, then apply the function-identity checks below. Anonymous JavaScript/TypeScript marks need reader proof. |
+| Nothing | Compare normally. A scope with no marks never refuses. |
+| `analysis`: one of its languages' numbers | **Refused**, exit 3: names the scope and the language, old number to new; run `coverage`, then `ratchet prune`, then `ratchet seed --scope NAME`. |
+| `reader`: the reader number of one of its lanes' parsers | **Refused**, exit 3, the same way, naming the parser. |
+| `lizard`: the lizard version | **Refused**, exit 3: every scope that holds marks is named. |
+| `coverage`: its mode, from cc-only or no lane to a parser, back, or to another set of parsers | **Refused**, exit 3: names the old mode and the new one. |
+| `unstamped`: the scope has no recorded stamp, which is how a renamed scope reads | **Refused**, exit 3: names the new name. The old name, gone from the config, refuses nothing. |
+| A language the scope added or dropped | Compare normally. Functions in an added language show as unmarked until the next seed. |
+| Newer: a newer crapkit wrote the marks (a higher number than this one runs) | **Refused**, exit 3: upgrade this install. `ratchet seed` and `ratchet prune` refuse these marks too. |
+
+A file 0.8.x wrote holds one number and no coverage mode. Each scope that holds marks reads
+that number for each of its languages, and its mode is inferred from its lanes now: a
+coveragepy or istanbul lane counts as measured by that reader, the only two 0.8.x read; a
+scope whose lanes all use another parser counts as cc-only, so it reads as the move to
+measured; a scope with no lane counts as cc-only. verify then warns once, on stderr, naming
+the scopes whose mode it inferred. There is nothing to do: the next seed records each scope's
+mode. A file with one number and no marks at all compares as one value, as the tighten that
+restamps it does. A file with no stamp at all (written before stamping) warns, then applies
+the function-identity checks below; anonymous JavaScript/TypeScript marks need reader proof.
+
+A repo with an `api` scope in Python and a `web` scope in TypeScript, after a release raises
+Python's analysis number:
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`
+crapkit: ratchet marks were recorded under [crapkit-stamp=2 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 1 scope(s): api (python analysis 13 to 14) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope api`
 EXIT=3
 ```
 
@@ -485,7 +506,7 @@ Every write to the marks file sets the stamp by where its numbers came from:
 |---|---|
 | `ratchet seed` | The metric the run it read was measured under. The only write that replaces a recorded metric stamp. |
 | `ratchet prune`, `ratchet move`, the merge driver | The recorded stamp. None of them adds a number. A marks file prune creates holds no mark and takes the running metric. |
-| `verify`'s tighten, `verify --override` | The running metric. Marks another metric recorded are refused before the lanes run; a file written before stamping gains its stamp. |
+| `verify`'s tighten, `verify --override` | The running metric. Marks another metric recorded are refused before the lanes run; a file written before stamping gains its stamp. A file stamped per scope keeps its stamp lines. |
 | The pre-commit hook's override | The recorded stamp. A marks file it creates takes the running metric. |
 
 Seed and prune run their identity checks first. An upgrade that changes which functions a
@@ -527,7 +548,7 @@ request's own head, whose seed would sign the failed verify's findings as the ne
 
 ```
 $ crapkit verify --baseline 12
-crapkit: ratchet marks were recorded under [crapkit-analysis=9 lizard=1.24.0] but this run measures [crapkit-analysis=10 lizard=1.24.0] - CRAP scores are not comparable across metric versions; re-baseline from run 12 with `crapkit ratchet seed --baseline 12`
+crapkit: ratchet marks were recorded under [crapkit-analysis=9 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 1 scope(s): src (python analysis 9 to 10) - CRAP scores are not comparable across metric versions; re-baseline from run 12 with `crapkit ratchet seed --scope src --baseline 12`
 EXIT=3
 ```
 

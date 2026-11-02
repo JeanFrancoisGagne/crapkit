@@ -80,7 +80,8 @@ def test_matching_stamps_do_not_conflict():
 
 
 def test_a_differing_stamp_names_both_versions_and_the_fix():
-    msg = stamp_conflict("crapkit-analysis=2 lizard=1.17.10", "crapkit-analysis=3 lizard=1.24.0")
+    msg = stamp_conflict("crapkit-analysis=2 lizard=1.17.10",
+                         "crapkit-analysis=3 lizard=1.24.0").refusal("crapkit-ratchet.tsv")
     assert "crapkit-analysis=2 lizard=1.17.10" in msg
     assert "crapkit-analysis=3 lizard=1.24.0" in msg
     assert "ratchet seed" in msg
@@ -108,7 +109,7 @@ def test_marks_stamped_by_0_8_0_are_refused_until_one_reseed():
     from crapkit.analyze import ANALYSIS_VERSION
     from crapkit.ratchet import metric_version
 
-    refusal = stamp_conflict(stamp_text(11, lizard.version), metric_version())
+    refusal = stamp_conflict(stamp_text(11, lizard.version), metric_version()).refusal("m.tsv")
 
     assert ANALYSIS_VERSION == 13
     assert refusal is not None and "ratchet seed" in refusal, refusal
@@ -210,7 +211,7 @@ def test_a_stamp_crapkit_cannot_parse_keeps_its_line_and_the_number_it_opens_wit
 
     assert type(stamp) is UnreadableStamp and stamp
     assert (stamp.render(), stamp.analysis) == (line, analysis)
-    assert stamp_conflict(stamp, metric_version()).startswith(
+    assert stamp_conflict(stamp, metric_version()).refusal("m.tsv").startswith(
         f"ratchet marks were recorded under [{line}] but")
     assert dump_ratchet([], stamp=stamp).startswith(f"# {line}\n")
 
@@ -754,4 +755,247 @@ def test_crapkit_0_8_x_reads_a_foreign_stamp_and_unparseable_marks_in_a_per_scop
     assert [tuple(entry) for entry in entries] == [tuple(entry) for entry in MARKED]
     assert complaints == [f"ratchet line {number} has an unreadable mark: {line!r}"
                           for number, line in enumerate(scope_lines, 3)]
+
+
+# --- which scopes moved -----------------------------------------------------------
+#
+# A stamp is written here as plain data: ("single", N, lizard) for the line 0.8.x
+# wrote, ("scoped", lizard, {scope: ({language: N}, mode)}) for the per-scope
+# form, and the running stamp as (lizard, {scope: ({language: N}, mode)}).
+
+PY13, TS13, TS14, GO13 = {"python": 13}, {"typescript": 13}, {"typescript": 14}, {"go": 13}
+COV1, COV2, IST1 = {"coveragepy": 1}, {"coveragepy": 2}, {"istanbul": 1}
+OLD_LIZARD, LIZARD = "1.23.0", "1.24.0"
+TWO = {"api": (PY13, COV1), "web": (TS13, IST1)}
+
+
+def _as_stamp(data):
+    """The ratchet stamp a plain-data stamp spells."""
+    if data[0] == "single":
+        return SingleNumberStamp(data[1], data[2])
+    lizard, scopes = data[1:] if data[0] == "scoped" else data
+    return ScopeStamps(lizard, {name: ScopeStamp(dict(numbers), mode)
+                                for name, (numbers, mode) in scopes.items()})
+
+
+def _model_moves(recorded, running, marked) -> list[tuple]:
+    """The moved scopes, worked out from the plain data alone: no code shared
+    with ratchet.py. 0.8.x read coveragepy and istanbul at reader number 1."""
+    read_by_0_8 = {"coveragepy": 1, "istanbul": 1}
+    run_lizard, run_scopes = running
+    moves = []
+    for name in sorted(set(marked) & set(run_scopes)):
+        now_numbers, now_mode = run_scopes[name]
+        if recorded[0] == "single":
+            then_lizard, then_numbers = recorded[2], {language: recorded[1] for language in now_numbers}
+            kept = ({parser: read_by_0_8[parser] for parser in now_mode if parser in read_by_0_8}
+                    if isinstance(now_mode, dict) else {})
+            then_mode = kept or "cc-only"
+        elif name not in recorded[2]:
+            moves.append((name, "unstamped", "", None, None))
+            continue
+        else:
+            then_lizard, (then_numbers, then_mode) = recorded[1], recorded[2][name]
+        moves += [(name, "analysis", language, then_numbers[language], number)
+                  for language, number in now_numbers.items()
+                  if language in then_numbers and then_numbers[language] != number]
+        if then_lizard != run_lizard:
+            moves.append((name, "lizard", "", then_lizard, run_lizard))
+        same_parsers = (isinstance(then_mode, dict) and isinstance(now_mode, dict)
+                        and set(then_mode) == set(now_mode))
+        if same_parsers:
+            moves += [(name, "reader", parser, then_mode[parser], number)
+                      for parser, number in now_mode.items() if then_mode[parser] != number]
+        elif then_mode != now_mode:
+            moves.append((name, "coverage", "", then_mode, now_mode))
+    return moves
+
+
+def _ordered(moves) -> list[tuple]:
+    return sorted((tuple(move) for move in moves), key=lambda move: move[:3])
+
+
+def _moved(recorded, running, marked) -> list[tuple]:
+    conflict = stamp_conflict(_as_stamp(recorded), _as_stamp(running), frozenset(marked))
+    return _ordered(conflict.moved if conflict else ())
+
+
+_CASES = {
+    "equal stamps": (("scoped", LIZARD, TWO), (LIZARD, TWO), {"api", "web"}, []),
+    "one language raised": (
+        ("scoped", LIZARD, TWO), (LIZARD, {**TWO, "web": (TS14, IST1)}), {"api", "web"},
+        [("web", "analysis", "typescript", 13, 14)]),
+    "one reader raised": (
+        ("scoped", LIZARD, TWO), (LIZARD, {**TWO, "api": (PY13, COV2)}), {"api", "web"},
+        [("api", "reader", "coveragepy", 1, 2)]),
+    "lizard changed lists every marked scope and no unmarked one": (
+        ("scoped", OLD_LIZARD, TWO), (LIZARD, {**TWO, "docs": (PY13, COV1)}), {"api", "web"},
+        [("api", "lizard", "", OLD_LIZARD, LIZARD), ("web", "lizard", "", OLD_LIZARD, LIZARD)]),
+    "cc-only to coveragepy": (
+        ("scoped", LIZARD, {"api": (PY13, "cc-only")}), (LIZARD, {"api": (PY13, COV1)}), {"api"},
+        [("api", "coverage", "", "cc-only", COV1)]),
+    "coveragepy to cc-only": (
+        ("scoped", LIZARD, {"api": (PY13, COV1)}), (LIZARD, {"api": (PY13, "cc-only")}), {"api"},
+        [("api", "coverage", "", COV1, "cc-only")]),
+    "no-lane to istanbul": (
+        ("scoped", LIZARD, {"web": (TS13, "no-lane")}), (LIZARD, {"web": (TS13, IST1)}), {"web"},
+        [("web", "coverage", "", "no-lane", IST1)]),
+    "a second parser joins the scope's lanes": (
+        ("scoped", LIZARD, {"app": (PY13, COV1)}),
+        (LIZARD, {"app": (PY13, {"coveragepy": 1, "istanbul": 1})}), {"app"},
+        [("app", "coverage", "", COV1, {"coveragepy": 1, "istanbul": 1})]),
+    "a renamed scope": (
+        ("scoped", LIZARD, {"api": (PY13, COV1)}), (LIZARD, {"backend": (PY13, COV1)}), {"backend"},
+        [("backend", "unstamped", "", None, None)]),
+    "a new scope with no marks": (
+        ("scoped", LIZARD, {"api": (PY13, COV1)}), (LIZARD, {"api": (PY13, COV1), "web": (TS14, IST1)}),
+        {"api"}, []),
+    "a scope adds a language": (
+        ("scoped", LIZARD, {"api": (PY13, COV1)}), (LIZARD, {"api": ({**PY13, "javascript": 14}, COV1)}),
+        {"api"}, []),
+    "a scope drops a language": (
+        ("scoped", LIZARD, {"api": ({**PY13, "javascript": 13}, COV1)}), (LIZARD, {"api": (PY13, COV1)}),
+        {"api"}, []),
+    "single number equal with a coveragepy scope": (
+        ("single", 13, LIZARD), (LIZARD, {"api": (PY13, COV1)}), {"api"}, []),
+    "single number equal with a lane of a parser 0.8.x never read": (
+        ("single", 13, LIZARD), (LIZARD, {"svc": (GO13, {"lcov": 1})}), {"svc"},
+        [("svc", "coverage", "", "cc-only", {"lcov": 1})]),
+    "single number equal with a scope that has no lane": (
+        ("single", 13, LIZARD), (LIZARD, {"tools": (GO13, "cc-only")}), {"tools"}, []),
+    "single number below the running numbers": (
+        ("single", 11, LIZARD), (LIZARD, {**TWO, "docs": (PY13, COV1)}), {"api", "web"},
+        [("api", "analysis", "python", 11, 13), ("web", "analysis", "typescript", 11, 13)]),
+}
+
+
+@pytest.mark.parametrize("recorded, running, marked, expected", _CASES.values(), ids=list(_CASES))
+def test_stamp_conflict_names_the_scopes_whose_rules_moved(recorded, running, marked, expected):
+    assert _moved(recorded, running, marked) == _ordered(expected)
+    assert _ordered(_model_moves(recorded, running, marked)) == _ordered(expected)
+
+
+def test_a_renamed_scope_lists_the_old_name_as_gone_and_gone_refuses_nothing():
+    renamed = stamp_conflict(_as_stamp(("scoped", LIZARD, {"api": (PY13, COV1)})),
+                             _as_stamp((LIZARD, {"backend": (PY13, COV1)})), frozenset({"backend"}))
+    old = {"api": (PY13, COV1), "old": (GO13, "cc-only")}
+    gone_only = stamp_conflict(_as_stamp(("scoped", LIZARD, old)),
+                               _as_stamp((LIZARD, {"api": (PY13, COV1)})), frozenset({"api"}))
+
+    assert renamed.gone == ("api",) and renamed.refuses
+    assert "backend (no stamp recorded for this scope)" in renamed.refusal("crapkit-ratchet.tsv")
+    assert gone_only.gone == ("old",) and not gone_only.refuses and not gone_only.moved
+
+
+def test_a_single_number_file_names_the_scopes_whose_mode_it_inferred():
+    """A coveragepy or istanbul scope may have been measured or cc-only under
+    0.8.x, so its mode is a guess the warning names; a lane-less one is not."""
+    running = _as_stamp((LIZARD, {"api": (PY13, COV1), "tools": (GO13, "cc-only")}))
+    conflict = stamp_conflict(SingleNumberStamp(13, LIZARD), running, frozenset({"api", "tools"}))
+
+    assert conflict.inferred == ("api",) and not conflict.refuses
+    assert stamp_conflict(SingleNumberStamp(13, LIZARD), running, frozenset({"tools"})) is None
+    assert stamp_conflict(_as_stamp(("scoped", LIZARD, {"api": (PY13, COV1)})), running,
+                          frozenset({"api"})) is None
+
+
+def test_the_flip_from_a_parser_0_8_x_never_read_comes_from_the_running_tables(monkeypatch):
+    """No reader 0.8.x never read ships yet: a stand-in parser registered in
+    the two tables a config's running stamp reads makes the same flip."""
+    from crapkit import coverage_format
+    from stamps import lane, running, scope
+
+    monkeypatch.setitem(coverage_format._FORMATS, "lcov", coverage_format._FORMATS["coveragepy"])
+    monkeypatch.setitem(coverage_format.READER_VERSIONS, "lcov", 1)
+    now = running([scope("svc", "go")], [lane("go", "lcov", "svc")])
+
+    conflict = stamp_conflict(SingleNumberStamp(13, now.lizard), now, frozenset({"svc"}))
+    assert [tuple(move) for move in conflict.moved] == [("svc", "coverage", "", "cc-only", {"lcov": 1})]
+    assert conflict.inferred == ("svc",)
+
+
+def test_the_model_and_stamp_conflict_agree_over_generated_stamp_pairs():
+    import random
+
+    rng = random.Random(5)
+    modes = ["cc-only", "no-lane", COV1, COV2, IST1, {"coveragepy": 1, "istanbul": 1}, {"lcov": 1}]
+
+    def scopes():
+        names = rng.sample(["api", "web", "svc"], rng.randint(1, 3))
+        return {name: ({language: rng.choice([12, 13, 14])
+                        for language in rng.sample(["python", "typescript", "go"], rng.randint(1, 2))},
+                       rng.choice(modes)) for name in names}
+
+    for _ in range(400):
+        running = (rng.choice([OLD_LIZARD, LIZARD]), scopes())
+        recorded = (("single", rng.choice([12, 13, 14]), rng.choice([OLD_LIZARD, LIZARD]))
+                    if rng.random() < 0.4 else ("scoped", rng.choice([OLD_LIZARD, LIZARD]), scopes()))
+        marked = set(rng.sample(["api", "web", "svc", "nowhere"], rng.randint(0, 4)))
+        assert _moved(recorded, running, marked) == _ordered(_model_moves(recorded, running, marked)), (
+            recorded, running, marked)
+
+
+def test_two_single_number_stamps_compare_as_one_value():
+    conflict = stamp_conflict(SingleNumberStamp(11, LIZARD), SingleNumberStamp(13, LIZARD),
+                              frozenset({"api"}))
+
+    assert conflict.whole and conflict.refuses and conflict.moved == ()
+    assert conflict.refusal("crapkit-ratchet.tsv").startswith(
+        f"ratchet marks were recorded under [crapkit-analysis=11 lizard={LIZARD}] but this run "
+        f"measures [crapkit-analysis=13 lizard={LIZARD}] - CRAP scores are not comparable")
+    assert stamp_conflict(SingleNumberStamp(13, LIZARD), SingleNumberStamp(13, LIZARD)) is None
+
+
+def test_a_per_scope_file_against_a_single_running_number_compares_as_one_value():
+    """The writers that still pass `metric_version()` meet per-scope marks: one
+    value against another, never a per-scope read of a running stamp that has
+    no scopes. The merge driver's own `_per_scope` takes this pair per scope."""
+    recorded = _as_stamp(("scoped", LIZARD, TWO))
+
+    conflict = stamp_conflict(recorded, SingleNumberStamp(13, LIZARD), frozenset({"api"}))
+
+    assert conflict.whole and conflict.refuses and conflict.moved == ()
+
+
+def test_the_refusal_names_the_file_each_moved_scope_and_its_seed_in_ascii():
+    conflict = stamp_conflict(_as_stamp(("scoped", LIZARD, TWO)),
+                              _as_stamp((LIZARD, {"api": (PY13, COV2), "web": (TS14, IST1)})),
+                              frozenset({"api", "web"}))
+    refusal = conflict.refusal("crapkit-ratchet.tsv")
+
+    assert refusal.isascii()
+    assert refusal.startswith(f"ratchet marks were recorded under [crapkit-stamp=2 lizard={LIZARD}] in "
+                              "crapkit-ratchet.tsv, and the rules have moved since in 2 scope(s): api (coveragepy reader 1 to 2), web (typescript "
+                              "analysis 13 to 14) - CRAP scores are not comparable")
+    assert refusal.index("ratchet seed --scope api`") < refusal.index("ratchet seed --scope web`")
+    assert conflict.seeds(" --baseline 7").endswith("ratchet seed --scope web --baseline 7`")
+
+
+def test_marks_a_newer_crapkit_stamped_per_scope_ask_for_an_upgrade_not_a_seed():
+    conflict = stamp_conflict(_as_stamp(("scoped", LIZARD, {"web": (TS14, IST1)})),
+                              _as_stamp((LIZARD, {"web": (TS13, IST1)})), frozenset({"web"}))
+
+    assert conflict.newer
+    assert "upgrade it to the version that wrote them" in conflict.refusal("m.tsv")
+    assert "ratchet seed" not in conflict.refusal("m.tsv")
+
+
+def test_a_mark_no_scope_claims_counts_toward_no_scope():
+    running = _as_stamp((LIZARD, {**TWO, "web": (TS14, IST1)}))
+
+    assert stamp_conflict(_as_stamp(("scoped", LIZARD, TWO)), running, frozenset({"nowhere"})) is None
+
+
+@pytest.mark.parametrize("spelling", ["utf-8", "utf-8-sig", "crlf", "utf-16"])
+def test_every_spelling_of_a_marks_file_gives_the_same_moves(tmp_path, spelling):
+    from stamps import scoped
+
+    recorded = scoped(api=(PY13, COV1), web=(TS13, IST1))
+    text = dump_ratchet([RatchetEntry("web/a.ts", "f( )", 30.0)], stamp=recorded, file_name="m.tsv")
+    crlf = text.replace("\n", "\r\n").encode("utf-8")
+    (tmp_path / "m.tsv").write_bytes(crlf if spelling == "crlf" else text.encode(spelling))
+    running = _as_stamp((LIZARD, {"api": (PY13, COV1), "web": (TS14, IST1)}))
+
+    conflict = RatchetFile.read(tmp_path / "m.tsv").stamp_conflict(running, frozenset({"web"}))
+    assert [tuple(move) for move in conflict.moved] == [("web", "analysis", "typescript", 13, 14)]
 

@@ -94,7 +94,7 @@ def test_the_stamp_conflict_is_the_one_verify_refuses_with(tmp_path):
     saved = RatchetFile.read(marks_file(tmp_path))
 
     assert saved.stamp_conflict(OLD) is None
-    assert "re-baseline with" in saved.stamp_conflict(NEW)
+    assert "re-baseline with" in saved.stamp_conflict(NEW).refusal(saved.path.name)
     assert RatchetFile.read(tmp_path / "absent.tsv").stamp_conflict(NEW) is None
 
 
