@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner, git_commit_all, git_init_repo
+from unit.stamps import restamp
 
 # The child's own stdio encoding is what this file tests.
 _run = cli_runner(timeout=120, encoding="utf-8", errors="replace", spawn=True)
@@ -196,6 +197,7 @@ def test_a_marks_file_saved_with_a_bom_holds_the_same_marks(scored_repo: Path):
     then the header a data row (`line 1 has 1 fields, expected 3`), so verify
     failed and `ratchet seed` refused the file it had written itself."""
     assert _run(scored_repo, "ratchet", "seed").returncode == 0
+    restamp(scored_repo)
     marks = scored_repo / MARKS
     marks.write_bytes(b"\xef\xbb\xbf" + marks.read_bytes())
 

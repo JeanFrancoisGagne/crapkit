@@ -586,8 +586,15 @@ def metric(analysis: int, lizard: str | None = None) -> str:
 
 
 def stamp_refusal(old: int, new: int, *, old_lizard: str | None = None, new_lizard: str | None = None) -> str:
-    """The part of verify's refusal that names both metric stamps."""
-    return f"[{metric(old, old_lizard)}] but this run measures [{metric(new, new_lizard)}]"
+    """The part of verify's refusal that names what moved. The candidate, the
+    newest crapkit a cell runs, names each marked scope's move: a language's
+    analysis number, else the lizard version. Only an older release reads
+    marks newer than itself, and it names both stamps whole."""
+    if old > new:
+        return f"[{metric(old, old_lizard)}] but this run measures [{metric(new, new_lizard)}]"
+    if old != new:
+        return f"analysis {old} to {new}"
+    return f"lizard {old_lizard or lizard_version()} to {new_lizard or lizard_version()}"
 
 
 def upgrade_to(box, repo: Path, candidate, line: str) -> None:
@@ -600,7 +607,7 @@ def upgrade_to(box, repo: Path, candidate, line: str) -> None:
 
 
 def refused_until_reseed(box, repo: Path, candidate) -> None:
-    """Not a guide step: a verify before the reseed names both stamps."""
+    """Not a guide step: a verify before the reseed names each marked scope's old and new number."""
     old, new = analysis_of(stamp_of(repo)), analysis_version(candidate)
     if old == new:
         return
