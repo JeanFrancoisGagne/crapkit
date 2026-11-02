@@ -355,8 +355,9 @@ def test_the_verdict_hashes_the_ratchet_it_was_decided_against(receipt_repo: Pat
     second = run_cli(receipt_repo, "verify", "--json")
 
     ratchet = (receipt_repo / "crapkit-ratchet.tsv").read_bytes()
-    # the metric stamp rides the file, so the receipt hashes stamped bytes
-    assert ratchet.splitlines()[0].startswith(b"# crapkit-analysis=")
+    # the per-scope stamp rides the file, so the receipt hashes stamped bytes
+    assert ratchet.splitlines()[0].startswith(b"# crapkit-stamp=2 lizard=")
+    assert b"\n#scope\t" in ratchet
     assert ratchet.endswith(b"path\tlong_name\tcrap\n")
     assert json.loads(second.stdout)["ratchet_sha256"] == hashlib.sha256(ratchet).hexdigest()
     assert json.loads(second.stdout)["ratchet_changes"] is None, "nothing to move, nothing written"

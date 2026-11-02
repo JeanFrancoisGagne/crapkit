@@ -116,6 +116,13 @@ higher one, a newer crapkit wrote the marks (`the marks come from a newer crapki
 than this install`): upgrade this install, and never seed, since seed and prune refuse those
 marks and a seed would restamp the team's marks backwards:
 [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp).
+When the refusal names one scope, repair that scope alone: `crapkit coverage`, then
+`crapkit ratchet seed --scope NAME`, which rewrites only NAME's marks and stamp line. A seed
+that answers `recorded no metric for scope NAME` read a run from before 0.9.0: run
+`crapkit coverage` and seed again. A refusal that names `lizard` names the plain
+`crapkit ratchet seed`: the file records one lizard version for every scope, and
+`seed --scope` keeps it, so a scoped seed refuses that file:
+[docs: repairing one scope](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#repairing-one-scope---scope).
 
 `lane 'py': positional argument 'slow'' narrows a full-suite coverage run ... (cmd.exe
 does not treat ' as a quote: write the value in double quotes)` is the lane guard reading
@@ -323,9 +330,10 @@ differently. Its refusal opens like this, then names the fix:
 
     crapkit: ratchet merge refused: OURS and THEIRS moved a stamp differently - scope web: OURS records [lizard=1.24.0 analysis typescript=14; coverage istanbul=1] and THEIRS records [lizard=1.24.0 analysis typescript=15; coverage istanbul=1] - run ...
 
-Run `git merge --abort`. On one branch, run `crapkit coverage`, then `ratchet seed --scope NAME`
-for each scope the line names, commit, and merge again. A refusal that names no scope (an
-unstamped side, or two single-number stamps) asks for `crapkit coverage`,
+Run `git merge --abort`. On one branch, run `crapkit coverage`, then the seed the line names:
+`ratchet seed --scope NAME` for each scope, or the plain `crapkit ratchet seed` when the two
+branches recorded different lizard versions. Commit, and merge again. A refusal that names
+no scope (an unstamped side, or two single-number stamps) asks for `crapkit coverage`,
 `crapkit ratchet prune` and `crapkit ratchet seed` on one branch instead.
 
 A merge that goes through can print `ratchet merge: scope NAME's stamp came from OURS and

@@ -21,7 +21,8 @@ from cli_inproc_repo import commit_all, repo, seed_artifacts, template_repo  # n
 from crapkit import invocation
 from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.cli import main
-from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version, stamp_text
+from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version, read_stamp, stamp_text
+from stamps import running_in
 
 MARKS = "crapkit-ratchet.tsv"
 
@@ -138,7 +139,7 @@ def test_the_remedy_doctor_names_clears_it_and_prune_drops_the_moved_key(repo, c
     marks = (repo / MARKS).read_text(encoding="utf-8")
     capsys.readouterr()
 
-    assert metric_version() in marks and moved.long_name not in marks, marks
+    assert read_stamp(marks) == running_in(repo) and moved.long_name not in marks, marks
     assert _doctor(repo, capsys) == (0, [])
     assert _doctor(repo, capsys, "warnings") == (0, [])
     assert main(["verify", "--reuse-artifacts", "--repo", str(repo)]) == 0

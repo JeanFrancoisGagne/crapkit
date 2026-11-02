@@ -214,6 +214,35 @@ crapkit: ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] i
 ```
 
 [The metric stamp](ratchet.md#the-metric-stamp) lists each kind of move a refusal names.
+
+### The first seed writes one stamp per scope
+
+The first `crapkit ratchet seed` under 0.9.0 rewrites the marks file with one stamp line per
+scope, from the stamps the run it reads recorded. A run 0.8.x measured recorded none, so run
+`crapkit coverage` under 0.9.0 first; seed refuses such a run and names `crapkit coverage`.
+To repair one scope that verify names, run `crapkit ratchet seed --scope NAME`: it rewrites
+that scope's marks and line and leaves the others as they are. The file records one lizard
+version for every scope, and a scoped seed keeps it, so for a lizard move verify names the
+plain `crapkit ratchet seed` instead, and `--scope` refuses the file and names that seed.
+
+From that seed on, crapkit 0.8.x refuses the file once, by name, and changes nothing. 0.8.0's
+`crapkit verify` prints:
+
+```
+crapkit: ratchet marks were recorded under [crapkit-stamp=2 lizard=1.24.0: crapkit-ratchet.tsv holds one stamp per scope, which crapkit 0.9.0 or later reads] but this run measures [crapkit-analysis=11 lizard=1.24.0] — CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
+```
+
+That line's seed does not help on 0.8.x: 0.8.x reads each `#scope` line as a mark it
+cannot parse, so its seed, prune, move and merge driver refuse the file too. Upgrade every
+teammate to 0.9.0 before you commit the reseeded file.
+
+To go back to 0.8.x after that seed, check out the `crapkit-ratchet.tsv` you committed
+before it. A repo that 0.9.0 adopted has no such file: remove it, then run the re-seed
+block under [Downgrading](#downgrading), which writes it again under the older release:
+
+```sh
+git rm -q crapkit-ratchet.tsv
+```
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->
