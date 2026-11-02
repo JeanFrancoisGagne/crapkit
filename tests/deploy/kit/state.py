@@ -619,7 +619,9 @@ def reseed_and_verify(box, repo: Path, candidate, reconcile=None, lizard: str | 
     """The guide's reseed fence, the review, a commit, then verify."""
     done = reseed(box, repo, reconcile)
     review(box, repo, done, export_path(repo))
-    assert stamp_of(repo) == f"# {metric(analysis_version(candidate), lizard)}", done.diff
+    # The candidate's seed writes one stamp per scope: the per-scope first line, then `#scope` lines.
+    assert stamp_of(repo).startswith(f"# crapkit-stamp=2 lizard={lizard or lizard_version()}: "), done.diff
+    assert "\n#scope\t" in (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8"), done.diff
     commit(box, repo, "reseed the marks under the candidate")
     verify(box, repo)
     return done

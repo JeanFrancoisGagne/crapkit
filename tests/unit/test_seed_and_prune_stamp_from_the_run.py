@@ -3,33 +3,45 @@
 Both used to stamp the running metric. After an upgrade that changed the
 analysis version, seed (the remedy verify's stamp refusal prints) or prune run
 before any new coverage signed analysis 7 numbers as analysis 10, and verify
-stopped refusing and compared them. Now seed stamps the metric the run was
-measured under, prune adds no numbers and keeps the recorded stamp, and the
-line both print says when the run is not this crapkit's metric.
+stopped refusing and compared them. Now seed signs each scope with the stamp
+the run recorded for it, prune adds no numbers and keeps the recorded stamp,
+and the line both print names each scope the run measured under other rules.
 """
 import argparse
 
 import lizard
 import pytest
 
-from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.cli.ratchet_cmds import cmd_ratchet
-from crapkit.cli.verifying import _guard_ratchet_stamp
+from crapkit.cli.verifying import _guard_ratchet_stamp, verify_stamp_conflict
 from crapkit.config import load_config_text
 from crapkit.errors import ConfigError
 from crapkit.invocation import _self
-from crapkit.ratchet import metric_version, read_stamp, stamp_conflict
+from crapkit.ratchet import ScopeStamp, ScopeStamps, metric_version, read_stamp, running_stamp
 from crapkit.ratchetfile import RatchetFile
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
 SHA = "bb83d64fc19a7e2d4c5b60718293a4b5c6d7e8f9"
-OLD = {"crapkit": "0.4.4", "lizard": "1.17.10", "analysis_version": "7"}
 OLD_STAMP = "crapkit-analysis=7 lizard=1.17.10"
-CURRENT = {"crapkit": "0.7.6", "lizard": lizard.version, "analysis_version": str(ANALYSIS_VERSION)}
 CONFIG = ('[crapkit]\ntarget = 6\n\n'
           '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n')
 MARKS = "crapkit-ratchet.tsv"
+CFG = load_config_text(CONFIG)
+RUNNING = running_stamp(CFG)
+# What a 0.4.4 install measured src under, had it recorded scopes: analysis 7, lizard 1.17.10.
+OLD_SCOPES = ScopeStamps("1.17.10", {"src": ScopeStamp({"python": 7}, "no-lane")})
+
+
+def versions(stamps: ScopeStamps, crapkit: str = "0.9.0") -> dict:
+    return {"crapkit": crapkit, "lizard": stamps.lizard, "analysis_version": "13",
+            "scope_stamps": {name: stamp._asdict() for name, stamp in stamps.scopes.items()}}
+
+
+OLD = versions(OLD_SCOPES, "0.4.4")
+CURRENT = versions(RUNNING)
+OLD_SAID = (f"scope src under [lizard=1.17.10 analysis python=7; coverage no-lane], not this "
+            f"crapkit's [lizard={lizard.version} {RUNNING.scopes['src'].render()}]")
 
 
 def hot(ccn: int = 8) -> ScoredRow:
@@ -44,9 +56,9 @@ def repo(tmp_path):
     return tmp_path
 
 
-def measured_run(repo, versions: dict) -> int:
+def measured_run(repo, tool_versions: dict) -> int:
     store = SnapshotStore(repo / ".crapkit" / "crap.sqlite")
-    run_id = store.write_run(commit=SHA, tool_versions=versions, rows=[hot()],
+    run_id = store.write_run(commit=SHA, tool_versions=tool_versions, rows=[hot()],
                              kind="coverage", lanes={"unit": {}})
     store._conn.close()
     return run_id
@@ -73,19 +85,18 @@ def after_seed() -> str:
 # --- seed ----------------------------------------------------------------------
 
 def test_seed_from_a_run_under_an_older_metric_signs_that_metric(repo, capsys):
-    """The line names the step that restamps the marks, and no verify follows
-    it: that verify would refuse the stamp this seed signed."""
+    """The line names the scope, the step that restamps the marks, and no verify
+    follows it: that verify would refuse the stamp this seed signed."""
     run_id = measured_run(repo, OLD)
     write_marks(repo, OLD_STAMP)
 
     assert ratchet(repo, "seed") == 0
 
-    assert stamp(repo) == OLD_STAMP
-    assert stamp_conflict(stamp(repo), metric_version()) is not None, "verify still refuses"
+    assert stamp(repo) == OLD_SCOPES
+    assert verify_stamp_conflict(RatchetFile.read(repo / MARKS), CFG).refuses, "verify still refuses"
     assert capsys.readouterr().out == (
         f"{MARKS}: added 0, tightened 0 - 1 mark(s) vs run {run_id} ({SHA[:11]}); "
-        f"run {run_id} was measured under [{OLD_STAMP}], not this crapkit's "
-        f"[{metric_version()}], so verify refuses these marks until a fresh "
+        f"run {run_id} measured {OLD_SAID}, so verify refuses these marks until a fresh "
         f"`{_self()} coverage` and another seed\n")
 
 
@@ -94,17 +105,19 @@ def test_seed_from_a_run_under_the_running_metric_ends_with_the_commit_and_verif
 
     assert ratchet(repo, "seed") == 0
 
-    assert stamp(repo) == metric_version()
+    assert stamp(repo) == RUNNING
     assert capsys.readouterr().out == (
         f"{MARKS}: added 1, tightened 0 - 1 mark(s) vs run {run_id} ({SHA[:11]})\n{after_seed()}")
 
 
-def test_seed_refuses_a_run_that_recorded_no_metric(repo):
-    run_id = measured_run(repo, {})
+@pytest.mark.parametrize("tool_versions", [{}, {"crapkit": "0.8.1", "lizard": "1.24.0", "analysis_version": "13"}],
+                         ids=["nothing", "single-number"])
+def test_seed_refuses_a_run_that_recorded_no_stamp_per_scope(repo, tool_versions):
+    run_id = measured_run(repo, tool_versions)
     write_marks(repo, OLD_STAMP)
     before = (repo / MARKS).read_bytes()
 
-    with pytest.raises(ConfigError, match=f"ratchet seed: run {run_id} recorded no metric"):
+    with pytest.raises(ConfigError, match=f"ratchet seed: run {run_id} recorded no metric per scope"):
         ratchet(repo, "seed")
 
     assert (repo / MARKS).read_bytes() == before
@@ -133,8 +146,7 @@ def test_prune_against_a_run_under_an_older_metric_says_so(repo, capsys):
 
     assert stamp(repo) == OLD_STAMP
     assert capsys.readouterr().out.endswith(
-        f"; run {run_id} was measured under [{OLD_STAMP}], not this crapkit's "
-        f"[{metric_version()}], and the marks keep their recorded stamp\n")
+        f"; run {run_id} measured {OLD_SAID}, and the marks keep their recorded stamp\n")
 
 
 def test_prune_against_a_run_that_recorded_no_metric_says_so(repo, capsys):
@@ -144,7 +156,9 @@ def test_prune_against_a_run_that_recorded_no_metric_says_so(repo, capsys):
     assert ratchet(repo, "prune") == 0
 
     assert stamp(repo) == OLD_STAMP
-    assert f"; run {run_id} was measured under an unrecorded metric, not" in capsys.readouterr().out
+    assert capsys.readouterr().out.endswith(
+        f"; run {run_id} was measured under an unrecorded metric, not this crapkit's rules for "
+        "scope(s) src, and the marks keep their recorded stamp\n")
 
 
 def test_prune_that_creates_the_marks_file_stamps_the_running_metric(repo, capsys):
@@ -156,9 +170,7 @@ def test_prune_that_creates_the_marks_file_stamps_the_running_metric(repo, capsy
     assert ratchet(repo, "prune") == 0
 
     assert stamp(repo) == metric_version()
-    cfg = load_config_text(CONFIG, root=repo)
-    assert _guard_ratchet_stamp(RatchetFile.read(repo / MARKS), cfg) is None
+    assert _guard_ratchet_stamp(RatchetFile.read(repo / MARKS), CFG) is None
     assert capsys.readouterr().out == (
         f"{MARKS}: pruned 0, followed 0 rename(s) - 0 mark(s) vs run {run_id} ({SHA[:11]}); "
-        f"run {run_id} was measured under [{OLD_STAMP}], not this crapkit's "
-        f"[{metric_version()}]\n")
+        f"run {run_id} measured {OLD_SAID}\n")

@@ -21,7 +21,10 @@ from crapkit.ratchet import stamp_text
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
-MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version}
+SCOPE_LINE = f"#scope\tsrc\tanalysis typescript={ANALYSIS_VERSION}; coverage no-lane"
+# The per-scope stamp a run of this crapkit records for CONFIG, which seed signs.
+MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version,
+            "scope_stamps": {"src": {"analysis": {"typescript": ANALYSIS_VERSION}, "coverage": "no-lane"}}}
 CONFIG = ('[crapkit]\ntarget = 6\n\n'
           '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["typescript"]\n')
 OLD_SHA = "bb83d64fc19a7e2d4c5b60718293a4b5c6d7e8f9"
@@ -104,7 +107,7 @@ def test_prune_then_seed_writes_both_twins_under_the_positioned_keys(repo, capsy
 
     assert code == 0, err
     lines = (repo / MARKS).read_text(encoding="utf-8").splitlines()
-    assert lines[1:] == ["# crapkit-keys=1", "path\tlong_name\tcrap",
+    assert lines[1:] == ["# crapkit-keys=1", SCOPE_LINE, "path\tlong_name\tcrap",
                          "src/app.ts\t(anonymous)\t90.0000",
                          "src/app.ts\t(anonymous)#2\t90.0000"], lines
 
@@ -132,11 +135,14 @@ def test_the_upgrade_recipe_prunes_before_it_seeds(page, anchor, recipe):
 
 
 def test_a_seed_that_adds_no_twin_mark_keeps_the_legacy_file_as_before(repo, capsys):
-    """Twins under the ceiling get no mark, so the old format holds every mark seed writes."""
+    """Twins under the ceiling get no mark, so the old key format holds every mark
+    seed writes: the seed signs the run's per-scope stamp and adds no key stamp."""
     run = write(repo, [twin(1)._replace(crap=2.0, ccn=1), twin(2)._replace(crap=2.0, ccn=1)])
 
     code, out, err = ratchet(repo, capsys, "seed")
 
     assert code == 0, err
     assert out.startswith(f"{MARKS}: added 0, tightened 0 - 1 mark(s) vs run {run} "), out
-    assert (repo / MARKS).read_text(encoding="utf-8") == LEGACY
+    lines = (repo / MARKS).read_text(encoding="utf-8").splitlines()
+    assert lines[0].startswith("# crapkit-stamp=2 "), lines
+    assert lines[1:] == [SCOPE_LINE, *LEGACY.splitlines()[1:]], lines

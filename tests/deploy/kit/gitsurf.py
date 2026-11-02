@@ -475,7 +475,17 @@ def assert_driver_refused(step, ours: str, theirs: str) -> None:
     assert [line for line in expected_refusal(ours, theirs) if line not in said] == [], said
 
 
+PER_SCOPE_HEAD = re.compile(r"crapkit-stamp=2 lizard=([^\s:]+): ")
+
+
 def stamp(repo: Path) -> str:
-    """The marks file's metric stamp, bracketed the way the merge driver names it."""
-    first = (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8").splitlines()[0]
-    return "[" + first.lstrip("# ").strip() + "]"
+    """The marks file's metric stamp, bracketed the way the merge driver names
+    it. A per-scope file's stamp is its lizard version and each `#scope` line's
+    scope and stamp, sorted by scope, as the driver renders them."""
+    lines = (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8").splitlines()
+    first = lines[0].lstrip("# ").strip()
+    head = PER_SCOPE_HEAD.match(first)
+    if head is None:
+        return f"[{first}]"
+    scopes = dict(sorted(tuple(line.split("\t")[1:3]) for line in lines if line.startswith("#scope\t")))
+    return f"[crapkit-stamp=2 lizard={head[1]} {json.dumps(scopes, ensure_ascii=False)}]"

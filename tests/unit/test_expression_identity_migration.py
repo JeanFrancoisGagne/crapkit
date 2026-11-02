@@ -98,15 +98,21 @@ def _claim_source():
     return SOURCE.replace('x || 0', '{ ' + branches + ' return x; }')
 
 
-def _old_snapshot(root, version='9'):
+def _old_snapshot(root, version='9', scoped=False):
+    """A run the analysis `version` reader measured; `scoped` also records the
+    per-scope stamp seed signs, so seed reaches the reader check."""
     extensions = [e for e in analyze._extensions_for('app.ts') if not isinstance(e, LizardExtension)]
     old = lizard.FileAnalyzer(extensions).analyze_source_code('app.ts', _claim_source()).function_list
     records = [analyze._record('app.ts', fn) for fn in old]
     assert [r.start for r in records if r.long_name == '(anonymous)'] == [2, 6]
+    tool_versions = {'analysis_version': version, 'lizard': lizard.version}
+    if scoped:
+        tool_versions['scope_stamps'] = {
+            'web': {'analysis': {'typescript': int(version)}, 'coverage': {'istanbul': 1}}}
     store = SnapshotStore(root / '.crapkit/crap.sqlite')
     with closing(store._conn):
         return store.write_run(commit=git(root, 'rev-parse', 'HEAD').strip(),
-            tool_versions={'analysis_version': version, 'lizard': lizard.version},
+            tool_versions=tool_versions,
             rows=score_rows(build_inventory_rows({'web': records}), {}, lane_scopes={'web'}, target=6))
 
 
@@ -138,7 +144,7 @@ def test_claim_taken_from_an_old_snapshot_stays_with_the_whole_unproved_group(tm
 
 def test_seed_cannot_label_old_snapshot_ordinals_as_reader10(tmp_path, capsys):
     _repo(tmp_path, _claim_source())
-    _old_snapshot(tmp_path)
+    _old_snapshot(tmp_path, scoped=True)
     assert main(['ratchet', 'seed', '--repo', str(tmp_path)]) == 3
     assert 'reader' in capsys.readouterr().err
     assert not (tmp_path / 'crapkit-ratchet.tsv').exists()

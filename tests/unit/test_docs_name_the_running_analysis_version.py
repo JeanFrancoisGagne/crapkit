@@ -15,14 +15,16 @@ from pathlib import Path
 
 import pytest
 
-from crapkit.analyze import ANALYSIS_VERSION
+from crapkit.analyze import ANALYSIS_VERSION, ANALYSIS_VERSIONS
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 CLAIMS = [
     ("README.md", r"The current reader is\s+analysis version (\d+)"),
     ("docs/agent-json.md", r'^\{\n  "analysis_version": (\d+),\n  "lanes": \['),
     ("docs/agent-json.md", r"The analysis semantics version, currently `(\d+)`"),
-    ("docs/ratchet.md", r"## What a mark is\s+```\s+# crapkit-analysis=(\d+) "),
+    # The per-scope layout a seed writes comes first; its python scope names python's number.
+    ("docs/ratchet.md", r"## What a mark is\s+```\s+# crapkit-stamp=2 [^\n]*\n# crapkit-keys=1\n"
+                        r"#scope\t\w+\tanalysis python=(\d+);"),
     ("docs/ratchet.md", r"the current reader uses version (\d+)"),
     ("docs/ratchet.md", r"\| `# crapkit-analysis=(\d+) lizard=[^`]*` \| The reader"),
     ("docs/upgrading.md", r"^###? Analysis version (\d+)"),
@@ -35,5 +37,6 @@ def test_the_page_names_the_running_analysis_version(page, claim):
     found = re.search(claim, text, re.M)
 
     assert found, f"{page} lost the sentence {claim!r}"
-    assert int(found.group(1)) == ANALYSIS_VERSION, (
-        f"{page} names analysis version {found.group(1)}; crapkit runs {ANALYSIS_VERSION}")
+    running = ANALYSIS_VERSIONS["python"] if "#scope" in claim else ANALYSIS_VERSION
+    assert int(found.group(1)) == running, (
+        f"{page} names analysis version {found.group(1)}; crapkit runs {running}")

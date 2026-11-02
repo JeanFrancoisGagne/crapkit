@@ -29,8 +29,8 @@ def driven(box, templates, *, shell: str = "sh") -> Path:
 
 
 def hand_edit(repo: Path, key_part: str, value: str, *, unstamped: bool = False) -> None:
-    """Rewrite one mark by hand; `unstamped` drops the stamp lines the way a
-    marks file written before 0.4.5 has none."""
+    """Rewrite one mark by hand; `unstamped` drops the stamp lines, each
+    `#scope` line included, the way a marks file written before 0.4.5 has none."""
     path = repo / "crapkit-ratchet.tsv"
     lines = [line for line in path.read_text(encoding="utf-8").splitlines() if _kept(line, unstamped)]
     lines = [_valued(line, key_part, value) for line in lines]
@@ -38,7 +38,7 @@ def hand_edit(repo: Path, key_part: str, value: str, *, unstamped: bool = False)
 
 
 def _kept(line: str, unstamped: bool) -> bool:
-    return not (unstamped and line.startswith("# crapkit-"))
+    return not (unstamped and line.startswith(("# crapkit-", "#scope\t")))
 
 
 def _valued(line: str, key_part: str, value: str) -> str:

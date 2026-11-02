@@ -9,12 +9,14 @@ bytes as they were. Its merge driver refuses too, and git falls back to
 a conflict on the file. The read-only commands answer and write nothing.
 
 The repo is a source the old release built (init, coverage, seed, an
-override), whose marks the candidate then renders under per-scope stamps
-through the writer seed uses. The cell runs with the released 0.8.0 wheel and
-again with 0.8.1's.
+override), whose marks the candidate then reseeds: an upgraded teammate's
+`crapkit coverage`, `crapkit ratchet prune` and `crapkit ratchet seed`, in a
+copy of the repo so the old release's store stays as it wrote it. The cell
+runs with the released 0.8.0 wheel and again with 0.8.1's.
 """
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -27,43 +29,29 @@ PACKET = "metric-stamp-04"
 MARKS = "crapkit-ratchet.tsv"
 OLD_RELEASES = ("0.8.0", "0.8.1")
 FIRST_LINE = "# crapkit-stamp=2 lizard="
-# The candidate's own reader and writer: every scope of the repo's config,
-# stamped with the candidate's numbers, through RatchetFile.reseeded, the
-# write seed makes.
-RENDER = '''
-import tomllib
-from pathlib import Path
 
-import lizard
 
-from crapkit.analyze import ANALYSIS_VERSIONS
-from crapkit.coverage_format import READER_VERSIONS
-from crapkit.ratchet import ScopeStamp, ScopeStamps
-from crapkit.ratchetfile import RatchetFile
-
-config = tomllib.loads(Path("crapkit.toml").read_text(encoding="utf-8"))
-parsers = {}
-for lane in config.get("lane", []):
-    for scope in lane.get("scopes", []):
-        parsers.setdefault(scope, {})[lane["parser"]] = READER_VERSIONS[lane["parser"]]
-scopes = {row["name"]: ScopeStamp({language: ANALYSIS_VERSIONS[language] for language in row.get("languages", [])},
-                                  "cc-only" if row.get("coverage_optional") else parsers.get(row["name"], "no-lane"))
-          for row in config["scope"]}
-saved = RatchetFile.read(Path("crapkit-ratchet.tsv"), required=True)
-assert saved.publish(saved.reseeded(saved.entries, ScopeStamps(lizard.version, scopes)))
-'''
+def candidate_seeded(box, source, candidate) -> bytes:
+    """The marks file the candidate's seed writes over the old release's marks,
+    after the guide's coverage and prune, in its own copy of the source."""
+    teammate = source.checkout(box, "upgraded-teammate")
+    writer = state.venv_cli(box, candidate.version, box.root / "candidate-venv")
+    for step in (["coverage"], ["ratchet", "prune"], ["ratchet", "seed"]):
+        writer.run(box, teammate, *step)
+    seeded = (teammate / MARKS).read_bytes()
+    shutil.rmtree(teammate, ignore_errors=True)
+    return seeded
 
 
 def per_scope_repo(box, templates, candidate, old: str) -> Path:
-    """The old release's source with its marks rendered per scope and committed,
-    then the old release first on PATH."""
+    """The old release's source with the marks file the candidate's seed wrote
+    committed, then the old release first on PATH."""
     source = state.build(box, state.source_version(old), cache=templates)
     repo = source.checkout(box)
-    writer = state.venv_cli(box, candidate.version, box.root / "candidate-venv")
-    box.run([str(writer.bin / "python"), "-c", RENDER], cwd=repo, expect=0,
-            note="the candidate renders the marks under per-scope stamps")
+    (repo / MARKS).write_bytes(candidate_seeded(box, source, candidate))
     assert (repo / MARKS).read_text(encoding="utf-8").startswith(FIRST_LINE), box.transcript.text()
-    state.commit(box, repo, "marks under per-scope stamps, as a 0.9.0 seed writes them")
+    assert "\n#scope\t" in (repo / MARKS).read_text(encoding="utf-8"), box.transcript.text()
+    state.commit(box, repo, "marks under per-scope stamps, as the 0.9.0 seed wrote them")
     state.pip_venv(box, name="old-venv")
     state.pip_install(box, f"crapkit[py]=={old}")
     assert old in box.run(["crapkit", "--version"], expect=0).stdout
