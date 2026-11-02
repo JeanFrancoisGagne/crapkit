@@ -35,13 +35,17 @@ RUNNING = "crapkit-analysis=13 lizard=1.24.0"
 MARKS = "crapkit-ratchet.tsv"
 
 
+def _refusal(recorded: str, running: str) -> str:
+    return stamp_conflict(recorded, running).refusal(MARKS)
+
+
 @pytest.fixture(autouse=True)
 def console_script(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["/usr/local/bin/crapkit", "verify"])
 
 
 def test_marks_a_newer_crapkit_wrote_are_named_as_newer_and_sent_to_an_upgrade():
-    refusal = stamp_conflict(NEW, OLD)
+    refusal = _refusal(NEW, OLD)
 
     assert refusal.startswith(f"ratchet marks were recorded under [{NEW}] but this run "
                               f"measures [{OLD}]"), refusal
@@ -57,7 +61,7 @@ def test_marks_a_newer_crapkit_wrote_are_named_as_newer_and_sent_to_an_upgrade()
 ])
 def test_marks_a_newer_or_older_lizard_stamped_take_coverage_prune_and_seed(recorded):
     """The exact pin forbids the lizard upgrade, so the reseed is the remedy."""
-    refusal = stamp_conflict(recorded, RUNNING)
+    refusal = _refusal(recorded, RUNNING)
 
     assert refusal.endswith(coverage_then_seed()), refusal
     assert "upgrade" not in refusal and "newer lizard" not in refusal, refusal
@@ -68,7 +72,7 @@ def test_marks_a_newer_or_older_lizard_stamped_take_coverage_prune_and_seed(reco
     pytest.param("crapkit-analysis=14 lizard=1.24.3", id="newer-analysis-newer-lizard"),
 ])
 def test_marks_a_newer_analysis_stamped_name_a_crapkit_upgrade_at_every_pin(recorded):
-    refusal = stamp_conflict(recorded, RUNNING)
+    refusal = _refusal(recorded, RUNNING)
 
     assert "the marks come from a newer crapkit than this install" in refusal, refusal
     assert "(the CLI, the Action's `uses:` pin and the pre-commit `rev` alike)" in refusal, refusal
@@ -77,19 +81,19 @@ def test_marks_a_newer_analysis_stamped_name_a_crapkit_upgrade_at_every_pin(reco
 
 def test_version_parts_compare_as_numbers_not_as_text():
     """1.9.0 is older than 1.24.0, though "9" sorts after "2"."""
-    refusal = stamp_conflict("crapkit-analysis=11 lizard=1.9.0", OLD)
+    refusal = _refusal("crapkit-analysis=11 lizard=1.9.0", OLD)
 
     assert "newer" not in refusal and refusal.endswith("`crapkit ratchet seed`"), refusal
 
 
 def test_marks_an_older_crapkit_wrote_keep_coverage_then_seed():
-    assert stamp_conflict(OLD, NEW).endswith(
+    assert _refusal(OLD, NEW).endswith(
         "run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with "
         "`crapkit ratchet seed`")
 
 
 def test_a_stamp_it_cannot_read_keeps_coverage_then_seed():
-    assert stamp_conflict("lizard 0.0.1 analysis 0", OLD).endswith("`crapkit ratchet seed`")
+    assert _refusal("lizard 0.0.1 analysis 0", OLD).endswith("`crapkit ratchet seed`")
 
 
 def test_verify_over_newer_marks_refuses_before_the_lanes_and_leaves_them_alone(repo, capsys):
@@ -105,7 +109,8 @@ def test_verify_over_newer_marks_refuses_before_the_lanes_and_leaves_them_alone(
     err = capsys.readouterr().err
 
     assert code == 3, err
-    assert f"recorded under [{newer}] but this run measures [{metric_version()}]" in err, err
+    assert (f"ratchet marks were recorded under [{newer}] in {MARKS}, and the rules have moved since "
+            f"in 1 scope(s): src (typescript analysis {ANALYSIS_VERSION + 1} to {ANALYSIS_VERSION})") in err, err
     assert "newer crapkit" in err and "ratchet seed" not in err, err
     assert (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8") == text
 
@@ -140,11 +145,13 @@ def test_marks_a_newer_lizard_stamped_clear_with_the_reseed_verify_names(repo, c
     doctor = _doctor_lines(repo, capsys)
 
     assert refused == 3, err
-    assert (f"recorded under [{stamped}] but this run measures [{metric_version()}] - CRAP "
-            f"scores are not comparable across metric versions; {coverage_then_seed()}") in err, err
+    seed = "`crapkit ratchet seed --scope src`"
+    assert (f"ratchet marks were recorded under [{stamped}] in {MARKS}, and the rules have moved since "
+            f"in 1 scope(s): src (lizard {_one_patch_up(lizard.version)} to {lizard.version}) - CRAP scores are not "
+            f"comparable across metric versions; {coverage_then_seed(seed=seed)}") in err, err
     assert "newer lizard" not in err, err
     assert doctor[0] == 0 and doctor[1]["problems"] == [], doctor
-    assert len(doctor[1]["warnings"]) == 1 and coverage_then_seed() in doctor[1]["warnings"][0], doctor
+    assert len(doctor[1]["warnings"]) == 1 and coverage_then_seed(seed=seed) in doctor[1]["warnings"][0], doctor
     for step in (["coverage", "--reuse-artifacts"], ["ratchet", "prune"], ["ratchet", "seed"]):
         assert main([*step, "--repo", str(repo)]) == 0, (step, capsys.readouterr().err)
     assert read_stamp((repo / MARKS).read_text(encoding="utf-8")) == metric_version()

@@ -14,12 +14,13 @@ first thing an upgrading user meets.
 import argparse
 
 import pytest
+from stamps import config, lane, scope
 
 from crapkit import invocation
 from crapkit.cli.ratchet_cmds import cmd_ratchet
 from crapkit.cli.verifying import _guard_ratchet_stamp
 from crapkit.errors import ConfigError
-from crapkit.ratchet import stamp_conflict
+from crapkit.ratchet import ScopeStamp, ScopeStamps, stamp_conflict
 from crapkit.ratchetfile import RatchetFile
 
 OLD = "crapkit-analysis=9 lizard=1.24.0"
@@ -41,7 +42,7 @@ def marks(path, stamp: str):
 
 
 def test_the_stamp_refusal_names_coverage_then_seed():
-    assert stamp_conflict(OLD, NEW) == (
+    assert stamp_conflict(OLD, NEW).refusal("crapkit-ratchet.tsv") == (
         f"ratchet marks were recorded under [{OLD}] but this run measures [{NEW}] - CRAP "
         "scores are not comparable across metric versions; run `crapkit coverage`, then "
         "`crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`")
@@ -50,7 +51,7 @@ def test_the_stamp_refusal_names_coverage_then_seed():
 def test_the_unstamped_warning_names_coverage_then_seed(tmp_path, capsys):
     saved = RatchetFile.read(marks(tmp_path / "crapkit-ratchet.tsv", ""))
 
-    _guard_ratchet_stamp(saved, "crapkit-ratchet.tsv")
+    _guard_ratchet_stamp(saved, config([scope("src", "python")], [lane("py", "coveragepy", "src")]))
 
     assert capsys.readouterr().err == (
         "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping) - "
@@ -71,3 +72,18 @@ def test_the_merge_refusal_names_coverage_then_seed(tmp_path):
         "moved the stamp away from BASE's; THEIRS is newer, so on this branch, with a crapkit that "
         f"measures [{NEW}], run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline "
         "with `crapkit ratchet seed`, then merge again; OURS was left unchanged")
+
+
+def test_the_per_scope_refusal_names_coverage_prune_then_the_moved_scope_s_seed():
+    def stamp(python: int) -> ScopeStamps:
+        return ScopeStamps("1.24.0", {"api": ScopeStamp({"python": python}, {"coveragepy": 1}),
+                                      "web": ScopeStamp({"typescript": 13}, {"istanbul": 1})})
+
+    refusal = stamp_conflict(stamp(13), stamp(14), frozenset({"api", "web"})).refusal("crapkit-ratchet.tsv")
+
+    assert refusal == (
+        "ratchet marks were recorded under [crapkit-stamp=2 lizard=1.24.0] in crapkit-ratchet.tsv, and "
+        "the rules have moved since in 1 scope(s): "
+        "api (python analysis 13 to 14) - CRAP scores are not comparable across metric versions; "
+        "run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with "
+        "`crapkit ratchet seed --scope api`")

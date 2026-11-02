@@ -16,6 +16,7 @@ from pathlib import Path
 
 from cli_inproc_repo import (add_knotty, commit_all, git, istanbul,  # noqa: F401
                              repo, seed_artifacts, template_repo)
+from stamps import running_in
 
 import pytest
 
@@ -59,7 +60,7 @@ def head(repo) -> str:
 def write_marks(repo, *entries: tuple[str, str, float], stamp: str | None = None,
                 key_version: int = 0) -> None:
     (repo / MARKS).write_text(
-        dump_ratchet([RatchetEntry(*e) for e in entries],
+        dump_ratchet([RatchetEntry(*e) for e in entries], file_name=MARKS,
                      stamp=metric_version() if stamp is None else stamp, key_version=key_version),
         encoding="utf-8", newline="\n")
 
@@ -641,7 +642,7 @@ def test_a_marks_file_written_before_stamping_warns_and_still_verifies(baselined
 def test_a_clean_pass_tightens_the_marks(baselined, capsys):
     """On a commit the store has never scored, the tighten has nothing to
     compare this measurement against, so no mark is held back."""
-    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0))
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp=running_in(baselined))
     git(baselined, "-c", "user.email=t@example.com", "-c", "user.name=t",
         "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "empty")
 
@@ -1427,7 +1428,7 @@ def marked_debt(repo, capsys):
 
 def test_a_green_run_that_moved_marks_says_so_and_asks_for_git_add(marked_debt, capsys):
     write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 100.0),
-                ("src/app.ts", "plain ( x )", 9.0))
+                ("src/app.ts", "plain ( x )", 9.0), stamp=running_in(marked_debt))
 
     code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
 
@@ -1451,7 +1452,8 @@ def test_a_green_run_with_nothing_to_move_leaves_the_marks_file_alone(marked_deb
     """Written only when its text would change: a mark already at its measured
     value is not a tighten, and rewriting the file dirtied a clean checkout with
     a diff of nothing."""
-    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), key_version=1)
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp=running_in(marked_debt),
+                key_version=1)
     before = (marked_debt / MARKS).stat().st_mtime_ns
 
     code, out, err = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
@@ -1471,8 +1473,8 @@ def test_a_green_run_with_nothing_to_move_prints_no_ratchet_suffix(marked_debt, 
 
 def _crlf_marks(repo, *entries: tuple[str, str, float]) -> bytes:
     """The marks file as a Windows checkout under core.autocrlf=true holds it."""
-    data = dump_ratchet([RatchetEntry(*e) for e in entries], stamp=metric_version(),
-                        key_version=1).replace("\n", "\r\n").encode("utf-8")
+    data = dump_ratchet([RatchetEntry(*e) for e in entries], stamp=running_in(repo), key_version=1,
+                        file_name=MARKS).replace("\n", "\r\n").encode("utf-8")
     (repo / MARKS).write_bytes(data)
     return data
 

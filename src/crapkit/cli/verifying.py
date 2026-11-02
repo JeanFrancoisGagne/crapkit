@@ -262,8 +262,9 @@ def _verify_store(root: Path, tsv_baseline: str | None) -> SnapshotStore:
     return SnapshotStore(db_path)
 
 
-def _guard_ratchet_stamp(saved, name: str, named: dict | None = None, pinned: bool = False) -> None:
-    """Refuse to weigh fresh scores against marks another metric produced.
+def _guard_ratchet_stamp(saved, cfg, named: dict | None = None, pinned: bool = False) -> None:
+    """Refuse to weigh fresh scores against marks another metric produced, in
+    the scopes whose rules moved.
 
     Runs before the lanes do: a metric bump that silently kept 40k old marks is
     what this exists to stop, and finding out after a 40-minute run is too late.
@@ -271,17 +272,55 @@ def _guard_ratchet_stamp(saved, name: str, named: dict | None = None, pinned: bo
     names, can be the run the refusal says to seed from, and `pinned` can say
     a failed verify holds a plain seed on an older run.
     """
-    from ..ratchet import coverage_then_seed, metric_version
+    from ..ratchet import coverage_then_seed
 
     if saved.blank:
         return
     if not saved.metric_stamp:
-        print(f"warning: {name} carries no metric stamp (written before stamping) - "
+        print(f"warning: {cfg.ratchet_file} carries no metric stamp (written before stamping) - "
               f"{coverage_then_seed()} to stamp it", file=sys.stderr)
         return
-    conflict = saved.stamp_conflict(metric_version())
-    if conflict:
-        raise ConfigError(_stamp_refusal(conflict, named, pinned))
+    _refuse_or_warn(verify_stamp_conflict(saved, cfg), cfg.ratchet_file, named, pinned)
+
+
+def _refuse_or_warn(conflict, name: str, named: dict | None, pinned: bool) -> None:
+    """Refuse when a marked scope moved; else warn once when a mode was inferred."""
+    if conflict is None:
+        return
+    if conflict.refuses:
+        raise ConfigError(_stamp_refusal(conflict, name, named, pinned))
+    if conflict.inferred:
+        print(_inferred_warning(conflict.inferred, name), file=sys.stderr)
+
+
+def verify_stamp_conflict(saved, cfg):
+    """How the marks differ from what a run on `cfg` measures, as verify weighs them.
+
+    Marks a scope's stamp can be read from are weighed scope by scope against
+    the running per-scope stamp. A single-number file that holds no mark, and a
+    stamp crapkit cannot read, compare as one value with the single number,
+    as the tighten that restamps the file does."""
+    from ..ratchet import ScopeStamps, SingleNumberStamp, metric_version, running_stamp
+
+    stamp = saved.metric_stamp
+    if isinstance(stamp, ScopeStamps) or (isinstance(stamp, SingleNumberStamp) and saved.entries):
+        return saved.stamp_conflict(running_stamp(cfg), marked_scopes(saved.entries, cfg))
+    return saved.stamp_conflict(metric_version())
+
+
+def marked_scopes(entries, cfg) -> frozenset[str]:
+    """The scopes the config places the marks' paths in, by the rule that
+    places a scored function. A mark no scope claims counts toward none."""
+    from ..universe import scope_matchers
+
+    matchers = scope_matchers(cfg.scopes)
+    return frozenset(filter(None, (owning_scope(entry.path, matchers) for entry in entries)))
+
+
+def _inferred_warning(scopes: tuple, name: str) -> str:
+    return (f"warning: {name} records one analysis number and no coverage mode, so verify read "
+            f"scope(s) {', '.join(scopes)} as measured by the coverage readers 0.8.x read for "
+            "their lanes; nothing to do: the next seed or passing verify records each scope's mode")
 
 
 # Why the stock remedy alone would loop on a store a failed verify pins.
@@ -325,7 +364,7 @@ def _warn_marks_stand_in(saved, committed, commit: str, name: str) -> None:
           f"marks of code that is gone with `{_self()} ratchet prune`", file=sys.stderr)
 
 
-def _stamp_refusal(conflict: str, named: dict | None, pinned: bool = False) -> str:
+def _stamp_refusal(conflict, name: str, named: dict | None, pinned: bool = False) -> str:
     """The stamp refusal, with what it takes to clear it on this store.
 
     The stock remedy's `ratchet seed` reads the run verify would pick. A failed
@@ -337,29 +376,28 @@ def _stamp_refusal(conflict: str, named: dict | None, pinned: bool = False) -> s
     seed remedy at all: an upgrade clears them, and a seed would restamp them
     backwards.
     """
-    from ..ratchet import coverage_then_seed
-
-    stock = coverage_then_seed()
-    if not conflict.endswith(stock):
-        return conflict
     if named is not None:
-        return conflict.removesuffix(stock) + _named_seed(named)
-    return conflict + (_PINNED_SEED if pinned else "")
+        return conflict.refusal(name, _named_seed(named, conflict))
+    pinned_line = _PINNED_SEED if pinned and not conflict.newer else ""
+    return conflict.refusal(name) + pinned_line
 
 
-def _named_seed(named: dict) -> str:
-    """The seed that re-baselines the marks from the run verify was handed.
+def _named_seed(named: dict, conflict) -> str:
+    """The seed that re-baselines the moved scopes from the run verify was handed.
 
-    Seed stamps the metric of the run it reads, so a run another metric measured
-    needs a coverage run first, and that run is the one to name.
+    Seed stamps the metric of the run it reads, so a run whose stamp still
+    differs from the running one in a moved scope needs a coverage run first,
+    and that run is the one to name.
     """
-    from ..ratchet import metric_version, run_metric_version
+    from ..ratchet import ScopeStamps, run_metric_version, run_stamp, stamp_conflict
 
     run_id = named["id"]
-    if run_metric_version(named["tool_versions"]) == metric_version():
-        return f"re-baseline from run {run_id} with `{_self()} ratchet seed --baseline {run_id}`"
+    read = run_stamp if isinstance(conflict.running, ScopeStamps) else run_metric_version
+    behind = stamp_conflict(read(named["tool_versions"]), conflict.running, conflict.scopes)
+    if not (behind and behind.refuses):
+        return f"re-baseline from run {run_id} with {conflict.seeds(f' --baseline {run_id}')}"
     return (f"run {run_id} was measured under another metric too, so run `{_self()} coverage`, "
-            f"then re-baseline from the run it writes with `{_self()} ratchet seed --baseline ID`")
+            f"then re-baseline from the run it writes with {conflict.seeds(' --baseline ID')}")
 
 
 def _require_override_reason(reason: str | None) -> None:
@@ -1014,7 +1052,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     untracked = _untracked_in_scope(root, cfg)
     baseline, basis = _verify_basis(root, store, args, git)
     judged = _judged_marks(root, saved, baseline, cfg.ratchet_file)
-    _guard_ratchet_stamp(judged.marks, cfg.ratchet_file, *_seed_hint(store, args, baseline, git))
+    _guard_ratchet_stamp(judged.marks, cfg, *_seed_hint(store, args, baseline, git))
     _emit_baseline(root, store, baseline, args.emit_baseline)
     claimed = _claimed_names(root, cfg, dirty, git)
     if claimed:

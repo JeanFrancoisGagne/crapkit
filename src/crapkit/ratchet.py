@@ -534,24 +534,214 @@ def marked_collisions(entries, rows) -> set:
     return {_marked_group(entry, present) for entry in entries} & ambiguous_groups(rows)
 
 
-def stamp_conflict(recorded: MetricStamp, current: MetricStamp) -> str | None:
-    """The refusal when marks and the running metric disagree; None when they compare.
+# The coverage parsers 0.8.x read, each at the reader number it read them at.
+# A single-number file records no coverage mode: a scope a lane of one of these
+# measures now was measured by it then, and a scope whose lanes use only other
+# parsers was cc-only when 0.8.x seeded it.
+SINGLE_NUMBER_PARSERS = {"coveragepy": 1, "istanbul": 1}
+_NOT_COMPARABLE = "CRAP scores are not comparable across metric versions"
+_BACKWARDS = ("rather than re-seed, which would restamp the team's marks backwards and make "
+              "every upgraded teammate's verify refuse them")
+
+
+class StampMove(NamedTuple):
+    """One way a marked scope's rules moved since its marks were recorded.
+
+    `kind` is `analysis` (`what` names the language), `reader` (the parser),
+    `lizard`, `coverage` (old and new mode) or `unstamped` (the scope holds
+    marks and no recorded stamp, which is how a renamed scope reads)."""
+    scope: str
+    kind: str
+    what: str = ""
+    old: object = None
+    new: object = None
+
+    def render(self) -> str:
+        if self.kind == "unstamped":
+            return "no stamp recorded for this scope"
+        name = f"{self.what} {self.kind}" if self.what else self.kind
+        return f"{name} {_mode_text(self.old)} to {_mode_text(self.new)}"
+
+    @property
+    def newer(self) -> bool:
+        """The marks recorded a higher number than this crapkit runs: a newer release wrote them."""
+        return self.kind in ("analysis", "reader") and self.old > self.new
+
+
+def _mode_text(value) -> str:
+    return _coverage_text(value) if isinstance(value, dict) else str(value)
+
+
+class StampConflict(NamedTuple):
+    """How recorded marks and the running metric differ.
+
+    `moved` refuses: each marked scope whose rules moved. `gone` names the
+    recorded scopes the config no longer has, which refuse nothing. `inferred`
+    names the marked scopes whose coverage mode a single-number file left to
+    inference, for verify's warning. With neither side per scope, or a stamp
+    no scope can be read from, the whole file refuses as one value."""
+    recorded: MetricStamp
+    running: MetricStamp
+    moved: tuple = ()
+    gone: tuple = ()
+    inferred: tuple = ()
+
+    @property
+    def whole(self) -> bool:
+        return not _weighed_per_scope(self.recorded, self.running)
+
+    @property
+    def refuses(self) -> bool:
+        return self.whole or bool(self.moved)
+
+    @property
+    def scopes(self) -> frozenset:
+        """The scopes a seed restamps: the moved ones, or every running scope
+        for a whole-file refusal."""
+        if self.moved:
+            return frozenset(move.scope for move in self.moved)
+        return frozenset(self.running.scopes) if isinstance(self.running, ScopeStamps) else frozenset()
+
+    @property
+    def newer(self) -> bool:
+        """A newer crapkit wrote the marks: an upgrade clears them, and a seed
+        would restamp them backwards."""
+        if self.whole:
+            return bool(newer_tools(self.recorded, self.running))
+        return any(move.newer for move in self.moved)
+
+    def refusal(self, file_name: str, remedy: str | None = None) -> str:
+        """The text verify refuses with. `remedy` replaces the stock
+        coverage, prune and seed steps, which read the run a plain seed picks."""
+        head = f"ratchet marks were recorded under [{self.recorded}] but this run measures [{self.running}]"
+        if not self.whole:
+            head = (f"ratchet marks were recorded under [{_label(self.recorded)}] in {file_name}, and "
+                    f"the rules have moved since in {_scopes_moved(self.moved)}")
+        if self.newer:
+            return f"{head} - {upgrade_remedy(['crapkit'])} {_BACKWARDS}"
+        return f"{head} - {_NOT_COMPARABLE}; {remedy or coverage_then_seed(seed=self.seeds())}"
+
+    def seeds(self, baseline: str = "") -> str:
+        """`crapkit ratchet seed --scope NAME` for each moved scope, the plain
+        seed for a whole-file refusal; `baseline` appended to each."""
+        scopes = [f" --scope {name}" for name in dict.fromkeys(move.scope for move in self.moved)]
+        return ", then ".join(f"`{_self()} ratchet seed{scope}{baseline}`" for scope in scopes or [""])
+
+
+def _label(stamp: MetricStamp) -> str:
+    """A stamp as one refusal names it: a per-scope stamp by its form and lizard."""
+    return f"{_STAMP_2} lizard={stamp.lizard}" if isinstance(stamp, ScopeStamps) else stamp.render()
+
+
+def _scopes_moved(moved: tuple) -> str:
+    """`2 scope(s): web (typescript analysis 13 to 14), api (lizard 1.24.0 to 1.25.0)`."""
+    by_scope: dict[str, list[str]] = {}
+    for move in moved:
+        by_scope.setdefault(move.scope, []).append(move.render())
+    named = ", ".join(f"{name} ({'; '.join(what)})" for name, what in by_scope.items())
+    return f"{len(by_scope)} scope(s): {named}"
+
+
+def _weighed_per_scope(recorded: MetricStamp, running: MetricStamp) -> bool:
+    """Marks a scope's stamp can be read from, against a running per-scope stamp.
+    Not the merge's `_per_scope`, which also takes a per-scope side against a
+    single number: verify never weighs per scope without a per-scope running stamp."""
+    return isinstance(running, ScopeStamps) and isinstance(recorded, (SingleNumberStamp, ScopeStamps))
+
+
+def stamp_conflict(recorded: MetricStamp, running: MetricStamp,
+                   marked_scopes: frozenset = frozenset()) -> StampConflict | None:
+    """How `recorded` marks and the `running` metric differ; None when nothing does.
 
     An unstamped file has nothing to disagree with: the caller warns instead.
-    Marks a newer crapkit wrote are sent to an upgrade: the stock
-    coverage-then-seed would restamp them under this older metric, and every
-    teammate on the newer release would then be refused. Marks a newer lizard
-    stamped take that reseed, since the exact lizard pin admits no upgrade.
+    Against a per-scope `running` stamp only the scopes in `marked_scopes` can
+    move, and only by what their own languages, readers, lizard and coverage
+    mode record. Two single-number stamps compare as one value.
     """
-    if not recorded or recorded == current:
+    if not recorded or recorded == running:
         return None
-    head = f"ratchet marks were recorded under [{recorded}] but this run measures [{current}]"
-    newer = newer_tools(recorded, current)
-    if newer:
-        return (f"{head} - {upgrade_remedy(newer)} rather than re-seed, which would restamp the "
-                "team's marks backwards and make every upgraded teammate's verify refuse them")
-    return (f"{head} - CRAP scores are not comparable across metric versions; "
-            f"{coverage_then_seed()}")
+    if not _weighed_per_scope(recorded, running):
+        return StampConflict(recorded, running)
+    return _scoped_conflict(recorded, running, marked_scopes)
+
+
+def _scoped_conflict(recorded, running: ScopeStamps, marked_scopes) -> StampConflict | None:
+    """The per-scope comparison; None when no marked scope moved, no recorded
+    scope is gone and no mode was inferred."""
+    marked = sorted(set(marked_scopes) & set(running.scopes))
+    conflict = StampConflict(recorded, running, _moves(recorded, running, marked),
+                             _gone(recorded, running), _inferred(recorded, running, marked))
+    return conflict if conflict.moved or conflict.gone or conflict.inferred else None
+
+
+def _moves(recorded, running: ScopeStamps, marked: list[str]) -> tuple:
+    lizards = (recorded.lizard, running.lizard)
+    return tuple(move for name in marked for move in _scope_moves(
+        name, _recorded_scope(recorded, name, running.scopes[name]), running.scopes[name], lizards))
+
+
+def _recorded_scope(recorded, name: str, now: ScopeStamp) -> ScopeStamp | None:
+    """What `recorded` holds for scope `name`, which runs as `now`. A
+    single-number file holds N for each language the scope runs, and the mode
+    0.8.x seeded the scope under, inferred from its lanes now."""
+    if isinstance(recorded, ScopeStamps):
+        return recorded.scopes.get(name)
+    return ScopeStamp(dict.fromkeys(now.analysis, recorded.analysis), _inferred_mode(now.coverage))
+
+
+def _inferred_mode(mode) -> str | dict:
+    """A scope with a lane of a parser 0.8.x read was measured by those readers
+    at the number 0.8.x read them at; any other scope was cc-only."""
+    if not isinstance(mode, dict):
+        return "cc-only"
+    readers = {parser: SINGLE_NUMBER_PARSERS[parser] for parser in mode if parser in SINGLE_NUMBER_PARSERS}
+    return readers or "cc-only"
+
+
+def _scope_moves(name: str, then: ScopeStamp | None, now: ScopeStamp, lizards: tuple) -> list:
+    """Each way scope `name` moved from `then` to `now`. A language or a parser
+    only one side runs moves nothing: an added one leaves functions unmarked
+    until the next seed; a changed set of parsers moves the coverage mode."""
+    if then is None:
+        return [StampMove(name, "unstamped")]
+    moves = [StampMove(name, "analysis", language, then.analysis[language], number)
+             for language, number in now.analysis.items()
+             if language in then.analysis and then.analysis[language] != number]
+    if lizards[0] != lizards[1]:
+        moves.append(StampMove(name, "lizard", "", *lizards))
+    return moves + _coverage_moves(name, then.coverage, now.coverage)
+
+
+def _coverage_moves(name: str, then, now) -> list:
+    """`reader` per parser whose number moved, when both sides measure with the
+    same parsers; else `coverage` when the mode differs."""
+    if then == now:
+        return []
+    if _same_parsers(then, now):
+        return [StampMove(name, "reader", parser, then[parser], number)
+                for parser, number in now.items() if then[parser] != number]
+    return [StampMove(name, "coverage", "", then, now)]
+
+
+def _same_parsers(then, now) -> bool:
+    """Both modes are readers, and of the same parsers."""
+    return isinstance(then, dict) and isinstance(now, dict) and then.keys() == now.keys()
+
+
+def _gone(recorded, running: ScopeStamps) -> tuple:
+    """The scopes a per-scope file records that the config no longer has."""
+    if not isinstance(recorded, ScopeStamps):
+        return ()
+    return tuple(sorted(set(recorded.scopes) - set(running.scopes)))
+
+
+def _inferred(recorded, running: ScopeStamps, marked: list[str]) -> tuple:
+    """The marked scopes a single-number file leaves to a guess: those a lane
+    measures, which 0.8.x may have measured or scored cc-only. A scope with no
+    lane had one lane-less mode then, so it is no guess."""
+    if not isinstance(recorded, SingleNumberStamp):
+        return ()
+    return tuple(name for name in marked if isinstance(running.scopes[name].coverage, dict))
 
 
 def upgrade_remedy(tools: list[str]) -> str:
@@ -590,7 +780,7 @@ def _stamp_versions(stamp: str) -> dict[str, tuple[int, ...]]:
             for name, sep, value in fields if sep}
 
 
-def coverage_then_seed(rebaseline: str = "re-baseline") -> str:
+def coverage_then_seed(rebaseline: str = "re-baseline", seed: str = "") -> str:
     """The remedy every stamp refusal prints: a fresh run, a prune, then the seed.
 
     Seed stamps the metric of the run it reads. Right after an upgrade the
@@ -598,10 +788,11 @@ def coverage_then_seed(rebaseline: str = "re-baseline") -> str:
     verify refused again. A new metric can also move a function's key (a
     UTF-16 source, a name holding a byte cp1252 leaves undefined), and seed
     never drops a mark, so prune goes between them to drop the mark left under
-    the old key, as the upgrade guide says.
+    the old key, as the upgrade guide says. `seed` names the seed commands
+    when they are not the plain one.
     """
     return (f"run `{_self()} coverage`, then `{_self()} ratchet prune`, then {rebaseline} "
-            f"with `{_self()} ratchet seed`")
+            f"with {seed or f'`{_self()} ratchet seed`'}")
 
 
 def comment_line(line: str) -> bool:
