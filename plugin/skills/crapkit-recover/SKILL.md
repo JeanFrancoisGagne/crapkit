@@ -123,6 +123,10 @@ that answers `recorded no metric for scope NAME` read a run from before 0.9.0: r
 `crapkit ratchet seed`: the file records one lizard version for every scope, and
 `seed --scope` keeps it, so a scoped seed refuses that file:
 [docs: repairing one scope](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#repairing-one-scope---scope).
+A refusal whose last clause reads `so its marks hold no coverage yet: follow` and links the
+upgrade guide names a cc-only scope that a lane measures now. Follow that procedure: it
+compares the export with the marks before the scoped seed raises them:
+[docs: turning a cc-only scope into a measured one](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one).
 
 `lane 'py': positional argument 'slow'' narrows a full-suite coverage run ... (cmd.exe
 does not treat ' as a quote: write the value in double quotes)` is the lane guard reading
