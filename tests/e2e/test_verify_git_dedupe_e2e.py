@@ -11,6 +11,7 @@ pins that: the finding below is in a file the lane dirties while it runs, and it
 still has to count as committed.
 """
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -125,6 +126,51 @@ def test_one_git_status_serves_the_whole_verify(tmp_path, counted_status, capsys
     capsys.readouterr()
 
     assert len(counted_status) == 1, "attribution and the lane runner share one answer"
+
+
+FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
+
+
+@pytest.fixture()
+def started_git(monkeypatch) -> list:
+    """The argv of every git process started in this process, run for real."""
+    started: list = []
+    real = subprocess.Popen
+
+    class Counted(real):
+        def __init__(self, args, *rest, **kwargs):
+            if isinstance(args, (list, tuple)) and args and Path(str(args[0])).stem == "git":
+                started.append([str(arg) for arg in args])
+            super().__init__(args, *rest, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", Counted)
+    return started
+
+
+def mini_repo(tmp_path: Path) -> Path:
+    """tests/fixtures/mini_repo with a coverage baseline: the repo the timing
+    harness times verify on."""
+    repo = tmp_path / "mini"
+    shutil.copytree(FIXTURES / "mini_repo", repo)
+    write(repo / ".gitignore",
+          ".crapkit/\n.coverage*\ncoverage/\ncoverage-py.json\njunit.xml\n__pycache__/\n")
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "core.autocrlf", "false")
+    commit(repo, "init")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    return repo
+
+
+def test_one_tracked_file_listing_serves_the_whole_verify(tmp_path, started_git, capsys):
+    """The claimed-name scan and the inventory read one `git ls-files -z`."""
+    repo = mini_repo(tmp_path)
+    started_git.clear()
+
+    assert cmd_verify(verify_args(repo)) == 0
+    capsys.readouterr()
+
+    listings = [argv for argv in started_git if argv[-2:] == ["ls-files", "-z"]]
+    assert len(listings) == 1, f"{len(started_git)} git processes, {len(listings)} listings"
 
 
 def test_the_dirty_set_is_the_one_from_before_the_lanes_ran(tmp_path, capsys):

@@ -101,11 +101,11 @@ def test_each_docker_run_breaks_its_lines_with_a_continuation(name):
     assert any(line.rstrip().endswith("\\") for line in lines if "docker run" in line)
 
 
-def test_the_nightly_and_the_label_run_judge_with_mutation_py_diff_under_a_cap_that_fits():
+def test_the_nightly_run_judges_with_mutation_py_diff_under_a_cap_that_fits():
     job = JOBS["mutation-diff"]
     (args,) = _calls(job, "diff")
 
-    assert "label" in job["if"] and "nightly" in job["if"]
+    assert job["if"] == "needs.plan.outputs.mode == 'nightly'"
     assert not any("crapkit mutate" in str(item.get("run", "")) for item in job["steps"])
     assert args.cap_minutes >= STATS_MINUTES + JUDGING_MINUTES
     assert job["timeout-minutes"] >= args.cap_minutes + 15

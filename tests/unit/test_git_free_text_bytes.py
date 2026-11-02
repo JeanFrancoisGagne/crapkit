@@ -252,8 +252,10 @@ def test_a_utf16_revision_keeps_each_marks_entry_date(tmp_path, revisions, ages,
     ([_utf16(STAMPED + MARK), _utf16(STAMPED + MARK.replace(b"9.0", b"8.0")), STAMPED + MARK], 1),
 ], ids=["utf8-and-cp1252-history", "utf16-history"])
 def test_every_history_reads_its_revisions_in_one_batch(tmp_path, monkeypatch, revisions, reads):
-    """Every revision is read whole, whatever its encoding, and every blob a
-    history names comes from one `cat-file --batch` process."""
+    """Whatever its encoding, every blob a history reads whole comes from one
+    `cat-file --batch` process: the created revision's, and each UTF-16
+    revision's, whose patch git prints as binary. A UTF-8 revision with a
+    cp1252 byte or CRLF rows rides its patch."""
     from crapkit import gitio
 
     root = repository(tmp_path)

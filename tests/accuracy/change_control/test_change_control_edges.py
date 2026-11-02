@@ -288,6 +288,27 @@ def test_the_analysis_version_line_is_blanked_and_a_missing_file_is_no_bytes():
     assert cc._unversioned(None) == b""
 
 
+def test_the_number_tables_are_blanked_with_the_revision():
+    analyze = (b'ANALYSIS_VERSION = 13\nANALYSIS_VERSIONS = {\n    "go": 13,\n    "python": 14,\n'
+               b'}\n\ndef fingerprint():\n    return "cache=10"\n')
+    readers = b'READER_VERSIONS = {"istanbul": 1, "coveragepy": 2}\nFIRST_READER_VERSION = 1\n'
+
+    assert cc._unversioned(analyze) == b'\n\n\ndef fingerprint():\n    return "cache=10"\n'
+    assert cc._unversioned(readers) == b"\nFIRST_READER_VERSION = 1\n"
+
+
+def test_numbers_are_read_from_the_tree_without_importing_crapkit():
+    tree = _tree({cc.ANALYZE: b'ANALYSIS_VERSION = 14\nANALYSIS_VERSIONS = {"go": 13, "python": 14}\n',
+                  cc.COVERAGE_FORMAT: b'READER_VERSIONS = {"istanbul": 1, "coveragepy": 2}\n'})
+
+    held, now = cc.tree_numbers(tree), cc.running(tree, "1.24.0")
+
+    assert (held.revision, dict(held.languages), dict(held.readers)) == (
+        14, {"go": 13, "python": 14}, {"istanbul": 1, "coveragepy": 2})
+    assert (now.languages, now.readers) == ("go=13;python=14", "coveragepy=2;istanbul=1")
+    assert cc.tree_numbers(_tree({})) == cc.goldens.Numbers(0)
+
+
 def test_a_method_row_is_found_by_its_own_name():
     source = "class C:\n    def m(self):\n        pass\n"
 
@@ -338,10 +359,22 @@ def test_a_written_change_row_joins_its_calcs_and_names_the_unreleased_version(t
     goes in: the newest `## X.Y.Z <dash> unreleased` heading."""
     (tmp_path / cc.CHANGELOG).write_bytes(UNRELEASED_LOG)
 
-    cc.write_plan(tmp_path, _plan(), cc.Running("7", "1.24.0"))
+    cc.write_plan(tmp_path, _plan(), cc.Running("7", "1.24.0", "go=7;python=7", "coveragepy=1"))
 
     row = (tmp_path / cc.CHANGES).read_bytes().decode("utf-8").splitlines()[-1]
-    assert row == "C9\t2026-01-01\tfix\ta; b\t7\t1.24.0\t0.9.0\twhy"
+    assert row == "C9\t2026-01-01\tfix\ta; b\t7\t1.24.0\t0.9.0\twhy\tgo=7;python=7\tcoveragepy=1"
+
+
+def test_a_written_row_grows_an_old_header_and_keeps_every_old_row(tmp_path):
+    old = ("\t".join(cc.CHANGE_COLUMNS[:8]) + "\nC1\t2026-01-01\tnone\t\t7\t1.24.0\t\tfirst\n")
+    (tmp_path / cc.CHANGES).parent.mkdir(parents=True)
+    (tmp_path / cc.CHANGES).write_bytes(old.encode("utf-8"))
+
+    cc.write_plan(tmp_path, _plan((), "none"), cc.Running("7", "1.24.0"))
+
+    assert (tmp_path / cc.CHANGES).read_bytes().decode("utf-8").splitlines() == [
+        "\t".join(cc.CHANGE_COLUMNS), "C1\t2026-01-01\tnone\t\t7\t1.24.0\t\tfirst",
+        "C9\t2026-01-01\tnone\t\t7\t1.24.0\t\twhy\t\t"]
 
 
 def test_a_written_kind_none_row_names_no_changelog_version(tmp_path):
@@ -352,7 +385,7 @@ def test_a_written_kind_none_row_names_no_changelog_version(tmp_path):
     cc.write_plan(tmp_path, _plan((), "none"), cc.Running("7", "1.24.0"))
 
     row = (tmp_path / cc.CHANGES).read_bytes().decode("utf-8").splitlines()[-1]
-    assert row == "C9\t2026-01-01\tnone\t\t7\t1.24.0\t\twhy"
+    assert row == "C9\t2026-01-01\tnone\t\t7\t1.24.0\t\twhy\t\t"
 
 
 @pytest.mark.parametrize("kind, log, cell", [
@@ -408,7 +441,8 @@ def test_a_digest_row_of_added_rows_under_the_last_version_is_not_refused():
     moved = {**row, "digest": "e"}
 
     assert cc._digest_refusal([row], moved, cc.Running("7", "1.24.0"), added=True) == []
-    assert "to 8 (A1)" in cc._digest_refusal([row], moved, cc.Running("7", "1.24.0"))[0]
+    assert "(ANALYSIS_VERSION to 8)" in cc._digest_refusal([row], moved,
+                                                            cc.Running("7", "1.24.0"))[0]
 
 
 def test_a_row_appended_under_a_held_version_with_a_new_digest_is_found():
@@ -425,12 +459,41 @@ def test_a_digest_that_moved_under_no_version_asks_for_version_1():
 
     [text] = cc._digest_refusal([row], row, cc.Running("", "1.24.0"))
 
-    assert f"bump ANALYSIS_VERSION in {cc.ANALYZE} to 1 (A1)" in text
+    assert f"raise ANALYSIS_VERSION in {cc.ANALYZE} by one (ANALYSIS_VERSION to 1)" in text
+
+
+def _small_tree(scored: bytes) -> cc.DictTree:
+    return _tree({cc.LANGUAGE_MAP: b'LANGUAGE_EXTENSIONS = {"python": (".py",), "go": (".go",)}\n',
+                  f"{cc.SMALL_CORPUS}/crapkit.toml": b'[[lane]]\nparser = "coveragepy"\n'
+                                                     b'scopes = ["py"]\n',
+                  f"{SMALL}/scored.tsv": b"scope\tpath\tlong_name\tstart\tccn\tcov\n" + scored})
+
+
+def test_the_digest_refusal_names_each_number_that_covers_the_moved_rows():
+    row = {"analysis_version": "13", "lizard_version": "1.24.0", "corpus": "c", "digest": "d"}
+    base, head = _small_tree(b"py\tsrc/a.py\tf\t1\t1\t1.0\n"), _small_tree(
+        b"py\tsrc/a.py\tf\t1\t2\t0.5\n")
+    cells = cc.moved_cells(base, head)
+
+    [text] = cc._digest_refusal([row], {**row, "digest": "e"}, cc.Running("13", "1.24.0"),
+                                to_raise_=cc.to_raise(head, cells))
+
+    assert [cell.column for cell in cells] == ["ccn", "cov"]
+    assert (f'raise ANALYSIS_VERSIONS["python"] in {cc.ANALYZE}, READER_VERSIONS["coveragepy"] '
+            f"in {cc.COVERAGE_FORMAT}, ANALYSIS_VERSION in {cc.ANALYZE} by one "
+            "(ANALYSIS_VERSION to 14)") in text
+    assert '"go"' not in text
 
 
 def test_the_parsers_say_what_each_command_does():
-    assert cc._check_parser().description == "Judge a diff."
-    assert cc._declare_parser().description == "Judge and record a change that moves goldens."
+    check = cc._check_parser().description
+    assert check.startswith("Judge a diff. A moved golden needs its own number raised with "
+                            "ANALYSIS_VERSION")
+    assert "READER_VERSIONS" in check
+    declare = cc._declare_parser().description
+    assert declare.startswith("Judge and record a change that moves goldens. A moved cell needs "
+                              "the number of its language (ANALYSIS_VERSIONS")
+    assert "READER_VERSIONS in coverage_format.py" in declare
 
 
 def test_the_suggestion_for_a_diff_that_moves_nothing_is_kind_none():

@@ -14,11 +14,15 @@
 #              reads back, at most once per release key (version, PyPI files,
 #              tag commit). No tag push starts it: that run raced the upload.
 #
+# The nightly and weekly schedules run on main ([scope] schedules in
+# tests/deploy/MAP.toml); a dispatch runs any set on any branch, for example
+# `gh workflow run deploy.yml --ref <branch> -f cadence=nightly`. No pull request
+# starts this workflow: a pull request runs the copy in its merge commit, so
+# each push of a branch with an open pull request ran the nightly set.
+#
 # The scope job turns the event into one cadence and schedules the entries of
-# tests/deploy/MAP.toml [jobs] whose `when` holds it. A pull request gets the
-# nightly set when it changes an install surface ([scope] paths), and the
-# release set when it carries the deploy-full label; any other pull request
-# runs the scope job alone. Every other job reads the scope job's output.
+# tests/deploy/MAP.toml [jobs] whose `when` holds it. Every other job reads the
+# scope job's output.
 name: deploy
 # The title GitHub lists for each run: "deploy release <tree id>" for the
 # release cadence `release.py run deploy` dispatches, "deploy published
@@ -26,8 +30,6 @@ name: deploy
 # its commit by that name.
 run-name: deploy ${{ inputs.cadence || github.event_name }} ${{ inputs.tree || inputs.ref }}${{ inputs.files && ' ' || '' }}${{ inputs.files }}
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
   schedule:
     - cron: "17 6 * * *"
     - cron: "17 7 * * 1"
@@ -54,12 +56,11 @@ on:
 permissions:
   contents: read
 
-# A newer push to a pull request cancels the run it replaces. Adding a label
-# other than deploy-full starts a run of its own group, so it never cancels a
-# run in progress.
+# Each event, ref and cadence (the schedule's cron or the dispatched one) has a
+# group of its own: a nightly run never waits behind a release run, and no run
+# cancels one in progress.
 concurrency:
-  group: deploy-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event.label.name || github.event.schedule || inputs.cadence || 'run' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: deploy-${{ github.event_name }}-${{ github.ref }}-${{ github.event.schedule || inputs.cadence }}
 
 jobs:
   scope:
@@ -77,7 +78,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          fetch-depth: 0
           ref: ${{ inputs.ref }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
@@ -101,16 +101,11 @@ jobs:
         shell: python
         env:
           EVENT_NAME: ${{ github.event_name }}
-          ACTION: ${{ github.event.action }}
-          LABEL: ${{ github.event.label.name }}
-          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           SCHEDULE: ${{ github.event.schedule }}
           CADENCE_INPUT: ${{ inputs.cadence }}
         run: |
           import json
           import os
-          import subprocess
           import tomllib
           from pathlib import Path
 
@@ -119,36 +114,8 @@ jobs:
           RUNNERS = ("linux", "arm", "windows", "macos", "host", "tool", "action")
 
 
-          def surface_changes():
-              diff = ["git", "-c", "core.quotepath=off", "diff", "--name-only", "-z", os.environ["BASE_SHA"] + "...HEAD"]
-              names = subprocess.run(diff, capture_output=True, text=True, check=True).stdout.split("\0")
-              return [name for name in names if name and name.startswith(tuple(SCOPE["paths"]))]
-
-
-          def labels():
-              return json.loads(os.environ.get("LABELS") or "null") or []
-
-
-          def labeled(label):
-              """A labeled event counts only when the label added is this one."""
-              return ("release", "labeled " + label) if os.environ.get("LABEL") == label else ("none", "another label")
-
-
-          def pull_request():
-              label = SCOPE["label"]
-              if os.environ.get("ACTION") == "labeled":
-                  return labeled(label)
-              if label in labels():
-                  return "release", "labeled " + label
-              changed = surface_changes()
-              return ("nightly", "changes " + ", ".join(changed[:5])) if changed else ("none", "no install surface changed")
-
-
           def cadence():
-              event = os.environ["EVENT_NAME"]
-              if event == "pull_request":
-                  return pull_request()
-              if event == "schedule":
+              if os.environ["EVENT_NAME"] == "schedule":
                   return SCOPE["schedules"][os.environ["SCHEDULE"]], "schedule " + os.environ["SCHEDULE"]
               return os.environ["CADENCE_INPUT"], "dispatched"
 

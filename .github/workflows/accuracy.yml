@@ -1,5 +1,5 @@
 name: accuracy
-run-name: accuracy ${{ inputs.mode || (github.event_name == 'pull_request' && 'label') || (github.event.schedule == '0 6 * * 6' && 'weekly') || 'nightly' }} ${{ inputs.release_key }}
+run-name: accuracy ${{ inputs.mode || (github.event.schedule == '0 6 * * 6' && 'weekly') || 'nightly' }} ${{ inputs.release_key }}
 
 # The calculation-accuracy tiers that do not fit a push: every outside oracle on
 # the full corpus (nightly), full mutation testing (weekly), and the remote half
@@ -24,13 +24,16 @@ run-name: accuracy ${{ inputs.mode || (github.event_name == 'pull_request' && 'l
 # digest, cached per OS. A digest nobody has published yet fails that step
 # without stopping the cell, and each check that reads the corpus then ends as
 # an infra miss naming the publish steps.
+#
+# The schedules run on main; a dispatch runs any tier on any branch, for example
+# `gh workflow run accuracy.yml --ref <branch> -f mode=nightly`. No pull request
+# starts this workflow: a pull request runs the copy in its merge commit, so
+# each push of a branch with an open pull request started it.
 
 on:
   schedule:
     - cron: "17 3 * * 0-5"   # nightly; Saturday is the weekly run instead
     - cron: "0 6 * * 6"      # weekly
-  pull_request:
-    types: [labeled, synchronize]
   workflow_dispatch:
     inputs:
       mode:
@@ -58,8 +61,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: accuracy-${{ github.event.pull_request.number || inputs.ref || github.ref }}-${{ inputs.mode || github.event.schedule || 'label' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: accuracy-${{ inputs.ref || github.ref }}-${{ inputs.mode || github.event.schedule }}
 
 env:
   IMAGE_NAME: crapkit-accuracy
@@ -67,8 +69,6 @@ env:
 
 jobs:
   plan:
-    # A pull request runs only while it carries the `accuracy` label.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'accuracy')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -83,12 +83,10 @@ jobs:
           SCHEDULE: ${{ github.event.schedule }}
           INPUT_MODE: ${{ inputs.mode }}
           INPUT_REF: ${{ inputs.ref }}
-          PR_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -eu
           case "$EVENT" in
             schedule) mode=$([ "$SCHEDULE" = "0 6 * * 6" ] && echo weekly || echo nightly); ref=$GITHUB_SHA ;;
-            pull_request) mode=label; ref=$PR_SHA ;;
             *) mode=$INPUT_MODE; ref=${INPUT_REF:-$GITHUB_SHA} ;;
           esac
           case "$mode" in
@@ -140,19 +138,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ACTOR: ${{ github.actor }}
           MODE: ${{ needs.plan.outputs.mode }}
-          # Main and same-repository pull requests may push; a fork's may not.
-          CAN_PUSH: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
           set -eu
           echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
           if docker manifest inspect "$REF" > /dev/null 2>&1; then
             echo "$REF exists"
-          elif [ "$CAN_PUSH" = "true" ]; then
+          else
             docker build -f tools/accuracy/image/Dockerfile -t "$REF" tools/accuracy
             docker push "$REF"
-          else
-            echo "::error::$REF is not built yet and a fork cannot push it: a maintainer must dispatch this run"
-            exit 1
           fi
           docker pull --quiet "$REF"
           echo "digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$REF")" >> "$GITHUB_OUTPUT"
@@ -505,16 +498,16 @@ jobs:
       - run: python tools/accuracy/wheel_diff.py xplat receipts/*.json
 
   mutation-diff:
-    # Nightly, and on the label: every function of the calc modules whose stored
-    # verdicts do not carry to this head (tools/accuracy/mutation.py, "Carrying a
-    # verdict"), capped at 78 minutes: 48 before the first mutant (run
+    # Nightly: every function of the calc modules whose stored verdicts do not
+    # carry to this head (tools/accuracy/mutation.py, "Carrying a verdict"),
+    # capped at 78 minutes: 48 before the first mutant (run
     # 36891129973: stats pass 32.1, clean pass 14.8) and 30 of judging. A capped
     # run reports incomplete, never pass. A run that judges every function
     # (9,627 mutants) needs hours more, so it stays incomplete. The receipts
     # carry from run to run in the actions cache, keyed by the environment key
     # they hold.
     needs: [plan, image]
-    if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'label'
+    if: needs.plan.outputs.mode == 'nightly'
     runs-on: ubuntu-latest
     timeout-minutes: 95
     steps:
@@ -724,11 +717,13 @@ jobs:
           name: accuracy-receipt-${{ needs.plan.outputs.mode }}
           path: receipts/
           retention-days: 7
-      # A red run on main opens or updates one issue per kind: exit 1 is a
-      # check that failed (accuracy-red), exit 3 an oracle or fetch that was
-      # missing twice (accuracy-infra). A pull request's run files nothing.
+      # A red run of main's head (a schedule, or a dispatch on main with no ref)
+      # opens or updates one issue per kind: exit 1 is a check that failed
+      # (accuracy-red), exit 3 an oracle or fetch that was missing twice
+      # (accuracy-infra). A dispatch on a branch or at another ref tests other
+      # code and files nothing; whoever dispatched it reads the run.
       - name: File the result
-        if: always() && needs.plan.outputs.mode != 'label'
+        if: always() && github.ref == 'refs/heads/main' && !inputs.ref
         env:
           GH_TOKEN: ${{ github.token }}
           RESULTS: ${{ toJSON(needs) }}

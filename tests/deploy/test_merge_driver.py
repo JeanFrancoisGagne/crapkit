@@ -2,8 +2,9 @@
 
 Two branches burn down debt on adjacent lines of crapkit-ratchet.tsv, which
 git's text merge conflicts on. With the driver the merge is clean and keeps
-the lower mark per key; across metric stamps it refuses and git falls back to
-a text conflict, as the page prints.
+the lower mark per key. A stamp only one branch moved wins; an unstamped side
+against a stamped one refuses, and git falls back to a text conflict, as the
+page prints.
 """
 from __future__ import annotations
 
@@ -60,7 +61,7 @@ def stamp_refusal(box, repo: Path) -> None:
 
 
 @cell("lin-merge-driver", channel="merge driver", harness="git 2.47",
-      scenario="fresh: docs/ratchet.md lines; clean merge; different stamps refused", use_cases="ratchet merge",
+      scenario="fresh: docs/ratchet.md lines; clean merge; an unstamped side refused", use_cases="ratchet merge",
       os="linux", image="cells", cadence="push")
 def test_the_driver_merges_two_burn_downs_and_refuses_mixed_stamps(box, templates):
     repo = driven(box, templates)
@@ -71,7 +72,7 @@ def test_the_driver_merges_two_burn_downs_and_refuses_mixed_stamps(box, template
 
 
 @cell("lin-merge-driver", channel="merge driver", harness="git 2.47",
-      scenario="fresh: docs/ratchet.md lines; clean merge; different stamps refused", use_cases="ratchet merge",
+      scenario="fresh: docs/ratchet.md lines; clean merge; an unstamped side refused", use_cases="ratchet merge",
       os="linux", image="cells", cadence="push")
 def test_verify_on_main_after_a_verify_on_a_branch_measures_mains_history(box, templates):
     repo = driven(box, templates)
@@ -96,31 +97,29 @@ def reseed(box, repo: Path) -> None:
 
 
 @cell("lin-up-merge-driver-0.7.6", channel="merge driver", harness="git 2.47",
-      scenario="upgrade: stamp 11 vs 10 refusal; guide recovery; clean merge", use_cases="ratchet merge",
-      os="linux", image="cells", cadence="nightly")
-def test_a_branch_stamped_by_0_7_6_is_refused_then_merges_after_its_reseed(box, templates, candidate):
+      scenario="upgrade: main reseeded under the candidate merges a branch still stamped by 0.7.6; "
+      "main's stamp wins", use_cases="ratchet merge", os="linux", image="cells", cadence="nightly")
+def test_a_branch_stamped_by_0_7_6_merges_into_main_reseeded_under_the_candidate(box, templates, candidate):
+    """Only main moved the stamp, so the driver keeps main's and merges the marks per key."""
     assert OLD in wheels.releases()
     gitsurf.pip_venv(box, install=f'pip install "crapkit[py]=={OLD}"')
     repo = repos.checkout(box, "brownfield", cache=templates)
     gitsurf.adopt(box, repo)
     gitsurf.commit_attribute(box, repo)
     gitsurf.configure_driver(box, repo)
+    base = gitsurf.marks(repo)
     box.run(["git", "checkout", "-q", "-b", "feature"], cwd=repo, expect=0)
     gitsurf.tighten(box, repo, "test_legacy_one.py", gitsurf.LEGACY_TEST)
-    old_stamp = gitsurf.stamp(repo)
+    feature = gitsurf.marks(repo)
     box.run(["git", "checkout", "-q", "main"], cwd=repo, expect=0)
     box.script(gitsurf.inline(UPGRADE_DOC, "Upgrading crapkit", 'python -m pip install --upgrade "crapkit[py]"'),
                expect=0)
     reseed(box, repo)
+    main_stamp = gitsurf.stamp(repo)
 
-    gitsurf.assert_driver_refused(gitsurf.merge(box, repo, "feature"), gitsurf.stamp(repo), old_stamp)
-    box.run(["git", "merge", "--abort"], cwd=repo, expect=0)
-    box.run(["git", "checkout", "-q", "feature"], cwd=repo, expect=0)
-    reseed(box, repo)
-    feature = gitsurf.marks(repo)
-    box.run(["git", "checkout", "-q", "main"], cwd=repo, expect=0)
-    expected = {key: min(value, feature[key]) for key, value in gitsurf.marks(repo).items()}
+    expected = gitsurf.three_way(base, gitsurf.marks(repo), feature)
     gitsurf.assert_driver_merged(gitsurf.merge(box, repo, "feature"), repo, expected)
+    assert gitsurf.stamp(repo) == main_stamp
 
 
 # --- Windows: Route 2 and the driver from Git Bash, then from PowerShell -------------------------

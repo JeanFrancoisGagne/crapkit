@@ -6,10 +6,14 @@ The stamp turns that into an exit 3 instead of a green run.
 """
 import os
 from pathlib import Path
+import re
+import shlex
+import subprocess
+import sys
 
 import pytest
 
-from conftest import cli_runner, git_commit_all, git_init_repo
+from conftest import child_env, cli_runner, git_commit_all, git_init_repo
 
 TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -111,17 +115,28 @@ def _write(path: Path, stamp: str, rows: str) -> str:
     return str(path)
 
 
-def test_merge_refuses_two_sides_measured_by_different_metrics(tmp_path: Path):
-    base = _write(tmp_path / "base", "# crapkit-analysis=2 lizard=1.17.10\n", "src/a.ts\tf( )\t50.0000\n")
+def test_merge_refuses_two_sides_that_each_moved_the_stamp_differently(tmp_path: Path):
+    base = _write(tmp_path / "base", "# crapkit-analysis=1 lizard=1.17.10\n", "src/a.ts\tf( )\t50.0000\n")
     ours = _write(tmp_path / "ours", "# crapkit-analysis=2 lizard=1.17.10\n", "src/a.ts\tf( )\t30.0000\n")
     theirs = _write(tmp_path / "theirs", "# crapkit-analysis=3 lizard=1.24.0\n", "src/a.ts\tf( )\t20.0000\n")
 
     res = run_cli(tmp_path, "ratchet", "merge", base, ours, theirs)
-    assert res.returncode != 0, (res.returncode, res.stdout)
+    assert res.returncode == 3, (res.returncode, res.stdout)
     assert "crapkit-analysis=2 lizard=1.17.10" in res.stderr
     assert "crapkit-analysis=3 lizard=1.24.0" in res.stderr
     assert Path(ours).read_text(encoding="utf-8").endswith("src/a.ts\tf( )\t30.0000\n"), \
         "a refused merge must not rewrite ours"
+
+
+def test_merge_takes_the_stamp_of_the_one_side_that_moved_it(tmp_path: Path):
+    base = _write(tmp_path / "base", "# crapkit-analysis=2 lizard=1.17.10\n", "src/a.ts\tf( )\t50.0000\n")
+    ours = _write(tmp_path / "ours", "# crapkit-analysis=2 lizard=1.17.10\n", "src/a.ts\tf( )\t30.0000\n")
+    theirs = _write(tmp_path / "theirs", "# crapkit-analysis=3 lizard=1.24.0\n", "src/a.ts\tf( )\t50.0000\n")
+
+    res = run_cli(tmp_path, "ratchet", "merge", base, ours, theirs)
+    assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
+    assert Path(ours).read_text(encoding="utf-8") == (
+        "# crapkit-analysis=3 lizard=1.24.0\npath\tlong_name\tcrap\nsrc/a.ts\tf( )\t30.0000\n")
 
 
 def test_merge_of_matching_stamps_keeps_that_stamp_not_the_running_one(tmp_path: Path):
@@ -161,3 +176,95 @@ def test_merge_of_two_unstamped_sides_stays_unstamped(tmp_path: Path):
     assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
     assert Path(ours).read_text(encoding="utf-8").splitlines()[0] == "path\tlong_name\tcrap", \
         "stamping legacy marks with the running metric would assert a measurement nobody made"
+
+
+# --- a real `git merge` through the driver, installed as docs/ratchet.md says --------
+# Branch A (main, OURS) holds the file `ratchet seed --scope web` writes after a
+# typescript raise; branch B (feature, THEIRS) lowers marks as a verify tighten
+# does. Both files are written by hand: seed --scope and the per-scope writers
+# land later in this release.
+
+DOC = Path(__file__).resolve().parents[2] / "docs" / "ratchet.md"
+API = "analysis python=13; coverage coveragepy=1"
+WEB13 = "analysis typescript=13; coverage istanbul=1"
+WEB14 = "analysis typescript=14; coverage istanbul=1"
+WEB15 = "analysis typescript=15; coverage istanbul=1"
+ROWS = {"api/a.py\tf( )": "50.0000", "api/b.py\tg( )": "40.0000", "web/c.ts\th( )": "30.0000"}
+
+
+def _driver_lines() -> tuple[str, list[list[str]]]:
+    """The `.gitattributes` line and the `git config` commands of the page's
+    first two fences, with the driver run by this interpreter."""
+    section = DOC.read_text(encoding="utf-8").split("## The git merge driver\n", 1)[1]
+    attributes, config = re.findall(r"^```\n(.*?)^```", section, re.M | re.S)[:2]
+    here = f"{shlex.quote(Path(sys.executable).as_posix())} -m crapkit"
+    commands = [shlex.split(line.replace('"crapkit ratchet merge', f'"{here} ratchet merge'))
+                for line in config.splitlines()]
+    return attributes, commands
+
+
+def _marks_text(web: str, rows: dict) -> str:
+    head = ("# crapkit-stamp=2 lizard=1.24.0: crapkit-ratchet.tsv holds one stamp per scope, which "
+            "crapkit 0.9.0 or later reads")
+    lines = [head, "# crapkit-keys=1", f"#scope\tapi\t{API}", f"#scope\tweb\t{web}", "path\tlong_name\tcrap"]
+    return "\n".join([*lines, *(f"{key}\t{crap}" for key, crap in sorted(rows.items()))]) + "\n"
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=repo,
+                          env=child_env(), capture_output=True, text=True, encoding="utf-8")
+
+
+def _branches(tmp_path: Path, a: tuple[str, dict], b: tuple[str, dict]) -> Path:
+    """main at the base file, then A committed on main and B on feature."""
+    repo = git_init_repo(tmp_path)
+    attributes, commands = _driver_lines()
+    (repo / ".gitattributes").write_text(attributes, encoding="utf-8")
+    (repo / RATCHET).write_text(_marks_text(WEB13, ROWS), encoding="utf-8", newline="\n")
+    git_commit_all(repo, "base marks")
+    for command in commands:
+        assert subprocess.run(command, cwd=repo, capture_output=True).returncode == 0, command
+    for checkout, (web, rows) in ((["-b", "feature"], b), (["main"], a)):
+        _git(repo, "checkout", "-q", *checkout)
+        (repo / RATCHET).write_text(_marks_text(web, {**ROWS, **rows}), encoding="utf-8", newline="\n")
+        git_commit_all(repo, f"marks on {checkout[-1]}")
+    return repo
+
+
+def _merged(repo: Path) -> str:
+    return (repo / RATCHET).read_text(encoding="utf-8").replace("\r\n", "\n")
+
+
+def test_a_reseeded_scope_and_a_tighten_elsewhere_merge_through_git(tmp_path: Path):
+    lowered = {"api/a.py\tf( )": "30.0000", "api/b.py\tg( )": "35.0000"}
+    repo = _branches(tmp_path, (WEB14, {}), (WEB13, lowered))
+
+    done = _git(repo, "merge", "feature", "-m", "merge feature")
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert _merged(repo) == _marks_text(WEB14, {**ROWS, **lowered})
+    assert ("ratchet merge: scope web's stamp came from OURS and THEIRS changed 2 mark(s); "
+            "if verify names web, run ") in done.stderr, done.stderr
+
+
+def test_a_web_mark_both_branches_moved_merges_at_the_lower_value(tmp_path: Path):
+    repo = _branches(tmp_path, (WEB14, {"web/c.ts\th( )": "28.0000"}),
+                     (WEB13, {"api/a.py\tf( )": "30.0000", "web/c.ts\th( )": "25.0000"}))
+
+    done = _git(repo, "merge", "feature", "-m", "merge feature")
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert _merged(repo) == _marks_text(WEB14, {**ROWS, "api/a.py\tf( )": "30.0000", "web/c.ts\th( )": "25.0000"})
+    assert "scope web's stamp came from OURS and THEIRS changed 2 mark(s)" in done.stderr, done.stderr
+
+
+def test_two_branches_that_reseeded_web_differently_leave_a_conflict_naming_web(tmp_path: Path):
+    repo = _branches(tmp_path, (WEB14, {}), (WEB15, {}))
+
+    done = _git(repo, "merge", "feature", "-m", "merge feature")
+
+    said = done.stdout + done.stderr
+    assert done.returncode == 1, said
+    assert "CONFLICT (content): Merge conflict in crapkit-ratchet.tsv" in said, said
+    assert (f"ratchet merge refused: OURS and THEIRS moved a stamp differently - scope web: OURS records "
+            f"[lizard=1.24.0 {WEB14}] and THEIRS records [lizard=1.24.0 {WEB15}]") in said, said
