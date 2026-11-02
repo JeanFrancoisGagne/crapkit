@@ -249,6 +249,9 @@ class History(RuleBasedStateMachine):
         self.marks: dict | None = None
         self.stamp: str | None = None
         self.running: str | None = None
+        # The per-scope stamp a seed from this crapkit's run signs; `running` is
+        # the single number a write that creates the file stamps it with.
+        self.scoped: str | None = None
         self.overrides: set[int] = set()
         self.last_marks: dict = {}
         self.side = itertools.count()
@@ -301,6 +304,7 @@ class History(RuleBasedStateMachine):
         if self.running is None:
             versions = json.loads(self.sc.runs()[-1]["tool_versions"])
             self.running = f"crapkit-analysis={versions['analysis_version']} lizard={versions['lizard']}"
+            self.scoped = model.run_stamp(versions)
             self.history[-1].run = replace(self.history[-1].run, metric=self.running)
 
     def _baseline(self) -> Measured | None:
@@ -319,7 +323,13 @@ class History(RuleBasedStateMachine):
         return self.stamp if self.marks is not None else None
 
     def _stamp_refused(self) -> bool:
-        return self.marks is not None and model.stamp_refused(self.stamp, self.running)
+        return (self.marks is not None and model.stamp_refused(self.stamp, self.running)
+                and model.stamp_refused(self.stamp, self.scoped))
+
+    def _measured_stamp(self) -> str:
+        """The stamp a write of measured numbers leaves: a per-scope file keeps
+        its stamp lines, any other takes the running single number."""
+        return self.scoped if self.stamp == self.scoped else self.running
 
     def _lanes(self) -> tuple:
         return tuple(lane for lane in vw.LANES if lane not in self.sc.world.failing_lanes)
@@ -417,7 +427,7 @@ class History(RuleBasedStateMachine):
         after = model.tighten(before, scores(measured.world), vw.TARGET,
                               self._previous_same_commit(measured))
         if after != before:
-            self.marks, self.stamp = after, self.running
+            self.marks, self.stamp = after, self._measured_stamp()
 
     def _expected_now(self) -> Verdict | None:
         base = self._baseline()
@@ -439,7 +449,7 @@ class History(RuleBasedStateMachine):
     def _grant(self, measured: Measured, violations) -> None:
         fresh = scores(measured.world)
         self.marks = {**self._marks(), **{key: model.mark_value(fresh[key]) for key in violations}}
-        self.stamp = self.running
+        self.stamp = self._measured_stamp()
         self.overrides.add(measured.id)
 
     def _staged_violations(self, ccn: dict) -> set:
@@ -512,7 +522,7 @@ class History(RuleBasedStateMachine):
         if base is not None:
             self._read_upgraded_marks()
             self.marks, _, _ = model.seed(self._marks(), scores(base.world), vw.TARGET)
-            self.stamp = base.run.metric
+            self.stamp = self.scoped
 
     def prune(self):
         base = self._baseline()
@@ -528,8 +538,7 @@ class History(RuleBasedStateMachine):
         if self.marks is None:
             return self.seed()
         path = self.sc.root / "crapkit-ratchet.tsv"
-        lines = path.read_bytes().decode("utf-8").split("\n")
-        path.write_bytes("\n".join([f"# {OLD_METRIC}", *lines[1:]]).encode("utf-8"))
+        path.write_bytes(single_number(path.read_bytes().decode("utf-8"), OLD_METRIC).encode("utf-8"))
         self.stamp = OLD_METRIC
 
     # --- retention ---------------------------------------------------------------------------
@@ -907,6 +916,11 @@ def _failed_verify(scenario: vw.Scenario) -> None:
 
 
 def _metric(scenario: vw.Scenario, run: int = -1) -> str:
+    return model.run_stamp(json.loads(scenario.runs()[run]["tool_versions"]))
+
+
+def _single_metric(scenario: vw.Scenario, run: int = -1) -> str:
+    """The single-number stamp a run's analysis version and lizard spell."""
     versions = json.loads(scenario.runs()[run]["tool_versions"])
     return f"crapkit-analysis={versions['analysis_version']} lizard={versions['lizard']}"
 
@@ -1007,25 +1021,30 @@ def test_bouncing_measurement_holds_marks(make_repo):
 
 def _age_runs(scenario: vw.Scenario, analysis: int) -> str:
     """Relabel every stored run as measured under an older analysis version,
-    as the store an upgrade finds holds them: a 0.8.x run recorded no per-scope
-    stamp and no per-language or per-reader number. Returns that metric."""
+    each scope's stamp included, so seed signs those numbers. Returns that metric."""
     import sqlite3
     connection = sqlite3.connect(scenario.root / ".crapkit" / "crap.sqlite")
-    newer = ("analysis_versions", "reader_versions", "scope_stamps")
     with connection:
         for run_id, text in connection.execute("SELECT id, tool_versions FROM runs").fetchall():
-            kept = {key: value for key, value in json.loads(text).items() if key not in newer}
-            versions = {**kept, "analysis_version": analysis}
+            versions = {**json.loads(text), "analysis_version": analysis}
+            versions["scope_stamps"] = {name: {**stamp, "analysis": dict.fromkeys(stamp["analysis"], analysis)}
+                                        for name, stamp in versions["scope_stamps"].items()}
             connection.execute("UPDATE runs SET tool_versions = ? WHERE id = ?",
                                (json.dumps(versions), run_id))
     connection.close()
     return _metric(scenario)
 
 
+def single_number(text: str, stamp: str) -> str:
+    """A seeded marks file restamped by hand in the single-number form: its
+    per-scope first line and `#scope` lines give way to one `stamp` line."""
+    lines = [line for line in text.split("\n")[1:] if not line.startswith("#scope\t")]
+    return "\n".join([f"# {stamp}", *lines])
+
+
 def _stamp_marks(scenario: vw.Scenario, stamp: str) -> None:
     path = scenario.root / "crapkit-ratchet.tsv"
-    lines = path.read_bytes().decode("utf-8").split("\n")
-    path.write_bytes("\n".join([f"# {stamp}", *lines[1:]]).encode("utf-8"))
+    path.write_bytes(single_number(path.read_bytes().decode("utf-8"), stamp).encode("utf-8"))
 
 
 def _stamp(scenario: vw.Scenario) -> str | None:
@@ -1068,7 +1087,7 @@ def test_prune_creates_a_file_under_the_running_metric(make_repo):
     even when the run it read was measured under an older one; verify then
     has nothing to refuse."""
     scenario = _measured(make_repo)
-    running = _metric(scenario)
+    running = _single_metric(scenario)
     _age_runs(scenario, 7)
     assert scenario.marks_text() is None
     assert scenario.run("ratchet", "prune").code == 0

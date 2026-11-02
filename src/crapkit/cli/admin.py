@@ -1657,18 +1657,19 @@ def _doctor_marks_stamp(root: Path, cfg) -> list[Finding]:
     before the review. Marks a newer crapkit or lizard stamped FAIL, since
     only an upgrade of this install clears them, and so does a marks file
     crapkit cannot read, which stops verify too."""
-    from ..ratchet import metric_version, newer_tools
     from ..ratchetfile import RatchetFile
+    from .verifying import verify_stamp_conflict
 
     try:
         marks = RatchetFile.read(root / cfg.ratchet_file)
-    except ToolError as exc:
+        conflict = verify_stamp_conflict(marks, cfg)
+    except (ToolError, ConfigError) as exc:
         return [Finding("FAIL", str(exc))]
-    conflict = marks.stamp_conflict(metric_version())
-    if not conflict:
+    if not (conflict and conflict.refuses):
         return []
-    level = "FAIL" if newer_tools(marks.metric_stamp, metric_version()) else "WARN"
-    return [Finding(level, f"`{_self()} verify` refuses {cfg.ratchet_file} at exit 3: {conflict}")]
+    level = "FAIL" if conflict.newer else "WARN"
+    refusal = conflict.refusal(cfg.ratchet_file)
+    return [Finding(level, f"`{_self()} verify` refuses {cfg.ratchet_file} at exit 3: {refusal}")]
 
 
 def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],

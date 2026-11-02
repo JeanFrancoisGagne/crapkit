@@ -20,7 +20,8 @@ from cli_inproc_repo import git, seed_artifacts
 
 from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.cli import main
-from crapkit.ratchet import stamp_text
+from crapkit.config import load_config_text
+from crapkit.ratchet import running_stamp, stamp_text
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
@@ -43,14 +44,29 @@ def store_of(repo: Path) -> SnapshotStore:
     return SnapshotStore(repo / ".crapkit" / "crap.sqlite")
 
 
+def scope_stamps(repo: Path, analysis: int | None = None) -> dict:
+    """The `scope_stamps` a run on the repo's config records: this crapkit's, or
+    `analysis` for every language when an older crapkit measured the run."""
+    config = load_config_text((repo / "crapkit.toml").read_text(encoding="utf-8"), root=repo)
+    return {name: {"analysis": {language: analysis or number for language, number in stamp.analysis.items()},
+                   "coverage": stamp.coverage}
+            for name, stamp in running_stamp(config).scopes.items()}
+
+
+def run_versions(repo: Path, versions: dict | None = None) -> dict:
+    """MEASURED, or `versions`, with the scope stamps such a run records."""
+    analysis = None if versions is None else int(versions["analysis_version"])
+    return {**(versions or MEASURED), "scope_stamps": scope_stamps(repo, analysis)}
+
+
 def write_run(repo: Path, rows: list, *, kind: str = "coverage", ok: bool | None = None,
               versions: dict | None = None) -> int:
     """One stored run at HEAD; `ok` sets a verify's verdict, `versions` the metric it
-    was measured under (this crapkit's by default)."""
+    was measured under (this crapkit's by default), each scope stamped with it."""
     store = store_of(repo)
     with closing(store._conn):
         run_id = store.write_run(commit=git(repo, "rev-parse", "HEAD").strip(),
-                                 tool_versions=versions or MEASURED, rows=rows,
+                                 tool_versions=run_versions(repo, versions), rows=rows,
                                  lanes={"unit": {}, "ui": {}}, kind=kind)
         if ok is not None:
             store.set_verdict_ok(run_id, ok, findings=0 if ok else 1)

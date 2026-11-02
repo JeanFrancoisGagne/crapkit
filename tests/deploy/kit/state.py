@@ -586,8 +586,15 @@ def metric(analysis: int, lizard: str | None = None) -> str:
 
 
 def stamp_refusal(old: int, new: int, *, old_lizard: str | None = None, new_lizard: str | None = None) -> str:
-    """The part of verify's refusal that names both metric stamps."""
-    return f"[{metric(old, old_lizard)}] but this run measures [{metric(new, new_lizard)}]"
+    """The part of verify's refusal that names what moved. The candidate, the
+    newest crapkit a cell runs, names each marked scope's move: a language's
+    analysis number, else the lizard version. Only an older release reads
+    marks newer than itself, and it names both stamps whole."""
+    if old > new:
+        return f"[{metric(old, old_lizard)}] but this run measures [{metric(new, new_lizard)}]"
+    if old != new:
+        return f"analysis {old} to {new}"
+    return f"lizard {old_lizard or lizard_version()} to {new_lizard or lizard_version()}"
 
 
 def upgrade_to(box, repo: Path, candidate, line: str) -> None:
@@ -600,7 +607,7 @@ def upgrade_to(box, repo: Path, candidate, line: str) -> None:
 
 
 def refused_until_reseed(box, repo: Path, candidate) -> None:
-    """Not a guide step: a verify before the reseed names both stamps."""
+    """Not a guide step: a verify before the reseed names each marked scope's old and new number."""
     old, new = analysis_of(stamp_of(repo)), analysis_version(candidate)
     if old == new:
         return
@@ -612,7 +619,9 @@ def reseed_and_verify(box, repo: Path, candidate, reconcile=None, lizard: str | 
     """The guide's reseed fence, the review, a commit, then verify."""
     done = reseed(box, repo, reconcile)
     review(box, repo, done, export_path(repo))
-    assert stamp_of(repo) == f"# {metric(analysis_version(candidate), lizard)}", done.diff
+    # The candidate's seed writes one stamp per scope: the per-scope first line, then `#scope` lines.
+    assert stamp_of(repo).startswith(f"# crapkit-stamp=2 lizard={lizard or lizard_version()}: "), done.diff
+    assert "\n#scope\t" in (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8"), done.diff
     commit(box, repo, "reseed the marks under the candidate")
     verify(box, repo)
     return done

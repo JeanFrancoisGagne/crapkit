@@ -180,17 +180,20 @@ MERGED = [
     ("unstamped-and-unstamped", UNSTAMPED, UNSTAMPED, UNSTAMPED, UNSTAMPED, ()),
 ]
 
-# id, BASE, OURS, THEIRS, the scopes the refusal names (none for a whole-file refusal)
+# id, BASE, OURS, THEIRS, the scopes the refusal names (none for a whole-file refusal), and
+# those it seeds with `--scope`: none where the plain seed is the fix, as for a lizard split,
+# since one lizard version signs every scope and a scoped seed keeps the file's.
 REFUSED = [
     ("both-moved-api-apart", BASE, scoped(**{**SCOPES, "api": API14}), scoped(**{**SCOPES, "api": API15}),
-     ["api"]),
-    ("lizard-moved-apart", BASE, scoped("1.25.0", **SCOPES), scoped("1.26.0", **SCOPES), ["api", "old", "web"]),
+     ["api"], ["api"]),
+    ("lizard-moved-apart", BASE, scoped("1.25.0", **SCOPES), scoped("1.26.0", **SCOPES), ["api", "old", "web"],
+     []),
     ("lizard-moved-apart-and-theirs-removed-old", BASE, scoped("1.25.0", **SCOPES),
-     scoped("1.26.0", api=API13, web=WEB13), ["api", "old", "web"]),
+     scoped("1.26.0", api=API13, web=WEB13), ["api", "old", "web"], []),
     ("single-number-theirs-and-ours-moved-web-apart", single(12), scoped(api=API13, web=WEB14), single(13),
-     ["web"]),
-    ("single-number-apart", single(12), single(13), single(14), []),
-    ("unstamped-against-a-stamp", UNSTAMPED, UNSTAMPED, single(13), []),
+     ["web"], ["web"]),
+    ("single-number-apart", single(12), single(13), single(14), [], []),
+    ("unstamped-against-a-stamp", UNSTAMPED, UNSTAMPED, single(13), [], []),
 ]
 
 SWAP = {"OURS": "THEIRS", "THEIRS": "OURS"}
@@ -218,15 +221,16 @@ def test_swapping_ours_and_theirs_keeps_the_stamp_and_swaps_only_the_side_names(
     assert sorted(swapped.came_from) == sorted((scope, SWAP[side]) for scope, side in came_from)
 
 
-@pytest.mark.parametrize("base, ours, theirs, names", [row[1:] for row in REFUSED], ids=_ids(REFUSED))
-def test_a_scope_both_sides_moved_differently_refuses_in_either_order(base, ours, theirs, names):
+@pytest.mark.parametrize("base, ours, theirs, names, seeds", [row[1:] for row in REFUSED], ids=_ids(REFUSED))
+def test_a_scope_both_sides_moved_differently_refuses_in_either_order(base, ours, theirs, names, seeds):
     for o, t in ((ours, theirs), (theirs, ours)):
         with pytest.raises(ValueError) as refused:
             merge_stamps(stamp_of(base), stamp_of(o), stamp_of(t))
         said = str(refused.value)
         assert said.startswith("ratchet merge refused: ") and said.endswith("OURS was left unchanged"), said
         assert [name for name in SCOPES if f"scope {name}: " in said] == names, said
-        assert all(f"ratchet seed --scope {name}`" in said for name in names), said
+        assert [name for name in SCOPES if f"ratchet seed --scope {name}`" in said] == seeds, said
+        assert seeds or "ratchet seed`" in said, said
 
 
 def test_a_single_number_side_compares_on_its_number_and_lizard_only():
@@ -307,8 +311,8 @@ def test_no_note_when_the_other_side_changed_no_mark(tmp_path, capsys):
     assert capsys.readouterr().err == ""
 
 
-@pytest.mark.parametrize("base, ours, theirs, names", [row[1:] for row in REFUSED], ids=_ids(REFUSED))
-def test_a_refused_merge_exits_3_and_leaves_ours_as_it_was(tmp_path, capsys, base, ours, theirs, names):
+@pytest.mark.parametrize("base, ours, theirs", [row[1:4] for row in REFUSED], ids=_ids(REFUSED))
+def test_a_refused_merge_exits_3_and_leaves_ours_as_it_was(tmp_path, capsys, base, ours, theirs):
     files = write_sides(tmp_path, base, ours, theirs)
     before = (tmp_path / "ours.tsv").read_bytes()
 

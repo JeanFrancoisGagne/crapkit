@@ -5,33 +5,33 @@ sha256, so a docs edit that moves or rewrites one fails the kit contract until
 this model is read against the new text again. No crapkit import: the tests
 compare what crapkit prints with what these functions say it should print.
 
-doc: README.md:1383-1475 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aacfd8e862acadfae30
-doc: README.md:1477-1504 sha256=374689f0fb536f3116a2bc9b2820b3c7ef6eed0062f4dfdfc7453da57e00f9fa
-doc: README.md:1289-1289 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
+doc: README.md:1384-1476 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aacfd8e862acadfae30
+doc: README.md:1478-1505 sha256=374689f0fb536f3116a2bc9b2820b3c7ef6eed0062f4dfdfc7453da57e00f9fa
+doc: README.md:1290-1290 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
 doc: CONTEXT.md:34-41 sha256=f7baa578e3f82045a5588991a9c2a408ee7995faa7f12e682342b60295ef2987
 doc: CONTEXT.md:91-173 sha256=395c91466b52dc512219d14a40c3b5d7bddb59b5fbdd50c6093a94d2bfec8469
-doc: docs/ratchet.md:20-108 sha256=ea4a39929b56820608dc20b72a86865470153eea4c7b9da53845b9d95c5a596c
+doc: docs/ratchet.md:20-108 sha256=b50337b753f366cc9e423944f1f96f687ee1c235d4f63f6753844adf78a820b4
 doc: docs/ratchet.md:137-233 sha256=d5cf4828c9bde2e5ad519564b8b38b1c5bf1156e6dc15df24ca93f5d5b1bf104
 doc: docs/ratchet.md:276-280 sha256=0b862f815fe45a0f42c3d20e9280662fe954b8f170ada1654b49b04a0ec2e45a
-doc: docs/ratchet.md:284-347 sha256=e4ca95739a264be11a9e79d98b2d4b7f8792124bfc6fd2ec223f371b8ec08729
-doc: docs/ratchet.md:432-490 sha256=8d2696391b13c366a5391e68c5176445dad8a97c9b781b263ea622dd864d67f4
-doc: docs/ratchet.md:580-599 sha256=8962538fcb9660a65b4db6bbabf4066b59d1dca7806438a783db076fc1a7df9b
-doc: docs/ratchet.md:691-782 sha256=074d297059bb6c6e6c119f145582140aca9252b9f9119c9112b31d2131e2bcd8
-doc: docs/ratchet.md:967-1103 sha256=28a98789e1c287e6ae12af9136d2ccff9513a692533c37555852c93bb1c665c9
-doc: docs/ratchet.md:1105-1183 sha256=6320ef299e20d824d65626afe13746328b0bb5fefde690a6c327dbf9eedcac79
-doc: docs/ratchet.md:1272-1274 sha256=0b0353f91de49806c816e6fbb56a8ce38494cd5d093a357a4feb9420e0c9250e
+doc: docs/ratchet.md:284-393 sha256=afeb9a916e76008802f17be1b74c57220c4fd33fac1cb3ba8a8c21565ede78da
+doc: docs/ratchet.md:478-557 sha256=362bfb2c407e071ffa76be6db9d01d6280038731cb1e7a81af42a7e62bb08815
+doc: docs/ratchet.md:647-666 sha256=8962538fcb9660a65b4db6bbabf4066b59d1dca7806438a783db076fc1a7df9b
+doc: docs/ratchet.md:758-849 sha256=074d297059bb6c6e6c119f145582140aca9252b9f9119c9112b31d2131e2bcd8
+doc: docs/ratchet.md:1034-1170 sha256=28a98789e1c287e6ae12af9136d2ccff9513a692533c37555852c93bb1c665c9
+doc: docs/ratchet.md:1172-1250 sha256=6320ef299e20d824d65626afe13746328b0bb5fefde690a6c327dbf9eedcac79
+doc: docs/ratchet.md:1339-1341 sha256=0b0353f91de49806c816e6fbb56a8ce38494cd5d093a357a4feb9420e0c9250e
 doc: docs/agent-json.md:306-330 sha256=46e36bc36e895f6379112955a0182505cc361f45c214960ea48d2ee35003f40e
 doc: docs/agent-json.md:991-1004 sha256=bb81843c03ec9a8c4437527fd0fa5f6ed6230797e856bf9b6a792b8442907a7d
 doc: docs/agent-json.md:929-989 sha256=f413627ee32a4ebc15b9502445bb4a02a280622bd106ee28fc6571cf80b33680
 doc: docs/configuration.md:220-220 sha256=e6dc43339c7ab96208524957553d2995e11fc3bd1349d4f7d3b7aa6647f33d5f
 doc: docs/lanes.md:1622-1660 sha256=c3d344ab7101f3cc4a9e8bb17b1380fc491582dbc0237aa859faa2e29822694c
 doc: docs/lanes.md:1796-1809 sha256=c80c08b87c893b48a67c8dc8b92f1d37f947e41bee1efafb8670fe670064689c
-doc: docs/ratchet.md:1292-1296 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
+doc: docs/ratchet.md:1359-1363 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
 doc: docs/agent-json.md:593-613 sha256=64d6cb9b71322533826e0516f0eb3a3646b001c9636575730dc41313cfd76acf
 doc: docs/lanes.md:1297-1454 sha256=7d28889683d759dc2dc72783fd1428ceb32951db241a9b8735352e65a8fa1c9e
 doc: docs/lanes.md:1456-1517 sha256=9562d770e19872b412caf2ed5a4dbf8760c219d517f71ae90efa2d54b7f5c8a0
 doc: docs/lanes.md:2054-2155 sha256=6b2e585c08bcc87c7abc8d6bd58a0038fa702579d1bac4837b7de1698f70b532
-doc: README.md:1325-1332 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
+doc: README.md:1326-1333 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
 doc: docs/portable-records.md:9-24 sha256=e4e06a93b5a1fd4569a93b1673493be0fcdd6e7eb3b04c0d0bc507b5dd3867c9
 """
 from __future__ import annotations
@@ -252,8 +252,36 @@ def _comment(line: str, found: dict) -> None:
     text = line.removeprefix("#").strip()
     if text.startswith("crapkit-analysis="):
         found["stamp"] = text
+    elif text.startswith("crapkit-stamp=2 lizard="):
+        found["lizard"] = text.removeprefix("crapkit-stamp=2 lizard=").split(":")[0]
     elif text.startswith("crapkit-keys="):
         found["keys"] = text.removeprefix("crapkit-keys=")
+
+
+def scoped_stamp(lizard: str, scopes: dict) -> str:
+    """The per-scope form as one value: the lizard version and each scope's
+    `#scope` text, sorted by scope name (docs/ratchet.md, What a mark is)."""
+    return f"crapkit-stamp=2 lizard={lizard} " + "; ".join(f"{name}: {scopes[name]}" for name in sorted(scopes))
+
+
+def run_stamp(versions: dict) -> str:
+    """The stamp a run's tool versions spell: per scope when it recorded scope
+    stamps, each as its `#scope` line spells it, else the single number."""
+    if "scope_stamps" not in versions:
+        return f"crapkit-analysis={versions['analysis_version']} lizard={versions['lizard']}"
+    return scoped_stamp(versions["lizard"], {name: _scope_text(stamp)
+                                             for name, stamp in versions["scope_stamps"].items()})
+
+
+def _pairs(numbers: dict) -> str:
+    return "".join(f" {name}={number}" for name, number in sorted(numbers.items()))
+
+
+def _scope_text(stamp: dict) -> str:
+    """`analysis python=13; coverage coveragepy=1`: languages and parsers sorted."""
+    coverage = stamp["coverage"]
+    mode = coverage if isinstance(coverage, str) else _pairs(coverage)[1:]
+    return f"analysis{_pairs(stamp['analysis'])}; coverage {mode}"
 
 
 def parse_marks(text: str) -> MarksFile:
@@ -261,18 +289,29 @@ def parse_marks(text: str) -> MarksFile:
     Physical rows split at LF with one trailing CR removed. `text` is the file
     decoded by docs/ratchet.md's rule: UTF-16 behind a UTF-16 byte-order mark,
     else UTF-8 with a UTF-8 BOM dropped, U+FFFD for a byte neither fits."""
-    found: dict = {"marks": {}}
+    found: dict = {"marks": {}, "scopes": {}}
     for line in (raw.removesuffix("\r") for raw in text.split("\n")):
         _read_line(line, found)
-    return MarksFile(found.get("stamp"), found.get("keys"), found["marks"])
+    stamp = scoped_stamp(found["lizard"], found["scopes"]) if "lizard" in found else found.get("stamp")
+    return MarksFile(stamp, found.get("keys"), found["marks"])
 
 
 def _read_line(line: str, found: dict) -> None:
     fields = _fields(line) if line else ()
     if fields is None:
         _comment(line, found)
+    elif fields[:1] == ["#scope"] and not _number(fields[2]):
+        found["scopes"][fields[1]] = fields[2]
     elif fields and tuple(fields) != HEADER:
         found["marks"][(fields[0], fields[1])] = Decimal(fields[2])
+
+
+def _number(text: str) -> bool:
+    """A `#scope` row whose third field is a number is a mark whose path is `#scope`."""
+    try:
+        return Decimal(text).is_finite()
+    except ArithmeticError:
+        return False
 
 
 # The characters a writer encodes (docs/portable-records.md:68-70).

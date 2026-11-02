@@ -178,8 +178,9 @@ def console_script(monkeypatch):
 
 
 def test_the_newer_marks_example_quotes_a_stamp_pair_a_release_prints(console_script):
+    """The example is a 0.8.1 reader: two single-number stamps, compared as one value."""
     printed = stamp_conflict(f"crapkit-analysis={ANALYSIS_VERSION + 1} lizard=1.24.0",
-                             f"crapkit-analysis={ANALYSIS_VERSION} lizard=1.24.0")
+                             f"crapkit-analysis={ANALYSIS_VERSION} lizard=1.24.0").refusal("crapkit-ratchet.tsv")
 
     assert f"crapkit: {printed}" in _doc("docs/ratchet.md")
     assert "[crapkit-analysis=12 " not in _doc("docs/ratchet.md")

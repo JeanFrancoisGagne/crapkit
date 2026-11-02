@@ -25,7 +25,8 @@ def next_patch(version: str) -> str:
 
 
 @cell("lin-up-lizard-only", channel="pip", harness="none",
-      scenario="lizard fake wheel one patch up: verify refusal names both stamps; guide recovery",
+      scenario="lizard fake wheel one patch up: verify refusal names the lizard move in each marked scope; "
+               "guide recovery",
       use_cases="verify", os="linux", image="core", cadence="nightly")
 def test_lin_up_lizard_only(box, templates, candidate):
     lizard, fake = state.lizard_version(), next_patch(state.lizard_version())

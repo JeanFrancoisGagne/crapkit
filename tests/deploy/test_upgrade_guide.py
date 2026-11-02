@@ -119,14 +119,19 @@ def test_win_up_pip_0_7_6(box, templates, candidate):
 
 # --- from N-1 ------------------------------------------------------------------------
 
+INFERRED_MODE = "records one analysis number and no coverage mode, so verify read scope(s)"
+
 def same_analysis_upgrade(box, repo, candidate, source) -> None:
     """N-1 measured under the candidate's analysis version: one coverage, then
-    verify, and the marks file stays as N-1 wrote it."""
+    verify, which warns as the guide quotes that it inferred each marked
+    scope's coverage mode from N-1's one number, and the marks file stays as
+    N-1 wrote it."""
     marks = (repo / "crapkit-ratchet.tsv").read_bytes()
     state.upgrade_to(box, repo, candidate, state.upgrade_line(PIP_EXTRA))
     box.run(["crapkit", "coverage"], cwd=repo, expect=0, note="not a guide step: one coverage, no reseed")
-    state.verify(box, repo)
+    step = state.verify(box, repo)
 
+    assert state.guide_says(INFERRED_MODE) in step.stderr, box.transcript.text()
     assert (repo / "crapkit-ratchet.tsv").read_bytes() == marks, "a same-analysis upgrade rewrote the marks"
     state.after_upgrade(box, repo, source, candidate)
 
@@ -262,11 +267,10 @@ def churn_adopted(box, repo) -> None:
 
 
 def guide_refusal(candidate) -> str:
-    """docs/upgrading.md 'Analysis version 8': the quoted refusal, with only its
-    second stamp number moved to the candidate's analysis version."""
+    """docs/upgrading.md 'Analysis version 8': the quoted refusal, with each
+    scope's new number moved to the candidate's analysis version."""
     [(_command, printed)] = docsnip.outputs(docsnip.fence("docs/upgrading.md", "Analysis version 8"))
-    second = list(re.finditer(r"crapkit-analysis=(\d+)", printed))[1]
-    return printed[:second.start(1)] + str(state.analysis_version(candidate)) + printed[second.end(1):]
+    return re.sub(r"(analysis \d+ to )\d+", rf"\g<1>{state.analysis_version(candidate)}", printed)
 
 
 @cell("lin-up-pip-0.4.0", channel="pip venv", harness="none",

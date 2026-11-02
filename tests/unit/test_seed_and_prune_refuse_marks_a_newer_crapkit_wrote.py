@@ -13,7 +13,8 @@ import lizard
 
 from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.cli import main
-from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version, read_stamp, stamp_text
+from crapkit.config import load_config_text
+from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version, read_stamp, running_stamp, stamp_text
 
 MARKS = "crapkit-ratchet.tsv"
 
@@ -46,13 +47,18 @@ def test_marks_a_newer_crapkit_wrote_are_refused_and_left_as_they_are(repo, caps
     assert (repo / MARKS).read_text(encoding="utf-8") == text
 
 
+def running(repo):
+    """The stamp a seed from a run this crapkit measured on the repo signs."""
+    return running_stamp(load_config_text((repo / "crapkit.toml").read_text(encoding="utf-8"), root=repo))
+
+
 def test_marks_an_older_crapkit_wrote_still_reseed(repo, capsys):
     measured_with_marks(repo, capsys, ANALYSIS_VERSION - 1)
 
     code, _, err = run(repo, capsys, "ratchet", "seed")
 
     assert code == 0, err
-    assert read_stamp((repo / MARKS).read_text(encoding="utf-8")) == metric_version()
+    assert read_stamp((repo / MARKS).read_text(encoding="utf-8")) == running(repo)
 
 
 def test_a_plain_seed_pinned_to_an_older_run_refuses_and_names_the_newer_one(repo, capsys):

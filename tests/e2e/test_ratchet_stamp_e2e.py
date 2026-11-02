@@ -14,6 +14,7 @@ import sys
 import pytest
 
 from conftest import child_env, cli_runner, git_commit_all, git_init_repo
+from unit.stamps import restamp
 
 TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -76,8 +77,10 @@ def test_seed_stamps_the_marks_file_with_the_running_metric(repo: Path):
     assert seeded.returncode == 0, seeded.stdout + seeded.stderr
 
     stamp = first_line(repo)
-    assert stamp.startswith("# crapkit-analysis=") and " lizard=" in stamp, stamp
-    assert "tangled" in (repo / RATCHET).read_text(encoding="utf-8")
+    assert stamp.startswith("# crapkit-stamp=2 lizard=") and RATCHET in stamp, stamp
+    text = (repo / RATCHET).read_text(encoding="utf-8")
+    assert "\n#scope\tsrc\tanalysis typescript=" in text and "; coverage istanbul=" in text, text
+    assert "tangled" in text
 
 
 def test_a_stamped_ratchet_still_verifies_clean(repo: Path):
@@ -90,14 +93,72 @@ def test_a_stamped_ratchet_still_verifies_clean(repo: Path):
 def test_verify_refuses_marks_recorded_under_another_metric(repo: Path):
     assert run_cli(repo, "coverage", "--json").returncode == 0
     assert run_cli(repo, "ratchet", "seed").returncode == 0
-    body = (repo / RATCHET).read_text(encoding="utf-8").split("\n", 1)[1]
-    (repo / RATCHET).write_text("# crapkit-analysis=1 lizard=0.0.1\n" + body, encoding="utf-8")
+    text = (repo / RATCHET).read_text(encoding="utf-8")
+    text = re.sub(r"lizard=[^:]+:", "lizard=0.0.1:", text, count=1)
+    (repo / RATCHET).write_text(re.sub(r"analysis typescript=[0-9]+", "analysis typescript=1", text),
+                                encoding="utf-8", newline="\n")
 
     res = run_cli(repo, "verify", "--json")
     assert res.returncode == 3, (res.returncode, res.stdout, res.stderr)
-    assert "crapkit-analysis=1 lizard=0.0.1" in res.stderr, "the stale metric must be named"
-    assert "crapkit-analysis=" in res.stderr.split("but this run measures", 1)[1]
-    assert "ratchet seed" in res.stderr, "the message must carry the fix"
+    assert "src (typescript analysis 1 to " in res.stderr, "the stale number must be named per scope"
+    assert "; lizard 0.0.1 to " in res.stderr, res.stderr
+    # One lizard version signs every scope and `seed --scope` keeps the file's: the plain seed fixes it.
+    assert "ratchet seed`" in res.stderr and "--scope" not in res.stderr, res.stderr
+
+
+def tangled_at(text: str, mark: str) -> str:
+    return re.sub(r"(src/tangled\.ts\t[^\t]+\t)[0-9.]+", rf"\g<1>{mark}", text)
+
+
+def test_a_scoped_seed_after_an_analysis_move_keeps_a_mark_the_run_scores_higher(repo: Path):
+    """An analysis move lets no mark rise. The scoped seed restamps src and
+    leaves tangled's mark below its score, so verify fails tangled with exit 7."""
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    assert run_cli(repo, "ratchet", "seed").returncode == 0
+    text = (repo / RATCHET).read_text(encoding="utf-8")
+    moved = re.sub(r"(analysis typescript=)([0-9]+)", lambda m: f"{m[1]}{int(m[2]) - 1}", text)
+    (repo / RATCHET).write_text(tangled_at(moved, "50.0000"), encoding="utf-8", newline="\n")
+    assert run_cli(repo, "verify", "--json").returncode == 3
+
+    seeded = run_cli(repo, "ratchet", "seed", "--scope", "src")
+
+    assert seeded.returncode == 0, seeded.stdout + seeded.stderr
+    assert seeded.stdout.startswith(f"{RATCHET}: scope src: added 0, tightened 0 - "), seeded.stdout
+    assert (repo / RATCHET).read_text(encoding="utf-8") == tangled_at(text, "50.0000")
+    res = run_cli(repo, "verify", "--json")
+    assert res.returncode == 7, (res.returncode, res.stdout, res.stderr)
+    assert "tangled" in res.stdout, res.stdout
+
+
+ALERT = 'alert_command = "python -c \\"import sys; sys.stdin.read()\\""\n'
+
+
+def test_the_rise_an_analysis_move_left_is_recorded_by_hand_as_verify_names(repo: Path):
+    """The override path for a rise the scoped seed held back: `verify
+    --override` grants no ratchet regression and names the escape, raising
+    the mark by hand to the value verify prints; after that verify passes and
+    the marks file records the rise."""
+    (repo / "crapkit.toml").write_text(TOML.replace("[crapkit]\n", "[crapkit]\n" + ALERT), encoding="utf-8")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    assert run_cli(repo, "ratchet", "seed").returncode == 0
+    text = (repo / RATCHET).read_text(encoding="utf-8")
+    moved = re.sub(r"(analysis typescript=)([0-9]+)", lambda m: f"{m[1]}{int(m[2]) - 1}", text)
+    (repo / RATCHET).write_text(tangled_at(moved, "50.0000"), encoding="utf-8", newline="\n")
+    assert run_cli(repo, "ratchet", "seed", "--scope", "src").returncode == 0
+
+    refused = run_cli(repo, "verify", "--override", "the analysis move scores tangled higher")
+
+    assert refused.returncode == 7, (refused.returncode, refused.stdout, refused.stderr)
+    found = re.search(r"override refused: 1 ratchet regression \(src/tangled\.ts tangled \( a , b \) "
+                      r"50\.0 -> ([0-9.]+)\) never qualifies for an override; raise the mark by hand and commit it",
+                      refused.stderr)
+    assert found, refused.stderr
+    assert (repo / RATCHET).read_text(encoding="utf-8") == tangled_at(text, "50.0000"), "a refused override writes"
+    raised = f"{float(found[1]):.4f}"
+    (repo / RATCHET).write_text(tangled_at(text, raised), encoding="utf-8", newline="\n")
+    res = run_cli(repo, "verify", "--json")
+    assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
+    assert f"src/tangled.ts\ttangled ( a , b )\t{raised}\n" in (repo / RATCHET).read_text(encoding="utf-8")
 
 
 def test_verify_warns_once_and_proceeds_on_a_ratchet_written_before_stamping(repo: Path):
@@ -108,6 +169,93 @@ def test_verify_warns_once_and_proceeds_on_a_ratchet_written_before_stamping(rep
     res = run_cli(repo, "verify", "--json")
     assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
     assert res.stderr.count("no metric stamp") == 1, res.stderr
+
+
+def test_a_scope_renamed_in_the_config_reads_as_unstamped_and_names_the_new_name(repo: Path):
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    assert run_cli(repo, "ratchet", "seed").returncode == 0
+    restamp(repo)
+    (repo / "crapkit.toml").write_text(TOML.replace('name = "src"', 'name = "app"')
+                                       .replace('scopes = ["src"]', 'scopes = ["app"]'), encoding="utf-8")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+
+    res = run_cli(repo, "verify")
+    assert res.returncode == 3, (res.returncode, res.stdout, res.stderr)
+    assert "1 scope(s): app (no stamp recorded for this scope)" in res.stderr, res.stderr
+    assert "ratchet seed --scope app`" in res.stderr and "src" not in res.stderr.split(" - ", 1)[0]
+
+
+def test_a_lane_added_to_a_cc_only_scope_reads_as_the_coverage_move(repo: Path):
+    optional = TOML.split("[[lane]]")[0].replace('languages = ["typescript"]\n',
+                                                 'languages = ["typescript"]\ncoverage_optional = true\n')
+    (repo / "crapkit.toml").write_text(optional, encoding="utf-8")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    assert run_cli(repo, "ratchet", "seed").returncode == 0
+    restamp(repo)
+    (repo / "crapkit.toml").write_text(TOML, encoding="utf-8")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+
+    res = run_cli(repo, "verify")
+    assert res.returncode == 3, (res.returncode, res.stdout, res.stderr)
+    assert "src (coverage cc-only to istanbul=1)" in res.stderr, res.stderr
+
+
+# A second scope the lane never measures, holding a copy of tangled.
+LIB_SCOPE = '[[scope]]\nname = "lib"\npaths = ["lib"]\nlanguages = ["typescript"]\ncoverage_optional = true\n\n'
+EXPORT = ".crapkit/export.tsv"
+
+
+def export_rows(repo: Path) -> dict[tuple[str, str], dict[str, str]]:
+    """`coverage --export`'s rows by (path, long_name)."""
+    header, *rows = [line.split("\t") for line in (repo / EXPORT).read_text(encoding="utf-8").splitlines()]
+    return {(row["path"], row["long_name"]): row for row in (dict(zip(header, line)) for line in rows)}
+
+
+def marks_under(text: str, prefix: str) -> dict[tuple[str, str], str]:
+    """The marks whose path opens with `prefix`, as written: (path, key name) -> mark."""
+    return {(path, name): mark for path, name, mark in
+            (line.split("\t") for line in text.splitlines() if line.startswith(prefix))}
+
+
+def lines_of_scope(text: str, scope: str) -> list[str]:
+    """The scope's `#scope` line and its marks, byte for byte."""
+    return [line for line in text.splitlines(keepends=True)
+            if line.startswith((f"#scope\t{scope}\t", f"{scope}/"))]
+
+
+def test_a_flip_seed_raises_each_mark_to_the_exported_crap_and_leaves_the_other_scope(repo: Path):
+    """Accuracy checks for a scoped seed on the cc-only to istanbul flip: each
+    raised mark equals the export's CRAP at 4 places (1) and ccn^2 x (1 - cov)^3
+    + ccn from the export's own ccn and cov columns (2); every line of the other
+    scope keeps its bytes (3); and verify passes."""
+    (repo / "lib").mkdir()
+    (repo / "lib" / "knot.ts").write_text(TANGLED.replace("tangled", "knot"), encoding="utf-8")
+    git_commit_all(repo, "lib: a copy of tangled in a cc-only scope")
+    optional = TOML.split("[[lane]]")[0].replace('languages = ["typescript"]\n',
+                                                 'languages = ["typescript"]\ncoverage_optional = true\n')
+    (repo / "crapkit.toml").write_text(optional + LIB_SCOPE, encoding="utf-8")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    assert run_cli(repo, "ratchet", "seed").returncode == 0
+    before = (repo / RATCHET).read_text(encoding="utf-8")
+    (repo / "crapkit.toml").write_text(TOML + "\n" + LIB_SCOPE, encoding="utf-8")
+    assert run_cli(repo, "coverage", "--export", EXPORT).returncode == 0
+
+    seeded = run_cli(repo, "ratchet", "seed", "--scope", "src")
+
+    assert seeded.returncode == 0, seeded.stdout + seeded.stderr
+    after = (repo / RATCHET).read_text(encoding="utf-8")
+    exported = export_rows(repo)
+    raised = marks_under(after, "src/")
+    assert raised != marks_under(before, "src/") and "raised 1 (first src/tangled.ts" in seeded.stdout, \
+        seeded.stdout
+    for key, mark in raised.items():
+        row = exported[key]
+        ccn, cov = int(row["ccn"]), float(row["cov"])
+        assert mark == f"{float(row['crap']):.4f}", (key, mark, row)
+        assert mark == f"{ccn ** 2 * (1 - cov) ** 3 + ccn:.4f}", (key, mark, row)
+    assert lines_of_scope(after, "lib") == lines_of_scope(before, "lib") != []
+    res = run_cli(repo, "verify", "--json")
+    assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
 
 
 def _write(path: Path, stamp: str, rows: str) -> str:
