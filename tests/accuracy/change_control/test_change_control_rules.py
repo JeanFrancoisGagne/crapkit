@@ -187,7 +187,38 @@ def _golden_gone_from_the_lock(tree):
     return seeds.relock(head, "C2")
 
 
+TABLES = 'ANALYSIS_VERSIONS = {\n    "go": 11,\n    "python": 11,\n}\n'
+READERS = 'READER_VERSIONS = {"istanbul": 1, "coveragepy": 1}\n'
+SMALL_TOML = '[[lane]]\nname = "py"\nparser = "coveragepy"\nscopes = ["py"]\n'
+SUFFIXES = 'LANGUAGE_EXTENSIONS = {"python": (".py",), "go": (".go",)}\n'
+
+
+def _numbered(tree: dict[str, str], languages: str = TABLES, readers: str = READERS,
+              body: str = "") -> dict[str, str]:
+    """The tree with analyze.py's two number tables and coverage_format.py's
+    readers, `body` appended to analyze.py."""
+    return {**tree, seeds.ANALYZE: tree[seeds.ANALYZE] + languages + body,
+            cc.COVERAGE_FORMAT: readers + "def lane_format(lane):\n    return lane\n"}
+
+
+def _per_number(tree: dict[str, str], python: int = 11, go: int = 11,
+                coveragepy: int = 1) -> dict[str, str]:
+    """The tree under the per-number tables, its small corpus measured by one
+    coveragepy lane over scope py."""
+    tables = f'ANALYSIS_VERSIONS = {{\n    "go": {go},\n    "python": {python},\n}}\n'
+    readers = f'READER_VERSIONS = {{"istanbul": 1, "coveragepy": {coveragepy}}}\n'
+    return {**_numbered(tree, tables, readers), cc.LANGUAGE_MAP: SUFFIXES,
+            f"{cc.SMALL_CORPUS}/crapkit.toml": SMALL_TOML}
+
+
+def _go_raised_for_a_python_fix(tree):
+    """A declared Python ccn fix that raises the go number in place of python's."""
+    return seeds.replace(seeds.fixed_ccn(tree), seeds.ANALYZE, '"go": 11', '"go": 12')
+
+
 FAILING = {
+    "a python ccn fix that raises the go number": (_per_number(BASE_CCN8),
+                                                   _go_raised_for_a_python_fix, {"B12"}),
     "an edited metric-digests row": (BASE, _edited_metric_row, {"B1"}),
     "a golden relocked under an old change": (BASE, _golden_relocked_under_an_old_change,
                                               {"B5", "B10"}),
@@ -217,6 +248,9 @@ FAILING = {
         BASE, lambda tree: seeds.reader_changed(seeds.fixed_crap(tree)), {"B6"}),
 }
 CLEAN = {
+    "a python ccn fix that raises the python number": (
+        _per_number(BASE_CCN8), lambda tree: seeds.replace(
+            seeds.fixed_ccn(tree), seeds.ANALYZE, '"python": 11', '"python": 12')),
     "a declared fix": (BASE, seeds.fixed_crap),
     "a declared ccn fix": (BASE_CCN8, seeds.fixed_ccn),
     "a declared definition": (BASE, _declared_definition),
@@ -473,7 +507,9 @@ def test_each_further_break_fails_its_rule_in_memory(name):
 
 DECLARE = "python tools/accuracy/change_control.py declare"
 ANY_DECLARE = f'{DECLARE} <id> --kind <kind> --calcs "<calc>" --reason "<why>"'
-T5_FIX = (f"declare the move with `{ANY_DECLARE}` after bumping ANALYSIS_VERSION in "
+T5_FIX = (f"declare the move with `{ANY_DECLARE}` after raising the number of each language "
+          "(ANALYSIS_VERSIONS in src/crapkit/analyze.py) or coverage reader (READER_VERSIONS in "
+          "src/crapkit/coverage_format.py) it moves and ANALYSIS_VERSION in "
           "src/crapkit/analyze.py; never edit an old row")
 NAME_ONE = ("name one of them in the change's calcs, or declare the edit as a change that "
             "moves nothing: ")
@@ -650,6 +686,12 @@ def _facts(name: str, head: dict) -> list[tuple]:
              f'{DECLARE} C3 --kind fix --calcs "CRAP score" --reason "<why>"')],
         "a metric-digests row written twice": _t5(
             head, f"row 11/1.24.0/{seeds.corpus_digest(head)}/{digest} appears 2 times"),
+        "a python ccn fix that raises the go number": [(
+            "B12", f'{golden}: 3 cell(s) moved (ccn, ccn_mod, ccn_std, first src/a.py) and '
+                   'ANALYSIS_VERSIONS["python"] in src/crapkit/analyze.py did not rise: raise '
+                   f'it, then {DECLARE} C4 --kind fix --calcs "<calc>" --reason "<why>"',
+            "raise each number it names by one in this change")
+            for golden in (seeds.INVENTORY, seeds.SCORED)],
     }[name]
 
 
@@ -1058,6 +1100,21 @@ def test_a_version_only_analyze_edit_touches_no_calc():
         seeds.ANALYZE: ["Cognitive complexity", seeds.CCN]}
 
 
+def test_an_edit_of_only_the_revision_and_number_tables_touches_no_calc():
+    calced = seeds.append(BASE, seeds.CALCS, "Coverage reader", f"{seeds.SEED_TEST}::test_crap",
+                          cc.COVERAGE_FORMAT, f"{cc.COVERAGE_FORMAT}:lane_format")
+    base = _numbered(calced)
+    head = _numbered(seeds.bump(calced, "12"), TABLES.replace('"python": 11', '"python": 12'),
+                     READERS.replace('"coveragepy": 1', '"coveragepy": 2'))
+    rows = cc.calcs_of(_tree(base))
+    changed = {seeds.ANALYZE, cc.COVERAGE_FORMAT}
+
+    assert cc.touched_calcs(rows, changed, _tree(base), _tree(head)) == {}
+    fingerprint = _numbered(seeds.bump(calced, "12"), body="def fingerprint():\n    return 'x'\n")
+    assert list(cc.touched_calcs(rows, changed, _tree(base), _tree(fingerprint))) == [
+        seeds.ANALYZE]
+
+
 # --- pieces the verdict rests on -----------------------------------------------------------------
 
 
@@ -1202,9 +1259,9 @@ def test_declare_asks_for_the_analysis_bump_a_moved_digest_needs(make_repo):
     moved_to = seeds.corpus_digest(head)  # the corpus is unchanged; the metrics moved
     assert moved_to == seeds.corpus_digest(BASE_CCN8)
     assert (f"the metric digest moved from {_last_digest(BASE_CCN8)} to "
-            f"{cc.metric_digest(_tree(head))} under analysis 11, lizard 1.24.0: bump "
-            "ANALYSIS_VERSION in src/crapkit/analyze.py to 12 (A1), then rerun this "
-            "declare") in str(refused.value)
+            f"{cc.metric_digest(_tree(head))} under analysis 11, lizard 1.24.0: raise "
+            "ANALYSIS_VERSION in src/crapkit/analyze.py by one (ANALYSIS_VERSION to 12), then "
+            "rerun this declare") in str(refused.value)
 
 
 @pytest.mark.nightly
@@ -1367,7 +1424,7 @@ def test_a_digest_row_under_the_base_s_version_breaks_b1_unless_rows_only_appear
     assert [(problem.text, problem.fix) for problem in problems if problem.rule == "B1"] == [(
         f"{seeds.DIGESTS} adds a row under analysis 11, lizard 1.24.0, which the base holds, "
         "while scored rows that were there moved",
-        "bump ANALYSIS_VERSION in src/crapkit/analyze.py, then declare the move again")]
+        "raise ANALYSIS_VERSION in src/crapkit/analyze.py, then declare the move again")]
     assert not {"B1", "T5"} & pure_rules(base, appeared)
 
 
@@ -1747,3 +1804,68 @@ F1 = cc.Cell(seeds.SCORED, "src/a.py", "f1", "crap", "1.5", "1.0")
 ])
 def test_a_misquoted_oracle_names_what_was_recorded_and_what_answers_now(row, judged, text):
     assert cc._misrecorded("C3", row, judged) == cc.Problem("B11", text, "rerun the declare of C3")
+
+
+# --- B12: the analysis-bump rule, per number -----------------------------------------------------
+
+def _b12(base: dict[str, str], head: dict[str, str]) -> list[str]:
+    before, after = _tree(base), _tree(head)
+    diff = cc.Diff(before, after, cc.changed_paths(before, after))
+    return [problem.text for problem in cc.rule_b12(diff)]
+
+
+PY_MOVED = {**BASE, seeds.SCORED: seeds.scored(seeds.scored_rows(parse_ccn=8))}
+COV_MOVED = {**BASE, seeds.SCORED: seeds.scored(seeds.scored_rows(f_cov="0.5"))}
+
+
+def test_b12_replays_the_analysis_11_python_change_and_asks_for_the_python_number():
+    """Method 3: a Python ccn move passes with the python number raised, and a
+    rise of the go number alone, or of the revision alone, fails naming python."""
+    base = _per_number(BASE)
+
+    assert _b12(base, _per_number(seeds.bump(PY_MOVED, "12"), python=12)) == []
+    for head in (_per_number(seeds.bump(PY_MOVED, "12"), go=12),
+                 _per_number(seeds.bump(PY_MOVED, "12"))):
+        [text] = _b12(base, head)
+        assert text.startswith(f"{seeds.SCORED}: 3 cell(s) moved (ccn, ccn_mod, ccn_std, first "
+                               "src/a.py) and ANALYSIS_VERSIONS[\"python\"] in "
+                               "src/crapkit/analyze.py did not rise")
+        assert text.endswith(f'{cc.TOOL} declare C3 --kind fix --calcs "<calc>" --reason '
+                             '"<why>"')
+
+
+def test_b12_replays_the_n22_coveragepy_change_and_accepts_the_reader_rise():
+    """Method 2: a cov move of the coveragepy lane's scope asks for the coveragepy
+    number and accepts its rise; a python rise in its place fails."""
+    base = _per_number(BASE)
+
+    assert _b12(base, _per_number(seeds.bump(COV_MOVED, "12"), coveragepy=2)) == []
+    [text] = _b12(base, _per_number(seeds.bump(COV_MOVED, "12"), python=12))
+    assert 'READER_VERSIONS["coveragepy"] in src/crapkit/coverage_format.py' in text
+
+
+def test_b12_asks_for_the_revision_with_the_right_number():
+    [text] = _b12(_per_number(BASE), _per_number(PY_MOVED, python=12))
+
+    assert "ANALYSIS_VERSION in src/crapkit/analyze.py did not rise" in text
+
+
+def test_b12_leaves_an_edited_corpus_and_a_single_number_base_to_the_revision():
+    edited = {**PY_MOVED, seeds.SOURCE: seeds.SMALL + "\n"}
+
+    era = {**BASE, cc.LANGUAGE_MAP: SUFFIXES, f"{cc.SMALL_CORPUS}/crapkit.toml": SMALL_TOML}
+
+    assert _b12(_per_number(BASE), _per_number(edited)) == []
+    assert _b12(era, _per_number(seeds.bump(PY_MOVED, "12"))) == []
+    [text] = _b12(era, _per_number(PY_MOVED))
+    assert "ANALYSIS_VERSION in src/crapkit/analyze.py did not rise" in text
+
+
+def test_b2_lets_the_changes_header_grow_and_refuses_any_other_header_change():
+    grown = seeds.replace(BASE, seeds.CHANGES, "reason\n", "reason\tanalysis_versions\t"
+                                                            "reader_versions\n")
+    renamed = seeds.replace(BASE, seeds.CHANGES, "reason\n", "why\n")
+
+    assert "B2" not in pure_rules(BASE, grown)
+    assert "B2" in pure_rules(BASE, renamed)
+    assert cc.changes_of(_tree(grown))["C1"].get("analysis_versions", "") == ""

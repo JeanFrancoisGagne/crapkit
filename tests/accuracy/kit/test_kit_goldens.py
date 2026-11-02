@@ -273,6 +273,169 @@ def test_write_replaces_the_directory_and_keeps_bytes(tmp_path):
     assert (tmp_path / "new.txt").read_bytes() == b"a\r\nb\n"
 
 
+def test_changes_rows_of_the_single_number_era_read_with_empty_number_cells(tree):
+    lock_path, changes_path, _ = _paths(tree)
+    old_header = "\t".join(goldens.CHANGE_COLUMNS[:8])
+    old_rows = changes_path.read_bytes().split(b"\n", 1)[1]
+    changes_path.write_bytes(old_header.encode("utf-8") + b"\n" + old_rows)
+    base_lock, base_changes = goldens.read_lock(lock_path), goldens.read_changes(changes_path)
+    _edit(tree)
+
+    _declare(tree)
+
+    assert base_changes["K1"]["analysis_versions"] == base_changes["K1"]["reader_versions"] == ""
+    text = changes_path.read_bytes()
+    assert text.startswith(("\t".join(goldens.CHANGE_COLUMNS) + "\n").encode("utf-8"))
+    assert old_rows in text, "an old CHANGES row was rewritten"
+    assert goldens.against_base(base_lock, goldens.read_lock(lock_path), base_changes,
+                                goldens.read_changes(changes_path)) == []
+
+
+# --- the analysis-bump rule, per number, over the seed goldens ---------------------------
+
+SCORED = f"{KIT_RELATIVE.as_posix()}/seed-goldens/scored.tsv"
+LANES = goldens.lanes_of((goldens.FIXTURES / "seed" / "crapkit.toml").read_text(encoding="utf-8"))
+EXTENSIONS = {"typescript": (".ts",), "python": (".py",), "go": (".go",),
+              "cpp": (".c", ".h"), "objectivec": (".m", ".h")}
+BEFORE = goldens.Numbers(13, {name: 13 for name in EXTENSIONS},
+                         {"coveragepy": 1, "istanbul": 1})
+
+
+def _raised(revision: int = 1, **raised: int) -> goldens.Numbers:
+    """BEFORE with the revision and each named language or reader raised."""
+    languages = {name: number + raised.get(name, 0) for name, number in BEFORE.languages.items()}
+    readers = {name: number + raised.get(name, 0) for name, number in BEFORE.readers.items()}
+    return goldens.Numbers(BEFORE.revision + revision, languages, readers)
+
+
+def _seed_scored() -> str:
+    return (goldens.SEED_GOLDENS / "scored.tsv").read_bytes().decode("utf-8")
+
+
+def _set(text: str, path: str, column: str, value: str) -> str:
+    """The table with `column` of the first row scoring `path` set to `value`."""
+    lines = text.split("\n")
+    header = lines[0].split("\t")
+    at = next(n for n, line in enumerate(lines) if line.split("\t")[1:2] == [path])
+    cells = lines[at].split("\t")
+    cells[header.index(column)] = value
+    lines[at] = "\t".join(cells)
+    return "\n".join(lines)
+
+
+def _unraised(before: str, after: str, numbers: goldens.Numbers,
+              extensions=EXTENSIONS) -> list[str]:
+    moves = goldens.table_moves(SCORED, before, after)
+    return goldens.unraised(moves, BEFORE, numbers, extensions, LANES, goldens.SEED_FIX)
+
+
+def test_a_python_golden_move_with_no_python_rise_fails():
+    before = _seed_scored()
+
+    problems = _unraised(before, _set(before, "src/py/calc.py", "ccn", "6"), _raised())
+
+    assert len(problems) == 1
+    assert 'ANALYSIS_VERSIONS["python"]' in problems[0]
+
+
+def test_a_go_golden_move_with_only_a_python_rise_fails_naming_go():
+    before = _seed_scored().replace("src/ts/grade.ts", "src/go/grade.go")
+
+    problems = _unraised(before, _set(before, "src/go/grade.go", "cognitive", "4"),
+                         _raised(python=1))
+
+    assert len(problems) == 1
+    assert 'ANALYSIS_VERSIONS["go"]' in problems[0]
+    assert 'ANALYSIS_VERSIONS["python"]' not in problems[0]
+
+
+def test_a_python_rise_with_only_python_goldens_moved_passes():
+    before = _seed_scored()
+    after = _set(_set(before, "src/py/calc.py", "cognitive", "9"), "src/py/calc.py", "nesting", "3")
+
+    assert _unraised(before, after, _raised(python=1)) == []
+    assert _unraised(before, after, _raised(python=1)) == [], "the check gave two answers"
+
+
+def test_a_coveragepy_cov_move_with_no_coveragepy_rise_fails():
+    before = _seed_scored()
+    after = _set(before, "src/py/calc.py", "cov", "0.5")
+
+    problems = _unraised(before, after, _raised(istanbul=1, python=1))
+
+    assert len(problems) == 1
+    assert 'READER_VERSIONS["coveragepy"]' in problems[0]
+    assert _unraised(before, after, _raised(coveragepy=1)) == []
+
+
+def test_a_new_extension_adds_functions_moves_no_cell_and_needs_no_rise():
+    before = _seed_scored()
+    row = next(line for line in before.split("\n") if "src/ts/grade.ts" in line)
+    after = before + row.replace("src/ts/grade.ts", "src/ts/extra.mts") + "\n"
+    wider = {**EXTENSIONS, "typescript": (".ts", ".mts")}
+
+    assert goldens.table_moves(SCORED, before, after) == []
+    assert _unraised(before, after, BEFORE, wider) == []
+
+
+def test_a_new_reader_s_new_goldens_pass_with_the_reader_entering_at_1():
+    entered = goldens.Numbers(BEFORE.revision, BEFORE.languages,
+                              {**BEFORE.readers, "lcov": 1})
+    moves = goldens.table_moves(f"{KIT_RELATIVE.as_posix()}/lcov-goldens/scored.tsv", None,
+                                _seed_scored())
+
+    assert moves == []
+    assert goldens.unraised(moves, BEFORE, entered, EXTENSIONS, LANES) == []
+
+
+def test_the_right_number_with_no_revision_rise_fails_naming_analysis_version():
+    before = _seed_scored()
+
+    problems = _unraised(before, _set(before, "src/py/calc.py", "ccn", "6"),
+                         _raised(revision=0, python=1))
+
+    assert len(problems) == 1
+    assert "ANALYSIS_VERSION in src/crapkit/analyze.py did not rise" in problems[0]
+
+
+def test_the_failure_line_names_the_golden_the_number_and_the_declare_command():
+    before = _seed_scored()
+
+    problem = _unraised(before, _set(before, "src/ts/grade.ts", "ccn", "7"), _raised())[0]
+
+    assert problem.startswith(f"{SCORED}: ")
+    assert 'ANALYSIS_VERSIONS["typescript"] in src/crapkit/analyze.py' in problem
+    assert problem.endswith(goldens.SEED_FIX)
+
+
+def test_a_suffix_two_languages_claim_needs_a_rise_of_either():
+    before = _seed_scored().replace("src/py/calc.py", "src/c/calc.h")
+    after = _set(before, "src/c/calc.h", "ccn", "6")
+
+    assert _unraised(before, after, _raised(objectivec=1)) == []
+    assert _unraised(before, after, _raised(cpp=1)) == []
+    problems = _unraised(before, after, _raised(go=1))
+    assert len(problems) == 1
+    assert 'ANALYSIS_VERSIONS["cpp"]' in problems[0] and '"objectivec"' in problems[0]
+
+
+def test_a_base_of_the_single_number_era_asks_for_the_revision_alone():
+    before, era = _seed_scored(), goldens.Numbers(13)
+    after = _set(before, "src/py/calc.py", "ccn", "6")
+    moves = goldens.table_moves(SCORED, before, after)
+
+    assert goldens.unraised(moves, era, _raised(), EXTENSIONS, LANES) == []
+    assert "ANALYSIS_VERSION in" in goldens.unraised(moves, era, BEFORE, EXTENSIONS, LANES)[0]
+
+
+def test_number_cells_round_trip_sorted():
+    cell = goldens.number_cell({"go": 13, "cpp": 14})
+
+    assert cell == "cpp=14;go=13"
+    assert goldens.numbers_of(cell) == {"cpp": 14, "go": 13}
+    assert goldens.numbers_of("") == {}
+
+
 def test_changes_refuse_a_duplicate_id_and_an_unknown_kind(tmp_path):
     header = "\t".join(goldens.CHANGE_COLUMNS)
     path = tmp_path / "CHANGES.tsv"

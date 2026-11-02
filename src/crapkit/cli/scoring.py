@@ -126,10 +126,25 @@ def _warn_empty_scopes(cfg, empty: dict[str, int]) -> None:
             print(_empty_scope_line(scope, empty[scope.name]), file=sys.stderr)
 
 
+def _run_versions(cfg, lizard_version: str) -> dict:
+    """The tool_versions a run records: the three keys verify --json prints, and
+    the store-only analysis number per language, reader number per parser, and
+    each scope's stamp (`ratchet.running_stamp`)."""
+    from ..analyze import ANALYSIS_VERSION, ANALYSIS_VERSIONS
+    from ..coverage_format import READER_VERSIONS
+    from ..ratchet import running_stamp
+
+    return {"crapkit": __version__, "lizard": lizard_version,
+            "analysis_version": str(ANALYSIS_VERSION),
+            "analysis_versions": dict(ANALYSIS_VERSIONS), "reader_versions": dict(READER_VERSIONS),
+            "scope_stamps": {name: stamp._asdict()
+                             for name, stamp in running_stamp(cfg).scopes.items()}}
+
+
 def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int, dict]:
     """Shared by inventory/coverage: returns (commit, rows, corpus, cache_hits, tool_versions)."""
     lizard, *_ = _analysis_tools()
-    from ..analyze import ANALYSIS_VERSION, unread_reasons
+    from ..analyze import unread_reasons
     facts = git or GitFacts(root)
     commit = facts.head_commit()
     universe = _scan(root, list(facts.tracked_files()), cfg)
@@ -138,8 +153,7 @@ def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int
     records_by_path, cache_hits = _analyzed_corpus(
         root, root / ".crapkit" / "cache.json", flat, _analysis_workers(cfg), cfg.analysis_worker_budget)
     rows = build_inventory_rows(_records_by_scope(universe.by_scope, records_by_path))
-    tool_versions = {"crapkit": __version__, "lizard": lizard.version,
-                     "analysis_version": str(ANALYSIS_VERSION)}
+    tool_versions = _run_versions(cfg, lizard.version)
     unread = unread_reasons(records_by_path)
     empty = _empty_scopes(cfg, universe.by_scope, unread)
     _warn_empty_scopes(cfg, empty)

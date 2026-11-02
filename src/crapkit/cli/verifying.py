@@ -6,6 +6,7 @@ question at different moments: does this change hold?"""
 from __future__ import annotations
 
 import argparse
+import sqlite3
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
@@ -352,10 +353,10 @@ def _named_seed(named: dict) -> str:
     Seed stamps the metric of the run it reads, so a run another metric measured
     needs a coverage run first, and that run is the one to name.
     """
-    from ..ratchet import metric_version, run_stamp
+    from ..ratchet import metric_version, run_metric_version
 
     run_id = named["id"]
-    if run_stamp(named["tool_versions"]) == metric_version():
+    if run_metric_version(named["tool_versions"]) == metric_version():
         return f"re-baseline from run {run_id} with `{_self()} ratchet seed --baseline {run_id}`"
     return (f"run {run_id} was measured under another metric too, so run `{_self()} coverage`, "
             f"then re-baseline from the run it writes with `{_self()} ratchet seed --baseline ID`")
@@ -815,8 +816,10 @@ def _receipt(tool_versions: dict, saved, judged: _JudgedMarks,
     the commit that held them and their digest), and the tighten's counts, null
     when this run's tighten wrote nothing (a failed run, --no-tighten, nothing
     to move). An override's grant is its own write and is an `overridden`
-    findings item, not counted here."""
-    return {"tool_versions": tool_versions, "ratchet_sha256": saved.sha256,
+    findings item, not counted here. The run's store-only stamp keys stay out:
+    the payload prints the three versions it declares."""
+    printed = {key: tool_versions[key] for key in ("analysis_version", "crapkit", "lizard")}
+    return {"tool_versions": printed, "ratchet_sha256": saved.sha256,
             "ratchet_source": "committed" if judged.commit else "tree",
             "ratchet_source_commit": judged.commit,
             "ratchet_source_sha256": judged.marks.sha256,
@@ -1302,7 +1305,10 @@ def _print_clear_the_reason() -> None:
 def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) -> None:
     """The audited hook override: alert line, ratchet debt (staged into the
     pending commit), and a snapshot record — all three or nothing. A function
-    the marks file already holds keeps its mark's value: a mark only falls."""
+    the marks file already holds keeps its mark's value: a mark only falls.
+    A store that cannot take the audit stops the grant before the alert."""
+    from contextlib import suppress
+
     from ..gitio import head_commit
     from ..override import record_override
     from ..ratchet import metric_version
@@ -1312,23 +1318,49 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
 
     _require_override_alert(reason, cfg)
     db_path = root / ".crapkit" / "crap.sqlite"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    store = SnapshotStore(db_path)
-    saved = RatchetFile.read(root / cfg.ratchet_file)
-    key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, records, store)
-    run_id = store.write_run(commit=head_commit(root), tool_versions={}, rows=[],
-                             lanes={"_hook_override": {"staged": True}}, kind="hook")
-    # Each mark is the high end of the CRAP bound the gate judged the function on.
-    gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0, v.high, "decompose", False, v.key_name)
-            for v in violations]
-    record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
-                    alert_command=cfg.alert_command, violations=gate, reason=reason,
-                    raise_marks=False, key_version=key_version, identity_rows=records,
-                    ratchet_input=saved, metric=metric_version())
+    try:
+        # A root that takes no .crapkit folder leaves SQLite to refuse the
+        # store's open (CANTOPEN), so it reads as a read-only store too.
+        with suppress(PermissionError):
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+        store = SnapshotStore(db_path)
+        saved = RatchetFile.read(root / cfg.ratchet_file)
+        key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, records, store)
+        run_id = store.write_run(commit=head_commit(root), tool_versions={}, rows=[],
+                                 lanes={"_hook_override": {"staged": True}}, kind="hook")
+        # Each mark is the high end of the CRAP bound the gate judged the function on.
+        gate = [GateViolation(v.path, v.long_name, v.start, v.ccn, 0.0, v.high, "decompose", False, v.key_name)
+                for v in violations]
+        record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
+                        alert_command=cfg.alert_command, violations=gate, reason=reason,
+                        raise_marks=False, key_version=key_version, identity_rows=records,
+                        ratchet_input=saved, metric=metric_version())
+    except sqlite3.DatabaseError as exc:
+        # The store opens and takes the hook run before the alert fires, so a
+        # store a read-only tree holds, or one cut short, stops the grant before
+        # any of its three parts. The module's own misuse errors carry no SQLite
+        # code and pass through.
+        fault = _STORE_FAULTS.get(getattr(exc, "sqlite_errorcode", 0) & 0xFF)
+        if fault is None:
+            raise
+        raise ToolError(_STORE_FAULT.format(store=db_path.relative_to(root).as_posix(), cause=exc,
+                                            state=fault[0], fix=fault[1])) from exc
     _stage_if_written(root, cfg.ratchet_file, saved)
     print(f"crapkit: override granted with full audit ({reason}).")
     _print_kept_marks(saved, gate)
     _print_clear_the_reason()
+
+
+# SQLite's primary result codes for a store the hook grant cannot write, and
+# for one whose bytes hold no whole database: the state each names, and its fix.
+_STORE_FAULTS = {
+    **dict.fromkeys((sqlite3.SQLITE_READONLY, sqlite3.SQLITE_PERM, sqlite3.SQLITE_CANTOPEN),
+                    ("read only", "make the store and its folder writable")),
+    **dict.fromkeys((sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB),
+                    ("damaged", "restore it from a backup, or move it aside so the next run starts a new one")),
+}
+_STORE_FAULT = ("the store {store} is {state} ({cause}): the override records its audit there, "
+                "so nothing was granted; {fix}, then commit again")
 
 
 def _stage_if_written(root: Path, rel: str, saved) -> None:

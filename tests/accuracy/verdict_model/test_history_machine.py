@@ -1007,12 +1007,15 @@ def test_bouncing_measurement_holds_marks(make_repo):
 
 def _age_runs(scenario: vw.Scenario, analysis: int) -> str:
     """Relabel every stored run as measured under an older analysis version,
-    as the store an upgrade finds holds them. Returns that metric."""
+    as the store an upgrade finds holds them: a 0.8.x run recorded no per-scope
+    stamp and no per-language or per-reader number. Returns that metric."""
     import sqlite3
     connection = sqlite3.connect(scenario.root / ".crapkit" / "crap.sqlite")
+    newer = ("analysis_versions", "reader_versions", "scope_stamps")
     with connection:
         for run_id, text in connection.execute("SELECT id, tool_versions FROM runs").fetchall():
-            versions = {**json.loads(text), "analysis_version": analysis}
+            kept = {key: value for key, value in json.loads(text).items() if key not in newer}
+            versions = {**kept, "analysis_version": analysis}
             connection.execute("UPDATE runs SET tool_versions = ? WHERE id = ?",
                                (json.dumps(versions), run_id))
     connection.close()

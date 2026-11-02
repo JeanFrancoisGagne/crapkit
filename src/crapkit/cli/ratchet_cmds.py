@@ -661,13 +661,13 @@ def _refuse_newer_marks(saved, work: _WorkRun, action: str) -> None:
     ways to get there: this install is older than the marks (upgrade it), or a
     failed verify pins seed and prune to a run an older release measured (read
     a newer run)."""
-    from ..ratchet import metric_version, newer_tools, run_stamp
+    from ..ratchet import metric_version, newer_tools, run_metric_version
 
     recorded = saved.metric_stamp
     newer = newer_tools(recorded, metric_version())
     if newer:
         raise ConfigError(_newer_than_install(saved, action, newer))
-    measured = run_stamp(work.run["tool_versions"])
+    measured = run_metric_version(work.run["tool_versions"])
     if newer_tools(recorded, measured):
         raise ConfigError(f"ratchet {action} refused: {saved.path.name} was recorded under "
                           f"[{recorded.render()}] and run {work.run['id']} under the older "
@@ -784,9 +784,9 @@ def _seed_metric(run: dict) -> MetricStamp:
     A run from before crapkit recorded one cannot vouch for any metric, and
     stamping the running one is how old numbers passed for new ones.
     """
-    from ..ratchet import run_stamp
+    from ..ratchet import run_metric_version
 
-    metric = run_stamp(run["tool_versions"])
+    metric = run_metric_version(run["tool_versions"])
     if not metric:
         raise ConfigError(f"ratchet seed: run {run['id']} recorded no metric (analysis version "
                           "and lizard), so the marks it measured cannot be stamped; run "
@@ -796,10 +796,10 @@ def _seed_metric(run: dict) -> MetricStamp:
 
 def _metric_note(work: _WorkRun, action: str, *, created: bool) -> str:
     """Said only when the run seed or prune read is not this crapkit's metric."""
-    from ..ratchet import metric_version, run_stamp
+    from ..ratchet import metric_version, run_metric_version
 
     run = work.run
-    measured, running = run_stamp(run["tool_versions"]), metric_version()
+    measured, running = run_metric_version(run["tool_versions"]), metric_version()
     if measured == running:
         return ""
     said = f"[{measured.render()}]" if measured else "an unrecorded metric"
@@ -832,9 +832,9 @@ def _restamping_seed(work: _WorkRun) -> str:
 
 def _measured_here(run: dict | None) -> dict | None:
     """`run` when this crapkit measured it, so a seed from it signs the running metric."""
-    from ..ratchet import metric_version, run_stamp
+    from ..ratchet import metric_version, run_metric_version
 
-    if run is not None and run_stamp(run["tool_versions"]) == metric_version():
+    if run is not None and run_metric_version(run["tool_versions"]) == metric_version():
         return run
     return None
 

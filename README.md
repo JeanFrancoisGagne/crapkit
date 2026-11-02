@@ -965,10 +965,10 @@ violation and 0 otherwise. The stderr block above is the same either way.
 
 `CRAPKIT_OVERRIDE_REASON` is not a bypass. Setting it routes the commit through the full
 three-record audit: an alert line through `alert_command`, a ratchet entry staged into the
-commit, and a row in the override log. All three land or nothing does, and an unset
-`alert_command` refuses the override outright. A marked function whose ccn passed its mark
-passes too, with its mark kept as it was, so the next `crapkit verify` reports the rise. See
-[docs/ratchet.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#overrides-and-the-audit-trail).
+commit, and a row in the override log. All three land or nothing does: an unset `alert_command`
+refuses the override, and a read-only or damaged store stops it at exit 5. A marked function
+whose ccn passed its mark passes too and keeps its mark, so the next `crapkit verify` reports
+the rise. See [docs/ratchet.md](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#overrides-and-the-audit-trail).
 
 ## The GitHub Action
 
