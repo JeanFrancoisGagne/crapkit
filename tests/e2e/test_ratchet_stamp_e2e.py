@@ -14,6 +14,7 @@ import sys
 import pytest
 
 from conftest import child_env, cli_runner, git_commit_all, git_init_repo
+from unit.stamps import restamp
 
 TOML = (
     '[crapkit]\ntarget = 6\n\n'
@@ -95,9 +96,9 @@ def test_verify_refuses_marks_recorded_under_another_metric(repo: Path):
 
     res = run_cli(repo, "verify", "--json")
     assert res.returncode == 3, (res.returncode, res.stdout, res.stderr)
-    assert "crapkit-analysis=1 lizard=0.0.1" in res.stderr, "the stale metric must be named"
-    assert "crapkit-analysis=" in res.stderr.split("but this run measures", 1)[1]
-    assert "ratchet seed" in res.stderr, "the message must carry the fix"
+    assert "src (typescript analysis 1 to " in res.stderr, "the stale number must be named per scope"
+    assert "; lizard 0.0.1 to " in res.stderr, res.stderr
+    assert "ratchet seed --scope src" in res.stderr, "the message must carry the fix"
 
 
 def test_verify_warns_once_and_proceeds_on_a_ratchet_written_before_stamping(repo: Path):
@@ -108,6 +109,35 @@ def test_verify_warns_once_and_proceeds_on_a_ratchet_written_before_stamping(rep
     res = run_cli(repo, "verify", "--json")
     assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
     assert res.stderr.count("no metric stamp") == 1, res.stderr
+
+
+def test_a_scope_renamed_in_the_config_reads_as_unstamped_and_names_the_new_name(repo: Path):
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    assert run_cli(repo, "ratchet", "seed").returncode == 0
+    restamp(repo)
+    (repo / "crapkit.toml").write_text(TOML.replace('name = "src"', 'name = "app"')
+                                       .replace('scopes = ["src"]', 'scopes = ["app"]'), encoding="utf-8")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+
+    res = run_cli(repo, "verify")
+    assert res.returncode == 3, (res.returncode, res.stdout, res.stderr)
+    assert "1 scope(s): app (no stamp recorded for this scope)" in res.stderr, res.stderr
+    assert "ratchet seed --scope app`" in res.stderr and "src" not in res.stderr.split(" - ", 1)[0]
+
+
+def test_a_lane_added_to_a_cc_only_scope_reads_as_the_coverage_move(repo: Path):
+    optional = TOML.split("[[lane]]")[0].replace('languages = ["typescript"]\n',
+                                                 'languages = ["typescript"]\ncoverage_optional = true\n')
+    (repo / "crapkit.toml").write_text(optional, encoding="utf-8")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    assert run_cli(repo, "ratchet", "seed").returncode == 0
+    restamp(repo)
+    (repo / "crapkit.toml").write_text(TOML, encoding="utf-8")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+
+    res = run_cli(repo, "verify")
+    assert res.returncode == 3, (res.returncode, res.stdout, res.stderr)
+    assert "src (coverage cc-only to istanbul=1)" in res.stderr, res.stderr
 
 
 def _write(path: Path, stamp: str, rows: str) -> str:

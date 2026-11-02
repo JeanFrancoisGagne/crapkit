@@ -20,6 +20,7 @@ since the rewrite would save U+FFFD in place of the name that held it.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 import hashlib
 import os
 from pathlib import Path
@@ -28,8 +29,8 @@ from tempfile import NamedTemporaryFile
 
 from .errors import ConfigError, ToolError
 from .locks import exclusive_lock
-from .ratchet import (MetricStamp, dump_ratchet, load_ratchet, read_key_version, read_stamp,
-                      stamp_conflict)
+from .ratchet import (MetricStamp, ScopeStamps, StampConflict, dump_ratchet, load_ratchet,
+                      read_key_version, read_stamp, stamp_conflict)
 from .repotext import marks_bytes, marks_codec, marks_text, unreadable_byte
 
 
@@ -117,8 +118,10 @@ class RatchetFile:
         marks, no stamp, no header. A file with a stamp and no rows is not blank."""
         return not (self.text or "").strip()
 
-    @property
+    @cached_property
     def entries(self) -> list:
+        """The marks, parsed once per read: verify's stamp guard places them in
+        scopes before its lanes run, and its verdict reads the same list."""
         try:
             return load_ratchet(self.text or "")
         except ValueError as exc:
@@ -129,10 +132,12 @@ class RatchetFile:
         """The metric the recorded marks were measured under; NONE when none is recorded."""
         return read_stamp(self.text or "")
 
-    def stamp_conflict(self, metric: MetricStamp) -> str | None:
-        """Verify's refusal when these marks and numbers `metric` produced cannot be
-        compared; None when they can, or when no metric is recorded."""
-        return stamp_conflict(self.metric_stamp, metric)
+    def stamp_conflict(self, metric: MetricStamp,
+                       marked_scopes: frozenset = frozenset()) -> StampConflict | None:
+        """How these marks and numbers `metric` produced differ, as verify
+        weighs it; None when nothing does, or when no metric is recorded.
+        `marked_scopes` are the scopes the config places these marks in."""
+        return stamp_conflict(self.metric_stamp, metric, marked_scopes)
 
     def kept(self, entries: list, *, keys: int | None = None,
              new_file_metric: MetricStamp = MetricStamp.NONE,
@@ -153,11 +158,16 @@ class RatchetFile:
 
         Marks another metric recorded refuse it with the refusal verify gives
         before its lanes run. A file written before stamping gains the stamp,
-        which is the tighten's `restamped`.
+        which is the tighten's `restamped`. A per-scope file keeps its stamp:
+        verify weighed each marked scope against the running per-scope stamp
+        before its lanes ran, and a single number cannot restamp one scope.
         """
-        conflict = self.stamp_conflict(self._vouched(metric))
-        if conflict:
-            raise ConfigError(conflict)
+        metric = self._vouched(metric)
+        if isinstance(self.metric_stamp, ScopeStamps):
+            return self._dump(entries, self.metric_stamp, keys)
+        conflict = self.stamp_conflict(metric)
+        if conflict and conflict.refuses:
+            raise ConfigError(conflict.refusal(self.path.name))
         return self._dump(entries, metric, keys)
 
     def reseeded(self, entries: list, metric: MetricStamp, *, keys: int | None = None) -> str:

@@ -328,9 +328,10 @@ what each release changed.
 4. Keep `{python}` and `{python:DIR}` out of a committed `crapkit.toml` until every clone
    runs 0.8.1: 0.8.0 hands the token to the shell as written, and the lane fails.
 
-Until the re-seed, `crapkit verify` refuses the marks 0.8.0 stamped, at exit 3:
+Until the re-seed, `crapkit verify` refuses the marks 0.8.0 stamped, at exit 3. crapkit 0.9.0
+names each scope that holds marks and each of its languages, old number to new:
 
-    crapkit: ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] but this run measures [crapkit-analysis=13 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`
+    crapkit: ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 2 scope(s): api (python analysis 11 to 13), web (typescript analysis 11 to 13) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope api`, then `crapkit ratchet seed --scope web`
 
 The upgrade guide lists [every step in
 order](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#080-to-081-in-order),

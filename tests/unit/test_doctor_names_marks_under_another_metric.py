@@ -54,10 +54,11 @@ def test_marks_an_older_analysis_stamped_warn_with_verifys_remedy_at_exit_0(repo
 
     assert code == 0, "the upgrade guide's first step is doctor, and it must pass"
     assert warnings == [
-        f"`crapkit verify` refuses {MARKS} at exit 3: ratchet marks were recorded under "
-        f"[{older}] but this run measures [{metric_version()}] - CRAP scores are not comparable "
-        "across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then "
-        "re-baseline with `crapkit ratchet seed`"]
+        f"`crapkit verify` refuses {MARKS} at exit 3: ratchet marks were recorded under [{older}] in "
+        f"{MARKS}, and the rules have moved since in 1 scope(s): src (typescript analysis {ANALYSIS_VERSION - 1} to "
+        f"{ANALYSIS_VERSION}) - CRAP scores are not comparable across metric versions; run "
+        "`crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with "
+        "`crapkit ratchet seed --scope src`"]
     assert _doctor(repo, capsys)[1] == []
 
 
@@ -104,6 +105,22 @@ def test_a_marks_path_doctor_cannot_read_is_a_problem_not_a_traceback(repo, caps
 
     assert code == 1
     assert len(problems) == 1 and problems[0].startswith(f"cannot read ratchet {MARKS}"), problems
+
+
+def test_a_marks_row_doctor_cannot_read_is_a_problem_not_a_traceback(repo, capsys):
+    """verify's stamp check places every mark in a scope, so one row with no
+    number stops verify, and doctor names that row."""
+    row = "src/app.ts\tparse( text )\tninety"
+    _marks(repo, metric_version())
+    with (repo / MARKS).open("a", encoding="utf-8") as marks:
+        marks.write(f"{row}\n")
+    line = len((repo / MARKS).read_text(encoding="utf-8").splitlines())
+
+    code, problems = _doctor(repo, capsys)
+
+    assert code == 1
+    assert problems == [
+        f"unreadable ratchet file {MARKS}: ratchet line {line} has an unreadable mark: {row!r}"]
 
 
 def test_the_remedy_doctor_names_clears_it_and_prune_drops_the_moved_key(repo, capsys):

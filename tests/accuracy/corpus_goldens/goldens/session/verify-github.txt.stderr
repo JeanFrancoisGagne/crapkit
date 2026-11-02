@@ -1,3 +1,4 @@
+warning: crapkit-ratchet.tsv records one analysis number and no coverage mode, so verify read scope(s) py, web as measured by the coverage readers 0.8.x read for their lanes; nothing to do: the next seed or passing verify records each scope's mode
 crapkit: lane 'py' reuses .crapkit/cov/py.json; 2 file(s) in its scopes changed since it measured them (src/py/fresh.py, src/py/grades.py), so its coverage may be stale; rerun the lane (`crapkit coverage --lane py`) to measure the tree as it is
 crapkit: 2 source line span(s) hold more than one function; coverage cannot say whose is whose, so those functions score as uncovered, and splitting the definitions onto separate lines measures them; 1 of them hold a function over its target:
 crapkit:   src/web/arrows.js:7 (complexity 3)
