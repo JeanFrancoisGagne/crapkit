@@ -11,7 +11,7 @@ from pathlib import Path
 import lizard
 import pytest
 
-from crapkit.analyze import ANALYSIS_VERSION
+from crapkit.analyze import ANALYSIS_VERSION, ANALYSIS_VERSIONS
 from crapkit.cli.ratchet_cmds import _latest_full_run, cmd_ratchet
 from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
@@ -20,7 +20,9 @@ from crapkit.store import SnapshotStore
 TRUSTED_SHA = "bb83d64fc19a7e2d4c5b60718293a4b5c6d7e8f9"
 FAILED_SHA = "4f1c0aa9d3b2e5768190a2b3c4d5e6f70819a2b3"
 # The running metric: seed stamps the one its run recorded, and refuses a run with none.
-MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version}
+# The stamps this crapkit records for the one python scope with no lane.
+MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version,
+            "scope_stamps": {"src": {"analysis": {"python": ANALYSIS_VERSIONS["python"]}, "coverage": "no-lane"}}}
 CONFIG = ('[crapkit]\ntarget = 6\n\n'
           '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n')
 

@@ -234,14 +234,22 @@ def downgrade_line(installer: str) -> str:
     return line
 
 
-def stamps(refusal: str) -> set[str]:
-    return set(re.findall(r"crapkit-analysis=\d+", refusal))
+def stamps(refusal: str) -> list[str]:
+    """The two stamps a refusal brackets: what the marks recorded, then what this run measures."""
+    return re.findall(r"recorded under \[([^]]+)\] but this run measures \[([^]]+)\]", refusal)
+
+
+# The candidate's seed wrote one stamp per scope, which 0.8.x reads as a stamp
+# it cannot compare and a mark it cannot parse: docs/upgrading.md's 0.9.0 block
+# removes the file before the Downgrading block seeds it again.
+PER_SCOPE = "The first seed writes one stamp per scope"
 
 
 @cell("docs-downgrade", channel="pip venv, pipx, uv tool", harness="none",
       scenario="downgrade: a repo adopted under the candidate, then each downgrade row of docs/upgrading.md "
                "installs 0.8.0 and the page's token table writes the launcher back; doctor, coverage and "
-               "next-item work, verify refuses naming both stamps, and the page's re-seed block ends at verify OK",
+               "next-item work, verify refuses naming the per-scope line and its own stamp, and the page's "
+               "removal of the per-scope file and its re-seed block end at verify OK",
       use_cases="downgrade", os=("linux", "windows"), image="core", cadence="push")
 @pytest.mark.parametrize("installer", ["pip", "pipx", "uv tool"])
 def test_a_downgrade_does_what_the_upgrade_guide_says(box, templates, installer):
@@ -257,7 +265,11 @@ def test_a_downgrade_does_what_the_upgrade_guide_says(box, templates, installer)
     for works in (["doctor"], ["coverage"], ["next-item"]):
         box.run(["crapkit", *works], cwd=repo, expect=0)
     refused = box.run(["crapkit", "verify"], cwd=repo, expect=3)
+    box.script(docsnip.fence("docs/upgrading.md", PER_SCOPE, contains="git rm").text, cwd=repo, expect=0)
     reseed = box.script(docsnip.fence("docs/upgrading.md", "Downgrading").text, cwd=repo, expect=0)
 
-    assert len(stamps(refused.stderr)) == 2, "the refusal names both stamps"
+    ((recorded, measured),) = stamps(refused.stderr)
+    assert recorded.startswith("crapkit-stamp=2 lizard=") and measured.startswith("crapkit-analysis="), \
+        refused.stderr
     assert "verify OK" in reseed.stdout
+    assert state.stamp_of(repo).startswith("# crapkit-analysis="), "the older release's seed wrote the file"

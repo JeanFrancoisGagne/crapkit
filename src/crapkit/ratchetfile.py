@@ -30,7 +30,7 @@ from tempfile import NamedTemporaryFile
 from .errors import ConfigError, ToolError
 from .locks import exclusive_lock
 from .ratchet import (MetricStamp, ScopeStamps, StampConflict, dump_ratchet, load_ratchet,
-                      read_key_version, read_stamp, stamp_conflict)
+                      read_key_version, read_stamp, rescoped, stamp_conflict)
 from .repotext import marks_bytes, marks_codec, marks_text, unreadable_byte
 
 
@@ -170,9 +170,15 @@ class RatchetFile:
             raise ConfigError(conflict.refusal(self.path.name))
         return self._dump(entries, metric, keys)
 
-    def reseeded(self, entries: list, metric: MetricStamp, *, keys: int | None = None) -> str:
-        """seed's text, stamped with the metric of the run it read."""
-        return self._dump(entries, self._vouched(metric), keys)
+    def reseeded(self, entries: list, run_stamps: MetricStamp, *, scope: str | None = None,
+                 keys: int | None = None) -> str:
+        """seed's text, stamped with the metric of the run it read.
+
+        Without `scope` the file takes `run_stamps` whole, so every scope takes
+        the run's line and a scope the run does not hold drops its line. With
+        it, only that scope's line changes (`ratchet.rescoped`)."""
+        stamp = self._vouched(run_stamps) if scope is None else rescoped(self.metric_stamp, run_stamps, scope)
+        return self._dump(entries, stamp, keys)
 
     def _vouched(self, metric: MetricStamp) -> MetricStamp:
         """A write that stamps numbers names the metric that produced them.

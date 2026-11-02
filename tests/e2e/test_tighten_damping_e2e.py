@@ -68,10 +68,12 @@ def repo(tmp_path: Path) -> Path:
 
 def loose_mark(repo: Path) -> None:
     """A mark well above either measurement, so the next green verify has a real
-    tighten to make. Seeded first, so the file keeps the metric stamp verify checks."""
+    tighten to make. Seeded first, so the file keeps the stamp lines verify checks:
+    the first line and each scope's `#scope` line, everything above the header."""
     assert run_cli(repo, "ratchet", "seed").returncode == 0
-    stamp = (repo / RATCHET).read_text(encoding="utf-8").splitlines()[0]
-    (repo / RATCHET).write_text(f"{stamp}\npath\tlong_name\tcrap\n{MARK}", encoding="utf-8")
+    lines = (repo / RATCHET).read_text(encoding="utf-8").splitlines()
+    head = "\n".join(lines[:lines.index("path\tlong_name\tcrap")])
+    (repo / RATCHET).write_text(f"{head}\npath\tlong_name\tcrap\n{MARK}", encoding="utf-8")
 
 
 def marks(repo: Path) -> str:

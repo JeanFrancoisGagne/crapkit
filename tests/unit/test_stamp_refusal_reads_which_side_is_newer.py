@@ -24,8 +24,9 @@ from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.cli import main
 from crapkit.cli.ratchet_cmds import cmd_ratchet
 from crapkit.errors import ConfigError
-from crapkit.ratchet import (RatchetEntry, coverage_then_seed, dump_ratchet, metric_version,
-                             read_stamp, stamp_conflict, stamp_text)
+from crapkit.ratchet import (RatchetEntry, coverage_then_seed, dump_ratchet, read_stamp,
+                             stamp_conflict, stamp_text)
+from stamps import running_in
 
 import lizard
 
@@ -130,7 +131,8 @@ def _doctor_lines(repo, capsys) -> tuple[int, dict]:
 
 def test_marks_a_newer_lizard_stamped_clear_with_the_reseed_verify_names(repo, capsys):
     """A crapkit that lets lizard float seeded these marks: verify, doctor,
-    prune and seed all sent the user to a lizard upgrade the pin forbids."""
+    prune and seed all sent the user to a lizard upgrade the pin forbids. One
+    lizard version signs every scope, so the seed named is the plain one."""
     stamped = stamp_text(ANALYSIS_VERSION, _one_patch_up(lizard.version))
     (repo / MARKS).write_text(
         dump_ratchet([RatchetEntry("src/app.ts", "dispatch( kind : string )", 90.0)],
@@ -145,7 +147,7 @@ def test_marks_a_newer_lizard_stamped_clear_with_the_reseed_verify_names(repo, c
     doctor = _doctor_lines(repo, capsys)
 
     assert refused == 3, err
-    seed = "`crapkit ratchet seed --scope src`"
+    seed = "`crapkit ratchet seed`"
     assert (f"ratchet marks were recorded under [{stamped}] in {MARKS}, and the rules have moved since "
             f"in 1 scope(s): src (lizard {_one_patch_up(lizard.version)} to {lizard.version}) - CRAP scores are not "
             f"comparable across metric versions; {coverage_then_seed(seed=seed)}") in err, err
@@ -154,7 +156,7 @@ def test_marks_a_newer_lizard_stamped_clear_with_the_reseed_verify_names(repo, c
     assert len(doctor[1]["warnings"]) == 1 and coverage_then_seed(seed=seed) in doctor[1]["warnings"][0], doctor
     for step in (["coverage", "--reuse-artifacts"], ["ratchet", "prune"], ["ratchet", "seed"]):
         assert main([*step, "--repo", str(repo)]) == 0, (step, capsys.readouterr().err)
-    assert read_stamp((repo / MARKS).read_text(encoding="utf-8")) == metric_version()
+    assert read_stamp((repo / MARKS).read_text(encoding="utf-8")) == running_in(repo)
     assert main(["verify", "--reuse-artifacts", "--repo", str(repo)]) == 0, capsys.readouterr().err
 
 
