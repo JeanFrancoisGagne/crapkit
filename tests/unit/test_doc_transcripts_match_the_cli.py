@@ -458,6 +458,51 @@ def test_every_worklist_transcript_ends_with_the_step_worklist_prints(tmp_path):
             if not _ends_as_printed(tmp_path, block)] == []
 
 
+FLIP_SECTION = "### Turning a cc-only scope into a measured one"
+_CC_ONLY_PY = '[[scope]]\nname = "py"\npaths = ["py"]\nlanguages = ["python"]\ncoverage_optional = true\n'
+_MEASURED_PY = ('[[scope]]\nname = "py"\npaths = ["py"]\nlanguages = ["python"]\n\n[[lane]]\nname = "py"\n'
+                'command = "python -m pytest --cov"\nartifact = ".crapkit/cov/py.json"\nparser = "coveragepy"\n'
+                'scopes = ["py"]\n')
+
+
+def _flip_section() -> list[str]:
+    """The upgrade guide's flip procedure, each line without its list indent."""
+    text = _page("docs/upgrading.md")
+    section = text[text.index(FLIP_SECTION):text.index("<!-- /0.9.0:metric-stamp -->")]
+    return [line.strip() for line in section.splitlines()]
+
+
+def test_the_flip_procedure_quotes_the_warn_doctor_prints_for_the_flipped_scope(tmp_path, capsys):
+    """The procedure's py scope was seeded cc-only, and a coveragepy lane measures it now."""
+    from crapkit.cli.admin import _doctor_marks_stamp
+    from crapkit.config import load_config_text
+    from crapkit.ratchet import RatchetEntry, dump_ratchet, running_stamp
+
+    stamp = running_stamp(load_config_text(_CC_ONLY_PY, root=tmp_path))
+    (tmp_path / MARKS).write_text(dump_ratchet([RatchetEntry("py/calc.py", "check( a )", 8.0)],
+                                               stamp=stamp, key_version=1, file_name=MARKS), encoding="utf-8")
+    findings = _doctor_marks_stamp(tmp_path, load_config_text(_MEASURED_PY, root=tmp_path))
+    [warn] = _as_typed(_printed(findings, capsys))
+
+    assert warn.startswith("WARN ") and warn in _flip_section(), warn
+
+
+def test_the_flip_procedure_runs_its_steps_in_order_and_quotes_the_seed_s_rise():
+    from crapkit.cli.ratchet_cmds import _raised_note
+    from crapkit.ratchet import RatchetEntry
+
+    text = "\n".join(_flip_section())
+    steps = ["`crapkit doctor`", "`crapkit coverage --export export.tsv`", "`crapkit ratchet seed --scope NAME`",
+             "`git diff crapkit-ratchet.tsv`", "Commit the marks file", "`crapkit verify`"]
+    raised = _raised_note([(RatchetEntry("py/calc.py", "check( a )", 72.0), 8.0)])
+
+    at = 0
+    for step in steps:
+        assert step in text[at:], (step, "missing, or before the step it follows")
+        at = text.index(step, at) + len(step)
+    assert f"`scope py: added 0, tightened 0{raised}`" in " ".join(text.split()), raised
+
+
 def test_every_seed_transcript_under_the_running_metric_ends_with_commit_then_verify(capsys):
     from crapkit.cli.ratchet_cmds import _print_seed_next
 

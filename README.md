@@ -553,7 +553,7 @@ scores on complexity alone.
 A cc-only scope declares `coverage_optional = true`, scores `crap = ccn`, and needs no
 lane. Nothing about it is provisional: the ceiling still binds and the gate still refuses
 a function over it. Add a coverage lane the day a parser exists and the same scope starts
-joining coverage.
+joining coverage; [Turning a cc-only scope into a measured one](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one) re-marks it then.
 
 `crapkit init` writes that key itself, on every scope whose languages all lack a parser,
 and leaves it off any scope a lane could still measure. So the 60-second start above runs

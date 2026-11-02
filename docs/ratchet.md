@@ -506,7 +506,7 @@ measured; a scope with no lane counts as cc-only. verify then warns once, on std
 the scopes whose mode it inferred. There is nothing to do: the next seed records each scope's
 mode. A file with one number and no marks at all compares as one value, as the tighten that
 restamps it does. A file with no stamp at all (written before stamping) warns, then applies
-the function-identity checks below; anonymous JavaScript/TypeScript marks need reader proof.
+the function-identity checks below; anonymous JavaScript/TypeScript marks need reader proof. A cc-only scope that gains a lane takes the steps in [Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one).
 
 A repo with an `api` scope in Python and a `web` scope in TypeScript, after a release raises
 Python's analysis number:
