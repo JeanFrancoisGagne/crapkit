@@ -1,5 +1,5 @@
 """A team upgrades one member at a time: the repo holds what the candidate
-wrote (marks stamped under its analysis version, a portable baseline), and a
+wrote (marks its seed stamped one stamp per scope, a portable baseline), and a
 teammate, a hook or a CI job still runs 0.7.6.
 
 Each cell drives the old reader through the surface that reads the new
@@ -8,7 +8,9 @@ clone (skew-cli), the pre-commit framework pinned to rev v0.7.6
 (skew-precommit), and a CI job pinned to 0.7.6 reading the committed baseline
 (skew-baseline). Whatever the old reader refuses, the cell checks that the
 refusal names both metric stamps, that it rewrote nothing, and that the fix
-the user can follow keeps the team's marks under the newer stamp.
+the user can follow keeps the team's marks under the newer stamp. 0.7.6 reads
+the per-scope first line as a stamp it cannot compare and each `#scope` line
+as a mark it cannot parse, so its merge driver and its seed refuse the file.
 """
 from __future__ import annotations
 
@@ -47,9 +49,19 @@ def old_teammate(box) -> None:
 
 
 def stamp_refused(box, step, candidate) -> None:
-    """Exit 3, naming the stamp the marks carry and the one 0.7.6 measures."""
+    """Exit 3, naming the stamp the baseline carries and the one 0.7.6 measures."""
     assert step.exit == 3, box.transcript.text()
     assert state.stamp_refusal(state.analysis_version(candidate), OLD_ANALYSIS) in output(step), output(step)
+
+
+def marks_refused(box, step, repo) -> None:
+    """Exit 3, naming the per-scope first line the candidate's seed wrote,
+    which 0.7.6 reads as the marks' stamp, and the stamp 0.7.6 measures."""
+    recorded = state.stamp_of(repo)[2:]
+    assert recorded.startswith("crapkit-stamp=2 lizard="), recorded
+    assert step.exit == 3, box.transcript.text()
+    assert (f"recorded under [{recorded}] but this run measures [{state.metric(OLD_ANALYSIS)}]"
+            in output(step)), output(step)
 
 
 def commit_file(box, repo, name: str, text: str, expect: int | None) -> object:
@@ -80,35 +92,39 @@ def lowered(box, repo, branch: str, index: int) -> None:
     state.commit(box, repo, f"tighten mark {index} on {branch}")
 
 
-def merge_driver_merges(box, repo) -> None:
-    """docs/ratchet.md's driver, run by 0.7.6 on two sides of stamped marks."""
+def merge_driver_refuses(box, repo) -> None:
+    """docs/ratchet.md's driver, run by 0.7.6 on two sides of the per-scope
+    marks: it reads a `#scope` line as a mark it cannot parse, so it refuses,
+    git leaves a conflict on the file, and OURS keeps its bytes."""
     attributes = docsnip.fence("docs/ratchet.md", "The git merge driver", index=0).text
     state.write(repo, {".gitattributes": attributes + "\n"})
     state.commit(box, repo, "the ratchet merge driver")
     for line in docsnip.commands(docsnip.fence("docs/ratchet.md", "The git merge driver", index=1)):
         box.script(line, cwd=repo, expect=0)
-    stamp = state.stamp_of(repo)
     lowered(box, repo, "feature", 0)
     box.run(["git", "checkout", "-q", "main"], cwd=repo, expect=0)
     lowered(box, repo, "main", 1)
+    ours = (repo / "crapkit-ratchet.tsv").read_bytes()
     merged = box.run(["git", "merge", "feature", "-m", "merge feature"], cwd=repo, env=box.commit_env())
-    assert merged.exit == 0 and "ratchet merge:" in output(merged), box.transcript.text()
-    assert state.stamp_of(repo) == stamp, "the old merge driver rewrote the newer stamp"
+    said = output(merged)
+    assert merged.exit != 0 and "Merge conflict in crapkit-ratchet.tsv" in said, box.transcript.text()
+    assert "#scope" in said, said
+    assert (repo / "crapkit-ratchet.tsv").read_bytes() == ours, "the old merge driver rewrote OURS"
+    box.run(["git", "merge", "--abort"], cwd=repo, expect=0)
 
 
-def named_fix_restamps(box, repo, candidate) -> None:
-    """The fix 0.7.6 names, followed: its seed restamps the team's marks under
-    its own analysis version, and the upgraded teammate's verify then refuses."""
-    box.run(["crapkit", "ratchet", "seed"], cwd=repo, expect=0, note="the fix 0.7.6's refusal names")
-    assert state.stamp_of(repo) == f"# {state.metric(OLD_ANALYSIS)}"
-    upgraded = state.venv_cli(box, candidate.version, box.root / "candidate-venv")
-    upgraded.run(box, repo, "coverage")
-    refused = upgraded.run(box, repo, "verify", expect=3)
-    assert f"recorded under [{state.metric(OLD_ANALYSIS)}]" in output(refused), box.transcript.text()
+def named_fix_refuses(box, repo) -> None:
+    """The fix 0.7.6's refusal names, followed: its seed cannot read a `#scope`
+    line as a mark, so it refuses and the team's marks keep the newer stamps."""
+    before = (repo / "crapkit-ratchet.tsv").read_bytes()
+    seed = box.run(["crapkit", "ratchet", "seed"], cwd=repo, note="the fix 0.7.6's refusal names")
+    assert seed.exit != 0 and "unreadable ratchet file crapkit-ratchet.tsv" in output(seed), box.transcript.text()
+    assert (repo / "crapkit-ratchet.tsv").read_bytes() == before, "0.7.6's seed rewrote the team's marks"
 
 
 @cell("lin-skew-cli", channel="0.7.6 readers of candidate output", harness="git",
-      scenario="skew: stamp-11 marks read by 0.7.6 verify, commit hook and merge driver; refusal names the fix",
+      scenario="skew: per-scope marks the candidate seeded, read by 0.7.6 verify, commit hook and merge driver; "
+               "verify names both stamps, the driver and the seed refuse and rewrite nothing",
       use_cases="team version skew", os="linux", image="core", cadence="nightly")
 def test_lin_skew_cli(box, templates, candidate):
     gaps = state.Gaps()
@@ -117,13 +133,13 @@ def test_lin_skew_cli(box, templates, candidate):
     marks = (repo / "crapkit-ratchet.tsv").read_bytes()
 
     box.run(["crapkit", "coverage"], cwd=repo, expect=0)
-    stamp_refused(box, box.run(["crapkit", "verify"], cwd=repo), candidate)
+    marks_refused(box, box.run(["crapkit", "verify"], cwd=repo), repo)
     assert (repo / "crapkit-ratchet.tsv").read_bytes() == marks, "the refusal rewrote the marks"
     route1 = docsnip.fence("README.md", "Route 1: `.git/hooks/pre-commit` (local, not committed)")
     box.script(route1.text, cwd=repo, expect=0, note="README Route 1, pasted whole")
     hook_gates(box, repo)
-    merge_driver_merges(box, repo)
-    named_fix_restamps(box, repo, candidate)
+    merge_driver_refuses(box, repo)
+    named_fix_refuses(box, repo)
     gaps.check(bool(TEAM_NOTE.search(state.page())),
                f"{state.GUIDE}: nothing tells a team that an older crapkit refuses newer marks and names a reseed "
                "that restamps them backwards; upgrade every clone, CI pin and hook rev before reseeding")

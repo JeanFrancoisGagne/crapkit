@@ -214,6 +214,71 @@ crapkit: ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] i
 ```
 
 [The metric stamp](ratchet.md#the-metric-stamp) lists each kind of move a refusal names.
+
+### The first seed writes one stamp per scope
+
+The first `crapkit ratchet seed` under 0.9.0 rewrites the marks file with one stamp line per
+scope, from the stamps the run it reads recorded. A run 0.8.x measured recorded none, so run
+`crapkit coverage` under 0.9.0 first; seed refuses such a run and names `crapkit coverage`.
+To repair one scope that verify names, run `crapkit ratchet seed --scope NAME`: it rewrites
+that scope's marks and line and leaves the others as they are. The file records one lizard
+version for every scope, and a scoped seed keeps it, so for a lizard move verify names the
+plain `crapkit ratchet seed` instead, and `--scope` refuses the file and names that seed.
+
+From that seed on, crapkit 0.8.x refuses the file once, by name, and changes nothing. 0.8.0's
+`crapkit verify` prints:
+
+```
+crapkit: ratchet marks were recorded under [crapkit-stamp=2 lizard=1.24.0: crapkit-ratchet.tsv holds one stamp per scope, which crapkit 0.9.0 or later reads] but this run measures [crapkit-analysis=11 lizard=1.24.0] — CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
+```
+
+That line's seed does not help on 0.8.x: 0.8.x reads each `#scope` line as a mark it
+cannot parse, so its seed, prune, move and merge driver refuse the file too. Upgrade every
+teammate to 0.9.0 before you commit the reseeded file.
+
+To go back to 0.8.x after that seed, check out the `crapkit-ratchet.tsv` you committed
+before it. A repo that 0.9.0 adopted has no such file: remove it, then run the re-seed
+block under [Downgrading](#downgrading), which writes it again under the older release:
+
+```sh
+git rm -q crapkit-ratchet.tsv
+```
+
+### Turning a cc-only scope into a measured one
+
+A cc-only scope scores `crap = ccn`, so each of its marks equals its function's ccn. Once a
+lane measures the scope, the same function scores `ccn^2 x (1 - cov)^3 + ccn`, and every
+marked function that is not fully covered scores above its mark. The marks file records
+the scope as cc-only, so crapkit reads the change from that stamp:
+
+1. Add the `[[lane]]` that measures the scope and remove the scope's
+   `coverage_optional = true`, in one commit. Keep the scope's name: a scope renamed in
+   the same commit has no recorded stamp, so it reads as `unstamped`, not as this change.
+   Rename in one commit and add the lane in the next.
+2. Run `crapkit doctor`. Its report holds one WARN for the scope, and doctor still exits 0:
+
+   ```
+   WARN `crapkit verify` refuses crapkit-ratchet.tsv at exit 3: ratchet marks were recorded under [crapkit-stamp=2 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 1 scope(s): py (coverage cc-only to coveragepy=1) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope py`; py was cc-only and is now measured by its coveragepy lane(s), so its marks hold no coverage yet: follow docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one
+   ```
+
+   `crapkit verify` refuses the same way, at exit 3, before any lane runs.
+3. Run `crapkit coverage --export export.tsv` to measure the scope and write each
+   function's ccn, coverage and CRAP.
+4. Compare the export with the scope's marks in `crapkit-ratchet.tsv`. Each marked
+   function whose exported `crap` is above its mark is one that is not fully covered.
+5. Run `crapkit ratchet seed --scope NAME` for the scope the WARN names. On this move the
+   seed replaces the scope's marks with the run's values, rises included, and counts the
+   rises. Every other scope keeps its stamp line and its marks.
+6. Review the diff: `git diff crapkit-ratchet.tsv` shows the scope's stamp line and each
+   mark that moved.
+7. Commit the marks file.
+8. Run `crapkit verify`. It passes.
+
+For example, a function at ccn 8 carries the cc-only mark 8.0000. At 0% coverage it scores
+8^2 x 1 + 8 = 72, so the scoped seed raises its mark from 8 to 72 and its line counts the
+rise: `scope py: added 0, tightened 0, raised 1 (first py/calc.py check( a ) 8.0000 -> 72.0000)`.
+Had the same commit also renamed the scope, the scope would read as `unstamped`: the seed
+keeps the mark at 8, and `crapkit verify` names the function at exit 7.
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->

@@ -1308,6 +1308,11 @@ cells = ["lin-pip-start-py311", "lin-follow-hints"]
 
 [[doc]]
 page = "docs/ratchet.md"
+headings = ["Repairing one scope: `--scope`"]
+cells = ["lin-up-pip-0.8.1-seed-converts"]
+
+[[doc]]
+page = "docs/ratchet.md"
 headings = ["Seed and prune pick the run verify picks", "Pruning, and renames"]
 cells = ["lin-up-pip-0.7.6"]
 

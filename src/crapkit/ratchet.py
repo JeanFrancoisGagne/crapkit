@@ -619,13 +619,34 @@ class StampConflict(NamedTuple):
                     f"the rules have moved since in {_scopes_moved(self.moved)}")
         if self.newer:
             return f"{head} - {upgrade_remedy(['crapkit'])} {_BACKWARDS}"
-        return f"{head} - {_NOT_COMPARABLE}; {remedy or coverage_then_seed(seed=self.seeds())}"
+        flips = "".join(_flip_note(move) for move in self.moved if _raise_kind(move) == "coverage flip")
+        return f"{head} - {_NOT_COMPARABLE}; {remedy or coverage_then_seed(seed=self.seeds())}{flips}"
 
     def seeds(self, baseline: str = "") -> str:
-        """`crapkit ratchet seed --scope NAME` for each moved scope, the plain
-        seed for a whole-file refusal; `baseline` appended to each."""
-        scopes = [f" --scope {name}" for name in dict.fromkeys(move.scope for move in self.moved)]
+        """`crapkit ratchet seed --scope NAME` for each scope a scoped seed
+        repairs, else the plain seed; `baseline` appended to each."""
+        scopes = [f" --scope {name}" for name in self._scoped_repairs]
         return ", then ".join(f"`{_self()} ratchet seed{scope}{baseline}`" for scope in scopes or [""])
+
+    @property
+    def _scoped_repairs(self) -> tuple:
+        """The moved scopes, unless lizard moved: one lizard version signs every
+        scope and `seed --scope` keeps the file's, so only the plain seed clears it."""
+        if any(move.kind == "lizard" for move in self.moved):
+            return ()
+        return tuple(dict.fromkeys(move.scope for move in self.moved))
+
+
+# The upgrade guide's section a flip refusal links. A test pins the anchor, so
+# moving the section breaks that test before it breaks every printed link.
+FLIP_PROCEDURE = "docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one"
+
+
+def _flip_note(move: StampMove) -> str:
+    """The sentence a coverage flip adds to the refusal: the scope, the parsers
+    of the lanes that measure it now, and the procedure that re-marks it."""
+    return (f"; {move.scope} was {move.old} and is now measured by its {' and '.join(sorted(move.new))} "
+            f"lane(s), so its marks hold no coverage yet: follow {FLIP_PROCEDURE}")
 
 
 def _label(stamp: MetricStamp) -> str:
@@ -1045,7 +1066,7 @@ def _merge_scopes(sides: dict) -> StampMerge:
     picks = {name: _scope_pick(sides, name) for name in _scope_names(sides)}
     clashes = _clashes(picks, lizard_side)
     if lizard_side is None or clashes:
-        raise ValueError(_scopes_refusal(clashes, sides))
+        raise ValueError(_scopes_refusal(clashes, sides, lizard_side))
     stamp = ScopeStamps(sides[lizard_side].lizard, _merged_scopes(picks), _file_name(sides))
     return StampMerge(stamp, _came_from(stamp, sides))
 
@@ -1136,15 +1157,19 @@ def _came_from(stamp: ScopeStamps, sides: dict) -> tuple[tuple[str, str], ...]:
                          and _same(_view(sides[side], name), stamp.scopes[name])))
 
 
-def _scopes_refusal(names: list[str], sides: dict) -> str:
-    said = "; ".join(f"scope {name}: OURS records [{_recorded(sides['OURS'], name)}] and THEIRS "
-                     f"records [{_recorded(sides['THEIRS'], name)}]" for name in names)
-    steps = [f"`{_self()} coverage`", *(f"`{_self()} ratchet seed --scope {name}`" for name in names)]
+def _scopes_refusal(names: list[str], sides: dict, lizard_side: str | None) -> str:
+    """Names each clashing scope and its seed. Sides that moved lizard apart
+    get the plain seed: one lizard version signs every scope and `seed --scope`
+    keeps the file's, so a scoped seed refuses that file."""
+    said = "; ".join(f"scope {name}: OURS records [{scope_record(sides['OURS'], name)}] and THEIRS "
+                     f"records [{scope_record(sides['THEIRS'], name)}]" for name in names)
+    scoped = [f" --scope {name}" for name in names] if lizard_side else [""]
+    steps = [f"`{_self()} coverage`", *(f"`{_self()} ratchet seed{scope}`" for scope in scoped)]
     return (f"ratchet merge refused: OURS and THEIRS moved a stamp differently - {said} - run "
             f"{', '.join(steps[:-1])} and {steps[-1]} on one branch, then merge again; OURS was left unchanged")
 
 
-def _recorded(stamp: MetricStamp, name: str) -> str:
+def scope_record(stamp: MetricStamp, name: str) -> str:
     """What `stamp` records for scope `name`, as the refusal quotes it."""
     if isinstance(stamp, SingleNumberStamp):
         return stamp.render()
@@ -1152,22 +1177,92 @@ def _recorded(stamp: MetricStamp, name: str) -> str:
     return f"lizard={stamp.lizard} {scope.render() if scope else 'and no line for this scope'}"
 
 
+# Whether a seed lets a scope's marks take the run's values, above their old
+# marks too, by how the scope's stamp moved since the marks were recorded:
+# only the flip from cc-only or no-lane to a coverage reader. Every other move
+# keeps "marks only fall": verify fails the rise at exit 7, `verify --override`
+# grants no ratchet regression, and the mark is raised by hand.
+SEED_RAISES = {"coverage flip": True, "coverage": False, "analysis": False, "reader": False,
+               "lizard": False, "unstamped": False}
+
+
+def _raise_kind(move: StampMove) -> str:
+    """The `SEED_RAISES` row a move reads: a coverage move from no reader to readers is the flip."""
+    flip = move.kind == "coverage" and move.old in _NO_READER and isinstance(move.new, dict)
+    return "coverage flip" if flip else move.kind
+
+
+def rising_scopes(conflict: StampConflict | None) -> frozenset[str]:
+    """The moved scopes whose marks a seed lets rise: those with a move whose
+    `SEED_RAISES` row says so. None, a stamp that did not move, raises nothing."""
+    moved = conflict.moved if conflict else ()
+    return frozenset(move.scope for move in moved if SEED_RAISES[_raise_kind(move)])
+
+
+def rescoped(recorded: MetricStamp, run: ScopeStamps, name: str) -> ScopeStamps:
+    """`recorded` with scope `name` taking `run`'s line, the stamp `seed --scope`
+    signs. Every other scope keeps what the file recorded, and so does the
+    lizard version: a single-number file's scopes read at its one number, as
+    `stamp_conflict` reads them; an unstamped or unreadable file records none."""
+    scopes = _recorded_scopes(recorded, run)
+    lizard = recorded.lizard if isinstance(recorded, (ScopeStamps, SingleNumberStamp)) else run.lizard
+    file_name = recorded._parts[2] if isinstance(recorded, ScopeStamps) else None
+    return ScopeStamps(lizard, {**scopes, name: run.scopes[name]}, file_name)
+
+
+def _recorded_scopes(recorded: MetricStamp, run: ScopeStamps) -> dict:
+    """{scope: ScopeStamp} the file records, a single-number one for each scope `run` holds."""
+    if isinstance(recorded, ScopeStamps):
+        return dict(recorded.scopes)
+    if isinstance(recorded, SingleNumberStamp):
+        return {scope: _recorded_scope(recorded, scope, now) for scope, now in run.scopes.items()}
+    return {}
+
+
+def _every_path(path: str) -> bool:
+    return True
+
+
+def _no_path(path: str) -> bool:
+    return False
+
+
 def seed_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: int,
-                 scope_targets: dict[str, int] | None = None) -> tuple[list[RatchetEntry], int, int]:
-    """First-class mark entry: record every over-ceiling function at its current
-    CRAP. A mark never rises, seeding included — an existing lower mark stays."""
-    ceilings = scope_targets or {}
+                 scope_targets: dict[str, int] | None = None, scope=None,
+                 raises=None) -> tuple[list[RatchetEntry], int, int]:
+    """First-class mark entry: record every over-ceiling function at its current CRAP.
+
+    `scope` and `raises` are path predicates. Rows outside `scope` are left out
+    and the marks there stay as they are (None takes every path). A mark never
+    rises, seeding included, except where `raises` admits its path: there the
+    mark takes the run's value. `raised_marks` lists the rises."""
+    rises = raises or _no_path
     marks = MarkIndex(prior).working_copy()
     added = tightened = 0
-    for key, row in rows_by_key(fresh).items():
-        if not over_ceiling(row.crap, ceilings.get(row.scope, target)):
-            continue
-        a, t = _seed_mark(marks, key, row.crap)
+    for key, row in _over_ceiling(fresh, target, scope_targets or {}, scope or _every_path):
+        a, t = _place_mark(marks, key, row, rises)
         added += a
         tightened += t
     seeded = sorted(marks.values(), key=lambda e: (e.path, e.long_name))
-    check_marks_kept(prior, seeded, adds=True)
+    check_marks_kept(_held(prior, rises), _held(seeded, rises), adds=True)
     return seeded, added, tightened
+
+
+def _over_ceiling(fresh: list[ScoredRow], target: int, ceilings: dict, admits) -> list[tuple]:
+    """(key, row) for each row whose path `admits` takes and whose CRAP is over its scope's ceiling."""
+    return [(key, row) for key, row in rows_by_key(fresh).items()
+            if admits(row.path) and over_ceiling(row.crap, ceilings.get(row.scope, target))]
+
+
+def _place_mark(marks: dict, key: tuple, row: ScoredRow, rises) -> tuple[int, int]:
+    """Mark `row` at the run's value where `rises` admits its path, else only lower; (added, tightened)."""
+    place = _raise_mark if rises(row.path) else _seed_mark
+    return place(marks, key, row.crap)
+
+
+def _held(entries: list[RatchetEntry], rises) -> list[RatchetEntry]:
+    """The marks a seed may not raise."""
+    return [entry for entry in entries if not rises(entry.path)]
 
 
 def _seed_mark(marks: dict, key: tuple, crap: float) -> tuple[int, int]:
@@ -1178,6 +1273,22 @@ def _seed_mark(marks: dict, key: tuple, crap: float) -> tuple[int, int]:
         return 0, 0
     marks[key] = RatchetEntry(key[0], key[1], mark)
     return (1, 0) if old is None else (0, 1)
+
+
+def _raise_mark(marks: dict, key: tuple, crap: float) -> tuple[int, int]:
+    """Place one mark at the run's value, above the old one too; returns (added, tightened)."""
+    old = marks.get(key)
+    marks[key] = RatchetEntry(key[0], key[1], round(crap, 4))
+    if old is None:
+        return 1, 0
+    return 0, int(marks[key].crap < old.crap)
+
+
+def raised_marks(prior: list[RatchetEntry], seeded: list[RatchetEntry]) -> list[tuple[RatchetEntry, float]]:
+    """(mark, the mark it replaced) for each mark of `seeded` above `prior`'s, in file order."""
+    before = MarkIndex(prior)
+    olds = ((entry, before.mark(mark_key(entry))) for entry in seeded)
+    return [(entry, old) for entry, old in olds if old is not None and entry.crap > old]
 
 
 def _repath(entries: list[RatchetEntry], dest_of) -> tuple[list[RatchetEntry], int]:

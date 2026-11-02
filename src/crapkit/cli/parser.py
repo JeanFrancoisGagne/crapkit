@@ -614,6 +614,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="seed and prune: read run ID instead of the run verify would pick, "
                           "the audited way past a failed verify; refused for a failed verify, "
                           "a hook, a partial or an inventory run")
+    rat.add_argument("--scope", default=None, metavar="NAME",
+                     help="seed only: repair one scope's marks and stamp: rewrite the marks the "
+                          "config places in scope NAME and NAME's stamp line, and leave every "
+                          "other scope's marks and stamp line as they are")
     rat.add_argument("--json", action="store_true", help="machine output (report)")
     rat.add_argument("--enforce", action="store_true",
                      help="report: exit 1 on debt policy violations (age, repayment quota)")

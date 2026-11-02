@@ -146,8 +146,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # added 22 on 090/metric-stamp, and the landing met at 3,959. 090/integration
 # reached 3,943 once the marks history read one patch stream (mission-3-11),
 # and the sync met at 3,965. verify's per-scope stamp check (metric-stamp-05)
-# added 25.
-SRC_DEFS = 3994
+# added 25. seed's per-scope stamps and `--scope` (metric-stamp-06) added 23.
+# The flip refusal's note (metric-stamp-07) added 1.
+SRC_DEFS = 4018
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
