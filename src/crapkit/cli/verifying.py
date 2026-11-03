@@ -298,8 +298,8 @@ def verify_stamp_conflict(saved, cfg):
 
     Marks a scope's stamp can be read from are weighed scope by scope against
     the running per-scope stamp. A single-number file that holds no mark, and a
-    stamp crapkit cannot read, compare as one value with the single number,
-    as the tighten that restamps the file does."""
+    stamp crapkit cannot read, compare as one value with the single number;
+    the tighten then signs the running per-scope stamp over a passing file."""
     from ..ratchet import ScopeStamps, SingleNumberStamp, metric_version, running_stamp
 
     stamp = saved.metric_stamp
@@ -446,16 +446,19 @@ def _apply_verify_override(store: SnapshotStore, run_id: int, root: Path, cfg, v
     refuses one grants nothing (`_refuse_override` says so once the verdict is
     printed)."""
     from ..override import record_override
-    from ..ratchet import metric_version
+    from ..ratchet import running_stamp
+    from ..ratchetfile import RatchetFile
     from ..verify import grant, override_grants
 
     granted = override_grants(verdict) if reason else ()
     if not granted:
         return verdict
+    saved = ratchet_input or RatchetFile.read(root / cfg.ratchet_file)
     record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                     alert_command=cfg.alert_command, violations=list(granted),
                     reason=reason, key_version=key_version, identity_rows=identity_rows,
-                    ratchet_input=ratchet_input, metric=metric_version())
+                    ratchet_input=saved, metric=running_stamp(cfg),
+                    marked_scopes=marked_scopes(saved.entries, cfg))
     return grant(verdict)
 
 
@@ -510,11 +513,13 @@ def _held_marks(store: SnapshotStore, cfg, commit: str, run_id: int, ratchet,
     return frozenset((r.path, r.long_name) for r in refusals)
 
 
-def _write_marks_if_changed(saved, prior: list[RatchetEntry],
-                            updated: list[RatchetEntry], *, key_version: int | None = None) -> RatchetDelta | None:
+def _write_marks_if_changed(saved, prior: list[RatchetEntry], updated: list[RatchetEntry], cfg, *,
+                            key_version: int | None = None) -> RatchetDelta | None:
     """Rewrite the marks file only when its text would change, and never create
     one to hold zero marks. Returns what the write did, or None when the file
-    was left alone.
+    was left alone. The write signs the running per-scope stamp, so a
+    single-number or unstamped file whose marks the guard passed converts
+    here, and verify prints `restamped` when no mark moved.
 
     A clean checkout used to end every green verify with an untracked marks
     file holding a stamp, a header and no rows, and a repo with marks got a
@@ -524,11 +529,12 @@ def _write_marks_if_changed(saved, prior: list[RatchetEntry],
     emptied file is left empty too: restamped into a header with no rows, it
     asked for a `git add` that committed the lost marks as a valid empty file.
     """
-    from ..ratchet import metric_version, ratchet_delta
+    from ..ratchet import ratchet_delta, running_stamp
 
     if saved.blank:
         return None
-    if not saved.publish(saved.measured(updated, metric_version(), keys=key_version)):
+    text = saved.measured(updated, running_stamp(cfg), marked_scopes(prior, cfg), keys=key_version)
+    if not saved.publish(text):
         return None
     return ratchet_delta(prior, updated)
 
@@ -555,7 +561,7 @@ def _settle_verify(store: SnapshotStore, run_id: int, verdict,
         hold = _held_marks(store, cfg, commit, run_id, ratchet, scored)
         updated = update_ratchet(ratchet, scored, target=cfg.target,
                                  scope_targets=cfg.scope_targets, hold=hold)
-        changes = _write_marks_if_changed(saved, ratchet, updated, key_version=key_version)
+        changes = _write_marks_if_changed(saved, ratchet, updated, cfg, key_version=key_version)
     store.set_verdict_ok(run_id, verdict.ok, findings=sum(dirty_counts(verdict)))
     return changes
 
@@ -1349,7 +1355,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
 
     from ..gitio import head_commit
     from ..override import record_override
-    from ..ratchet import metric_version
+    from ..ratchet import running_stamp
     from ..ratchetfile import RatchetFile
     from ..verify import GateViolation
     from ._shared import _check_ratchet_identity
@@ -1372,7 +1378,7 @@ def _grant_env_override(root: Path, cfg, violations, reason: str, records=()) ->
         record_override(store=store, run_id=run_id, root=root, ratchet_file=cfg.ratchet_file,
                         alert_command=cfg.alert_command, violations=gate, reason=reason,
                         raise_marks=False, key_version=key_version, identity_rows=records,
-                        ratchet_input=saved, metric=metric_version())
+                        ratchet_input=saved, metric=running_stamp(cfg))
     except sqlite3.DatabaseError as exc:
         # The store opens and takes the hook run before the alert fires, so a
         # store a read-only tree holds, or one cut short, stops the grant before

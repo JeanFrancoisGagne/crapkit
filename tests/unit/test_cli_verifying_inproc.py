@@ -25,7 +25,7 @@ from crapkit.cli.verifying import _verify_exit_code
 from crapkit.cli import main
 from crapkit.cli import verifying
 from crapkit.invocation import _self
-from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version, read_stamp
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation, RatchetRegression, Verdict, parse_baseline_tsv
 
@@ -1464,11 +1464,44 @@ def test_a_green_run_with_nothing_to_move_leaves_the_marks_file_alone(marked_deb
 
 
 def test_a_green_run_with_nothing_to_move_prints_no_ratchet_suffix(marked_debt, capsys):
-    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), key_version=1)
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp=running_in(marked_debt),
+                key_version=1)
 
     _, out, _ = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
 
     assert "ratchet:" not in out and "git add" not in out, out
+
+
+def test_a_single_number_file_this_crapkit_runs_converts_on_the_first_passing_verify(
+        marked_debt, capsys):
+    """A 0.8.1 file whose one number this crapkit runs needs no reseed: the
+    pass that moves no mark rewrites it with one stamp per scope and says
+    `restamped`, and the next verify passes with no warning and no rewrite."""
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp=metric_version(), key_version=1)
+
+    code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+
+    assert code == 0, out + err
+    assert f"ratchet: restamped -> git add {MARKS}" in out, out
+    text = (marked_debt / MARKS).read_text(encoding="utf-8")
+    assert read_stamp(text) == running_in(marked_debt), text
+    assert "src/app.ts\tknotty ( n )\t16.0000\n" in text
+    converted = (marked_debt / MARKS).read_bytes()
+    code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+    assert (code, err) == (0, ""), out + err
+    assert "ratchet:" not in out and (marked_debt / MARKS).read_bytes() == converted, out
+
+
+def test_no_tighten_leaves_a_single_number_file_byte_identical(marked_debt, capsys):
+    """So a 0.8.x checkout that shares the file still reads it."""
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp=metric_version(), key_version=1)
+    before = (marked_debt / MARKS).read_bytes()
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--no-tighten"], marked_debt, capsys)
+
+    assert code == 0, out + err
+    assert (marked_debt / MARKS).read_bytes() == before
+    assert "ratchet:" not in out, out
 
 
 def _crlf_marks(repo, *entries: tuple[str, str, float]) -> bytes:
@@ -1513,7 +1546,7 @@ def test_a_marks_file_written_before_stamping_is_restamped_and_says_so(marked_de
     assert code == 0
     assert "carries no metric stamp" in err, err
     assert f"(0 changed files) ratchet: restamped -> git add {MARKS}" in out, out
-    assert (marked_debt / MARKS).read_text(encoding="utf-8").startswith("# crapkit-analysis=")
+    assert read_stamp((marked_debt / MARKS).read_text(encoding="utf-8")) == running_in(marked_debt)
 
 
 def test_a_green_run_never_creates_a_marks_file_to_hold_zero_marks(baselined, capsys):
