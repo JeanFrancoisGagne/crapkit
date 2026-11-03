@@ -88,6 +88,28 @@ def _unread_fields(payload: str, key: str, dirty: str,
             AgentField(payload, f"{key}[].dirty", ("boolean",), dirty))
 
 
+_AMBIGUITY = ("why no mark carried to this function: a mark left its file under its bare name, "
+              "and twins, several such marks or several unmarked functions of that name keep the "
+              "carry from saying which function it belongs to; the sentence names every candidate "
+              "key and the ratchet move --function command that ends it; null when no mark of its "
+              "name left the file")
+# A carried item's own fields, in the order verify and rescore --gate print them.
+CARRIED_FIELDS = ("path", "long_name", "key_name", "carried_from", "mark")
+_CARRIED_DESCRIPTIONS = {
+    "path": "repo-relative path",
+    "long_name": "the function's long name now",
+    "key_name": "the function's ratchet key now, which holds no mark yet",
+    "carried_from": ("carried: the key the mark was recorded under before the function's "
+                     "signature changed, the one marked key of its bare name that left the file"),
+    "mark": "carried: the recorded mark that pardons the function, its CRAP at or under it"}
+
+
+def _carried_fields(payload: str, prefix: str, names: tuple[str, ...]) -> tuple[AgentField, ...]:
+    """The fields NAMES of a carried item: one function a carried mark pardons."""
+    return tuple(AgentField(payload, prefix + name, ("number",) if name == "mark" else ("string",),
+                            _CARRIED_DESCRIPTIONS[name]) for name in names)
+
+
 _ADDED = (
     AgentField("worklist --json", "shallow", ("boolean",),
                _SHALLOW.format(counts="commits, authors and the churn the ranking reads")),
@@ -133,16 +155,17 @@ _ADDED = (
                "digest of the marks verify judged against; null when there were no marks"),
     AgentField("verify --json", "findings", ("array",),
                "every finding once: the kinds in exit order (unreadable_name, gate_violation, "
-               "unread_file, ratchet_regression, new_failure, diff_uncovered, overridden), each "
-               "kind's items in the order its own list gives them; diff_uncovered lists at most "
-               "50, and counts.diff_uncovered_count counts them all"),
+               "unread_file, ratchet_regression, new_failure, diff_uncovered, overridden, "
+               "carried), each kind's items in the order its own list gives them; diff_uncovered "
+               "lists at most 50, and counts.diff_uncovered_count counts them all"),
     AgentField("verify --json", "findings[].kind", ("string",),
                "unreadable_name, gate_violation, unread_file, ratchet_regression, new_failure, "
-               "diff_uncovered or overridden; the fields beside the common six are the kind's own"),
+               "diff_uncovered, overridden or carried; the fields beside the common six are the "
+               "kind's own"),
     AgentField("verify --json", "findings[].fails", ("boolean",),
                "true when this item fails the verdict: its kind fires an exit code and the "
                "verdict holds it; a diff_uncovered item fails only past diff_uncovered_max, and "
-               "an overridden one never does"),
+               "an overridden or carried one never does"),
     AgentField("verify --json", "findings[].exit_code", ("integer", "null"),
                "the exit code the item fires when it fails: 3 unreadable_name, 6 gate_violation "
                "and unread_file, 7 ratchet_regression, 8 new_failure, 9 diff_uncovered; null when "
@@ -156,8 +179,23 @@ _ADDED = (
                "new_failure, when its test id names such a file"),
     AgentField("verify --json", "findings[].rule", ("string",),
                "the label of the item's rule: complexity gate (gate_violation, unread_file), "
-               "ratchet regressions, new test failures, diff-coverage ceiling, unreadable name or "
-               "override"),
+               "ratchet regressions, new test failures, diff-coverage ceiling, unreadable name, "
+               "override or carried mark"),
+    AgentField("verify --json", "findings[].mark_ambiguity", ("string", "null"), _AMBIGUITY),
+    AgentField("verify --json", "findings[].carried_from", ("string", "null"),
+               f"{_CARRIED_DESCRIPTIONS['carried_from']}; ratchet_regression: the key the mark "
+               "was recorded under when a signature edit carried it to the function that rose, "
+               "null for a mark under the function's own key"),
+    *_carried_fields("verify --json", "findings[].", ("mark",)),
+    AgentField("verify --json", "ratchet_changes.rekeyed", ("integer",),
+               "marks that moved, at their value or lower, to the key of the function a "
+               "signature edit carried them to; the OK line adds `, N re-keyed` when N is above 0"),
+    AgentField("rescore --gate --json", "gate.carried", ("array",),
+               "the changed functions over their ceiling that a carried mark pardons, each also "
+               "named by one stderr line; [] when none"),
+    *_carried_fields("rescore --gate --json", "gate.carried[].", CARRIED_FIELDS),
+    AgentField("rescore --gate --json", "gate.breaches[].mark_ambiguity", ("string", "null"),
+               _AMBIGUITY),
     AgentField("verify --json", "counts", ("object",),
                "the numbers beside findings, which its items do not carry"),
     AgentField("verify --json", "counts.diff_uncovered_count", ("integer",),
@@ -1446,7 +1484,14 @@ _RESCORE_GATE = {
                             "description": "the ratchet key form of the name"},
                         "ceiling": {
                             "type": "integer",
-                            "description": "the ceiling it exceeds"}}}},
+                            "description": "the ceiling it exceeds"},
+                        "mark_ambiguity": schema_of("rescore --gate --json",
+                                                    "gate.breaches[].mark_ambiguity")}}},
+            "carried": {**schema_of("rescore --gate --json", "gate.carried"), "items": {
+                "type": "object",
+                "description": "one function a carried mark pardons",
+                "properties": {name: schema_of("rescore --gate --json", f"gate.carried[].{name}")
+                               for name in CARRIED_FIELDS}}},
             "untracked": {
                 "type": "array",
                 "description": "rescored paths git tracks nothing of, judged in full",
@@ -1627,14 +1672,17 @@ _FINDING_FIELDS = {
                    "description": "ratchet_regression: the score this run measured"},
     "test": {"type": "string",
              "description": "new_failure: the test id that fails now and passed in the baseline"},
-    "line": {"type": "integer", "description": "diff_uncovered: the changed line no test ran"}}
+    "line": {"type": "integer", "description": "diff_uncovered: the changed line no test ran"},
+    **{key: schema_of("verify --json", f"findings[].{key}")
+       for key in ("mark_ambiguity", "carried_from", "mark")}}
 _FINDING = {
     "type": "object",
     "description": ("one finding: kind, fails, exit_code, overridable, dirty and rule, then its "
                     "kind's own fields (gate_violation and overridden: path, long_name, start, "
-                    "ccn, cov, crap, remedy, key_name; unread_file: path, reason; "
-                    "ratchet_regression: path, long_name, recorded, fresh_crap; new_failure: "
-                    "test; diff_uncovered: path, line; unreadable_name: path, scope, reason)"),
+                    "ccn, cov, crap, remedy, key_name, mark_ambiguity; unread_file: path, reason; "
+                    "ratchet_regression: path, long_name, recorded, fresh_crap, carried_from; new_failure: "
+                    "test; diff_uncovered: path, line; unreadable_name: path, scope, reason; "
+                    "carried: path, long_name, key_name, carried_from, mark)"),
     "properties": {
         **{key: schema_of("verify --json", f"findings[].{key}")
            for key in ("kind", "fails", "exit_code", "overridable", "dirty", "rule")},
@@ -1682,7 +1730,8 @@ _VERIFY = {
         "type": ("object", "null"),
         "description": "what this run's tighten did to the marks file; null when it wrote nothing",
         "properties": {"dropped": _count("marks whose function is now at or under its ceiling"),
-                       "tightened": _count("marks that fell")}},
+                       "tightened": _count("marks that fell"),
+                       "rekeyed": schema_of("verify --json", "ratchet_changes.rekeyed")}},
     "lanes_without_results": _added_strings("verify --json", "lanes_without_results"),
     "lanes_without_baseline_results": _added_strings("verify --json",
                                                      "lanes_without_baseline_results"),

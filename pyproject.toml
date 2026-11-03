@@ -249,6 +249,7 @@ paths_to_mutate = [
     "src/crapkit/lizardshell.py",
     "src/crapkit/lizardswift.py",
     "src/crapkit/lizardtypescript.py",
+    "src/crapkit/marks_history.py",
     "src/crapkit/mcp_server.py",
     "src/crapkit/mutate.py",
     "src/crapkit/mutate_pool.py",

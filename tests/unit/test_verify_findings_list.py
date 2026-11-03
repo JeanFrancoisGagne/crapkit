@@ -29,8 +29,8 @@ from accuracy.verdict_model import model_verdict as model
 from crapkit import universe, verify
 from crapkit.agent_fields import FIELDS
 from crapkit.cli import main, verifying
-from crapkit.verify import (FINDING_KINDS, GateViolation, RatchetRegression, UncoveredViolation,
-                            UnreadableName, Unread, Verdict)
+from crapkit.verify import (FINDING_KINDS, Carried, GateViolation, RatchetRegression,
+                            UncoveredViolation, UnreadableName, Unread, Verdict)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -40,6 +40,7 @@ ROSE = RatchetRegression("lib/m.py", "g( y )", 4.0, 9.0)
 FAILURE = "tests/t.py::test_a"
 LINE = UncoveredViolation("src/a.py", 7)
 NAME = UnreadableName("src/caf\udce9.py", "src")
+CARRIED = Carried("src/g.py", "h( x , y = None )", "h( x , y = None )", "h( x )", 7.0)
 
 # One entry per kind, a second one its file's uncommitted edits make dirty,
 # and the Verdict field it lives in.
@@ -51,6 +52,7 @@ KINDS = {
     "new_failure": ("new_failures", FAILURE, "tests/u.py::test_b"),
     "diff_uncovered": ("uncovered_violations", LINE, LINE._replace(path="src/e.py", dirty=True)),
     "overridden": ("overridden", GATE, GATE._replace(start=30, dirty=True)),
+    "carried": ("carried", CARRIED, CARRIED._replace(path="src/k.py", dirty=True)),
 }
 ORDER = list(KINDS)
 
@@ -58,21 +60,24 @@ COMMON = ("kind", "fails", "exit_code", "overridable", "dirty", "rule")
 RULES = {"unreadable_name": "unreadable name", "gate_violation": "complexity gate",
          "unread_file": "complexity gate", "ratchet_regression": "ratchet regressions",
          "new_failure": "new test failures", "diff_uncovered": "diff-coverage ceiling",
-         "overridden": "override"}
+         "overridden": "override", "carried": "carried mark"}
 SENTENCE = ("src/caf\\xe9.py is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit "
             "reads every path as UTF-8; a file a scope takes is refused, not left out, so no gate passes "
             "it unread: rename it (git mv) to a UTF-8 name")
 GATE_FIELDS = {"path": "src/a.py", "long_name": "f( x )", "start": 3, "ccn": 9, "cov": 0.5, "crap": 84.0,
-               "remedy": "decompose", "key_name": "f( x )"}
+               "remedy": "decompose", "key_name": "f( x )", "mark_ambiguity": None}
 # Each kind's own fields on its clean entry.
 OWN = {
     "unreadable_name": {"path": "src/caf\\xe9.py", "scope": "src", "reason": SENTENCE},
     "gate_violation": GATE_FIELDS,
     "unread_file": {"path": "src/b.ts", "reason": "src/b.ts:12: arrow refused"},
-    "ratchet_regression": {"path": "lib/m.py", "long_name": "g( y )", "recorded": 4.0, "fresh_crap": 9.0},
+    "ratchet_regression": {"path": "lib/m.py", "long_name": "g( y )", "recorded": 4.0, "fresh_crap": 9.0,
+                           "carried_from": None},
     "new_failure": {"test": "tests/t.py::test_a"},
     "diff_uncovered": {"path": "src/a.py", "line": 7},
     "overridden": GATE_FIELDS,
+    "carried": {"path": "src/g.py", "long_name": "h( x , y = None )", "key_name": "h( x , y = None )",
+                "carried_from": "h( x )", "mark": 7.0},
 }
 BASELINE = {"id": 1, "commit": "a" * 40}
 
@@ -275,9 +280,9 @@ def test_a_payload_with_every_kind_prints_no_old_key_and_findings_and_counts_car
         "unread_files": [{"path": "src/b.ts", "reason": "src/b.ts:12: arrow refused", "dirty": False},
                          {"path": "src/c.ts", "reason": "src/b.ts:12: arrow refused", "dirty": True}],
         "ratchet_regressions": [{"path": "lib/m.py", "long_name": "g( y )", "recorded": 4.0,
-                                 "fresh_crap": 9.0, "dirty": False},
+                                 "fresh_crap": 9.0, "carried_from": None, "dirty": False},
                                 {"path": "lib/n.py", "long_name": "g( y )", "recorded": 4.0,
-                                 "fresh_crap": 9.0, "dirty": True}],
+                                 "fresh_crap": 9.0, "carried_from": None, "dirty": True}],
         "new_failures": ["tests/t.py::test_a", "tests/u.py::test_b"],
         "diff_uncovered": [{"path": "src/a.py", "line": line} for line in range(1, 51)],
         "overridden": gates,

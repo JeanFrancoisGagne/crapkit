@@ -154,7 +154,14 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # stamp builders (metric-stamp-11) took 1 away, and the sync met at 4,096.
 # The Cobertura reader and covstream's XML walk (m1-readers-05) added 30.
 # The JaCoCo reader and the stanza's wrapper command (m1-readers-06) added 17.
-SRC_DEFS = 4143
+# On 090/mission-4 the one whole-key rewrite for marks (mission-4-01) added 2,
+# `ratchet move --function` (mission-4-02) added 16 and the merge driver's
+# move pairing (mission-4-05) added 10, and its sync with metric-stamp-11 met
+# at 4,045. ratchet report's move events (mission-4-06) added 5. The gate's
+# pardon through a carried mark (mission-4-03a) added 14. Both hooks naming a
+# carried mark and its refusal (mission-4-03b) added 5. verify's re-key of a
+# carried mark (mission-4-04) added 4, and the sync met at 4,199.
+SRC_DEFS = 4199
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

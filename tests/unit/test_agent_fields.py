@@ -273,18 +273,50 @@ def _every_kind_payload(capsys) -> dict:
     from crapkit.cli._shared import _print_json
     from crapkit.cli.verifying import _verify_result
     from crapkit.gate import Unread, UnreadableName
-    from crapkit.verify import GateViolation, RatchetRegression, Verdict, settle_verdict, with_diff_coverage
+    from crapkit.verify import (Carried, GateViolation, RatchetRegression, Verdict, settle_verdict,
+                                with_diff_coverage)
 
     gate = GateViolation("src/app.ts", "knotty ( n )", 21, 8, 0.25, 34.75, "decompose", True, "knotty ( n )")
+    refused = gate._replace(start=40, mark_ambiguity=TWIN_REFUSAL)
     verdict = settle_verdict(Verdict.passing()._replace(
         claimed_names=(UnreadableName(UNREADABLE, "src", True),), gate_violations=[gate],
         unread_files=(Unread("src/b.ts", "src/b.ts:1: arrow refused", True),),
         ratchet_regressions=[RatchetRegression("src/app.ts", "dispatch ( kind )", 9.0, 12.5)],
-        new_failures=["tests/t.py::test_a"], overridden=(gate._replace(start=40),)))
+        new_failures=["tests/t.py::test_a"], overridden=(refused,),
+        carried=(Carried("src/app.ts", "knotty ( n , m )", "knotty ( n , m )", "knotty ( n )", 34.75,
+                         True),)))
     lines = [("src/app.ts", 22)]
     verdict = with_diff_coverage(verdict, lines, 0, {"src/app.ts"})
     _print_json(_verify_result(verdict, 7, {"id": 1, "commit": "a" * 40}, "a" * 40, {"src/app.ts": [(21, 30)]},
                                lines, 0, 0, {"src/app.ts"}))
+    return json.loads(capsys.readouterr().out)
+
+
+TWIN_REFUSAL = ('src/twin.py: no mark carries to "rank( x , y = 1 )", "rank( x , y = 1 )#2" under '
+                'the name rank: twins never carry a mark')
+
+
+def _carried_gate_payload(capsys) -> dict:
+    """rescore --gate --json's gate block over a mark carried through a signature
+    edit and over twins the carry refuses: a run over one repo prints neither."""
+    from crapkit.cli._shared import _print_json
+    from crapkit.cli.scoring import _gate_breaches, _gate_changes, gate_block
+    from crapkit.gate import judge
+    from crapkit.keys import MarkIndex
+    from crapkit.score import ScoredRow
+
+    def row(path: str, name: str, start: int) -> ScoredRow:
+        return ScoredRow("src", path, name, start, start + 5, 7, 7, 7, 12, 2, 1, 1.0, "measured", 7.0,
+                         "decompose")
+
+    rows = [row("src/calc.py", "classify( a , b , c = None )", 10),
+            row("src/twin.py", "rank( x , y = 1 )", 10), row("src/twin.py", "rank( x , y = 1 )", 40)]
+    marks = MarkIndex([RatchetEntry("src/calc.py", "classify( a , b )", 7.0),
+                       RatchetEntry("src/twin.py", "rank( x )", 7.0)])
+    changes = _gate_changes(rows, {}, {r.path for r in rows}, {})
+    result = judge(changes, lambda scope: 6, lambda: marks)
+    ceilings = {r.path: 6 for r in rows}
+    _print_json({"gate": gate_block(result, ceilings, _gate_breaches(result, rows))})
     return json.loads(capsys.readouterr().out)
 
 
@@ -319,6 +351,7 @@ def payloads(repo, capsys, monkeypatch, tmp_path_factory) -> dict[str, list]:
     _verifies(out, repo, capsys)
     _verify_stop(out, repo, capsys)
     out["verify --json"].append(_every_kind_payload(capsys))
+    out["rescore --gate --json"].append(_carried_gate_payload(capsys))
     _override(out, repo, capsys)
     _print(out, repo, capsys, "clean --json", "clean", "--dry-run", "--json")
     _empty_scope(out, repo, capsys)
@@ -455,7 +488,22 @@ def test_the_unread_finding_has_one_shape_in_every_payload(payloads):
 
 
 FINDING_KINDS = ("unreadable_name", "gate_violation", "unread_file", "ratchet_regression", "new_failure",
-                 "diff_uncovered", "overridden")
+                 "diff_uncovered", "overridden", "carried")
+
+
+@NOT_UTF8_NAMES
+def test_the_gate_block_lists_a_carry_and_names_a_refused_one(payloads):
+    """A carried function is a gate.carried item, never a breach; a twin the
+    carry refuses is a breach whose mark_ambiguity is keys' sentence."""
+    (gate,) = [payload["gate"] for payload in payloads["rescore --gate --json"]
+               if payload["gate"]["carried"]]
+
+    assert gate["carried"] == [{"path": "src/calc.py", "long_name": "classify( a , b , c = None )",
+                                "key_name": "classify( a , b , c = None )",
+                                "carried_from": "classify( a , b )", "mark": 7.0}]
+    assert [b["path"] for b in gate["breaches"]] == ["src/twin.py", "src/twin.py"]
+    assert all("twins never carry a mark" in b["mark_ambiguity"] for b in gate["breaches"])
+    assert "carried_marks" not in json.dumps(payloads)
 
 
 @NOT_UTF8_NAMES

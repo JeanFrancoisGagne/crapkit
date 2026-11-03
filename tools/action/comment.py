@@ -401,6 +401,14 @@ def _overridden_bullets(verify: dict) -> list[str]:
                    "overridden function")
 
 
+def _carried_bullets(verify: dict) -> list[str]:
+    """A function a mark recorded under its old key passed: it fails nothing, so
+    without its bullet a reviewer could not see which mark judged it."""
+    return _capped([f"- carried: `{c.get('path')}` `{c.get('key_name')}` carries the mark "
+                    f"{c.get('mark')} recorded for `{c.get('carried_from')}`"
+                    for c in _of(verify, "carried")], "carried mark")
+
+
 def _unreadable_bullets(verify: dict) -> list[str]:
     """A file a scope takes whose name is not UTF-8: verify stops on it before
     any lane runs. The reason names the scope and the rename that fixes it."""
@@ -466,7 +474,8 @@ def _failed(verify: dict, exit_code: int) -> str:
                + _capped(_ratchet_bullets(verify), "ratchet regression")
                + _capped(_failure_bullets(verify), "new test failure")
                + _uncovered_bullets(verify)
-               + _overridden_bullets(verify))
+               + _overridden_bullets(verify)
+               + _carried_bullets(verify))
     if not bullets:
         return f"{head} {counts}"
     return "\n".join([head, "", *bullets, "", counts])
@@ -493,7 +502,7 @@ def verdict_line(verify: dict | None, exit_code: int, base_reason: str | None = 
         return (f"**verify judged no changed function:** the base run was not made "
                 f"({base_reason}). {_against(verify)}.")
     return _listed(f"**verify passed.** {_against(verify)}.{_unchecked(verify)}",
-                   _overridden_bullets(verify))
+                   _overridden_bullets(verify) + _carried_bullets(verify))
 
 
 def _in_diff(active: list[dict], changed: list[str]) -> list[dict]:

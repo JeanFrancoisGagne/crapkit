@@ -28,7 +28,8 @@ import pytest
 
 from crapkit import keys
 from crapkit.keys import Carry, Exact, Refused, Twin
-from crapkit.ratchet import RatchetEntry
+from crapkit.ratchet import RatchetEntry, checked_key_version
+from crapkit.score import ScoredRow
 from marks_history_repo import NEW, OLD, PATH, REKEYED, SECOND, SEEDED, TWIN, keys_of
 
 OTHER = "calc/other.py"
@@ -143,6 +144,27 @@ def test_resolve_counts_the_function_among_the_file_functions():
     assert keys.resolve(key(NEW), set(), at(OLD)) == Carry(key(OLD), key(NEW))
 
 
+def scored(name: str, start: int) -> ScoredRow:
+    """A row with no recorded within-line position, as a legacy reader wrote it."""
+    return ScoredRow("src", PATH, name, start, start + 2, 9, 9, 9, 3, 1, 1, 0.0, "measured", 90.0,
+                     "decompose")
+
+
+UNPROVED = f"path\tlong_name\tcrap\n{PATH}\t{OLD}\t7.0000\n{PATH}\tgrade( a )\t4.0000\n"
+# NEW took OLD's bare name, and two `grade( a )` open on one line: a legacy collision.
+COLLIDED = [scored(NEW, 3), scored("grade( a )", 9), scored("grade( a )", 9)]
+
+
+def test_an_unproved_marks_file_with_a_legacy_collision_carries_no_mark():
+    """`resolve` takes keys and no identity proof, so the refusal
+    sits at the key-identity check every reader of a marks file runs first:
+    the file is refused before any carry is read. The key stamp proves it."""
+    with pytest.raises(ValueError, match=rf"ambiguous for {PATH}: grade\( a \)"):
+        checked_key_version(UNPROVED, COLLIDED)
+
+    assert checked_key_version("# crapkit-keys=1\n" + UNPROVED, COLLIDED) == 1
+
+
 # --- pair_moves -----------------------------------------------------------------
 
 def test_one_drop_and_one_add_with_one_bare_name_pair():
@@ -155,6 +177,14 @@ def test_two_adds_with_one_bare_name_give_no_pair_and_a_refusal_naming_both():
     assert (moves.pairs, moves.unpaired) == ([], sorted(at(OLD, NEW, "classify( y )")))
     assert len(moves.refused) == 1
     assert_names_the_ambiguity(moves.refused[0].text, [OLD, NEW, "classify( y )"])
+
+
+def test_two_drops_and_two_adds_with_one_bare_name_give_no_pair():
+    moves = keys.pair_moves(PATH, at(OLD, "classify( x )"), at(NEW, "classify( y )"))
+
+    assert (moves.pairs, moves.unpaired) == ([], sorted(at(OLD, "classify( x )", NEW, "classify( y )")))
+    assert len(moves.refused) == 1
+    assert_names_the_ambiguity(moves.refused[0].text, [OLD, "classify( x )", NEW, "classify( y )"])
 
 
 def test_a_twin_drop_gives_no_pair():
@@ -184,6 +214,34 @@ def test_pairs_and_refusals_are_independent_per_bare_name():
     assert moves.unpaired == sorted(at("grade( a )", "grade( b )", "grade( c )"))
     assert len(moves.refused) == 1
     assert_names_the_ambiguity(moves.refused[0].text, ["grade( a )", "grade( b )", "grade( c )"])
+
+
+# --- pair_path_moves ------------------------------------------------------------
+
+MOVED_TO = "calc/grading.py"
+
+# (case, the dropped marks, the added marks, the pairs)
+PATH_MOVES = [
+    ("one of each pairs", {key("f( )"): 7.0}, {key("f( )", MOVED_TO): 7.0}, [(key("f( )"), key("f( )", MOVED_TO))]),
+    ("two of each give no pair", {key("f( )"): 7.0, key("f( )", OTHER): 7.0},
+     {key("f( )", MOVED_TO): 7.0, key("f( )", "lib/f.py"): 7.0}, []),
+    ("two drops and one add give no pair", {key("f( )"): 7.0, key("f( )", OTHER): 7.0},
+     {key("f( )", MOVED_TO): 7.0}, []),
+    ("a different value gives no pair", {key("f( )"): 7.0}, {key("f( )", MOVED_TO): 6.5}, []),
+    ("another key name gives no pair", {key(OLD): 7.0}, {key(NEW, MOVED_TO): 7.0}, []),
+    ("a twin pairs with the same twin key name", {key("f( )#2"): 7.0}, {key("f( )#2", MOVED_TO): 7.0},
+     [(key("f( )#2"), key("f( )#2", MOVED_TO))]),
+    ("a twin never pairs with its bare name", {key("f( )#2"): 7.0}, {key("f( )", MOVED_TO): 7.0}, []),
+    ("pairs are independent per key name and value", {key("f( )"): 7.0, key("g( )"): 7.0, key("h( )"): 3.0},
+     {key("f( )", MOVED_TO): 7.0, key("g( )", MOVED_TO): 7.0, key("h( )", MOVED_TO): 3.0},
+     [(key("f( )"), key("f( )", MOVED_TO)), (key("g( )"), key("g( )", MOVED_TO)),
+      (key("h( )"), key("h( )", MOVED_TO))]),
+]
+
+
+@pytest.mark.parametrize("case, dropped, added, pairs", PATH_MOVES, ids=[r[0] for r in PATH_MOVES])
+def test_pair_path_moves_answers_the_hand_table(case, dropped, added, pairs):
+    assert keys.pair_path_moves(dropped, added) == pairs
 
 
 # The mission-4 probe shapes (tests/unit/test_mission4_probes.py), as pairing rows.
@@ -348,5 +406,76 @@ def test_hypothesis_pair_moves_agrees_with_the_independent_model():
     @hypothesis.given(dropped=st.sets(keyed, max_size=6), added=st.sets(keyed, max_size=6))
     def check(dropped, added):
         assert_pairing_agrees(dropped, added - dropped)
+
+    check()
+
+
+# --- keys.carriers: the same rule, asked from the mark's side ----------------------
+
+# (case, the file's functions, the marked keys, {mark name: answer, or the names a refusal holds})
+CARRIERS = [
+    ("the probe carries", at(NEW), at(OLD), {OLD: Carry(key(OLD), key(NEW))}),
+    ("a mark whose key a function holds is absent", at(OLD, NEW), at(OLD), {}),
+    ("twins refuse", at(NEW, TWIN), at(OLD), {OLD: [NEW, TWIN, OLD]}),
+    ("two leaving marks of one bare name refuse", at(NEW), at(OLD, "classify( x )"),
+     {OLD: [NEW, OLD, "classify( x )"], "classify( x )": [NEW, OLD, "classify( x )"]}),
+    ("two unmarked functions of one bare name refuse", at(NEW, "classify( q )"), at(OLD),
+     {OLD: [NEW, "classify( q )", OLD]}),
+    ("no unmarked function of the bare name: absent", at("grade( a )"), at(OLD), {}),
+    ("a fixed classify( a ) leaves the carry in place", at("classify( a )", NEW),
+     at("classify( a )", OLD), {OLD: Carry(key(OLD), key(NEW))}),
+    ("a mark in another file never carries here", at(NEW), at(OLD, path=OTHER), {}),
+]
+
+
+@pytest.mark.parametrize("case, functions, marked, wanted", CARRIERS, ids=[r[0] for r in CARRIERS])
+def test_carriers_answers_the_hand_table(case, functions, marked, wanted):
+    found = keys.carriers(functions, marked)
+
+    assert sorted(found) == sorted(key(name) for name in wanted)
+    for name, answer in wanted.items():
+        if isinstance(answer, Carry):
+            assert found[key(name)] == answer
+        else:
+            assert isinstance(found[key(name)], Refused)
+            assert_names_the_ambiguity(found[key(name)].text, answer)
+
+
+def assert_carriers_agree_with_resolve(functions: set, marked: set) -> None:
+    """Each answer `carriers` gives a mark is the one `resolve` gives each
+    unmarked function of its bare name, and every Carry `resolve` gives is one
+    `carriers` gives."""
+    found = keys.carriers(functions, marked)
+    for function in functions - marked:
+        answer = keys.resolve(function, functions, marked)
+        if isinstance(answer, Carry):
+            assert found[answer.old_key] == answer
+        elif isinstance(answer, Refused):
+            assert answer in found.values()
+    for mark, answer in found.items():
+        assert mark in marked - functions
+        if isinstance(answer, Carry):
+            assert keys.resolve(answer.new_key, functions, marked) == answer
+
+
+CARRY_POOL = [OLD, NEW, TWIN, "classify( x )", "classify( q )", "grade( a )", "(anonymous) ( z )"]
+
+
+def test_carriers_agree_with_resolve_on_every_small_file():
+    for parts in itertools.product(range(4), repeat=len(CARRY_POOL)):
+        functions = at(*cast(CARRY_POOL, parts, 1, 2))
+        assert_carriers_agree_with_resolve(functions, at(*cast(CARRY_POOL, parts, 2, 3)))
+
+
+def test_hypothesis_carriers_agree_with_resolve():
+    hypothesis, st, quiet = hypothesis_or_skip()
+    names = long_names(st)
+
+    @quiet
+    @hypothesis.given(functions=st.sets(names, max_size=6), left=st.sets(names, max_size=4),
+                      data=st.data())
+    def check(functions, left, data):
+        kept = data.draw(st.sets(st.sampled_from(sorted(functions)))) if functions else set()
+        assert_carriers_agree_with_resolve(at(*functions), at(*kept) | at(*(left - functions)))
 
     check()

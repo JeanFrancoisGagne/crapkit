@@ -313,6 +313,22 @@ still reads it.
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->
+### A signature edit keeps its mark
+
+0.9.0's gates pass a function whose signature changed while exactly one mark in its file
+shares its bare name and its CRAP stays at or under that mark: `rescore --gate`,
+`check_gate` and `verify` print one `crapkit gate: ... carries the mark ...` line for it.
+A teammate on 0.8.x still refuses that function, since 0.8.x reads a mark only under the
+function's exact key, until the marks file holds the mark under the new key and is
+committed: by a passing verify that writes it there, or by the
+`crapkit ratchet move --function` command the line prints.
+
+The next passing `crapkit verify` re-keys such a mark: it writes the mark under the
+function's new key at its value, or lower when the function improved, and its OK line ends
+`ratchet: 0 dropped, 0 tightened, 1 re-keyed -> git add crapkit-ratchet.tsv`. Commit that
+file as you commit any tighten. `verify --json` gains `ratchet_changes.rekeyed`, and a
+`ratchet_regression` item gains `carried_from`. A teammate on 0.8.x reads the re-keyed file
+as it reads any mark.
 <!-- /0.9.0:mission-4 -->
 
 <!-- 0.9.0:m1-readers -->

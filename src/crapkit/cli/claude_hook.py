@@ -679,7 +679,7 @@ def _worded(rel: str, result, ceiling: int | None) -> list[str]:
 
 
 # Every kind of breach the gate finds; each is held to its ceiling before the advisory prints.
-_BREACH_KINDS = ("over_ceiling", "pardoned", "marked_rise", "unproven", "unproven_rise")
+_BREACH_KINDS = ("over_ceiling", "pardoned", "marked_rise", "unproven", "unproven_rise", "carried")
 
 
 def _records_of(result, kinds: tuple) -> list:
@@ -786,9 +786,23 @@ def _advisory_lines(rel: str, breaches: list, ceiling: int) -> list[str]:
 
 
 def _over_lines(rel: str, breaches, ceiling: int) -> list[str]:
-    """The unmarked block: the functions over `ceiling` no mark covers, worst first."""
-    records = sorted((breach.function.record for breach in breaches), key=lambda rec: (-rec.ccn, rec.start))
-    return _advisory_lines(rel, records, ceiling) if records else []
+    """The unmarked block: the functions over `ceiling` no mark covers, worst
+    first, with keys' sentence under each one no mark could carry to."""
+    worst = sorted(breaches, key=lambda breach: (-breach.function.record.ccn, breach.function.record.start))
+    if not worst:
+        return []
+    head, *rows, closing = _advisory_lines(rel, [breach.function.record for breach in worst], ceiling)
+    return [head, *_with_ambiguity(rows, worst), closing]
+
+
+def _with_ambiguity(rows: list[str], breaches) -> list[str]:
+    """Each function's row, then keys' sentence when a mark left the file under
+    its bare name and could not carry to it: the sentence names every candidate
+    and the `ratchet move --function` command that ends the question."""
+    lines = []
+    for row, breach in zip(rows, breaches):
+        lines += [row] if breach.mark_ambiguity is None else [row, f"    {breach.mark_ambiguity}"]
+    return lines
 
 
 # What each marked block says its functions did, and its closing line. A ccn
@@ -820,7 +834,10 @@ def _ccn_rise(breach) -> str:
 def _marked_lines(rel: str, breaches, said: tuple[str, str], ccn_of) -> list[str]:
     """One marked block, the advisory's head line, then each function worst
     ccn first under the handle its mark sits under (`#2` for a second twin),
-    as the commit gate prints it, then the closing line. [] for none."""
+    as the commit gate prints it, a carried mark's old key noted after it,
+    then the closing line. [] for none."""
+    from ..gate import carried_note
+
     if not breaches:
         return []
     rose, closing = said
@@ -828,7 +845,7 @@ def _marked_lines(rel: str, breaches, said: tuple[str, str], ccn_of) -> list[str
             "(the edit landed; nothing was blocked)")
     worst = sorted(breaches, key=lambda breach: (-breach.function.record.ccn, breach.function.record.start))
     rows = [f"  ccn {ccn_of(breach)}  {rel}:{breach.function.record.start}  {breach.key_name}  "
-            f"mark {breach.mark:.4f}" for breach in worst]
+            f"mark {breach.mark:.4f}{carried_note(breach)}" for breach in worst]
     return [head, *rows, closing]
 
 

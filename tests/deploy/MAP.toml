@@ -117,7 +117,7 @@ modules = ["tests/deploy/test_mixed_versions.py"]
 modules = ["tests/deploy/test_seed_converts.py"]
 
 [packets.metric-stamp-07]
-modules = ["tests/deploy/test_cc_only_to_measured.py"]
+modules = ["tests/deploy/test_cc_only_to_measured.py", "tests/deploy/test_flip_reaches_the_agent.py"]
 
 [packets.criterion-13]
 modules = ["tests/deploy/test_criterion.py"]
@@ -458,6 +458,13 @@ published-action-tag = { packet = "deploy-action", cadence = "published", job = 
 "lin-mixed-0.8.0-reads-0.9.0-marks" = { packet = "metric-stamp-04", cadence = "nightly", os = "linux", image = "core" }
 "lin-up-pip-0.8.1-seed-converts" = { packet = "metric-stamp-06", cadence = "nightly", os = "linux", image = "core" }
 lin-cc-only-to-measured = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+# metric-stamp-07: the flip refusal reaches the agent in each core-image harness, fresh and upgrade
+lin-flip-route-claude-code = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+lin-flip-route-codex = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+lin-flip-route-cursor-agent = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+lin-up-flip-route-claude-code = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+lin-up-flip-route-codex = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+lin-up-flip-route-cursor-agent = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
 # criterion-13
 lin-criterion-fresh = { packet = "criterion-13", cadence = "push", os = "linux", image = "core" }
 lin-criterion-upgrade = { packet = "criterion-13", cadence = "push", os = "linux", image = "core" }
@@ -1026,8 +1033,8 @@ schedules = { "17 6 * * *" = "nightly", "17 7 * * 1" = "weekly" }
 "PyPI, online" = ["lin-online-pypi"]
 "Docker product image" = ["lin-host-docker-product", "lin-host-up-docker-0.7.6", "docs-docker-user"]
 "MCP registry entry" = ["lin-registry-entry", "published-registry"]
-"Claude Code marketplace" = ["lin-claude-plugin-fresh", "lin-up-claude-plugin-0.7.6", "lin-claude-plugin-ahead", "lin-main-between-releases", "lin-marketplace-pinned-tag", "lin-up-claude-plugin-0.4.2", "lin-up-claude-plugin-0.5.1", "win-uvtool-claude-plugin", "lin-online-marketplaces"]
-"Codex marketplace" = ["lin-codex-plugin-fresh", "lin-up-codex-plugin-0.7.6", "lin-codex-autoupgrade", "win-codex-plugin", "lin-online-marketplaces", "lin-codex-plugin-manifest", "win-codex-plugin-manifest", "lin-codex-onboard-explicit", "lin-codex-plugin-hooks-0.8.0"]
+"Claude Code marketplace" = ["lin-claude-plugin-fresh", "lin-up-claude-plugin-0.7.6", "lin-claude-plugin-ahead", "lin-main-between-releases", "lin-marketplace-pinned-tag", "lin-up-claude-plugin-0.4.2", "lin-up-claude-plugin-0.5.1", "win-uvtool-claude-plugin", "lin-online-marketplaces", "lin-flip-route-claude-code", "lin-up-flip-route-claude-code", "lin-flip-route-cursor-agent", "lin-up-flip-route-cursor-agent"]
+"Codex marketplace" = ["lin-codex-plugin-fresh", "lin-up-codex-plugin-0.7.6", "lin-codex-autoupgrade", "win-codex-plugin", "lin-online-marketplaces", "lin-codex-plugin-manifest", "win-codex-plugin-manifest", "lin-codex-onboard-explicit", "lin-codex-plugin-hooks-0.8.0", "lin-flip-route-codex", "lin-up-flip-route-codex"]
 "Copilot CLI plugin" = ["lin-copilot-plugin-hooks"]
 "skills copy" = ["lin-skills-copy"]
 "claude mcp add" = ["lin-claude-mcp-scopes"]
@@ -1053,11 +1060,11 @@ schedules = { "17 6 * * *" = "nightly", "17 7 * * 1" = "weekly" }
 # The 27 harness profiles, then the tools that drive a surface without an agent.
 
 [harnesses]
-claude-code = ["lin-claude-plugin-fresh", "lin-claude-mcp-scopes", "lin-call-claude", "lin-claude-hook-stub", "lin-plugin-floors", "win-uvtool-claude-plugin", "win-claude-hook-stub", "lin-profiles-sim", "lin-hooks-sim", "lin-plugin-floor-doctor", "lin-plugin-validate-strict", "win-plugin-validate-strict", "docs-plugin-floors"]
+claude-code = ["lin-claude-plugin-fresh", "lin-claude-mcp-scopes", "lin-call-claude", "lin-claude-hook-stub", "lin-plugin-floors", "win-uvtool-claude-plugin", "win-claude-hook-stub", "lin-profiles-sim", "lin-hooks-sim", "lin-plugin-floor-doctor", "lin-plugin-validate-strict", "win-plugin-validate-strict", "docs-plugin-floors", "lin-flip-route-claude-code", "lin-up-flip-route-claude-code"]
 claude-desktop = ["lin-profiles-sim", "win-profiles-sim"]
 claude-agent-sdk = ["lin-agent-sdk", "lin-agent-sdk-py"]
-codex = ["lin-codex-plugin-fresh", "lin-codex-mcp-add", "lin-codex-autoupgrade", "lin-up-codex-plugin-0.7.6", "lin-up-codex-tools-0.5.1", "win-codex-plugin", "lin-codex-plugin-manifest", "win-codex-plugin-manifest", "lin-codex-onboard-explicit", "lin-codex-plugin-hooks-0.8.0", "docs-codex-skills"]
-cursor = ["lin-cursor-cli", "lin-up-cursor-0.7.6", "lin-cursor-claude-import", "win-cursor-cli"]
+codex = ["lin-codex-plugin-fresh", "lin-codex-mcp-add", "lin-codex-autoupgrade", "lin-up-codex-plugin-0.7.6", "lin-up-codex-tools-0.5.1", "win-codex-plugin", "lin-codex-plugin-manifest", "win-codex-plugin-manifest", "lin-codex-onboard-explicit", "lin-codex-plugin-hooks-0.8.0", "docs-codex-skills", "lin-flip-route-codex", "lin-up-flip-route-codex"]
+cursor = ["lin-cursor-cli", "lin-up-cursor-0.7.6", "lin-cursor-claude-import", "win-cursor-cli", "lin-flip-route-cursor-agent", "lin-up-flip-route-cursor-agent"]
 windsurf = ["lin-profiles-sim", "calibrate-all"]
 vscode-copilot = ["lin-vscode-electron", "lin-profiles-sim", "lin-hooks-sim"]
 copilot-cli = ["lin-copilot-cli", "lin-call-copilot", "lin-copilot-plugin-hooks", "win-real-cli"]
@@ -1169,7 +1176,7 @@ devcontainers-cli = ["lin-devcontainer"]
 "MCP tool renames" = ["lin-up-pyextra-0.5.1", "lin-up-codex-tools-0.5.1", "lin-mcp-renamed-tools", "win-mcp-renamed-tools", "lin-up-pyextra-0.5.1-renames", "win-up-pyextra-0.5.1-renames"]
 "PostToolUse hook, Edit and Write" = ["lin-claude-hook-stub", "win-claude-hook-stub", "lin-hooks-sim"]
 "PostToolUse hook, Bash matcher" = ["lin-claude-hook-stub", "lin-up-bash-matcher-0.7.6"]
-"skills" = ["lin-onboard-skill", "lin-recover-skill", "lin-skills-copy", "docs-codex-skills", "lin-codex-onboard-explicit"]
+"skills" = ["lin-onboard-skill", "lin-recover-skill", "lin-skills-copy", "docs-codex-skills", "lin-codex-onboard-explicit", "lin-flip-route-claude-code", "lin-up-flip-route-claude-code", "lin-flip-route-codex", "lin-up-flip-route-codex", "lin-flip-route-cursor-agent", "lin-up-flip-route-cursor-agent"]
 "Action verdict" = ["gha-action-consumer", "gha-act-delta", "gha-action-windows"]
 "Action comment" = ["gha-action-readonly-token", "gha-act-readonly"]
 "container guard" = ["lin-pip-start-py311", "lin-route4-ci", "lin-precommit", "lin-devcontainer", "lin-codex-cloud-sim", "gha-action-container-job", "lin-doctor-container-warn", "win-doctor-container-warn"]
@@ -1496,6 +1503,11 @@ cells = ["lin-override-commit"]
 page = "docs/ratchet.md"
 headings = ["Naming the run to seed from", "Moving marks by hand", "Reporting the burn-down", "The debt policy"]
 exclude = "reference: ratchet subcommands no install or upgrade path runs"
+
+[[doc]]
+page = "docs/ratchet.md"
+headings = ["A signature change keeps its mark"]
+exclude = "reference: the signature-carry probe; tests/e2e/test_signature_carry_e2e.py drives rescore --gate, check_gate and verify over it"
 
 [[doc]]
 page = "docs/resources.md"
