@@ -16,7 +16,7 @@ from pathlib import Path
 
 from cli_inproc_repo import (add_knotty, commit_all, git, istanbul,  # noqa: F401
                              repo, seed_artifacts, template_repo)
-from stamps import running_in
+from stamps import running_in, single_number
 
 import pytest
 
@@ -25,7 +25,7 @@ from crapkit.cli.verifying import _verify_exit_code
 from crapkit.cli import main
 from crapkit.cli import verifying
 from crapkit.invocation import _self
-from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version, read_stamp
+from crapkit.ratchet import RatchetEntry, dump_ratchet, read_stamp
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation, RatchetRegression, Verdict, parse_baseline_tsv
 
@@ -61,7 +61,7 @@ def write_marks(repo, *entries: tuple[str, str, float], stamp: str | None = None
                 key_version: int = 0) -> None:
     (repo / MARKS).write_text(
         dump_ratchet([RatchetEntry(*e) for e in entries], file_name=MARKS,
-                     stamp=metric_version() if stamp is None else stamp, key_version=key_version),
+                     stamp=running_in(repo) if stamp is None else stamp, key_version=key_version),
         encoding="utf-8", newline="\n")
 
 
@@ -1477,7 +1477,8 @@ def test_a_single_number_file_this_crapkit_runs_converts_on_the_first_passing_ve
     """A 0.8.1 file whose one number this crapkit runs needs no reseed: the
     pass that moves no mark rewrites it with one stamp per scope and says
     `restamped`, and the next verify passes with no warning and no rewrite."""
-    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp=metric_version(), key_version=1)
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0),
+                stamp=single_number(13, running_in(marked_debt).lizard), key_version=1)
 
     code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
 
@@ -1494,7 +1495,8 @@ def test_a_single_number_file_this_crapkit_runs_converts_on_the_first_passing_ve
 
 def test_no_tighten_leaves_a_single_number_file_byte_identical(marked_debt, capsys):
     """So a 0.8.x checkout that shares the file still reads it."""
-    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp=metric_version(), key_version=1)
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0),
+                stamp=single_number(13, running_in(marked_debt).lizard), key_version=1)
     before = (marked_debt / MARKS).read_bytes()
 
     code, out, err = run(["verify", "--reuse-artifacts", "--no-tighten"], marked_debt, capsys)

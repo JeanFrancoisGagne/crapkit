@@ -21,7 +21,7 @@ import pytest
 
 from crapkit import gate
 from crapkit.cli import main, verifying
-from crapkit.ratchet import metric_version
+from lizard import version as LIZARD_VERSION
 from crapkit.ratchetfile import RatchetFile
 from crapkit.store import SnapshotStore
 
@@ -57,14 +57,14 @@ def run(argv, repo, capsys) -> tuple[int, str, str]:
 
 def marks_text(*rows: tuple[str, str, str]) -> str:
     """The marks file as crapkit writes it: stamp, key format, header, rows sorted."""
-    lines = [f"# {metric_version()}", "# crapkit-keys=1", "path\tlong_name\tcrap"]
+    lines = [f"# crapkit-analysis=13 lizard={LIZARD_VERSION}", "# crapkit-keys=1", "path\tlong_name\tcrap"]
     return "\n".join(lines + ["\t".join(row) for row in sorted(rows)]) + "\n"
 
 
 def legacy_marks_text(*rows: tuple[str, str, str]) -> str:
     """A marks file a release before 0.8.1 wrote, then edited by hand: no
     key-format line, and each mark as typed (7.5, not 7.5000)."""
-    lines = [f"# {metric_version()}", "path\tlong_name\tcrap"]
+    lines = [f"# crapkit-analysis=13 lizard={LIZARD_VERSION}", "path\tlong_name\tcrap"]
     return "\n".join(lines + ["\t".join(row) for row in rows]) + "\n"
 
 

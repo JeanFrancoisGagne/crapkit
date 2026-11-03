@@ -480,7 +480,7 @@ After the prune every mark names a function run 3 holds, and the seed writes
 Scores measured under different rules are not comparable. The file's first lines record the
 rules behind the numbers: the lizard version, and for each scope the analysis number of each
 of its languages and its coverage mode (cc-only, no lane, or the reader number of each parser
-its lanes use). A file 0.8.x wrote records one analysis number for every language instead.
+its lanes use). crapkit writes only this form; a file 0.8.x wrote holds one analysis number.
 Before any lane runs, verify places each mark in the scope the config gives its path and
 compares each scope that holds marks with what this crapkit runs. It refuses naming only the
 scopes whose rules moved, so a raise in one language's analysis or in one coverage reader
@@ -531,8 +531,8 @@ crapkit prints that line from 0.8.1 on; the example is a 0.8.1 reader meeting ma
 later release stamped 14. A 0.8.0 reader meeting 0.8.1's marks prints the older line, which
 asks for a seed; upgrade that reader instead.
 
-The versions compare as numbers, so lizard 1.9.0 is older than 1.24.0. Only `crapkit-analysis`
-marks a newer release. crapkit pins lizard exactly, so marks a newer lizard stamped, which a
+The versions compare as numbers, so lizard 1.9.0 is older than 1.24.0. Only an analysis or a
+reader number marks a newer release. crapkit pins lizard exactly, so marks a newer lizard stamped, which a
 release that let lizard float (0.8.1 and earlier) writes, ask for `coverage`, `ratchet prune`
 and `ratchet seed` like older marks. Seed and prune refuse marks a newer crapkit stamped: a seed
 would restamp them backwards, and a prune would drop every mark whose function the older reader
@@ -546,7 +546,7 @@ verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files) ratchet: resta
 EXIT=0
 ```
 
-Every write to the marks file sets the stamp by where its numbers came from. A write of numbers this crapkit measured signs one stamp per scope, so the first passing verify under 0.9.0 converts a 0.8.1 marks file with no reseed:
+Every write to the marks file sets the stamp by where its numbers came from, and none builds a new single-number line. A write of numbers this crapkit measured signs one stamp per scope, so the first passing verify under 0.9.0 converts a 0.8.1 marks file with no reseed:
 
 | Write | Stamp it leaves |
 |---|---|
@@ -570,11 +570,11 @@ $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a); run 9 was measured under [crapkit-analysis=9 lizard=1.24.0], not this crapkit's [crapkit-analysis=10 lizard=1.24.0], so verify refuses these marks until a fresh `crapkit coverage` and another seed
 ```
 
-A run stored before crapkit recorded its metric vouches for none, and seed refuses it:
+A run that recorded no metric per scope, as every run 0.8.x stored, vouches for none, and seed refuses it:
 
 ```
 $ crapkit ratchet seed
-crapkit: ratchet seed: run 3 recorded no metric (analysis version and lizard), so the marks it measured cannot be stamped; run `crapkit coverage` and seed again
+crapkit: ratchet seed: run 3 recorded no metric per scope (its analysis, lizard and coverage rules), so the marks it measured cannot be stamped; run `crapkit coverage` and seed again
 EXIT=3
 ```
 
@@ -619,9 +619,9 @@ the identity review below first.
 ### Analysis version 8: a re-seed that only restamps
 
 This historical transition changed analysis version 7 to 8. The verify refusal quoted
-above belongs to that upgrade; the current reader uses version 13. Follow
-[Upgrading](upgrading.md) for current saved-state checks. In the older transition,
-reseeding from a fresh coverage run updated the stamp as follows:
+above belongs to that upgrade; the current reader uses version 13, and a 0.9.0 crapkit
+reads the file below as a single-number file. Follow [Upgrading](upgrading.md) for current
+saved-state checks. In the older transition, reseeding from a fresh coverage run updated the stamp as follows:
 
 ```
 $ crapkit ratchet seed

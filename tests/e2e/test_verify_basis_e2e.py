@@ -19,7 +19,8 @@ from conftest import cli_runner
 from repo_templates import copy_of, template
 
 from crapkit.analyze import ANALYSIS_VERSION
-from crapkit.ratchet import metric_version
+from crapkit.config import load_config_text
+from crapkit.ratchet import RatchetEntry, dump_ratchet, running_stamp
 
 PY = sys.executable
 GEN = "gen_cov.py"
@@ -366,8 +367,9 @@ def test_the_verdict_hashes_the_ratchet_it_was_decided_against(receipt_repo: Pat
 def mark(repo: Path, crap: float) -> None:
     """One mark on `alpha`, stamped with the running metric the way `ratchet
     seed` writes it, so the stamp guard has nothing to say."""
-    write(repo, "crapkit-ratchet.tsv",
-          f"# {metric_version()}\npath\tlong_name\tcrap\nsrc/mod.py\talpha( n )\t{crap:.4f}\n")
+    running = running_stamp(load_config_text((repo / "crapkit.toml").read_text(encoding="utf-8"), root=repo))
+    write(repo, "crapkit-ratchet.tsv", dump_ratchet([RatchetEntry("src/mod.py", "alpha( n )", crap)],
+                                                   stamp=running, file_name="crapkit-ratchet.tsv"))
 
 
 ALERT_PY = "import sys\nopen('.crapkit/alerts.log', 'a', encoding='utf-8').write(sys.stdin.read())\n"

@@ -22,7 +22,7 @@ from crapkit import lanes, repotext, resources
 from crapkit.cli._shared import _repo_relative
 from crapkit.errors import ConfigError
 from crapkit.override import record_override
-from crapkit.ratchet import metric_version
+from stamps import FIXED
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation
 from name_bytes import NOT_UTF8_NAMES
@@ -117,7 +117,7 @@ def test_an_override_reason_in_any_bytes_lands_all_three_records(tmp_path, given
              f'pathlib.Path(r\'{log}\').write_bytes(sys.stdin.buffer.read())"')
 
     record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
-                    alert_command=alert, violations=[VIOLATION], reason=given, metric=metric_version())
+                    alert_command=alert, violations=[VIOLATION], reason=given, metric=FIXED)
 
     assert store.read_overrides(run_id) == [("src/a.ts", "f( )", 90.0, kept)]
     assert f"OVERRIDE ({kept})".encode() in log.read_bytes()

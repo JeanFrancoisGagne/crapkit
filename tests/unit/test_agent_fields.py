@@ -23,7 +23,8 @@ from crapkit import mcp_server
 from crapkit.agent_fields import (ADDED, ERROR_OBJECT, FIELDS, MCP_TOOLS, PAYLOADS, VERSION,
                                   AgentField, added_field)
 from crapkit.cli import main
-from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import KEY_VERSION, RatchetEntry
+from stamps import marks_in
 from name_bytes import NOT_UTF8_NAMES
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -109,8 +110,7 @@ def _verify(repo: Path, capsys, *flags: str) -> dict:
 
 def _write_marks(repo: Path) -> None:
     """A mark above knotty's score, so the verify over it tightens the mark."""
-    marks = dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 80.0)],
-                         stamp=metric_version(), key_version=KEY_VERSION)
+    marks = marks_in(repo, [RatchetEntry("src/app.ts", "knotty ( n )", 80.0)], KEY_VERSION)
     (repo / MARKS).write_text(marks, encoding="utf-8", newline="\n")
 
 

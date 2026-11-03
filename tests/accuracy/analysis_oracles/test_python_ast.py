@@ -151,7 +151,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # The one whole-key rewrite for marks (mission-4-01) added 2.
 # `ratchet move --function` (mission-4-02) added 16.
 # The merge driver's move pairing (mission-4-05) added 10.
-SRC_DEFS = 4046
+# 090/integration reached 4,017 once no code could build a single-number stamp
+# (metric-stamp-11), and the sync met at 4,045.
+SRC_DEFS = 4045
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

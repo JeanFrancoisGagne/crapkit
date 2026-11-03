@@ -207,7 +207,7 @@ def test_a_python_only_repo_passes_verify_when_go_and_istanbul_move(repo, capsys
 
 def test_a_single_number_file_warns_once_naming_the_scopes_whose_mode_it_inferred(repo, capsys):
     _two_scopes(repo)
-    _stamped(repo, ratchet.metric_version())
+    _stamped(repo, ratchet.MetricStamp.parse(f"crapkit-analysis=13 lizard={lizard.version}"))
     _coverage(repo, capsys)
 
     code, _, err = verify(repo, capsys, "--no-tighten")

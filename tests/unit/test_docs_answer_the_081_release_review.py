@@ -159,7 +159,8 @@ def test_verify_reads_a_hand_typed_mark_at_four_decimals_as_the_guide_row_says(r
     30.0000 and 30.00004". verify reads that mark as 30.0 and compares the CRAP
     rounded to four places, so no CRAP there fails: 0.8.1 only passes what 0.8.0
     failed, never the other way."""
-    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+    from crapkit.ratchet import RatchetEntry
+    from stamps import marks_in
 
     with open(repo / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
         fh.write(FIVE)
@@ -171,7 +172,7 @@ def test_verify_reads_a_hand_typed_mark_at_four_decimals_as_the_guide_row_says(r
              {"dispatch": (1, 13, 2), "plain": (13, 18, 1), "five": (start, start + 6, 0)})
     assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
     capsys.readouterr()
-    marks = dump_ratchet([RatchetEntry("src/app.ts", "five ( n )", 30.0)], stamp=metric_version())
+    marks = marks_in(repo, [RatchetEntry("src/app.ts", "five ( n )", 30.0)])
 
     def verify(typed: str) -> tuple[int, str]:
         (repo / "crapkit-ratchet.tsv").write_text(marks.replace("\t30.0000\n", f"\t{typed}\n"),
@@ -206,10 +207,11 @@ MARKS = "crapkit-ratchet.tsv"
 
 def _untracked_mark(repo, path: str, long_name: str, crap: float) -> None:
     """A mark in the working tree's marks file that no commit and no index holds."""
-    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+    from crapkit.ratchet import RatchetEntry
+    from stamps import marks_in
 
-    (repo / MARKS).write_text(dump_ratchet([RatchetEntry(path, long_name, crap)],
-                                           stamp=metric_version()), encoding="utf-8", newline="\n")
+    (repo / MARKS).write_text(marks_in(repo, [RatchetEntry(path, long_name, crap)]),
+                              encoding="utf-8", newline="\n")
     assert git(repo, "status", "--porcelain", "--", MARKS) == f"?? {MARKS}\n"
 
 

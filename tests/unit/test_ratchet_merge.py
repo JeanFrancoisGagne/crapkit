@@ -12,9 +12,10 @@ import pytest
 from crapkit import invocation
 from crapkit.cli import main
 from crapkit.ratchet import (KEY_VERSION, RatchetEntry, ScopeStamps, SingleNumberStamp, changed_marks,
-                             dump_ratchet, load_ratchet, merge_ratchets, merge_stamps, metric_version,
+                             dump_ratchet, load_ratchet, merge_ratchets, merge_stamps,
                              read_key_version, read_stamp)
 from merge_oracle import three_way_marks
+from stamps import FIXED
 
 
 def e(name: str, crap: float) -> RatchetEntry:
@@ -141,7 +142,7 @@ def test_a_moved_mark_counts_as_one_changed_mark():
 # --- the driver on an add/add merge ------------------------------------------------
 
 def _marks(path, *marks: RatchetEntry, key_version: int = KEY_VERSION):
-    path.write_text(dump_ratchet(list(marks), stamp=metric_version(), key_version=key_version),
+    path.write_text(dump_ratchet(list(marks), stamp=FIXED, key_version=key_version, file_name=path.name),
                     encoding="utf-8")
     return path
 
@@ -172,7 +173,7 @@ def test_an_add_add_merge_unions_both_sides_at_the_lower_mark(tmp_path, capsys, 
     text = ours.read_text(encoding="utf-8")
     assert load_ratchet(text) == [RatchetEntry("a.py", "f( )", 8.0), RatchetEntry("b.py", "g( )", 9.0),
                                   RatchetEntry("c.py", "h( )", 10.0)]
-    assert (read_stamp(text), read_key_version(text)) == (metric_version(), KEY_VERSION)
+    assert (read_stamp(text), read_key_version(text)) == (FIXED, KEY_VERSION)
 
 
 def test_an_add_add_merge_still_refuses_sides_of_different_key_versions(tmp_path, capsys):
