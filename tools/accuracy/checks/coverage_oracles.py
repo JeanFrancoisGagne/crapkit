@@ -30,6 +30,8 @@ CHECKS += [
     {"name": "per-line test contexts", "seconds": 5, "pytest": [_CO + "test_contexts.py"]},
     {"name": "doctor unmeasured directories", "seconds": 6,
      "pytest": [_CO + "test_doctor_unmeasured.py"]},
+    {"name": "every format has a recording and a reader", "seconds": 1,
+     "pytest": [_CO + "test_every_format_has_oracles.py"]},
 ]
 CHECKS += [
     {"name": "istanbul-lib-coverage and crap-typescript", "seconds": 20, "tiers": ["nightly"],

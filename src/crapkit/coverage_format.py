@@ -1,10 +1,10 @@
 """Which coverage format reads a lane's artifact.
 
-A lane names its format with `parser`, and each format is one adapter module:
-coverage_istanbul for istanbul JSON, coverage_py for a coverage.py JSON report,
-coverage_lcov for an lcov tracefile, coverage_cobertura for a Cobertura XML
-report, coverage_jacoco for a JaCoCo XML report, coverage_gocover for a Go
-coverprofile.
+A lane names its format with `parser`, and each of the six formats is one
+adapter module: coverage_py for a coverage.py JSON report, coverage_istanbul for
+istanbul JSON, coverage_lcov for an lcov tracefile, coverage_cobertura for a
+Cobertura XML report, coverage_jacoco for a JaCoCo XML report and
+coverage_gocover for a Go coverprofile.
 An adapter owns what its format decides when an artifact is read: function
 coverage, dead lines, per-line test contexts, the path key it builds, the
 absolute keys it did not place with the placing step's reason (the record the
@@ -21,6 +21,15 @@ artifact refusal), and what a run drops in the tree (init's .gitignore). A
 format with no such fact leaves it empty. Runner facts read the toolchain
 table, so no module but this one compares parser strings
 (tests/unit/test_parser_strings_live_in_one_module.py).
+
+A seventh reader takes these steps, and a test fails for each one it skips:
+its adapter module; its `_FORMATS` and `READER_VERSIONS` entries; the lane
+`parser` enum in config_contract.py and a regenerated crapkit.schema.json; its
+field rows and minimal-artifact builder in tests/unit/coverage_fields.py; the
+toolchain rows of the runners that write it; its reader-version stamp rows;
+oracle probes, recordings with their tests/accuracy/coverage_oracles
+ground_table entries and a counts_table reader; a deploy cell; and its rows in
+the README, the handbook, docs/configuration.md and docs/lanes.md.
 """
 from __future__ import annotations
 

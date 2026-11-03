@@ -7,13 +7,13 @@ join: complexity and coverage multiplied into one per-function number,
 
 | Tool | What it measures | What it gates | Runs as |
 | --- | --- | --- | --- |
-| [crap4py](https://github.com/gabadi/crap4py) | the same CRAP formula per function, Python only, from an lcov file you pass it; a port of crap4go and crap4clj, conventional threshold 30 | `--max-crap N` exits non-zero when any function scores above N (functions with no coverage data never trip it) | CLI |
+| [crap4py](https://github.com/gabadi/crap4py) | the same CRAP formula per function, Python only, from an lcov file you pass it (crapkit reads the same lcov file); a port of crap4go and crap4clj, conventional threshold 30 | `--max-crap N` exits non-zero when any function scores above N (functions with no coverage data never trip it) | CLI |
 | [radon](https://radon.readthedocs.io/) | cyclomatic complexity per function, method or class; maintainability index and raw metrics per file; Halstead per file, or per function with `-f` | nothing by itself | CLI / library |
 | [xenon](https://github.com/rubik/xenon) | radon's complexity ranks | CI fails past a chosen rank | CLI |
 | [wily](https://wily.readthedocs.io/) | complexity and maintainability across git history | `wily rank --threshold N` exits non-zero when the ranked metric's total (maintainability index by default) is below N; otherwise it reports trends | CLI over git |
 | [coverage.py / pytest-cov](https://coverage.readthedocs.io/) | which lines and branches the suite executed | a total-percent floor (`--fail-under`) | test plugin |
 | [SonarQube](https://www.sonarsource.com/products/sonarqube/) | a multi-language platform: static analysis, duplication, coverage ingestion, quality gates | its own gate rules | server + scanner |
-| crapkit | complexity times uncovered risk, one score per function, churn-ranked | staged complexity and the full verify verdict; agent edits receive an advisory | local CLI, optional stdio MCP server |
+| crapkit | complexity times uncovered risk, one score per function, churn-ranked, from coverage.py JSON, istanbul JSON, lcov, Cobertura XML, JaCoCo XML or a Go coverprofile | staged complexity and the full verify verdict; agent edits receive an advisory | local CLI, optional stdio MCP server |
 
 ## Where the lines sit
 

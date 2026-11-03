@@ -316,7 +316,7 @@
 <!-- ============================ 03 LANGUAGES ============================ -->
 <h2 id="language-support"><span class="sn">03</span>What it reads</h2>
 <p class="lede">Two questions before you install: can crapkit score my repo, and will coverage ever join the score.</p>
-<p>Fourteen languages, two coverage parsers. The left column is the label a <code>crapkit.toml</code> spells in <code>languages = [...]</code>. A file joins a scope only when its path prefix <em>and</em> its extension both match.</p>
+<p>Fourteen languages, six coverage formats: <code>coveragepy</code> for Python, <code>istanbul</code> for JavaScript, TypeScript, TSX and Vue, <code>lcov</code> for Rust, C, C++, Swift, Objective-C and JavaScript through Bun, Deno or c8, <code>cobertura</code> for C and C++ through gcovr, <code>jacoco</code> for Java and <code>coverprofile</code> for Go (<a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#which-languages-a-lane-can-measure">docs/lanes.md</a>). The left column is the label a <code>crapkit.toml</code> spells in <code>languages = [...]</code>. A file joins a scope only when its path prefix <em>and</em> its extension both match.</p>
 <div class="tw" role="region" aria-label="Language support" tabindex="0"><table id="languages">
   <tr><th scope="col">Language</th><th scope="col">Extensions</th><th scope="col">Coverage</th></tr>
   <tr><td class="mono">python</td><td class="mono">.py</td><td><code>coveragepy</code></td></tr>
@@ -630,7 +630,7 @@ name             = "unit"
 command          = "npx vitest run --coverage --coverage.reportsDirectory=.crapkit/cov/unit --reporter=default --reporter=junit --outputFile=.crapkit/cov/unit/junit.xml"
 artifact         = ".crapkit/cov/unit/coverage-final.json"
 results_artifact = ".crapkit/cov/unit/junit.xml"
-parser           = "istanbul"          # or "coveragepy"
+parser           = "istanbul"          # or coveragepy, lcov, cobertura, jacoco, coverprofile
 scopes           = ["src"]</code></pre>
 <ul>
   <li><strong>Provenance:</strong> every artifact is stamped with its producing commit, its duration and the git blob id of each file under the lane's scopes, so its line numbers go stale for the files whose bytes moved and for no others. Automatic <code>--reuse-unchanged</code> requires the same clean HEAD and unchanged lane settings, configuration bytes, inherited environment and coverage/JUnit bytes, or, for a lane that lists its <code>inputs</code>, no change under those paths, its lane table or its <code>env</code> since the artifact's commit. Without <code>inputs</code>, any tracked or untracked edit or new commit reruns the lane; a lane's declared artifact and results file do not count as edits. Each rerun prints <code>rerunning:</code> and the reason, and each reuse names what its proof leaves out: gitignored files and anything outside the repository, and for a lane with <code>inputs</code>, files outside them and inherited environment variables. Ignored external inputs, dependencies and services still require a fresh measurement when they change. Explicit <code>--reuse-artifacts</code> reads saved files and warns about stale source coverage, naming up to three of the files that moved.</li>
