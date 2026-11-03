@@ -61,6 +61,14 @@ COMMAND_ROWS = [
     ("python3 -m pytest", "pytest"),
     ("cross-env CI=1 vitest run", "vitest"),
     ("bash -c \"cd web && npx jest --coverage\"", "jest"),
+    # Gradle and Maven, through their wrappers too: `gradlew.bat` is Gradle's
+    # Windows wrapper, read by the one spelling rule as `.cmd` and `.exe` are.
+    ("./gradlew test jacocoTestReport", "gradle"),
+    ("gradlew.bat test jacocoTestReport", "gradle"),
+    ("gradle test", "gradle"),
+    ("mvn test", "maven"),
+    ("./mvnw verify", "maven"),
+    ("mvnw.cmd test", "maven"),
 ]
 
 # A path spelled with `\` reads as a path under cmd.exe only: sh takes the

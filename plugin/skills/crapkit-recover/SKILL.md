@@ -234,6 +234,10 @@ artifact and what is wrong with it.
 | cobertura | `cobertura artifact PATH: the XML ends or breaks at line L, column C` | the run was killed while it wrote the report, so the XML is cut off. Rerun the lane |
 | cobertura | `measured N file(s), none of them under the paths its scopes declare` with absolute paths | the report's `<source>` root is another checkout: see the next section. A relative source that misses every scope wants `path_prefix` |
 | cobertura | `cobertura artifact PATH declares the entity NAME in its DTD` | the report's DTD declares an entity, which no Cobertura producer writes; crapkit expands none. Regenerate the report with its producer |
+| jacoco | a missing artifact after the tests passed | the report task never ran after `test`: the command runs `test` alone, or Maven's `report` goal came before `test`. Run `test jacocoTestReport` (Gradle) or `prepare-agent test report` (Maven), then rerun the lane |
+| jacoco | a missing artifact, with `build/reports/jacoco/test/html/` written | Gradle's `jacocoTestReport` writes no XML by default. Set `reports { xml.required = true }` on the task, then rerun the lane |
+| jacoco | `measured N file(s), none of them under the paths its scopes declare`, or functions the tests run at `cov` 0.0 | the report was built from another checkout's classes or `.exec` file (JaCoCo's log says `Execution data for class ... does not match`), or its package paths sit under a source root `path_prefix` does not name. Rebuild and rerun the lane here, with `path_prefix` at the source root (`src/main/java`) |
+| jacoco | `N of the M sourcefile(s) in PATH name no file under path_prefix`, or `measured N file(s), none of them under the paths its scopes declare`, in a multi-module build | one lane over an aggregate report places only the module its `path_prefix` names, and the other modules' functions score untested. Declare one lane per module, each with `path_prefix` at that module's source root |
 
 [docs: lcov](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#lcov).
 

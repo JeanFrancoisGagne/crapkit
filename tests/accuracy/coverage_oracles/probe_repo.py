@@ -40,6 +40,9 @@ VITEST = ("js/shapes.js", "mjs/shapes.mjs", "ts/shapes.ts", "tsx/shapes.tsx", "j
 JEST = ("js/shapes.js", "ts/shapes.ts")
 RUST = ("rust/shapes.rs",)
 CPP = ("cpp/shapes.cpp",)
+# A JaCoCo key is the package path and sourcefile name under the source root.
+JAVA_ROOT = "java/src/main/java"
+JAVA = (f"{JAVA_ROOT}/Shapes.java",)
 # producer -> (parser, the probes its recording measured)
 PRODUCERS = {
     "coveragepy-7.16.1": ("coveragepy", PYTHON),
@@ -56,14 +59,16 @@ PRODUCERS = {
     "cargo-llvm-cov-0.9.1": ("lcov", RUST),
     "llvm-cov-19.1.7": ("lcov", CPP),
     "gcovr-7.2": ("cobertura", CPP),
+    "jacoco-0.8.12-gradle-8.10.2": ("jacoco", JAVA),
+    "jacoco-0.8.12-maven-3.9.9": ("jacoco", JAVA),
 }
 # The text formats: their recordings are no JSON, so test_join and test_dark_lines skip them.
-TEXT = {"lcov": ".lcov", "cobertura": ".xml"}
+TEXT = {"lcov": ".lcov", "cobertura": ".xml", "jacoco": ".xml"}
 
 
 def artifact(name: str, scenario: str) -> Path:
-    """A committed recording: an lcov producer's `.lcov`, a Cobertura one's
-    `.xml`, every other one's `.json`."""
+    """A committed recording: an lcov producer's `.lcov`, a Cobertura or
+    JaCoCo one's `.xml`, every other one's `.json`."""
     suffix = TEXT.get(PRODUCERS[name][0], ".json")
     return RECORDED / name / f"{scenario}{suffix}"
 
@@ -85,7 +90,8 @@ def without_start_line(name: str) -> bool:
 REFUSED = tuple(sorted(name for name in PRODUCERS if without_start_line(name)))
 SCORED = {name: value for name, value in PRODUCERS.items() if name not in REFUSED}
 LANGUAGES = {".py": "python", ".js": "javascript", ".mjs": "javascript", ".jsx": "javascript",
-             ".ts": "typescript", ".tsx": "tsx", ".vue": "vue", ".rs": "rust", ".cpp": "cpp"}
+             ".ts": "typescript", ".tsx": "tsx", ".vue": "vue", ".rs": "rust", ".cpp": "cpp",
+             ".java": "java"}
 HEADER = "[crapkit]\ntarget = 6\nanalysis_workers = 1\n\n[exclude]\nglobs = [\"recorded/**\"]\n"
 
 
@@ -175,6 +181,29 @@ def merged_cobertura(all_slots: list[Slot]) -> bytes:
     return ET.tostring(report, encoding="utf-8", xml_declaration=True)
 
 
+def _packages(slot: Slot) -> list[ET.Element]:
+    """The recording's packages, each named under the slot's pNN/ and the Java
+    source root, keeping the sourcefiles of the slot's probes."""
+    kept = []
+    for package in ET.fromstring(slot.artifact.read_bytes()).iter("package"):
+        root = "/".join(part for part in (JAVA_ROOT, package.get("name")) if part)
+        for source in package.findall("sourcefile"):
+            if f"{root}/{source.get('name')}" not in slot.probes:
+                package.remove(source)
+        package.set("name", f"{slot.prefix}/{root}")
+        kept.append(package)
+    return kept
+
+
+def merged_jacoco(all_slots: list[Slot]) -> bytes:
+    """One aggregate JaCoCo report: a <group> per JaCoCo slot holding its
+    packages, as a multi-module build writes one group per module."""
+    report = ET.Element("report", name="probes")
+    for slot in (slot for slot in all_slots if slot.parser == "jacoco"):
+        ET.SubElement(report, "group", name=slot.prefix).extend(_packages(slot))
+    return ET.tostring(report, encoding="utf-8", xml_declaration=True)
+
+
 def merged(all_slots: list[Slot], parser: str) -> dict:
     """One artifact holding every slot's recording of one format, keys moved
     under each slot's pNN/. One lane per format reads the whole matrix, so the
@@ -205,7 +234,7 @@ def _scope(slot: Slot) -> str:
 
 # (lane name, parser, artifact file name)
 LANES = (("py", "coveragepy", "py.json"), ("js", "istanbul", "js.json"), ("lcov", "lcov", "lcov.info"),
-         ("cpp", "cobertura", "cpp.xml"))
+         ("cpp", "cobertura", "cpp.xml"), ("java", "jacoco", "java.xml"))
 
 
 def _lanes(all_slots: list[Slot]) -> str:
@@ -218,6 +247,8 @@ def _lanes(all_slots: list[Slot]) -> str:
 
 
 def _merged_bytes(all_slots: list[Slot], parser: str) -> bytes:
+    if parser == "jacoco":
+        return merged_jacoco(all_slots)
     if parser == "cobertura":
         return merged_cobertura(all_slots)
     if parser == "lcov":

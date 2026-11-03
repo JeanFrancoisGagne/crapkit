@@ -106,7 +106,7 @@ def test_a_coverage_run_records_each_scope_s_numbers_and_coverage_mode(repo, cap
     assert versions["analysis_versions"] == ANALYSIS_VERSIONS
     assert set(versions["analysis_versions"].values()) == {13}
     assert versions["reader_versions"] == READER_VERSIONS == {
-        "coveragepy": 1, "istanbul": 1, "lcov": 1, "cobertura": 1}
+        "coveragepy": 1, "istanbul": 1, "lcov": 1, "cobertura": 1, "jacoco": 1}
     assert versions["analysis_version"] == "13"
 
 

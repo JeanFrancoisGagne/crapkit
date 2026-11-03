@@ -423,3 +423,51 @@ def cobertura_classes(data: bytes) -> list[CoberturaClass]:
             {number: pair for number, pair in conditions.items() if pair},
             float(cls.get("line-rate")), float(cls.get("branch-rate"))))
     return found
+
+
+class JacocoSourcefile(NamedTuple):
+    """One <sourcefile> as JaCoCo wrote it, keyed by its package path: each
+    <line>'s (mi, ci, mb, cb) and the sourcefile's own LINE and BRANCH
+    <counter>s as (missed, covered)."""
+    key: str
+    lines: dict[int, tuple[int, int, int, int]]
+    counters: dict[str, tuple[int, int]]
+
+
+def jacoco_sourcefiles(data: bytes) -> list[JacocoSourcefile]:
+    """Every <sourcefile> of a JaCoCo report, in document order, through any
+    <group>. The DOCTYPE's report.dtd is never opened: ElementTree reads no
+    external DTD."""
+    found = []
+    for package in ET.fromstring(data).iter("package"):
+        prefix = package.get("name")
+        for source in package.findall("sourcefile"):
+            name = source.get("name")
+            lines = {int(line.get("nr")): tuple(int(line.get(field)) for field in
+                                                ("mi", "ci", "mb", "cb"))
+                     for line in source.findall("line")}
+            counters = {counter.get("type"): (int(counter.get("missed")),
+                                              int(counter.get("covered")))
+                        for counter in source.findall("counter")}
+            found.append(JacocoSourcefile(f"{prefix}/{name}" if prefix else name, lines, counters))
+    return found
+
+
+def jacoco_rows(data: bytes, root: str, spans: list[tuple[str, int, int]]) -> list[Counts]:
+    """One row per (path, start, end) span: the counted lines (mi + ci > 0) of
+    the sourcefile keyed under `root` that the span holds and no inner span
+    holds, and their branches as arms `<line>.<k>`. JaCoCo counts a line's
+    branches and never names them, so the line's first cb arms are the taken ones."""
+    files = {f"{root}/{source.key}": source.lines for source in jacoco_sourcefiles(data)}
+    rows = []
+    for span in spans:
+        path = span[0]
+        own = [(nr, counters) for nr, counters in sorted(files.get(path, {}).items())
+               if _owner(spans, path, nr) == span]
+        counted = [(nr, ci) for nr, (mi, ci, _, _) in own if mi + ci]
+        arms = [(f"{nr}.{k}", k < cb) for nr, (_, _, mb, cb) in own for k in range(mb + cb)]
+        rows.append(Counts(path, "", span[1], span[2], tuple(name for name, _ in arms),
+                           tuple(name for name, taken in arms if taken),
+                           tuple(nr for nr, _ in counted), tuple(nr for nr, ci in counted if ci),
+                           any(ci for _, ci in counted)))
+    return rows

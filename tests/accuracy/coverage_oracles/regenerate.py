@@ -23,7 +23,9 @@ tools/accuracy/node; Python producers each get a venv built by `uv` under
 CRAPKIT_ACCURACY_PRODUCERS (default ~/.cache/crapkit-accuracy/producers). The two
 lcov recordings were made in debian:trixie-slim with Debian's clang and llvm
 19.1.7, rustc 1.99.1 and cargo-llvm-cov 0.9.1 on PATH; gcovr-7.2's Cobertura
-and lcov, in the same image with Debian's g++ 14.2.0 and gcovr 7.2.
+and lcov, in the same image with Debian's g++ 14.2.0 and gcovr 7.2. The two
+JaCoCo 0.8.12 recordings of the Java probe were made in gradle:8.10.2-jdk21
+(OpenJDK 21.0.5) and maven:3.9.9-eclipse-temurin-21 (OpenJDK 21.0.7).
 """
 from __future__ import annotations
 
@@ -169,12 +171,29 @@ _GCOVR = Producer(f"gcovr-{GCOVR}", "native", (
     {".xml": "artifact.xml", ".lcov": "artifact.lcov"},
     versions=((("gcovr", "--version"), f"gcovr {GCOVR}"), (("g++", "--version"), f") {GCC}")))
 
+# JaCoCo over the Java probe through Gradle and through Maven, XML and CSV from
+# one run. Each scenario builds into {out}, since a build directory kept from
+# the call run would hold its test results and its JaCoCo data.
+JACOCO = "0.8.12"
+_JACOCO_GOAL = f"org.jacoco:jacoco-maven-plugin:{JACOCO}"
+_GRADLE = Producer(f"jacoco-{JACOCO}-gradle-8.10.2", "native", (
+    ("gradle", "--no-daemon", "-q", "-p", "java", "-PprobeOut={out}/build", "test",
+     "jacocoTestReport"),),
+    {".xml": "build/reports/jacoco/test/jacocoTestReport.xml",
+     ".csv": "build/reports/jacoco/test/jacocoTestReport.csv"},
+    versions=((("gradle", "--version"), "Gradle 8.10.2"), (("java", "-version"), '"21.0.5"')))
+_MAVEN = Producer(f"jacoco-{JACOCO}-maven-3.9.9", "native", (
+    ("mvn", "-q", "-B", "-f", "java/pom.xml", "-DprobeOut={out}/target",
+     f"{_JACOCO_GOAL}:prepare-agent", "test", f"{_JACOCO_GOAL}:report"),),
+    {".xml": "target/site/jacoco/jacoco.xml", ".csv": "target/site/jacoco/jacoco.csv"},
+    versions=((("mvn", "--version"), "Apache Maven 3.9.9"), (("java", "-version"), '"21.0.7"')))
+
 PRODUCERS = {producer.name: producer for producer in (
     _coveragepy("7.16.1"), _coveragepy("7.13.0"), _coveragepy("7.10.6"), _coverage_reports(),
     _pytest_cov("5.0.0", "8.3.5"), _pytest_cov("7.1.0", "9.1.1"),
     _pytest_cov("7.1.0", "9.1.1", ("--cov-context=test",), "-contexts", "py/coveragerc-contexts"),
     _vitest("v8"), _vitest("istanbul"), _jest("babel"), _jest("v8"), _NYC, _C8, _CARGO,
-    _LLVM_COV, _GCOVR)}
+    _LLVM_COV, _GCOVR, _GRADLE, _MAVEN)}
 
 
 # --- where the tools come from ----------------------------------------------------------------
@@ -317,12 +336,15 @@ def canonical(artifact: dict, root: str) -> dict:
 
 
 _VOLATILE_ATTRIBUTES = re.compile(r'\b(timestamp|time|hostname)="[^"]*"')
+# JaCoCo's session: the host name and a random id, the start and dump times.
+_SESSIONINFO = re.compile(r"<sessioninfo [^>]*/>")
 
 
 def canonical_text(text: str, root: str) -> str:
     """lcov, xml and JUnit: the root marked, times and the host name fixed."""
     posix = root.replace("\\", "/").rstrip("/")
     marked = text.replace(root, ROOT_MARK).replace(posix, ROOT_MARK).replace("\r\n", "\n")
+    marked = _SESSIONINFO.sub('<sessioninfo id="0" start="0" dump="0"/>', marked)
     return _VOLATILE_ATTRIBUTES.sub(lambda match: f'{match.group(1)}="0"', marked)
 
 
@@ -347,6 +369,8 @@ def record_one(producer: Producer, root: Path, scenario: str, out: Path, dest: P
 
 def _counts(path: Path) -> list:
     import counts_table
+    if _text_reader(path) == "jacoco":
+        return counts_table.jacoco_sourcefiles(path.read_bytes())
     if path.suffix == ".xml":
         return list(counts_table.cobertura_classes(path.read_bytes()))
     if path.suffix == ".lcov":
@@ -374,11 +398,20 @@ def _fn_coverage(path: Path, kind: str) -> dict | str:
 
 
 TEXT_READERS = {".lcov": "lcov", ".xml": "cobertura"}
+# JaCoCo writes this DOCTYPE at the head of every XML report; Cobertura never does.
+JACOCO_DOCTYPE = b"-//JACOCO//DTD Report"
+
+
+def _text_reader(path: Path) -> str | None:
+    """The crapkit reader of a text recording, None for JSON."""
+    if path.suffix == ".xml" and JACOCO_DOCTYPE in path.read_bytes()[:256]:
+        return "jacoco"
+    return TEXT_READERS.get(path.suffix)
 
 
 def _parse(path: Path, kind: str) -> dict:
     import importlib
-    parser = TEXT_READERS.get(path.suffix)
+    parser = _text_reader(path)
     if parser:
         reader = importlib.import_module(f"crapkit.coverage_{parser}")
         lane = importlib.import_module("crapkit.config").Lane(

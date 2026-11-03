@@ -18,9 +18,11 @@ from crapkit.toolchain import TOOLCHAINS, Toolchain
 ROOT = Path(__file__).resolve().parents[2]
 LCOV = ROOT / "tests" / "fixtures" / "coverage" / "lcov"
 COBERTURA = ROOT / "tests" / "fixtures" / "coverage" / "cobertura"
+JACOCO = ROOT / "tests" / "fixtures" / "coverage" / "jacoco"
 
 # The runners mission-1 names, by the row name every reader keys on.
-MISSION_1 = ("pytest", "vitest", "jest", "bun", "deno", "cargo llvm-cov", "gcovr", "go test", "c8")
+MISSION_1 = ("pytest", "vitest", "jest", "bun", "deno", "cargo llvm-cov", "gcovr", "gradle", "maven",
+             "go test", "c8")
 
 
 def test_every_row_is_keyed_by_its_own_unique_name():
@@ -105,7 +107,8 @@ def test_every_format_a_row_names_is_a_registered_parser():
 def test_every_stanza_row_has_markers_languages_and_the_stanzas_parser():
     stanzas = [row for row in TOOLCHAINS.values() if row.stanza]
 
-    assert [row.name for row in stanzas] == ["bun", "deno", "cargo llvm-cov", "gcovr"]
+    assert [row.name for row in stanzas] == ["bun", "deno", "cargo llvm-cov", "gcovr", "gradle",
+                                             "maven"]
     for row in stanzas:
         assert row.markers and row.languages and row.formats, row.name
         assert row.stanza.parser in row.formats, row.name
@@ -121,6 +124,8 @@ def test_every_stanza_row_has_markers_languages_and_the_stanzas_parser():
     ("deno", ("javascript", "typescript", "tsx"), ("lcov",), ("deno.json", "deno.jsonc")),
     ("cargo llvm-cov", ("rust",), ("lcov",), ("Cargo.toml",)),
     ("gcovr", ("cpp",), ("cobertura",), ("CMakeLists.txt",)),
+    ("gradle", ("java",), ("jacoco",), ("build.gradle", "build.gradle.kts")),
+    ("maven", ("java",), ("jacoco",), ("pom.xml",)),
     ("c8", ("javascript", "typescript", "tsx"), ("istanbul", "lcov"), ()),
 ])
 def test_each_row_carries_its_languages_formats_and_markers(name, languages, formats, markers):
@@ -131,10 +136,10 @@ def test_each_row_carries_its_languages_formats_and_markers(name, languages, for
 
 def test_the_stanza_commands_are_the_ones_the_fixture_readme_records():
     """init never prints a command no run wrote: each stanza command is the one
-    tests/fixtures/coverage/lcov/README.md or cobertura/README.md records for
+    tests/fixtures/coverage/lcov/, cobertura/ or jacoco/README.md records for
     its fixture."""
     readme = "".join((folder / "README.md").read_text(encoding="utf-8")
-                     for folder in (LCOV, COBERTURA))
+                     for folder in (LCOV, COBERTURA, JACOCO))
     recorded = dict(re.findall(r"^- Stanza `([^`]+)`: `([^`]+)`", readme, re.M))
     stanzas = {row.stanza.name: row.stanza.command for row in TOOLCHAINS.values() if row.stanza}
 
@@ -190,6 +195,48 @@ def test_the_gcovr_stanza_is_the_ticket_spelling():
                                                             "cobertura")
 
 
+def test_the_gradle_and_maven_rows_are_the_ticket_spelling():
+    gradle, maven = TOOLCHAINS["gradle"], TOOLCHAINS["maven"]
+
+    assert gradle.words == (("gradle",), ("gradlew",))
+    assert maven.words == (("mvn",), ("mvnw",))
+    assert gradle.stanza.wrapper == "gradlew"
+    assert gradle.stanza.wrapped == ("./gradlew test jacocoTestReport",
+                                     "gradlew test jacocoTestReport")
+    assert any("xml.required = true" in note for note in gradle.stanza.notes)
+    assert (gradle.stanza.artifact, maven.stanza.artifact) == (
+        "build/reports/jacoco/test/jacocoTestReport.xml", "target/site/jacoco/jacoco.xml")
+    assert gradle.stanza.path_prefix == maven.stanza.path_prefix == "src/main/java"
+    assert maven.stanza.command == ("mvn org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test "
+                                    "org.jacoco:jacoco-maven-plugin:0.8.12:report")
+
+
+@pytest.mark.parametrize("markers, cmd, command", [
+    (frozenset({"build.gradle"}), True, "gradle test jacocoTestReport"),
+    (frozenset({"build.gradle", "gradlew"}), False, "./gradlew test jacocoTestReport"),
+    (frozenset({"build.gradle", "gradlew"}), True, "gradlew test jacocoTestReport"),
+])
+def test_the_gradle_stanza_runs_through_a_root_gradlew_spelled_for_the_shell(markers, cmd,
+                                                                            command):
+    assert TOOLCHAINS["gradle"].stanza.resolved(markers, cmd).command == command
+    assert "gradlew" in toolchain.MARKERS
+
+
+@pytest.mark.parametrize("recording", ["gradle-8.10.2.xml", "maven-3.9.9.xml"])
+def test_each_java_stanza_recording_reads_through_the_jacoco_reader(recording, tmp_path):
+    from crapkit.config import Lane
+    from crapkit.coverage_format import lane_format
+
+    artifact = tmp_path / recording
+    artifact.write_bytes((JACOCO / recording).read_bytes())
+    lane = Lane(name="java", command="true", artifact=recording, parser="jacoco", scopes=(),
+                path_prefix="src/main/java")
+
+    _, evidence, _ = lane_format(lane).read(lane, tmp_path, artifact)
+
+    assert sorted(evidence) == ["src/main/java/Greeter.java", "src/main/java/com/acme/Shapes.java"]
+
+
 def test_the_rust_stanza_is_the_ticket_spelling():
     stanza = TOOLCHAINS["cargo llvm-cov"].stanza
 
@@ -202,13 +249,14 @@ def test_the_measurable_languages_and_the_live_lane_languages():
     from crapkit.scaffold import LIVE_LANE_LANGUAGES
 
     assert toolchain.measurable_languages() == frozenset(
-        {"python", "javascript", "typescript", "tsx", "vue", "rust", "cpp"})
+        {"python", "javascript", "typescript", "tsx", "vue", "rust", "cpp", "java"})
     assert LIVE_LANE_LANGUAGES == frozenset({"python", "javascript", "typescript", "tsx", "vue"})
 
 
 def test_readers_name_each_parser_and_toolchain_for_a_language():
     assert toolchain.readers("rust") == (("lcov", "cargo llvm-cov"),)
     assert toolchain.readers("cpp") == (("cobertura", "gcovr"),)
+    assert toolchain.readers("java") == (("jacoco", "gradle"), ("jacoco", "maven"))
     assert toolchain.readers("zig") == ()
 
 

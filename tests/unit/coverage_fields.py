@@ -80,7 +80,8 @@ WRONG = {
     "lcov path": [],
     "lcov text": [],
     "lcov record": [],
-    # A Cobertura attribute is text too. A filename and a source take any text.
+    # A Cobertura or JaCoCo attribute is text too. A filename, a source and a
+    # package or sourcefile name take any text.
     "xml line": ["x", "-1", "1.5", "nan", ""],
     "xml count": ["x", "-1", "1.5", "nan", "inf", ""],
     "xml boolean": ["x", "1", "True", ""],
@@ -95,10 +96,11 @@ MAPS = {
     "coveragepy": {"files", "functions", "classes", "contexts"},
     "lcov": set(),
     "cobertura": set(),
+    "jacoco": set(),
 }
 
 FILE_KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs",
-             "cobertura": "src/a.cpp"}
+             "cobertura": "src/a.cpp", "jacoco": "src/a.java"}
 
 _FN = "*.fnMap.*"
 _B0, _B1 = "*.branchMap.0", "*.branchMap.1"
@@ -271,6 +273,16 @@ FIELDS = [
     Field("cobertura", "line@condition-coverage", False, "xml conditions",
           ReadsAs("0% (0/0)", "a branch line with no condition-coverage gives line evidence "
                   "only", _COBERTURA_LINES_ONLY), "condition-coverage"),
+
+    # JaCoCo: the same TAG@ATTRIBUTE spelling. Every line attribute is
+    # required; the default package's name is empty, never absent.
+    Field("jacoco", "package@name", True, "xml path", (), "a package has no name"),
+    Field("jacoco", "sourcefile@name", True, "xml path", (), "a sourcefile has no name"),
+    Field("jacoco", "line@nr", True, "xml line", (), "nr"),
+    Field("jacoco", "line@mi", True, "xml count", (), "mi"),
+    Field("jacoco", "line@ci", True, "xml count", (), "ci"),
+    Field("jacoco", "line@mb", True, "xml count", (), "mb"),
+    Field("jacoco", "line@cb", True, "xml count", (), "cb"),
 ]
 
 
@@ -413,7 +425,18 @@ def _cobertura() -> str:
             "</lines></class></classes></package></packages></coverage>\n")
 
 
-def _cobertura_at(text: str, locator: str):
+def _jacoco() -> str:
+    """One sourcefile in package `src`: lines 1-3 hit and line 5 missed, line 2
+    a branch line with one of its two branches covered."""
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><!DOCTYPE report PUBLIC '
+            '"-//JACOCO//DTD Report 1.1//EN" "report.dtd"><report name="test">'
+            '<package name="src"><sourcefile name="a.java">'
+            '<line nr="1" mi="0" ci="2" mb="0" cb="0"/><line nr="2" mi="0" ci="3" mb="1" cb="1"/>'
+            '<line nr="3" mi="0" ci="1" mb="0" cb="0"/><line nr="5" mi="2" ci="0" mb="0" cb="0"/>'
+            "</sourcefile></package></report>\n")
+
+
+def _xml_at(text: str, locator: str):
     """The match of the field at `locator`: its group 1 is the whole field (an
     attribute with its leading space, or an element), or None."""
     tag, _, attribute = locator.partition("@")
@@ -422,15 +445,15 @@ def _cobertura_at(text: str, locator: str):
     return re.search(f"(<{tag}>[^<]*</{tag}>)", text)
 
 
-def cobertura_locators(text: str) -> list[str]:
-    """Each row's locator the report holds."""
+def xml_locators(format: str, text: str) -> list[str]:
+    """Each of the format's row locators the report holds."""
     return [row.locator for row in FIELDS
-            if row.format == "cobertura" and _cobertura_at(text, row.locator)]
+            if row.format == format and _xml_at(text, row.locator)]
 
 
-def cobertura_edit(text: str, locator: str, value: str | None) -> str:
+def xml_edit(text: str, locator: str, value: str | None) -> str:
     """Drop (value None) or set the field at `locator`."""
-    found = _cobertura_at(text, locator)
+    found = _xml_at(text, locator)
     tag, _, attribute = locator.partition("@")
     if value is None:
         new = ""
@@ -439,18 +462,20 @@ def cobertura_edit(text: str, locator: str, value: str | None) -> str:
     return text[:found.start(1)] + new + text[found.end(1):]
 
 
-def _cobertura_artifact(drop: str | None = None,
-                        retype: tuple[str, object] | None = None) -> bytes:
-    text = _cobertura()
-    if drop is not None:
-        text = cobertura_edit(text, drop, None)
-    if retype is not None:
-        text = cobertura_edit(text, retype[0], str(retype[1]))
-    return text.encode("utf-8")
+def _xml_artifact(make):
+    def build(drop: str | None = None, retype: tuple[str, object] | None = None) -> bytes:
+        text = make()
+        if drop is not None:
+            text = xml_edit(text, drop, None)
+        if retype is not None:
+            text = xml_edit(text, retype[0], str(retype[1]))
+        return text.encode("utf-8")
+    return build
 
 
 _BUILDERS = {"istanbul": _json_artifact(_istanbul), "coveragepy": _json_artifact(_coveragepy),
-             "lcov": _lcov_artifact, "cobertura": _cobertura_artifact}
+             "lcov": _lcov_artifact, "cobertura": _xml_artifact(_cobertura),
+             "jacoco": _xml_artifact(_jacoco)}
 
 
 def minimal_artifact(format: str, drop: str | None = None,

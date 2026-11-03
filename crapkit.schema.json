@@ -202,7 +202,8 @@
               "istanbul",
               "coveragepy",
               "lcov",
-              "cobertura"
+              "cobertura",
+              "jacoco"
             ]
           },
           "scopes": {
@@ -216,7 +217,7 @@
           },
           "path_prefix": {
             "type": "string",
-            "description": "prefix joined onto the relative keys of coverage.py and lcov artifacts and the relative sources of Cobertura reports"
+            "description": "prefix joined onto the relative keys of coverage.py and lcov artifacts and the relative sources of Cobertura reports, and the source root JaCoCo package paths sit under"
           },
           "env": {
             "type": "object",

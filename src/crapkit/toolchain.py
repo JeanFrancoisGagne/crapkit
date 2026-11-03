@@ -22,13 +22,25 @@ from typing import NamedTuple
 
 class Stanza(NamedTuple):
     """The commented lane init writes for a toolchain it detects. Each command
-    runs from the repo root and reads the same under sh and cmd.exe, and the
-    runner keys its report from the root, so no stanza needs a per-dialect
-    command or a path_prefix."""
+    runs from the repo root. `wrapper` is a root file that, when present, runs
+    the stanza through it: `wrapped` holds that command under sh, then under
+    cmd.exe. `path_prefix` is the source root the report's keys sit under, and
+    `notes` are comment lines the lane needs; init prints each only when set."""
     name: str
     command: str
     artifact: str
     parser: str
+    path_prefix: str | None = None
+    wrapper: str | None = None
+    wrapped: tuple[str, str] | None = None
+    notes: tuple[str, ...] = ()
+
+    def resolved(self, markers: frozenset[str], cmd: bool) -> Stanza:
+        """The stanza as init writes it: through its wrapper when the repo root
+        holds one, spelled for the shell lane commands run under."""
+        if self.wrapper not in markers:
+            return self
+        return self._replace(command=self.wrapped[cmd])
 
 
 class Toolchain(NamedTuple):
@@ -72,8 +84,8 @@ class Toolchain(NamedTuple):
 
 _JS = ("javascript", "typescript", "tsx")
 # Each stanza command is the one that recorded its fixture under
-# tests/fixtures/coverage/lcov/ or cobertura/, so init never prints a command no
-# run wrote.
+# tests/fixtures/coverage/lcov/, cobertura/ or jacoco/, so init never prints a
+# command no run wrote.
 _BUN_STANZA = Stanza("bun", "bun test --coverage --coverage-reporter=lcov "
                             "--coverage-dir=.crapkit/cov/bun",
                      ".crapkit/cov/bun/lcov.info", "lcov")
@@ -89,6 +101,21 @@ _CPP_STANZA = Stanza("cpp", "cmake -S . -B build/crapkit-cov -DCMAKE_C_FLAGS=--c
                             "ctest --test-dir build/crapkit-cov && gcovr --root . --cobertura "
                             ".crapkit/cov/cpp.xml",
                      ".crapkit/cov/cpp.xml", "cobertura")
+# Gradle's JaCoCo plugin writes its XML report only when the report task turns
+# it on, and a root gradlew wrapper runs the Gradle version the repo pins.
+_GRADLE_STANZA = Stanza("java-gradle", "gradle test jacocoTestReport",
+                        "build/reports/jacoco/test/jacocoTestReport.xml", "jacoco",
+                        path_prefix="src/main/java", wrapper="gradlew",
+                        wrapped=("./gradlew test jacocoTestReport",
+                                 "gradlew test jacocoTestReport"),
+                        notes=("jacocoTestReport writes this XML only with "
+                               "reports { xml.required = true } in the build script",))
+# The JaCoCo plugin's goals by their full coordinates, so the pom needs no edit:
+# prepare-agent hands surefire the agent, report reads the run's jacoco.exec.
+_JACOCO_MAVEN_PLUGIN = "org.jacoco:jacoco-maven-plugin:0.8.12"
+_MAVEN_STANZA = Stanza("java-maven", f"mvn {_JACOCO_MAVEN_PLUGIN}:prepare-agent test "
+                                f"{_JACOCO_MAVEN_PLUGIN}:report",
+                       "target/site/jacoco/jacoco.xml", "jacoco", path_prefix="src/main/java")
 
 _ROWS = (
     # pytest raises Interrupted at the END of collection when any module fails
@@ -150,13 +177,19 @@ _ROWS = (
               markers=("Cargo.toml",), stanza=_RUST_STANZA),
     Toolchain("gcovr", (("gcovr",),), languages=("cpp",), formats=("cobertura",),
               markers=("CMakeLists.txt",), stanza=_CPP_STANZA),
+    Toolchain("gradle", (("gradle",), ("gradlew",)), languages=("java",), formats=("jacoco",),
+              markers=("build.gradle", "build.gradle.kts"), stanza=_GRADLE_STANZA),
+    Toolchain("maven", (("mvn",), ("mvnw",)), languages=("java",), formats=("jacoco",),
+              markers=("pom.xml",), stanza=_MAVEN_STANZA),
     Toolchain("go test", (("go", "test"),)),
     Toolchain("c8", (("c8",),), languages=_JS, formats=("istanbul", "lcov")),
 )
 
 TOOLCHAINS = MappingProxyType({row.name: row for row in _ROWS})
-# Every repo-root file some row's markers name: what init reads to detect them.
-MARKERS = frozenset(marker for row in _ROWS for marker in row.markers)
+# Every repo-root file some row's markers or stanza wrapper names: what init
+# reads to detect a row and to pick its stanza's command.
+MARKERS = frozenset([*(marker for row in _ROWS for marker in row.markers),
+                     *(row.stanza.wrapper for row in _ROWS if row.stanza and row.stanza.wrapper)])
 
 
 def detected(markers) -> tuple[Toolchain, ...]:
@@ -186,8 +219,9 @@ def readers(language: str) -> tuple[tuple[str, str], ...]:
 # only they are `spelled`, and a runner refusal or hint keys on those alone.
 
 # A token spells a runner as its bare name, a path's last part, or either with
-# one of these extensions: `.venv\Scripts\pytest.exe`, `node_modules/.bin/vitest.cmd`.
-_SPELLED_EXTENSIONS = (".cmd", ".exe", ".js", ".cjs", ".mjs")
+# one of these extensions: `.venv\Scripts\pytest.exe`, `node_modules/.bin/vitest.cmd`,
+# Gradle's Windows wrapper `gradlew.bat`.
+_SPELLED_EXTENSIONS = (".cmd", ".bat", ".exe", ".js", ".cjs", ".mjs")
 # The rows a single token spells, by that token.
 _ONE_WORD = MappingProxyType({spelling[0]: row.name for row in _ROWS
                               for spelling in row.words if len(spelling) == 1})

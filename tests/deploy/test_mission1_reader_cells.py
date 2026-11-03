@@ -25,6 +25,11 @@ fresh and upgrade under every harness, `lin-up-0.8.1-cc-only-cpp` for the
 0.8.1 cc-only upgrade and its flip, and `win-cobertura-absolute-source` on
 Windows for a report whose <source> is the checkout in a lower-case drive
 spelling, then through a junction.
+
+The jacoco cells (row `m1-readers-06`) do the same over the Java repo of
+tests/fixtures/coverage/jacoco and the report Gradle 8.10.2 wrote for it:
+fresh and upgrade under every harness, and `lin-up-0.8.1-cc-only-java` for the
+0.8.1 cc-only upgrade and its flip.
 """
 from __future__ import annotations
 
@@ -297,3 +302,97 @@ def test_win_cobertura_absolute_source(box, templates):
         profiles.commit(box, repo, f"the report's source is {source}")
 
         assert _worklist_cov(box, repo) == {"grade": 0.0}, box.transcript.text()
+
+
+# --- m1-readers-06: a JaCoCo lane over a Java repo -----------------------------------------------
+
+JACOCO_ROW = "m1-readers-06"
+JACOCO = Path(__file__).resolve().parents[1] / "fixtures" / "coverage" / "jacoco"
+JAVA_SOURCES = ("build.gradle", "pom.xml", "src/main/java/Greeter.java",
+                "src/main/java/com/acme/Shapes.java", "src/test/java/com/acme/ShapesTest.java")
+JACOCO_USE_CASES = "coverage, jacoco lane, list_worklist, get_next_item"
+JAVA_SCOPE = ('[crapkit]\ntarget = {target}\n\n[[scope]]\nname = "java"\npaths = ["src/main/java"]\n'
+              'languages = ["java"]\n{optional}\n')
+JAVA_LANE = ('[exclude]\nglobs = ["make_report.py", "src/test/**"]\n\n'
+             '[[lane]]\nname = "java-gradle"\ncommand = "python make_report.py"\n'
+             'artifact = "build/reports/jacoco/test/jacocoTestReport.xml"\nparser = "jacoco"\n'
+             'path_prefix = "src/main/java"\nscopes = ["java"]\n')
+# grade's ccn is 8: under a ceiling of 8 it owes tests, not a split, so its
+# remedy is add-tests; under 5 the cc-only seed marks it.
+JAVA_MEASURED = JAVA_SCOPE.format(target=8, optional="") + JAVA_LANE
+JAVA_CC_ONLY_5 = JAVA_SCOPE.format(target=5, optional="coverage_optional = true\n")
+JAVA_MEASURED_5 = JAVA_SCOPE.format(target=5, optional="") + JAVA_LANE
+# The lane's command: the committed Gradle report copied to the artifact path.
+MAKE_JACOCO = ("from pathlib import Path\n"
+               "out = Path('build/reports/jacoco/test')\n"
+               "out.mkdir(parents=True, exist_ok=True)\n"
+               "(out / 'jacocoTestReport.xml').write_bytes(Path('report.xml').read_bytes())\n")
+JAVA_SHAPES = "src/main/java/com/acme/Shapes.java"
+
+
+def _java_repo(box, config: str) -> Path:
+    """The Java fixture repo, its committed Gradle JaCoCo report and `config`, in a git repo."""
+    repo = box.root / "repo"
+    files = {rel: (JACOCO / "java-repo" / rel).read_text(encoding="utf-8") for rel in JAVA_SOURCES}
+    files.update({"report.xml": (JACOCO / "gradle-8.10.2.xml").read_text(encoding="utf-8"),
+                  "make_report.py": MAKE_JACOCO, ".gitignore": "build/\n.crapkit/\n"})
+    state.write(repo, files)
+    _configure(repo, config)
+    box.run(["git", "init", "-q", "-b", "main"], cwd=repo, expect=0)
+    profiles.commit(box, repo, "a Java repo")
+    return repo
+
+
+@pytest.mark.parametrize("key", _harness_cells(
+    "lin-jacoco", "fresh: README pip start; a Java repo's jacoco lane (a Gradle 8.10.2 JaCoCo report) "
+                  "measures it, and get_next_item and list_worklist show cov 0 and add-tests on grade",
+    row=JACOCO_ROW, use_cases=JACOCO_USE_CASES))
+def test_jacoco_lane_fresh(box, templates, key):
+    profiles.session_crapkit(box, templates)
+    repo = _java_repo(box, JAVA_MEASURED)
+    _in_the_harness_shell(box, key)
+    assert_the_agent_gets_cov_and_add_tests(box, repo, JAVA_SHAPES, "Shapes::grade")
+
+
+@pytest.mark.parametrize("key", _harness_cells(
+    "lin-up-jacoco", "upgrade from N-1 by the guide's pip row: N-1 scores the Java repo cc-only, the "
+                     "config gains a jacoco lane, and get_next_item and list_worklist show cov 0 "
+                     "and add-tests", row=JACOCO_ROW, use_cases=JACOCO_USE_CASES))
+def test_jacoco_lane_upgrade(box, candidate, record_property, key):
+    n1 = wheels.n_minus_1()
+    record_property("n_minus_1", n1)
+    state.pip_venv(box, "3.12")
+    state.pip_install(box, f"crapkit=={n1}")
+    repo = _java_repo(box, JAVA_SCOPE.format(target=8, optional="coverage_optional = true\n"))
+    box.run(["crapkit", "coverage"], cwd=repo, expect=0)
+    state.upgrade_to(box, repo, candidate, state.upgrade_line(PIP))
+    _configure(repo, JAVA_MEASURED)
+    profiles.commit(box, repo, "the java scope gains a jacoco lane")
+    _in_the_harness_shell(box, key)
+    assert_the_agent_gets_cov_and_add_tests(box, repo, JAVA_SHAPES, "Shapes::grade")
+
+
+@cell("lin-up-0.8.1-cc-only-java", channel="pip venv", harness="none",
+      scenario="upgrade from 0.8.1 by the guide's pip row: a seeded cc-only Java scope verifies with no "
+               "conflict; once the config adds a jacoco lane, verify names the flip once, exit 3",
+      use_cases="upgrade guide, ratchet lifecycle, jacoco lane", os="linux", image="core",
+      cadence="nightly", packet=JACOCO_ROW)
+def test_lin_up_0_8_1_cc_only_java(box, candidate):
+    state.pip_venv(box, "3.12")
+    state.pip_install(box, f"crapkit=={OLD}")
+    repo = _java_repo(box, JAVA_CC_ONLY_5)
+    for step in (["coverage"], ["ratchet", "seed"]):
+        box.run(["crapkit", *step], cwd=repo, expect=0)
+    state.commit(box, repo, "seeded cc-only under 0.8.1")
+
+    state.upgrade_to(box, repo, candidate, state.upgrade_line(PIP))
+    box.run(["crapkit", "coverage"], cwd=repo, expect=0)
+    state.verify(box, repo)
+
+    _configure(repo, JAVA_MEASURED_5)
+    state.commit(box, repo, "the java scope gains a jacoco lane")
+    box.run(["crapkit", "coverage"], cwd=repo, expect=0)
+    refusal = output(box.run(["crapkit", "verify"], cwd=repo, expect=3))
+
+    assert "java was cc-only and is now measured by its jacoco lane(s)" in refusal, box.transcript.text()
+    assert refusal.count("ratchet seed --scope java") == 1, box.transcript.text()

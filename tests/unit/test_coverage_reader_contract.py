@@ -81,30 +81,44 @@ def _cobertura(root: Path) -> list[str]:
             "</lines></class>", "</classes></package></packages>", "</coverage>"]
 
 
+def _jacoco(root: Path) -> list[str]:
+    """A JaCoCo report is XML too, its control one element to a line, with the
+    DOCTYPE every producer writes."""
+    return ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            '<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">',
+            '<report name="test">', '<package name="src">', '<sourcefile name="a.java">',
+            _JLINE_1, '<line nr="2" mi="0" ci="3" mb="1" cb="1"/>', _JLINE_3,
+            '<line nr="5" mi="2" ci="0" mb="0" cb="0"/>', "</sourcefile>", "</package>",
+            "</report>"]
+
+
+_JLINE_1 = '<line nr="1" mi="0" ci="2" mb="0" cb="0"/>'
+_JLINE_3 = '<line nr="3" mi="0" ci="1" mb="0" cb="0"/>'
 CONTROLS = {"istanbul": _istanbul, "coveragepy": _coveragepy, "lcov": _lcov,
-            "cobertura": _cobertura}
+            "cobertura": _cobertura, "jacoco": _jacoco}
 # The formats whose artifact is one JSON document.
 JSON_FORMATS = ["coveragepy", "istanbul"]
 # The formats whose artifact is XML: its declaration and a byte-order mark
 # decide the decode (test_coverage_cobertura holds Latin-1 and UTF-16 reports),
 # so the not-UTF-8 refusal is not theirs.
-XML_FORMATS = ["cobertura"]
+XML_FORMATS = ["cobertura", "jacoco"]
 KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs",
-        "cobertura": "src/a.cpp"}
+        "cobertura": "src/a.cpp", "jacoco": "src/a.java"}
 # An istanbul entry with statements is an instrumenter's own output, whose fnMap
 # lists every function it measured, so its rows carry full_listing
 # (coverage_istanbul._instrumented; test_coverage_istanbul pins both readings).
-# lcov and Cobertura hand no function records: score's evidence join builds them.
+# lcov, Cobertura and JaCoCo hand no function records: score's evidence join builds them.
 ROWS = {"istanbul": [FnCoverage("f", 1, 6, True, 2, 1, 3, 2, full_listing=True)],
         "coveragepy": [FnCoverage("f", 1, 5, True, 2, 1, 3, 2)],
-        "lcov": [], "cobertura": []}
+        "lcov": [], "cobertura": [], "jacoco": []}
 # read()'s second value: the control's one file, its dead line 5 as missed_lines.
 # istanbul and coverage.py keep their own function records, so hit_lines is
-# None; lcov's and Cobertura's evidence holds their hit lines and their arms.
+# None; lcov's, Cobertura's and JaCoCo's evidence holds their hit lines and their arms.
 DEAD = FileEvidence(hit_lines=None, missed_lines=array("I", [5]))
 EVIDENCE = {"istanbul": DEAD, "coveragepy": DEAD,
             "lcov": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),)),
-            "cobertura": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),))}
+            "cobertura": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),)),
+            "jacoco": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),))}
 
 
 def _ist(doc: dict) -> dict:
@@ -270,7 +284,7 @@ def _counted_as(fmt: str, value):
 
 
 def _swap(old: str, new: str):
-    """An edit that rewrites one line of the lcov or Cobertura control."""
+    """An edit that rewrites one line of the lcov, Cobertura or JaCoCo control."""
     return lambda lines: lines.__setitem__(lines.index(old), new)
 
 
@@ -289,6 +303,8 @@ PROMISES = {
                        ["num_statements without covered_lines"]),
         "lcov": (_swap("DA:3,1", "DA:3"), ["SF:src/a.rs", "DA:3", "needs a line and a count"]),
         "cobertura": (_swap(_LINE_3, '<line number="3"/>'), ["src/a.cpp", "line 3 has no hits"]),
+        "jacoco": (_swap(_JLINE_3, '<line nr="3" mi="0" mb="0" cb="0"/>'),
+                   ["src/a.java", "line 3 has no ci"]),
     },
     "negative-count": {
         "istanbul": (_counted_as("istanbul", -1), ["s['0']", "nonnegative", "-1"]),
@@ -296,18 +312,24 @@ PROMISES = {
         "lcov": (_swap("DA:3,1", "DA:3,-1"), ["DA:3,-1", "nonnegative", "'-1'"]),
         "cobertura": (_swap(_LINE_3, '<line number="3" hits="-1"/>'),
                       ["src/a.cpp", "line 3: hits '-1'", "nonnegative"]),
+        "jacoco": (_swap(_JLINE_3, '<line nr="3" mi="0" ci="-1" mb="0" cb="0"/>'),
+                   ["src/a.java", "line 3: ci '-1'", "nonnegative"]),
     },
     "count-a-string": {
         "istanbul": (_counted_as("istanbul", "1"), ["s['0']", "'1'"]),
         "coveragepy": (_counted_as("coveragepy", "2"), ["covered_lines", "'2'"]),
         "lcov": (_swap("DA:3,1", "DA:3,one"), ["DA:3,one", "count 'one'"]),
         "cobertura": (_swap(_LINE_3, '<line number="3" hits="one"/>'), ["line 3: hits 'one'"]),
+        "jacoco": (_swap(_JLINE_3, '<line nr="3" mi="0" ci="one" mb="0" cb="0"/>'),
+                   ["line 3: ci 'one'"]),
     },
     "counter-group-null": {
         "istanbul": (lambda d: _ist(d).update(s=None), ["src/app.ts", "`s` holds null"]),
         "coveragepy": (lambda d: _pyfn(d).update(summary=None), ["f: no summary object"]),
         "lcov": (_swap("DA:3,1", "DA:"), ["SF:src/a.rs", "DA:", "needs a line and a count"]),
         "cobertura": (_swap(_LINE_3, '<line number="3" hits=""/>'), ["src/a.cpp", "hits ''"]),
+        "jacoco": (_swap(_JLINE_3, '<line nr="3" mi="0" ci="" mb="0" cb="0"/>'),
+                   ["src/a.java", "ci ''"]),
     },
     "file-entry-null": {
         "istanbul": (lambda d: d.update({next(iter(d)): None}),
@@ -317,6 +339,8 @@ PROMISES = {
         "lcov": (_swap("SF:src/a.rs", "SF:"), ["an SF record names no file"]),
         "cobertura": (_swap('<class name="a" filename="src/a.cpp"><methods/><lines>',
                             '<class name="a"><methods/><lines>'), ["a class names no filename"]),
+        "jacoco": (_swap('<sourcefile name="a.java">', "<sourcefile>"),
+                   ["a sourcefile has no name"]),
     },
     "missing-required-field": {
         "istanbul": (lambda d: _ist(d)["fnMap"]["0"]["loc"].pop("end"), ["loc.end.line"]),
@@ -324,6 +348,8 @@ PROMISES = {
                        ["no start_line", "coverage>=7.13.1"]),
         "lcov": (_da_first, ["a DA record comes before any SF record"]),
         "cobertura": (_swap(_LINE_3, '<line hits="1"/>'), ["src/a.cpp", "a line has no number"]),
+        "jacoco": (_swap(_JLINE_3, '<line mi="0" ci="1" mb="0" cb="0"/>'),
+                   ["src/a.java", "a line has no nr"]),
     },
 }
 
@@ -363,6 +389,16 @@ def test_an_lcov_count_that_is_not_a_finite_number_is_refused(tmp_path, old, new
     text = _refusal(tmp_path, "lcov", _bytes(tmp_path, "lcov", _swap(old, new)))
 
     _holds(text, ["cov.json", "SF:src/a.rs", new, "is not a nonnegative integer", REGENERATE])
+
+
+@pytest.mark.parametrize("counter, number", [("mb", "NaN"), ("cb", "inf"), ("ci", "1e999")])
+def test_a_jacoco_counter_that_is_not_a_finite_number_is_refused(tmp_path, counter, number):
+    counts = {"mi": "0", "ci": "1", "mb": "0", "cb": "0", counter: number}
+    line = '<line nr="3" ' + " ".join(f'{name}="{value}"' for name, value in counts.items()) + "/>"
+    text = _refusal(tmp_path, "jacoco", _bytes(tmp_path, "jacoco", _swap(_JLINE_3, line)))
+
+    _holds(text, ["cov.json", "src/a.java", f"line 3: {counter} '{number}'",
+                  "is not a nonnegative integer", REGENERATE])
 
 
 # --- what each format refuses in its own fields -----------------------------------
@@ -559,9 +595,8 @@ def test_a_coveragepy_lane_reads_the_contexts_of_one_file_through_its_adapter(tm
 # field a recorded artifact holds is removed once, so a reader added to _FORMATS
 # is checked field by field the day it lands.
 
-from coverage_fields import (FIELDS, MAPS, WRONG, cobertura_edit,  # noqa: E402
-                             cobertura_locators, field_paths, generic, lcov_edit, lcov_locators,
-                             minimal_artifact)
+from coverage_fields import (FIELDS, MAPS, WRONG, field_paths, generic,  # noqa: E402
+                             lcov_edit, lcov_locators, minimal_artifact, xml_edit, xml_locators)
 from crapkit.repotext import json_kind  # noqa: E402
 
 RECORDED = Path(__file__).parents[1] / "accuracy" / "coverage_oracles" / "recorded"
@@ -635,6 +670,14 @@ FILE_UNNAMED = {("coveragepy", "files.*.functions"):
                 # A class with no filename has no file to name.
                 ("cobertura", "class@filename"):
                 "cobertura artifact cov.json: a class names no filename; "
+                "regenerate the artifact with the coverage tool that wrote it",
+                # A JaCoCo key is its package path and sourcefile name: with either
+                # gone there is no key to name.
+                ("jacoco", "package@name"):
+                "jacoco artifact cov.json: a package has no name; "
+                "regenerate the artifact with the coverage tool that wrote it",
+                ("jacoco", "sourcefile@name"):
+                "jacoco artifact cov.json: package 'src': a sourcefile has no name; "
                 "regenerate the artifact with the coverage tool that wrote it"}
 
 
@@ -960,17 +1003,16 @@ COBERTURA_RECORDED = [pytest.param(RECORDED / name / f"{scenario}.xml", id=f"{na
     for scenario in ("call", "idle")]
 
 
-def _cobertura_unexplained(root: Path, text: str, locator: str, base) -> str | None:
+def _xml_unexplained(root: Path, fmt: str, text: str, locator: str, base) -> str | None:
     """Why removing the first field at `locator` breaks the table's promise."""
-    rows = [row for row in FIELDS if row.format == "cobertura" and row.locator == locator]
-    removed = _outcome(root, "cobertura", cobertura_edit(text, locator, None).encode("utf-8"))
+    rows = [row for row in FIELDS if row.format == fmt and row.locator == locator]
+    removed = _outcome(root, fmt, xml_edit(text, locator, None).encode("utf-8"))
     if removed == base:
         return None
     if isinstance(removed, str):
         return None if any(row.named in removed for row in rows) else (
             f"{locator}: refused with no row naming it: {removed}")
-    documented = [_outcome(root, "cobertura",
-                           cobertura_edit(text, locator, row.absent.value).encode("utf-8"))
+    documented = [_outcome(root, fmt, xml_edit(text, locator, row.absent.value).encode("utf-8"))
                   for row in rows if not row.required]
     if removed in documented:
         return None
@@ -983,8 +1025,32 @@ def test_removing_each_field_a_recorded_cobertura_report_holds_refuses_or_reads_
     text = report.read_text(encoding="utf-8").replace(ISTANBUL_ROOT, tmp_path.as_posix())
     base = _outcome(tmp_path, "cobertura", text.encode("utf-8"))
 
-    broken = [why for locator in cobertura_locators(text)
-              if (why := _cobertura_unexplained(tmp_path, text, locator, base))]
+    broken = [why for locator in xml_locators("cobertura", text)
+              if (why := _xml_unexplained(tmp_path, "cobertura", text, locator, base))]
 
     assert not isinstance(base, str), base
+    assert not broken, "\n".join(broken)
+
+
+# Every recorded JaCoCo report: Gradle's jacocoTestReport and Maven's
+# jacoco:report over one fixture repo, and the two over the Java probe.
+JACOCO_FIXTURES = Path(__file__).parents[1] / "fixtures" / "coverage" / "jacoco"
+JACOCO_RECORDED = [pytest.param(report, id=report.stem)
+                   for report in sorted(JACOCO_FIXTURES.glob("*.xml"))] + [
+    pytest.param(report, id=f"{report.parent.name}-{report.stem}")
+    for report in sorted(RECORDED.glob("jacoco-*/*.xml"))]
+
+
+@pytest.mark.parametrize("report", JACOCO_RECORDED)
+def test_removing_each_field_a_recorded_jacoco_report_holds_refuses_or_reads_as_documented(
+        tmp_path, report):
+    text = report.read_text(encoding="utf-8")
+    base = _outcome(tmp_path, "jacoco", text.encode("utf-8"))
+
+    broken = [why for locator in xml_locators("jacoco", text)
+              if (why := _xml_unexplained(tmp_path, "jacoco", text, locator, base))]
+
+    assert not isinstance(base, str), base
+    assert sorted(xml_locators("jacoco", text)) == sorted(
+        row.locator for row in FIELDS if row.format == "jacoco")
     assert not broken, "\n".join(broken)
