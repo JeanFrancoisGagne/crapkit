@@ -566,17 +566,39 @@ def _oldest_held(root: Path, runs: list[dict]) -> dict | None:
     return None
 
 
-def _pruned(root: Path, store: SnapshotStore, prior: list, fresh: list) -> tuple[list, str]:
-    """Prune, renames first: a file git moved is a relocated mark, not repaid debt."""
-    from ..ratchet import follow_renames, prune_ratchet
+def _pruned(root: Path, store: SnapshotStore, prior: list, fresh: list, carry: bool) -> tuple[list, str]:
+    """Prune, renames first: a file git moved is a relocated mark, not repaid debt.
+    A marks file whose key identity is unproved (CARRY False) follows and
+    keeps only the marks whose own key a row holds, as 0.8.1 did."""
+    from ..ratchet import exact_marks, follow_renames, prune_ratchet
 
     renames = _prune_renames(root, store.list_runs())
-    followed, moved = follow_renames(prior, fresh, renames.pairs)
-    entries, dropped = prune_ratchet(followed, fresh)
+    followed, moved = follow_renames(prior, fresh, renames.pairs, carry=carry)
+    entries, _ = prune_ratchet(followed if carry else exact_marks(followed, fresh), fresh)
     _refuse_unseen_renames(root, renames, _left_the_corpus(followed, entries, fresh))
     _note_window(renames)
-    return entries, (f"pruned {dropped}, followed {moved} rename(s)"
+    return entries, (f"pruned {len(followed) - len(entries)}, followed {moved} rename(s)"
+                     f"{_rekeyed_note(followed, entries, fresh)}"
                      f"{_followed_names(prior, followed, renames.pairs)}")
+
+
+def _rekeyed_note(prior: list, entries: list, fresh: list) -> str:
+    """`, re-keyed K` for the marks that moved to the key of the function that
+    carries them; "" for none, so a line with no re-key keeps its bytes."""
+    from ..ratchet import ratchet_delta
+
+    rekeyed = ratchet_delta(prior, entries, fresh).rekeyed
+    return f", re-keyed {rekeyed}" if rekeyed else ""
+
+
+def _print_kept(name: str, entries: list, fresh: list) -> None:
+    """One line per file whose marks no single function carries, naming them
+    and the command that re-keys one."""
+    from ..ratchet import ambiguous_marks
+
+    for path, kept in ambiguous_marks(entries, fresh).items():
+        print(f"{name}: kept {len(kept)} mark(s) in {path} that no single function carries: "
+              f"{', '.join(kept)}; run {_self()} ratchet move --function {path} OLD NEW")
 
 
 def _left_the_corpus(followed: list, kept: list, fresh: list) -> list[str]:
@@ -835,7 +857,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None,
     """
     from ..gitio import GitFacts
     from ..keys import require_unambiguous
-    from ..ratchet import running_stamp
+    from ..ratchet import KEY_VERSION, running_stamp
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
@@ -849,16 +871,20 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None,
     marks = saved.entries
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store,
                                           entries=marks, moves_marks=True)
+    # An unproved key identity (key version 0) proves no carry, so seed and
+    # prune read each mark under its own key, as 0.8.1 did.
+    carry = key_version == KEY_VERSION
     if action == "seed":
         entries, note, text = _seed(saved, _SeedRead(work, fresh, key_version), cfg, scope)
     else:
-        entries, note = _pruned(root, store, marks, fresh)
+        entries, note = _pruned(root, store, marks, fresh, carry)
         text = saved.kept(entries, keys=key_version, new_file_stamp=running_stamp(cfg))
     _publish_checked(saved, text, entries, fresh, latest["tool_versions"])
     # A scoped seed refused a run that measured its scope under other rules.
     metric_note = "" if scope else _metric_note(work, action, cfg, created=saved.text is None)
     print(f"{cfg.ratchet_file}: {note} - {len(entries)} mark(s) vs run {latest['id']} "
           f"({latest['commit'][:11]}){_skip_note(work.skipped, work.newer)}{metric_note}")
+    _print_kept(cfg.ratchet_file, entries if carry else [], fresh)
     _print_seed_next(action, cfg.ratchet_file, metric_note)
     return 0
 
@@ -967,7 +993,10 @@ def _seed(saved, read: _SeedRead, cfg, scope: str | None) -> tuple[list, str, st
     """seed's marks, the counts its line prints, and the text it writes. A
     scope whose stamp moved in a way `ratchet.SEED_RAISES` lets rise takes the
     run's values; every other mark only falls."""
-    entries, note = _seeded(saved.entries, read.fresh, cfg, scope, _rising(saved, read.work.run, cfg))
+    from ..ratchet import KEY_VERSION
+
+    rising = _rising(saved, read.work.run, cfg)
+    entries, note = _seeded(saved.entries, read.fresh, cfg, scope, rising, read.key_version == KEY_VERSION)
     _refuse_unkeyable_twins(cfg.ratchet_file, read.work, saved.entries, entries, read.fresh,
                             read.key_version)
     run_stamps = _signed_stamps(saved, read.work, cfg, scope)
@@ -1032,19 +1061,22 @@ def _refuse_restamping(work: _WorkRun, stamps, running, scope: str) -> None:
                       f"{_way_off(_measured_here(work.newer, running))}")
 
 
-def _seeded(prior: list, fresh: list, cfg, scope: str | None, rising: frozenset) -> tuple[list, str]:
+def _seeded(prior: list, fresh: list, cfg, scope: str | None, rising: frozenset,
+            carry: bool) -> tuple[list, str]:
     """seed's marks and its counts: `scope` keeps it to the paths the config
-    places there, and the marks in `rising` scopes take the run's values."""
+    places there, the marks in `rising` scopes take the run's values, and
+    `carry` False reads each mark under its own key only."""
     from ..ratchet import raised_marks, seed_ratchet
     from ..universe import owning_scope, scope_matchers
 
     matchers = scope_matchers(cfg.scopes)
     admits = None if scope is None else (lambda path: owning_scope(path, matchers) == scope)
     rises = (lambda path: owning_scope(path, matchers) in rising) if rising else None
-    entries, added, tightened = seed_ratchet(prior, fresh, target=cfg.target,
-                                             scope_targets=cfg.scope_targets, scope=admits, raises=rises)
+    entries, added, tightened = seed_ratchet(prior, fresh, target=cfg.target, scope_targets=cfg.scope_targets,
+                                             scope=admits, raises=rises, carry=carry)
     head = "" if scope is None else f"scope {scope}: "
-    return entries, f"{head}added {added}, tightened {tightened}{_raised_note(raised_marks(prior, entries))}"
+    counts = f"added {added}, tightened {tightened}{_rekeyed_note(prior, entries, fresh)}"
+    return entries, f"{head}{counts}{_raised_note(raised_marks(prior, entries, fresh))}"
 
 
 def _raised_note(raised: list) -> str:

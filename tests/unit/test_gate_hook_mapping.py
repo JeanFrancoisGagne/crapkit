@@ -207,7 +207,8 @@ def test_a_reason_grants_a_marked_rise_and_the_breach_beside_it_in_one_grant(hoo
     assert [[(v.long_name, v.key_name, v.high) for v in grant] for grant in hooked.grants] == [
         [("fresh( a , b )", "fresh( a , b )", 90.0), (NAME, NAME, 72.0)]]
     assert out.splitlines() == [
-        "crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:",
+        "crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 "
+        "(with no coverage known, CRAP is at least ccn):",
         f"  ccn   9  {PATH}:20  fresh( a , b )",
         RISE_HEAD,
         f"  ccn   8  {PATH}:1  {NAME}  mark 7.0000"]
@@ -265,7 +266,8 @@ def test_a_function_over_its_ceiling_with_no_reason_exits_6(hooked):
     code, out, _ = hooked(breach(), reason=False)
 
     assert (code, hooked.grants) == (6, [])
-    assert "crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:" in out
+    assert ("crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 "
+            "(with no coverage known, CRAP is at least ccn):") in out
     assert f"ccn   8  {PATH}:1  {NAME}" in out
     assert "decompose before committing" in out
 

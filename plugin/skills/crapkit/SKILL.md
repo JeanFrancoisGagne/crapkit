@@ -1,6 +1,6 @@
 ---
 name: crapkit
-description: "Work one crapkit debt item end to end: the packet that replaces reading the file, the ceiling the edit is judged against, the verdict that clears the commit. Use when the session already names crapkit (crapkit.toml, .crapkit/, crapkit-ratchet.tsv, a CRAP score, `crapkit next-item`, `crapkit brief`), when the user asks to burn down debt or lower complexity in a repo crapkit measures, when a commit is refused with \"crapkit: commit blocked by the complexity gate\", \"crapkit gate: N staged function(s) exceed the complexity ceiling\" or \"decompose before committing\", or when an edit draws the mid-session advisory \"crapkit advisory: N function(s) over ceiling C\". Not for eslint, husky, or any other pre-commit gate."
+description: "Work one crapkit debt item end to end: the packet that replaces reading the file, the ceiling the edit is judged against, the verdict that clears the commit. Use when the session already names crapkit (crapkit.toml, .crapkit/, crapkit-ratchet.tsv, a CRAP score, `crapkit next-item`, `crapkit brief`), when the user asks to burn down debt or lower complexity in a repo crapkit measures, when a commit is refused with \"crapkit: commit blocked by the complexity gate\", \"crapkit gate: N staged function(s) exceed the CRAP ceiling\" or \"decompose before committing\", or when an edit draws the mid-session advisory \"crapkit advisory: N function(s) over ceiling C\". Not for eslint, husky, or any other pre-commit gate."
 ---
 
 # Working a crapkit item
@@ -14,7 +14,7 @@ session works in does not hold those pages.
 
 | Moment | What answers it |
 |---|---|
-| Before opening the file | `crapkit brief PATH NAME --json`, or the MCP `get_function_brief` tool where the server is registered |
+| Before opening the file | `crapkit brief PATH NAME --json`, or the MCP `get_function_brief` tool where the server is registered. A `carried_from` value means the mark followed the function through a signature edit: it is the function's own debt, and a passing `crapkit verify` re-keys it |
 | Which house rules bind here | `notes.repo` and `notes.scope` in the packet |
 | An advisory fired on the edit you just made | Decompose that function now, not at the commit wall. The edit landed and nothing was blocked, but the gate refuses the same function later |
 | An advisory says a file could not be read | No function in it was judged, and the commit gate refuses the file once staged. Change what the `UNREAD` line's reason names, or list the file under `[exclude]` |

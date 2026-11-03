@@ -80,6 +80,7 @@ do next.
 | `params` | its parameters in order, each `{name, type}`, so a new test can call it without opening the file |
 | `notes` | the repo's and the scope's house rules, carried in from crapkit.toml |
 | `gate_rule` | `ceiling` is the number step 3 judges ccn against; `binds` is the gate's scope rule as one fixed sentence: print it, do not branch on it |
+| `ratchet_mark`, `carried_from` | the mark the gate judges this function by, also `gate_rule.ratchet_mark`. A `carried_from` key means a signature edit carried the mark from that key: it is your debt, not new debt, and a passing verify re-keys it |
 | `commands` | the literal strings for steps 3, 4 and 5, plus `refresh` and `refresh_writes_run` |
 | `scored_changes` | how many files the run scored hold other content now, your own edits included. Anything but `0`, `null` included: run `commands.refresh` before trusting `cov` or `source` |
 | `stale` | `true` means HEAD moved past the run's commit; it says nothing about the files |
@@ -179,7 +180,7 @@ what you are editing, `gate_rule.ceiling` is the number to land under.
 
 Prints the rescored table on stdout (`--json` for one object), violations on stderr:
 
-    crapkit gate: 1 rescored function(s) over their scope ceiling:
+    crapkit gate: 1 rescored function(s) exceed the CRAP ceiling of 6:
       GATE  crap    132.0  ccn  11 cov 0%  calc/grade.py:54  curve( scores , mode , floor , ceiling , skip_none )  -> decompose
 
 Three rules decide what it judges:
@@ -1047,7 +1048,7 @@ Every function you add or edit must sit at or under its scope's `target` in this
 own `crapkit.toml`: 6 for `src` and `tools`, 5 for `tools/accuracy`. The pre-commit hook
 runs `python -P -m crapkit hook-precommit` over the staged blobs:
 
-    crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+    crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 (with no coverage known, CRAP is at least ccn):
       ccn   7  calc/report.py:39  tally( rows , low , high , invert , label , pad , strict )
     decompose before committing (coverage cannot save a function above the target).
 

@@ -184,7 +184,7 @@ def test_solo_mid_feature_hears_the_advisory_then_the_gate(box, templates):
     assert [_generic(line) for line in said(spoke).splitlines()] == _advisory_lines(EXAMPLE)
     assert "refresh_token" in said(seen["rescore"])
     assert said(seen["brief"]).startswith("calc/session.py:1  refresh_token( req , store )")
-    assert "crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6" in said(seen["refused"])
+    assert "crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6" in said(seen["refused"])
     assert "crapkit gate" not in said(seen["landed"])
 
 
@@ -678,7 +678,7 @@ def test_below_the_git_top_the_enforcement_block_arms_a_working_hook(box, templa
     refused = box.run(["git", "commit", "-q", "-m", "breach"], cwd=root, env=box.commit_env(), expect=1)
 
     assert armed
-    assert "crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6" in said(refused)
+    assert "crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6" in said(refused)
 
 
 def enforce_where_it_can(box, root: Path) -> bool:
