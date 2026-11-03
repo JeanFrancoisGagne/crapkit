@@ -27,6 +27,7 @@ from crapkit.ratchet import (RatchetEntry, ScopeStamp, ScopeStamps, dump_ratchet
 from crapkit.ratchetfile import RatchetFile
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
+from stamps import single_number
 
 ROOT = Path(__file__).resolve().parents[2]
 SHA = "bb83d64fc19a7e2d4c5b60718293a4b5c6d7e8f9"
@@ -234,7 +235,7 @@ def test_a_scoped_seed_with_a_baseline_reads_that_run(repo):
 
 def test_a_plain_seed_on_a_single_number_file_writes_every_scope_s_stamp(repo, capsys):
     cfg = configure(repo)
-    write_marks(repo, [API, WEB], ratchet.SingleNumberStamp(13, running(cfg).lizard))
+    write_marks(repo, [API, WEB], single_number(13, running(cfg).lizard))
     store_run(repo, [row(API, 50.0), row(WEB, 30.0)], running(cfg))
 
     assert seed(repo) == 0
@@ -399,8 +400,8 @@ def one_patch_up(version: str) -> str:
 LIZARD_MOVED = {
     "per-scope": lambda now: ScopeStamps("1.17.10", now.scopes),
     "per-scope-and-web-analysis": lambda now: ScopeStamps("1.17.10", older_typescript(now).scopes),
-    "single-number": lambda now: ratchet.SingleNumberStamp(11, "1.17.10"),
-    "single-number-under-a-newer-lizard": lambda now: ratchet.SingleNumberStamp(13, one_patch_up(now.lizard)),
+    "single-number": lambda now: single_number(11, "1.17.10"),
+    "single-number-under-a-newer-lizard": lambda now: single_number(13, one_patch_up(now.lizard)),
 }
 RECORDED = {**LIZARD_MOVED, "web-analysis-only": older_typescript}
 
@@ -455,7 +456,7 @@ def test_the_ratchet_page_quotes_the_lizard_refusal(repo, monkeypatch):
     """docs/ratchet.md quotes it for a 0.8.1 file stamped lizard 1.24.3, under a crapkit that runs 1.24.0."""
     monkeypatch.setattr(invocation, "_runs_here", lambda found: True)  # the page runs `$ crapkit`
     cfg = configure(repo)
-    write_marks(repo, [API, WEB], ratchet.SingleNumberStamp(13, one_patch_up(running(cfg).lizard)))
+    write_marks(repo, [API, WEB], single_number(13, one_patch_up(running(cfg).lizard)))
     store_run(repo, [row(API, 50.0), row(WEB, 30.0)], running(cfg))
 
     with pytest.raises(ConfigError) as refused:
@@ -480,7 +481,7 @@ RUN = ScopeStamps("1.24.0", {"api": ScopeStamp({"python": 13}, {"coveragepy": 1}
 def test_a_scoped_seed_on_a_single_number_file_reads_each_other_scope_at_its_one_number():
     """api keeps what the 0.8.x file recorded for it: its number for python and
     the mode 0.8.x read its lane under; web takes the run's line, and the file's lizard stays."""
-    signed = ratchet.rescoped(ratchet.SingleNumberStamp(11, "1.17.10"), RUN, "web")
+    signed = ratchet.rescoped(single_number(11, "1.17.10"), RUN, "web")
 
     assert signed == ScopeStamps("1.17.10", {"api": ScopeStamp({"python": 11}, {"coveragepy": 1}),
                                              "web": RUN.scopes["web"]})

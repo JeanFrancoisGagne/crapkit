@@ -59,10 +59,10 @@ def test_crapkit_s_merge_is_idempotent_and_a_drop_beats_unchanged(base, side):
 @pure
 @given(marks=MARKS)
 def test_round_trip_through_crapkit_s_reader_and_writer(marks):
-    from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet
+    from crapkit.ratchet import MetricStamp, RatchetEntry, dump_ratchet, load_ratchet
     entries = [RatchetEntry(path, key, float(value)) for (path, key), value in marks.items()]
 
-    text = dump_ratchet(entries, stamp=STAMP, key_version=1)
+    text = dump_ratchet(entries, stamp=MetricStamp.parse(STAMP), key_version=1)
 
     assert sorted(load_ratchet(text)) == sorted(entries)
     assert [decoded(line) for line in lines_of(text.encode("utf-8"))] == \

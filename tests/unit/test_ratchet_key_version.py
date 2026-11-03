@@ -1,20 +1,20 @@
 """A key-format migration cannot silently move existing debt between callbacks."""
 import pytest
 
-from crapkit.ratchet import (RatchetEntry, check_key_groups, dump_ratchet,
+from crapkit.ratchet import (MetricStamp, RatchetEntry, check_key_groups, dump_ratchet,
                              read_key_version, read_stamp)
 
 
 def _text(*entries, version=0):
     return dump_ratchet([RatchetEntry(*entry) for entry in entries],
-                        stamp="crapkit-analysis=9 lizard=1.24.0", key_version=version)
+                        stamp=MetricStamp.parse("crapkit-analysis=9 lizard=1.24.0"), key_version=version)
 
 
 def test_key_version_is_separate_from_metric_stamp():
     text = _text(("a.ts", "f( x )", 20), version=1)
     assert read_key_version(text) == 1
     assert read_stamp(text) == "crapkit-analysis=9 lizard=1.24.0"
-    assert read_stamp(dump_ratchet([], stamp="", key_version=1)) == ""
+    assert read_stamp(dump_ratchet([], stamp=MetricStamp.NONE, key_version=1)) == ""
 
 
 @pytest.mark.parametrize("marker", ["2", "-1", "nan", "1\n# crapkit-keys=0"])
