@@ -1137,16 +1137,29 @@ def _report_gate(verdict: _RescoreGate, as_json: bool) -> int:
                   f"0 over {_gate_ceiling_label(verdict.ceilings)}")
         return 0
     _print_unread({u.path: u.reason for u in verdict.result.unread}, "changed", file=sys.stderr)
-    _print_breaches(verdict.breaches, verdict.unmeasured)
+    _print_breaches(verdict.breaches, verdict.ceilings, verdict.unmeasured)
     return code
 
 
-def _print_breaches(breaches: list, unmeasured: frozenset = frozenset()) -> None:
-    if breaches:
-        print(f"crapkit gate: {len(breaches)} rescored function(s) over their scope ceiling:",
-              file=sys.stderr)
-    for v in breaches:
-        print(_gate_line(v, (v.path, v.start, v.long_name) in unmeasured), file=sys.stderr)
+def refusal_head(judged: str, ceilings: list[int], no_coverage: bool) -> str:
+    """The head line of a gate refusal, the hook's and `rescore --gate`'s:
+    the CRAP ceiling the breaches share, else `their scope`. With
+    `no_coverage`, a listed function has no known coverage, so the line says
+    why its ccn decides: coverage brings CRAP down to ccn at best."""
+    of = f"of {ceilings[0]}" if len(set(ceilings)) == 1 else "of their scope"
+    why = " (with no coverage known, CRAP is at least ccn)" if no_coverage else ""
+    return f"crapkit gate: {len(ceilings)} {judged} function(s) exceed the CRAP ceiling {of}{why}:"
+
+
+def _print_breaches(breaches: list, ceilings: dict[str, int], unmeasured: frozenset) -> None:
+    """The breaches under the hook's head line, each as verify's GATE row; a
+    row whose cov no measurement stands behind prints `cov -`."""
+    if not breaches:
+        return
+    blind = [(v.path, v.start, v.long_name) in unmeasured for v in breaches]
+    print(refusal_head("rescored", [ceilings[v.path] for v in breaches], any(blind)), file=sys.stderr)
+    for v, no_cov in zip(breaches, blind):
+        print(_gate_line(v, no_cov), file=sys.stderr)
 
 
 def _rescore_baseline(root: Path) -> tuple[SnapshotStore, dict]:

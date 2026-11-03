@@ -12,7 +12,7 @@ return value.
 """
 import json
 
-from cli_inproc_repo import (add_knotty, commit_all, istanbul, repo,  # noqa: F401
+from cli_inproc_repo import (APP_TS, add_knotty, commit_all, istanbul, repo,  # noqa: F401
                              seed_artifacts, template_repo)
 
 import pytest
@@ -551,13 +551,44 @@ def test_the_gate_passes_a_tree_that_changed_nothing_over_its_ceiling(scored, ca
 
 
 def test_the_gate_refuses_a_function_this_tree_pushed_over_the_ceiling(scored, capsys):
+    """knotty is new since the run, so no coverage stands behind it: the head
+    line says why its ccn decides."""
     add_knotty(scored)
 
     code, _, err = run(["rescore", "src/app.ts", "--gate"], scored, capsys)
 
     assert code == 6
-    assert "1 rescored function(s) over their scope ceiling" in err, err
-    assert "GATE" in err and "knotty" in err, err
+    lines = err.splitlines()
+    assert lines[0] == ("crapkit gate: 1 rescored function(s) exceed the CRAP ceiling of 6 "
+                        "(with no coverage known, CRAP is at least ccn):"), err
+    assert "GATE" in lines[1] and "cov -" in lines[1] and "knotty" in lines[1], err
+
+
+PLAIN_EIGHT = """export function plain(x: number): number {
+  if (x > 1) { return 1; }
+  if (x > 2) { return 2; }
+  if (x > 3) { return 3; }
+  if (x > 4) { return 4; }
+  if (x > 5) { return 5; }
+  if (x > 6) { return 6; }
+  if (x > 7) { return 7; }
+  return -x;
+}
+"""
+
+
+def test_a_refused_function_with_stored_coverage_names_the_ceiling_alone(scored, capsys):
+    """plain keeps its name at ccn 8, so it keeps the run's coverage: its CRAP
+    is known, and the head line carries no clause about ccn."""
+    (scored / "src" / "app.ts").write_text(APP_TS.split("export function plain")[0] + PLAIN_EIGHT,
+                                           encoding="utf-8", newline="\n")
+
+    code, _, err = run(["rescore", "src/app.ts", "--gate"], scored, capsys)
+
+    assert code == 6
+    lines = err.splitlines()
+    assert lines[0] == "crapkit gate: 1 rescored function(s) exceed the CRAP ceiling of 6:", err
+    assert "GATE" in lines[1] and "cov -" not in lines[1] and "plain ( x )" in lines[1], err
 
 
 def test_a_ratchet_mark_the_repo_already_signed_for_passes_the_gate(scored, capsys):

@@ -41,7 +41,7 @@ paths = ["src"]
 languages = ["python"]
 """
 
-CEILING = "exceed the complexity ceiling"
+CEILING = "exceed the CRAP ceiling"
 DECOMPOSE = "decompose before committing"
 EXEMPT = "carry a ratchet mark"
 COUNT_LINE = ("crapkit gate: {n} staged function(s) carry a ratchet mark and were not gated - "

@@ -42,7 +42,7 @@ def test_outside_a_commit_nothing_staged_judges_every_tracked_file(tmp_path):
     result = run_cli(tmp_path, "hook-precommit")
 
     assert result.returncode == 6, result.stdout + result.stderr
-    assert "1 tracked function(s) exceed the complexity ceiling of 2" in result.stdout
+    assert "1 tracked function(s) exceed the CRAP ceiling of 2" in result.stdout
     assert "every tracked file was judged" in result.stderr
 
 

@@ -1,6 +1,6 @@
 ---
 name: crapkit
-description: "Work one crapkit debt item end to end: the packet that replaces reading the file, the ceiling the edit is judged against, the verdict that clears the commit. Use when the session already names crapkit (crapkit.toml, .crapkit/, crapkit-ratchet.tsv, a CRAP score, `crapkit next-item`, `crapkit brief`), when the user asks to burn down debt or lower complexity in a repo crapkit measures, when a commit is refused with \"crapkit: commit blocked by the complexity gate\", \"crapkit gate: N staged function(s) exceed the complexity ceiling\" or \"decompose before committing\", or when an edit draws the mid-session advisory \"crapkit advisory: N function(s) over ceiling C\". Not for eslint, husky, or any other pre-commit gate."
+description: "Work one crapkit debt item end to end: the packet that replaces reading the file, the ceiling the edit is judged against, the verdict that clears the commit. Use when the session already names crapkit (crapkit.toml, .crapkit/, crapkit-ratchet.tsv, a CRAP score, `crapkit next-item`, `crapkit brief`), when the user asks to burn down debt or lower complexity in a repo crapkit measures, when a commit is refused with \"crapkit: commit blocked by the complexity gate\", \"crapkit gate: N staged function(s) exceed the CRAP ceiling\" or \"decompose before committing\", or when an edit draws the mid-session advisory \"crapkit advisory: N function(s) over ceiling C\". Not for eslint, husky, or any other pre-commit gate."
 ---
 
 # Working a crapkit item

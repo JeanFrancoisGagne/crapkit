@@ -47,7 +47,8 @@ def test_outside_a_commit_a_committed_breach_fails(committed_breach, capsys):
 
     assert code == 6, out + err
     assert "nothing is staged and no commit is running" in err, err
-    assert "tracked function(s) exceed the complexity ceiling of 6:" in out, out
+    assert ("tracked function(s) exceed the CRAP ceiling of 6 "
+            "(with no coverage known, CRAP is at least ccn):") in out, out
     assert "ccn   8  src/app.ts:20  knotty ( n )" in out, out
     assert "decompose them and commit the split" in out, out
 
