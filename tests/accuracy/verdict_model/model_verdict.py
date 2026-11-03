@@ -5,9 +5,9 @@ sha256, so a docs edit that moves or rewrites one fails the kit contract until
 this model is read against the new text again. No crapkit import: the tests
 compare what crapkit prints with what these functions say it should print.
 
-doc: README.md:1386-1478 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aacfd8e862acadfae30
-doc: README.md:1480-1507 sha256=374689f0fb536f3116a2bc9b2820b3c7ef6eed0062f4dfdfc7453da57e00f9fa
-doc: README.md:1292-1292 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
+doc: README.md:1388-1480 sha256=1c2801ea923ab793b72240c35aa05bdf750c63fa0b596aacfd8e862acadfae30
+doc: README.md:1482-1509 sha256=374689f0fb536f3116a2bc9b2820b3c7ef6eed0062f4dfdfc7453da57e00f9fa
+doc: README.md:1294-1294 sha256=b468eff446265c0eeee5557ec042e40db30799e459c6011f389a9ce89ac9e1fc
 doc: CONTEXT.md:34-41 sha256=f7baa578e3f82045a5588991a9c2a408ee7995faa7f12e682342b60295ef2987
 doc: CONTEXT.md:91-173 sha256=395c91466b52dc512219d14a40c3b5d7bddb59b5fbdd50c6093a94d2bfec8469
 doc: docs/ratchet.md:20-108 sha256=b50337b753f366cc9e423944f1f96f687ee1c235d4f63f6753844adf78a820b4
@@ -24,14 +24,14 @@ doc: docs/agent-json.md:306-330 sha256=46e36bc36e895f6379112955a0182505cc361f45c
 doc: docs/agent-json.md:991-1004 sha256=bb81843c03ec9a8c4437527fd0fa5f6ed6230797e856bf9b6a792b8442907a7d
 doc: docs/agent-json.md:929-989 sha256=f413627ee32a4ebc15b9502445bb4a02a280622bd106ee28fc6571cf80b33680
 doc: docs/configuration.md:220-220 sha256=e6dc43339c7ab96208524957553d2995e11fc3bd1349d4f7d3b7aa6647f33d5f
-doc: docs/lanes.md:1622-1660 sha256=c3d344ab7101f3cc4a9e8bb17b1380fc491582dbc0237aa859faa2e29822694c
-doc: docs/lanes.md:1796-1809 sha256=c80c08b87c893b48a67c8dc8b92f1d37f947e41bee1efafb8670fe670064689c
+doc: docs/lanes.md:1633-1671 sha256=c3d344ab7101f3cc4a9e8bb17b1380fc491582dbc0237aa859faa2e29822694c
+doc: docs/lanes.md:1807-1820 sha256=c80c08b87c893b48a67c8dc8b92f1d37f947e41bee1efafb8670fe670064689c
 doc: docs/ratchet.md:1359-1363 sha256=d595fbb2cd6d8f4d0597fa6fab845041af6c1da7ddb2aaf38e4f7884ca2bf974
 doc: docs/agent-json.md:593-613 sha256=64d6cb9b71322533826e0516f0eb3a3646b001c9636575730dc41313cfd76acf
-doc: docs/lanes.md:1297-1454 sha256=7d28889683d759dc2dc72783fd1428ceb32951db241a9b8735352e65a8fa1c9e
-doc: docs/lanes.md:1456-1517 sha256=9562d770e19872b412caf2ed5a4dbf8760c219d517f71ae90efa2d54b7f5c8a0
-doc: docs/lanes.md:2054-2155 sha256=20c35db0609fa11816fa82592124a32dcf49fba96fba341af034768f3d8e467a
-doc: README.md:1328-1335 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
+doc: docs/lanes.md:1308-1465 sha256=7d28889683d759dc2dc72783fd1428ceb32951db241a9b8735352e65a8fa1c9e
+doc: docs/lanes.md:1467-1528 sha256=9562d770e19872b412caf2ed5a4dbf8760c219d517f71ae90efa2d54b7f5c8a0
+doc: docs/lanes.md:2065-2166 sha256=20c35db0609fa11816fa82592124a32dcf49fba96fba341af034768f3d8e467a
+doc: README.md:1330-1337 sha256=393f9980d5d30fba8ab60f9a2945e02babf0c495c8cd2f474a0c3a20c0eab943
 doc: docs/portable-records.md:9-24 sha256=e4e06a93b5a1fd4569a93b1673493be0fcdd6e7eb3b04c0d0bc507b5dd3867c9
 """
 from __future__ import annotations

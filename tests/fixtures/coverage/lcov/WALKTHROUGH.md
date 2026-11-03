@@ -13,7 +13,7 @@ this walkthrough lowers `target` from 6 to 5 to put one function over the ceilin
 ```
 $ crapkit init
 wrote crapkit.toml with 1 scope(s): rust
-no coverage parser reads this repo's languages, so every scope is cc-only (coverage_optional = true) and needs no lane - next: run `crapkit coverage`
+every scope is cc-only (coverage_optional = true) and needs no lane - next: run `crapkit coverage`
 ```
 
 init writes no lane for Rust. The scope it writes:

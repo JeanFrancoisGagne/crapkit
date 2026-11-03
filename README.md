@@ -87,8 +87,10 @@ $ crapkit coverage
 crapkit: the git repository at /repo has no commit yet: crapkit measures a commit, so make the first one (git add, then git commit) and run it again
 ```
 
-`init` detects pytest, Vitest and Jest from the repository's own files. Review the
-generated config before running its commands. When detection leaves a commented
+`init` detects pytest, Vitest and Jest from the repository's own files and writes their
+lanes live. For cargo llvm-cov, Bun and Deno it leaves a commented lane while those scopes
+stay cc-only; [Turning a cc-only scope into a measured one](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one)
+takes one from there. Review the generated config before running its commands. When detection leaves a commented
 lane, fill it in using the [lane recipes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md).
 Commit the adoption files, then run `crapkit verify` to establish a passing verdict.
 Install the [commit gate](#the-gate) when the config and ratchet are ready.
@@ -553,10 +555,10 @@ scores on complexity alone.
 
 A cc-only scope declares `coverage_optional = true`, scores `crap = ccn`, and needs no
 lane. Nothing about it is provisional: the ceiling still binds and the gate still refuses
-a function over it. Add a coverage lane the day a parser exists and the same scope starts
-joining coverage; [Turning a cc-only scope into a measured one](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one) re-marks it then.
+a function over it. A lane whose runner writes a format crapkit reads makes the scope
+measured ([which languages a lane can measure](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#which-languages-a-lane-can-measure)); [Turning a cc-only scope into a measured one](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one) re-marks it then.
 
-`crapkit init` writes that key itself, on every scope whose languages all lack a parser,
+`crapkit init` writes that key itself, on every scope init writes no live lane for,
 and leaves it off any scope a lane could still measure. So the 60-second start above runs
 unchanged on a Go, Rust or shell repo: `crapkit coverage` scores it with no lane at all,
 and that run is the baseline `worklist`, `next-item`, `ratchet seed` and `verify` read.
