@@ -338,6 +338,21 @@ def test_the_refusal_names_each_scope_what_each_side_recorded_and_the_fix(tmp_pa
         "`crapkit ratchet seed --scope web` on one branch, then merge again; OURS was left unchanged\n")
 
 
+def test_a_lizard_split_refusal_says_which_side_has_no_line_for_a_scope_and_names_the_plain_seed(
+        tmp_path, capsys):
+    files = write_sides(tmp_path, BASE, scoped("1.25.0", **SCOPES), scoped("1.26.0", api=API13, web=WEB13))
+
+    assert main(["ratchet", "merge", *files]) == 3
+
+    assert capsys.readouterr().err == (
+        "crapkit: ratchet merge refused: OURS and THEIRS moved a stamp differently - scope api: OURS "
+        f"records [lizard=1.25.0 {API13}] and THEIRS records [lizard=1.26.0 {API13}]; scope old: OURS "
+        f"records [lizard=1.25.0 {OLD13}] and THEIRS records [lizard=1.26.0 and no line for this scope]; "
+        f"scope web: OURS records [lizard=1.25.0 {WEB13}] and THEIRS records [lizard=1.26.0 {WEB13}] - "
+        "run `crapkit coverage` and `crapkit ratchet seed` on one branch, then merge again; OURS was left "
+        "unchanged\n")
+
+
 def test_a_single_number_refusal_names_the_newer_side_and_the_crapkit_to_reseed_with(tmp_path, capsys):
     files = write_sides(tmp_path, single(12), single(13), single(14))
 

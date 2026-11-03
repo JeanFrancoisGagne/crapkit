@@ -1017,14 +1017,16 @@ def test_bouncing_measurement_holds_marks(make_repo):
 
 def _age_runs(scenario: vw.Scenario, analysis: int) -> str:
     """Relabel every stored run as measured under an older analysis version,
-    each scope's stamp included, so seed signs those numbers. Returns that metric."""
+    each scope's stamp included, so seed signs those numbers. Returns that metric.
+    A crapkit before 0.9.0 records no scope stamps, and a retro replay runs one."""
     import sqlite3
     connection = sqlite3.connect(scenario.root / ".crapkit" / "crap.sqlite")
     with connection:
         for run_id, text in connection.execute("SELECT id, tool_versions FROM runs").fetchall():
             versions = {**json.loads(text), "analysis_version": analysis}
-            versions["scope_stamps"] = {name: {**stamp, "analysis": dict.fromkeys(stamp["analysis"], analysis)}
-                                        for name, stamp in versions["scope_stamps"].items()}
+            if "scope_stamps" in versions:
+                versions["scope_stamps"] = {name: {**stamp, "analysis": dict.fromkeys(stamp["analysis"], analysis)}
+                                            for name, stamp in versions["scope_stamps"].items()}
             connection.execute("UPDATE runs SET tool_versions = ? WHERE id = ?",
                                (json.dumps(versions), run_id))
     connection.close()
