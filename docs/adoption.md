@@ -8,10 +8,12 @@ order. Existing installations should start with [Upgrading](upgrading.md).
 ## Evaluate with one command before `init`
 
 When your CI already writes a coverage file, score it before you write any config:
-`uvx crapkit score src --coverage lcov.info --fail-above 30`. It prints CRAP per function
-for the git-tracked source under `src`, worst first, and exits 6 when a function scores above
-30. It reads lcov, coverage.py JSON and istanbul JSON, and writes nothing under the repo.
-Run `crapkit init` once the numbers say crapkit is worth wiring in.
+`uvx crapkit score src --coverage lcov.info --fail-above 30 --junit crapkit.xml`. It prints
+CRAP per function for the git-tracked source under `src`, worst first, and exits 6 when a
+function scores above 30. It reads lcov, coverage.py JSON and istanbul JSON, and writes
+nothing under the repo but `crapkit.xml`: a JUnit report with one test case per function,
+failed when it scores above 30, which GitLab, Jenkins and Azure Pipelines show as test
+results. Run `crapkit init` once the numbers say crapkit is worth wiring in.
 
 ## Cut fewer, broader scopes first
 

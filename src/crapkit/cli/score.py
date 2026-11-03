@@ -1,19 +1,21 @@
 """`crapkit score`: CRAP per function from a coverage file CI already wrote,
 with no crapkit.toml, no lane run and no store. The flags build the Config
 (one_shot.config_from_flags); analysis and the join run in memory, and the
-command writes nothing under the repo, so it needs no `init` first."""
+command writes nothing under the repo but the --junit report it is asked for,
+so it needs no `init` first."""
 from __future__ import annotations
 
 import argparse
 import sys
 from pathlib import Path
 
-from .. import one_shot
+from .. import junit_report, one_shot
 from ..gitio import ls_files
 from ..named import first_few
 from ..repopath import typed_path
 from ..snapshot import build_inventory_rows
-from ._shared import _analysis_tools, _on_its_drive, _say_left_out, _scan
+from ._shared import (_analysis_tools, _on_its_drive, _refuse_unwritable_outputs, _repo_out_path,
+                      _say_left_out, _scan)
 from .scoring import _present_on_disk, _records_by_scope, _tracked_files
 
 # The exit `rescore --gate` and every other "a function is over its limit"
@@ -55,6 +57,7 @@ def _inventory(root: Path, cfg) -> tuple[list[str], list]:
 
 def cmd_score(args: argparse.Namespace) -> int:
     root = _root(args.repo)
+    _refuse_unwritable_outputs(root, {"--junit": args.junit})
     artifact = _artifact(root, args.coverage)
     cfg = one_shot.config_from_flags(root, args.paths, args.coverage,
                                      one_shot.format_of(artifact, args.format))
@@ -64,5 +67,7 @@ def cmd_score(args: argparse.Namespace) -> int:
     limit = cfg.target if args.fail_above is None else args.fail_above
     for line in one_shot.report_lines(scored, limit, args.top):
         print(line)
+    if args.junit:
+        junit_report.write(_repo_out_path(root, args.junit, "--junit"), scored, limit)
     failing = args.fail_above is not None and one_shot.over(scored, limit)
     return OVER_LIMIT if failing else 0

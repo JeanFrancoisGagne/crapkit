@@ -471,7 +471,8 @@ def build_parser() -> argparse.ArgumentParser:
                       "crapkit.toml; writes nothing",
         description="Score the git-tracked source under each PATH against an existing coverage "
                     "file, in memory: no crapkit.toml, no lane, no store, nothing written under "
-                    "the repo. Prints the functions over the limit, worst first, then "
+                    "the repo but the --junit report. Prints the functions over the limit, "
+                    "worst first, then "
                     "`N functions, M over LIMIT`. The format is sniffed from the file's first "
                     "bytes: an LCOV tracefile (TN: or SF: lines), a coverage.py JSON report "
                     "(meta and files) or an Istanbul JSON report (entries that hold "
@@ -498,6 +499,11 @@ def build_parser() -> argparse.ArgumentParser:
                           "(default: list those above the default ceiling of 6, exit 0)")
     scr.add_argument("--top", type=int, default=None, metavar="K",
                      help="print only the worst K of them (default: all)")
+    scr.add_argument("--junit", default=None, metavar="FILE",
+                     help="also write a JUnit XML report, one test case per scored function and "
+                          "a failure for each one over the limit, for CI systems that show test "
+                          "reports; written whatever the exit, relative to the repo or absolute"
+                          + _TYPED)
     scr.set_defaults(func=_Handler("score", "cmd_score"))
 
     dig = sub.add_parser("digest", help="delta between the last two scored runs; silent when unchanged")

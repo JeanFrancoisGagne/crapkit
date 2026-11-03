@@ -47,6 +47,7 @@
 - `crapkit score PATH --coverage FILE --fail-above N` scores an existing coverage file with no config and exits 6 when a function is over N.
 - crapkit init leaves a commented coverage lane for each toolchain it detects at the repo root (cargo llvm-cov, Bun, Deno), and crapkit doctor notes each cc-only scope whose language a reader can now measure, naming the language, the parser and the toolchain. brief's uncovered_lines_note for such a function names the parser and its lanes.md recipe.
 - crapkit creates the directory of a lane's declared artifact before the lane runs, so a runner that does not create it runs as written in a fresh clone.
+- `crapkit score --junit FILE` writes one JUnit test case per scored function, failing those over the limit, for CI systems that show test reports.
 <!-- /0.9.0:m1-readers -->
 
 <!-- 0.9.0:m5-comment-fixture -->
