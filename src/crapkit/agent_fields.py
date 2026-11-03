@@ -1451,7 +1451,7 @@ _RESCORE_GATE = {
                 "type": "object",
                 "properties": {},
                 "additionalProperties": {"type": "integer"},
-                "description": ("map of repo-relative path to the ccn ceiling it was "
+                "description": ("map of repo-relative path to the CRAP ceiling it was "
                 "judged against")},
             "breaches": {
                 "type": "array",

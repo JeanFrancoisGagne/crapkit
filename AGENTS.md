@@ -179,7 +179,7 @@ what you are editing, `gate_rule.ceiling` is the number to land under.
 
 Prints the rescored table on stdout (`--json` for one object), violations on stderr:
 
-    crapkit gate: 1 rescored function(s) over their scope ceiling:
+    crapkit gate: 1 rescored function(s) exceed the CRAP ceiling of 6:
       GATE  crap    132.0  ccn  11 cov 0%  calc/grade.py:54  curve( scores , mode , floor , ceiling , skip_none )  -> decompose
 
 Three rules decide what it judges:
@@ -1047,7 +1047,7 @@ Every function you add or edit must sit at or under its scope's `target` in this
 own `crapkit.toml`: 6 for `src` and `tools`, 5 for `tools/accuracy`. The pre-commit hook
 runs `python -P -m crapkit hook-precommit` over the staged blobs:
 
-    crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+    crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 (with no coverage known, CRAP is at least ccn):
       ccn   7  calc/report.py:39  tally( rows , low , high , invert , label , pad , strict )
     decompose before committing (coverage cannot save a function above the target).
 

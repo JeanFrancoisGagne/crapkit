@@ -300,7 +300,7 @@ Two more branches in the same function push it past 51.5698, and both refuse:
 
 ```
 $ crapkit rescore calc/grade.py --gate
-crapkit gate: 1 rescored function(s) over their scope ceiling:
+crapkit gate: 1 rescored function(s) exceed the CRAP ceiling of 6:
   GATE  crap     83.0  ccn  17 cov 39%  calc/grade.py:1  classify( score , attempts , late , bonus )  -> decompose
 EXIT=6
 
@@ -1357,7 +1357,7 @@ The pre-commit hook takes the same path through `CRAPKIT_OVERRIDE_REASON`:
 
 ```
 $ CRAPKIT_OVERRIDE_REASON="hotfix 412, decompose in the follow-up" git commit -m "add route"
-crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 (with no coverage known, CRAP is at least ccn):
   ccn   7  app/m.py:9  route( a , b , c , d )
 crapkit: override granted with full audit (hotfix 412, decompose in the follow-up).
 crapkit: clear CRAPKIT_OVERRIDE_REASON now (`unset CRAPKIT_OVERRIDE_REASON`) - while set it grants again on every commit.

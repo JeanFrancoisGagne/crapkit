@@ -24,7 +24,7 @@ from ._shared import (_analysis_tools, _command_root, _emit_findings,
                       _ratchet_key_version, _refuse_unwritable_outputs, _repo_out_path,
                       _repo_relative, _say_left_out, _stand, _unreadable_json, _write_tsv,
                       behind_head, no_config, repo_text)
-from .scoring import _scored_run
+from .scoring import _scored_run, refusal_head
 
 if TYPE_CHECKING:
     from ..ratchet import RatchetDelta, RatchetEntry
@@ -1821,14 +1821,14 @@ def _refuse_rises(violations: list, whole: bool) -> int:
 
 
 def _print_breaches(violations: list, target: int, shown: str, judged: str) -> None:
-    """The refusal's head line names the ceiling the breaches were judged
-    against, a scope's own `target` included. Breaches under scopes with
-    different ceilings each name theirs on the row, `ccn   6 > 5`. `target`
-    stands in for a violation built without a ceiling."""
+    """The refusal's head line names the CRAP ceiling the breaches were judged
+    against, a scope's own `target` included, and why each row shows a ccn: a
+    blob has no coverage, so its CRAP is at least its ccn. Breaches under
+    scopes with different ceilings each name theirs on the row, `ccn   6 > 5`.
+    `target` stands in for a violation built without a ceiling."""
     ceilings = [_judged_ceiling(v, target) for v in violations]
     shared = len(set(ceilings)) == 1
-    head = f"of {ceilings[0]}" if shared else "of their scope"
-    print(f"crapkit gate: {len(violations)} {judged} function(s) exceed the complexity ceiling {head}:")
+    print(refusal_head(judged, ceilings, no_coverage=True))
     for v, ceiling in zip(violations, ceilings):
         over = "" if shared else f" > {ceiling}"
         print(f"  ccn {v.ccn:>3}{over}  {shown}{v.path}:{v.start}  {v.long_name}")

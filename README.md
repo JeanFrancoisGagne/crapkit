@@ -955,7 +955,7 @@ error, which is a broken job and not a verdict.
 
 ```
 $ git commit -m "add route"
-crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 (with no coverage known, CRAP is at least ccn):
   ccn   7  app/m.py:9  route( a , b , c , d )
 decompose before committing (coverage cannot save a function above the target).
 ```
