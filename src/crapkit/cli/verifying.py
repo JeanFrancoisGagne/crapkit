@@ -296,15 +296,21 @@ def _refuse_or_warn(conflict, name: str, named: dict | None, pinned: bool) -> No
 def verify_stamp_conflict(saved, cfg):
     """How the marks differ from what a run on `cfg` measures, as verify weighs them.
 
+    The marks are read first: a line no reader parses, a cut scope stamp line
+    among them, refuses naming that line, as seed and prune do. Weighed as a
+    stamp first, it would name coverage, prune and seed, and prune and seed
+    refuse that line.
+
     Marks a scope's stamp can be read from are weighed scope by scope against
-    the running per-scope stamp. A single-number file that holds no mark, and a
-    stamp crapkit cannot read, compare as one value with the single number;
-    the tighten then signs the running per-scope stamp over a passing file."""
+    the running per-scope stamp. A single-number file that holds no mark, and
+    any other stamp crapkit cannot read, compare as one value with the single
+    number; the tighten then signs the running per-scope stamp over a passing
+    file."""
     from ..ratchet import ScopeStamps, SingleNumberStamp, as_one_value, running_stamp
 
-    stamp = saved.metric_stamp
-    if isinstance(stamp, ScopeStamps) or (isinstance(stamp, SingleNumberStamp) and saved.entries):
-        return saved.stamp_conflict(running_stamp(cfg), marked_scopes(saved.entries, cfg))
+    entries, stamp = saved.entries, saved.metric_stamp
+    if isinstance(stamp, ScopeStamps) or (isinstance(stamp, SingleNumberStamp) and entries):
+        return saved.stamp_conflict(running_stamp(cfg), marked_scopes(entries, cfg))
     return as_one_value(stamp, running_stamp(cfg))
 
 

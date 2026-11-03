@@ -181,8 +181,11 @@ def _ratchet_merge(files: list) -> int:
     # BOM, which read strictly hid its stamp (`ours is [unstamped]`, exit 3),
     # or as UTF-16, which OURS stays when it is written back.
     saved = [RatchetFile.read(Path(f), required=True) for f in files]
-    texts, stamps = _mergeable_texts(saved)
-    sides = [_ratchet_or_die(t, f) for t, f in zip(texts, files)]
+    # Marks before stamps: a side holding a line no reader parses, a cut scope
+    # stamp line among them, refuses naming that line, as seed and prune do.
+    # Stamps first would refuse it as a stamp mismatch whose reseed refuses that line.
+    sides = [_ratchet_or_die(side.text or "", f) for side, f in zip(saved, files)]
+    stamps = _merged_stamp(saved)
     merged = merge_ratchets(*sides)
     saved[1].publish(_merged_text(saved, merged, stamps.stamp))
     print(f"ratchet merge: {len(merged)} mark(s)")
@@ -220,8 +223,8 @@ def _print_stamp_notes(came_from: tuple, sides: list) -> None:
                   f"--scope {scope}", file=sys.stderr)
 
 
-def _mergeable_texts(saved: list) -> tuple[list[str], StampMerge]:
-    """The three sides' texts once they share one key format, and the stamp their merge records.
+def _merged_stamp(saved: list) -> StampMerge:
+    """The stamp the merge of the three sides records, once they share one key format.
 
     A blank BASE is no common ancestor. Two branches that each created the file
     (two first seeds) meet in an add/add merge, and git hands the driver an empty
@@ -236,7 +239,7 @@ def _mergeable_texts(saved: list) -> tuple[list[str], StampMerge]:
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
     _merge_key_version(texts[1:] if saved[0].blank else texts)
-    return texts, stamps
+    return stamps
 
 
 def _merge_key_version(texts: list[str]) -> None:

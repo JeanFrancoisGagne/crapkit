@@ -176,6 +176,30 @@ def test_the_merge_driver_writes_no_new_single_number_line(tmp_path, base, ours,
     assert read_stamp(text) in (ours, theirs) or read_stamp(text).scopes, text
 
 
+@pytest.mark.parametrize("cut", ["ours", "theirs"])
+def test_the_merge_driver_names_a_sides_cut_scope_stamp_line_and_keeps_ours(tmp_path, cut):
+    """Compared as a stamp, the cut line refused the merge as two stamps that do
+    not compare and sent the user to a reseed that refuses the same line. The
+    driver now names the line, as seed and prune do."""
+    files = {}
+    for side, crap in (("base", 50.0), ("ours", 40.0), ("theirs", 30.0)):
+        text = dump_ratchet([RatchetEntry("api/a.py", "f( )", crap)], stamp=RUNNING, key_version=1,
+                            file_name=NAME)
+        if side == cut:
+            text = text[:text.index("#scope\tapi\t") + len("#scope\tapi\t")]
+        files[side] = tmp_path / f"{side}.tsv"
+        files[side].write_text(text, encoding="utf-8", newline="\n")
+    before = files["ours"].read_bytes()
+
+    with pytest.raises(ConfigError) as refused:
+        cmd_ratchet(argparse.Namespace(action="merge", files=[str(path) for path in files.values()],
+                                       repo=None, baseline=None))
+
+    assert str(refused.value) == (f"unreadable ratchet file {files[cut]}: ratchet line 3 has an "
+                                  "unreadable scope stamp: '#scope\\tapi\\t'")
+    assert files["ours"].read_bytes() == before
+
+
 def test_a_measured_write_over_a_marked_scope_whose_rules_moved_is_refused(tmp_path):
     """web's marks were signed under typescript 12 and this crapkit runs 13."""
     saved = RatchetFile.read(marks_file(tmp_path, SCOPED, entries=(MARK, WEB_MARK)))
