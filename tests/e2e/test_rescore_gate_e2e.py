@@ -300,7 +300,7 @@ def test_the_gate_line_and_the_payload_name_the_scopes_own_ceiling(tmp_path: Pat
         "gate: 1 changed function(s) judged, 0 over ceiling 10"), text.stdout
     gate = json.loads(as_json.stdout)["gate"]
     assert gate == {"ok": True, "judged": 1, "ceilings": {"src/mod.py": 10}, "breaches": [],
-                    "untracked": [], "unread_files": []}
+                    "carried": [], "untracked": [], "unread_files": []}
 
 
 def test_a_breach_prints_no_passing_line(breached: Path):
@@ -363,7 +363,7 @@ def test_a_name_no_scope_takes_is_left_out_and_the_gate_judges_nothing(tmp_path:
     assert res.stderr == ("crapkit: left out docs/caf\\xe9.md: its name is not UTF-8 and no scope "
                           "takes it, so nothing in it is scored\n")
     assert json.loads(res.stdout)["gate"] == {"ok": True, "judged": 0, "ceilings": {}, "breaches": [],
-                                              "untracked": [], "unread_files": []}
+                                              "carried": [], "untracked": [], "unread_files": []}
 
 
 # --- rescore --gate and verify name one breach set ------------------------------

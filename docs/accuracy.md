@@ -51,6 +51,7 @@ The work is split into packets, one directory each under `tests/accuracy`:
 | `analysis_oracles` | The file universe, decoding, every language reader: functions, ccn, cognitive, nesting, nloc, params |
 | `coverage_oracles` | coverage.py and istanbul attribution, the coverage join, flags, dark lines, diff coverage |
 | `history_oracles` | Churn, coupling, changed ranges, renames, burn-down |
+| `mark_carry` | A mark's value kept when its key moves |
 | `corpus_goldens` | The corpora and goldens, the wheel diff, the cross-platform exports, every output surface |
 | `change_control` | The rules that stop an undeclared golden or metric move |
 | `definitions` | Each field's definition, the same in the README, CONTEXT.md, agent-json.md, MCP and SARIF |
@@ -107,12 +108,22 @@ or no longer (fixed). `python tools/docs/generate.py` writes this table, the
 | Artifact tree admission | `coverage_oracles` | `test_adversarial_artifacts.py::test_the_admission_verdict_follows_the_documented_table` | 0 | 0 | 0 |
 | Diff coverage | `coverage_oracles` | `test_diffcov_oracle.py::test_verify_lists_the_changed_lines_the_ground_truth_leaves_unrun` | 1 | 0 | 0 |
 | Doctor findings (unmeasured directories, nearby test) | `coverage_oracles` | `test_doctor_unmeasured.py::test_rule_model_vs_production_path` | 0 | 0 | 0 |
+| lcov per-file line and branch evidence | `coverage_oracles` | `test_ground_truth.py::test_crapkit_reads_each_lcov_recording_as_its_own_counts` | 0 | 0 | 0 |
+| Cobertura per-file line and branch evidence | `coverage_oracles` | `test_ground_truth.py::test_crapkit_reads_each_cobertura_recording_as_its_own_counts` | 0 | 0 | 0 |
+| JaCoCo per-file line and branch evidence | `coverage_oracles` | `test_ground_truth.py::test_crapkit_reads_each_jacoco_recording_as_its_own_counts` | 0 | 0 | 0 |
+| Go coverprofile per-file line evidence | `coverage_oracles` | `test_ground_truth.py::test_crapkit_reads_each_coverprofile_recording_as_its_own_counts` | 0 | 0 | 0 |
 | Field definitions across docs and schemas | `definitions` | `test_definition_models.py::test_sarif_over_target_messages_follow_the_definitions` | 0 | 1 | 1 |
 | Churn counts and recency weight | `history_oracles` | `test_churn_oracle.py::test_every_path_matches_the_numstat_walk` | 8 | 0 | 1 |
 | Change coupling | `history_oracles` | `test_coupling_oracle.py::test_pairs_match_the_numstat_walk` | 2 | 0 | 1 |
 | Changed line ranges | `history_oracles` | `test_changed_ranges.py::test_touched_functions_match_unidiff` | 1 | 0 | 0 |
 | Identity across renames and moves | `history_oracles` | `test_renames.py::test_marks_follow_the_documented_renames` | 0 | 0 | 0 |
 | Burn-down, mark age and debt policy | `history_oracles` | `test_burn_down.py::test_report_matches_the_history_walk` | 0 | 1 | 0 |
+| Mark value kept across a re-key | `mark_carry` | `test_rekey_values.py::test_every_hand_move_writes_the_hand_bytes` | 0 | 0 | 0 |
+| Merged mark value | `mark_carry` | `test_merge_values.py::test_every_hand_merge_writes_the_hand_marks` | 0 | 0 | 0 |
+| Gate pardon over a carried mark | `mark_carry` | `test_carry_pardon.py::test_every_hand_row_gets_its_answer_from_the_gate` | 0 | 0 | 0 |
+| ratchet_changes counts | `mark_carry` | `test_ratchet_changes.py::test_every_hand_row_gets_its_counts_from_the_update` | 0 | 0 | 0 |
+| prune and seed counts | `mark_carry` | `test_prune_seed.py::test_every_hand_row_gets_its_counts_from_prune_and_seed` | 0 | 0 | 0 |
+| Carried mark in the packet and the worklist | `mark_carry` | `test_brief_marks.py::test_every_hand_row_gets_its_mark_and_age_from_the_packet` | 0 | 0 | 0 |
 | Runtime invariant verdict | `runtime_guards` | `test_invariant_verdict.py::test_crapkit_stops_exactly_where_the_documented_bounds_do` | 2 | 3 | 0 |
 | CRAP score | `score_model` | `test_crap.py::test_reduced_grid_matches_the_exact_value` | 6 | 0 | 1 |
 | Function coverage ratio | `score_model` | `test_counts_join.py::test_every_scored_row_matches_its_artifact_counts` | 1 | 2 | 0 |

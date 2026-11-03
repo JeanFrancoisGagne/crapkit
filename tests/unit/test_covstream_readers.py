@@ -147,3 +147,141 @@ def test_a_200_mb_line_file_reads_inside_covstreams_memory_bound():
 
     assert count == 200 * 1000 * 1000 // 100
     assert peak < 32 * 1000 * 1000
+
+
+# --- xml_elements: the XML walk Cobertura and JaCoCo share ---------------------------
+
+COBERTURA_DTD = b"http://cobertura.sourceforge.net/xml/coverage-04.dtd"
+REPORT = (b'<?xml version="1.0" ?>\n<!DOCTYPE coverage SYSTEM "' + COBERTURA_DTD + b'">\n'
+          b'<coverage><sources><source>/r</source></sources><packages><package name="p">'
+          b'<classes><class filename="a.c"><methods><method name="f"/></methods><lines>'
+          b'<line number="1" hits="2"/><line number="2" hits="0"/></lines></class>'
+          b'<class filename="b.c"><lines/></class></classes></package></packages></coverage>\n')
+
+
+def _elements(tmp_path, data: bytes, tags=("source", "class"), chunk: int = covstream.CHUNK):
+    """What xml_elements yields for `data`, as (tag, attributes, text, child
+    tags), with the reader, whose digest the caller checks."""
+    reader = _reader(tmp_path, data, "coverage.xml")
+    found = [(el.tag, dict(el.attrib), el.text, [child.tag for child in el.iter()][1:])
+             for el in covstream.xml_elements(reader, "coverage.xml", tags, chunk)]
+    return found, reader
+
+
+def _xml_refusal(tmp_path, data: bytes) -> tuple[ToolError, covstream.HashingReader]:
+    reader = _reader(tmp_path, data, "coverage.xml")
+    with pytest.raises(ToolError) as refused:
+        list(covstream.xml_elements(reader, "coverage.xml", ("class",)))
+    return refused.value, reader
+
+
+@pytest.mark.parametrize("chunk", [1, 7, covstream.CHUNK])
+def test_xml_elements_yield_each_wanted_element_whole_at_its_end_tag(tmp_path, chunk):
+    found, reader = _elements(tmp_path, REPORT, chunk=chunk)
+
+    assert found == [("source", {}, "/r", []),
+                     ("class", {"filename": "a.c"}, None,
+                      ["methods", "method", "lines", "line", "line"]),
+                     ("class", {"filename": "b.c"}, None, ["lines"])]
+    assert reader.hexdigest() == hashlib.sha256(REPORT).hexdigest()
+
+
+def test_an_element_is_handed_over_once_its_end_tag_is_read_and_then_dropped(tmp_path):
+    """The walk holds no wanted element past its end: the first class comes
+    out before the second one's bytes are read, and nothing above it keeps it."""
+    reader = _reader(tmp_path, REPORT, "coverage.xml")
+    walk = covstream.xml_elements(reader, "coverage.xml", ("class",), 16)
+
+    first = next(walk)
+
+    assert first.get("filename") == "a.c"
+    assert REPORT.index(b'filename="b.c"') > 0
+    assert [el.get("filename") for el in walk] == ["b.c"]
+
+
+def test_the_cobertura_doctype_parses_with_sockets_blocked_and_no_file_opened(
+        tmp_path, monkeypatch):
+    """The system id names a DTD on the web, and a local one that declares an
+    entity: neither is fetched or opened, so neither refusal nor delay comes."""
+    import builtins
+    import socket
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(f"xml_elements reached out: {args!r}")
+
+    (tmp_path / "local.dtd").write_bytes(b'<!ENTITY lol "lol">\n')
+    local = REPORT.replace(COBERTURA_DTD, b"local.dtd")
+    readers = [_reader(tmp_path, data, f"coverage{i}.xml") for i, data in enumerate((REPORT, local))]
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    monkeypatch.setattr(builtins, "open", refuse)
+
+    for reader in readers:
+        assert len(list(covstream.xml_elements(reader, "coverage.xml", ("class",)))) == 2
+
+
+BILLION_LAUGHS = (b'<?xml version="1.0"?>\n<!DOCTYPE lolz [\n <!ENTITY lol "lol">\n'
+                  + b"".join(b' <!ENTITY lol%d "%s">\n' % (n, (b"&lol%d;" % (n - 1)) * 10
+                                                               if n > 1 else b"&lol;" * 10)
+                             for n in range(1, 10))
+                  + b']>\n<coverage><packages><class filename="&lol9;"/></packages></coverage>\n')
+
+
+def test_a_billion_laughs_document_is_refused_by_name_before_any_expansion(tmp_path):
+    tracemalloc.start()
+    try:
+        refusal, reader = _xml_refusal(tmp_path, BILLION_LAUGHS)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    assert refusal.exit_code == 5
+    assert str(refusal) == ("coverage.xml declares the entity 'lol' in its DTD; crapkit expands "
+                            "no entity a coverage report declares: regenerate the artifact with "
+                            "the coverage tool that wrote it")
+    # Expanded, &lol9; is 10**9 copies of `lol`; the peak is the walk's own 4 MB read.
+    assert peak < 8 << 20
+    assert reader.hexdigest() == hashlib.sha256(BILLION_LAUGHS).hexdigest()
+
+
+def test_a_report_cut_off_mid_element_is_refused_naming_the_file_line_and_column(tmp_path):
+    cut = REPORT[:REPORT.index(b'<line number="2"') + 9]
+
+    refusal, reader = _xml_refusal(tmp_path, cut)
+
+    assert refusal.exit_code == 5
+    assert str(refusal).startswith("coverage.xml: the XML ends or breaks at line 3, column ")
+    column = int(str(refusal).split("column ")[1].split(" ")[0])
+    assert cut.splitlines()[2][column - 1:] == b"<line num"
+    assert str(refusal).endswith("; regenerate the artifact with the coverage tool that wrote it")
+    assert reader.hexdigest() == hashlib.sha256(cut).hexdigest()
+
+
+@pytest.mark.parametrize("data", [b"", b"  \r\n", codecs.BOM_UTF8, b'<?xml version="1.0"?>\n'],
+                         ids=["zero-bytes", "whitespace", "byte-order-mark-alone",
+                              "declaration-alone"])
+def test_a_report_with_no_element_is_refused_as_empty(tmp_path, data):
+    refusal, reader = _xml_refusal(tmp_path, data)
+
+    assert str(refusal) == ("coverage.xml is empty: the file holds no XML element; rerun the "
+                            "lane so its coverage tool writes it")
+    assert reader.hexdigest() == hashlib.sha256(data).hexdigest()
+
+
+LATIN1 = '<?xml version="1.0" encoding="ISO-8859-1"?>\n<coverage><class filename="café.c"/></coverage>'
+DOC = '<?xml version="1.0"?>\n<coverage><class filename="café.c"/></coverage>'
+
+
+@pytest.mark.parametrize("data", [
+    LATIN1.encode("latin-1"),
+    codecs.BOM_UTF16_LE + DOC.encode("utf-16-le"),
+    codecs.BOM_UTF16_BE + DOC.encode("utf-16-be"),
+    codecs.BOM_UTF8 + DOC.encode("utf-8"),
+    DOC.encode("utf-8"),
+], ids=["declared-latin-1", "utf-16-le-bom", "utf-16-be-bom", "utf-8-bom", "utf-8"])
+@pytest.mark.parametrize("chunk", [1, covstream.CHUNK])
+def test_the_declaration_and_the_byte_order_mark_decide_the_decode(tmp_path, data, chunk):
+    found, reader = _elements(tmp_path, data, ("class",), chunk)
+
+    assert found == [("class", {"filename": "café.c"}, None, [])]
+    assert reader.hexdigest() == hashlib.sha256(data).hexdigest()

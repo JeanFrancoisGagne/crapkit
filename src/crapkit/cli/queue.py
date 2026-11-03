@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from typing import NamedTuple
 
@@ -607,9 +608,70 @@ def _no_twin_message(path: str, name: str, wanted: str, held: int) -> str:
             f" - it holds {held} function(s) named {wanted!r}")
 
 
-def _brief_mark(entries: list | None, key: tuple[str, str]) -> float | None:
-    """The committed mark on this function, or None when the repo carries none."""
-    return None if entries is None else keys.MarkIndex(entries).mark(key)
+class BriefMark(NamedTuple):
+    """The mark that judges one function: its value (None when no mark does),
+    the key it is read under, and that key's name when a signature edit
+    carried the mark to the function."""
+    value: float | None
+    key: tuple[str, str] | None
+    carried_from: str | None
+
+
+_NO_MARK = BriefMark(None, None, None)
+
+
+def _brief_mark(entries: list | None, key: tuple[str, str], rows: list,
+                proved: bool) -> BriefMark:
+    """The committed mark keys.resolve names for KEY: its own key's mark, or
+    the one a signature edit carried to it from another key, asked against
+    ROWS, KEY's file in the run read. No mark when the repo carries no marks
+    file or no mark carries. A marks file that does not prove its key identity
+    (PROVED false) carries nothing: KEY reads its own mark alone."""
+    if entries is None:
+        return _NO_MARK
+    index = keys.MarkIndex(entries)
+    own = index.mark(key)
+    if own is not None or not proved:
+        return BriefMark(own, key, None)
+    old = _carried_key(key, rows, index.keys())
+    return _NO_MARK if old is None else BriefMark(index.mark(old), old, old[1])
+
+
+def _carried_key(key: tuple[str, str], rows: list,
+                 marks: Collection[tuple[str, str]]) -> tuple[str, str] | None:
+    """The key of the mark keys.resolve carries to KEY from MARKS, or None.
+    The answer turns only on the keys of KEY's bare name in ROWS, so nothing
+    else is keyed, and a name `_name_keys` cannot key carries nothing. An
+    anonymous function never carries."""
+    name = _carry_name(key[1])
+    held = _name_keys(key[0], name, rows) if name else None
+    if held is None:
+        return None
+    answer = keys.resolve(key, held, marks)
+    return answer.old_key if isinstance(answer, keys.Carry) else None
+
+
+def _name_keys(path: str, name: str, rows: list) -> set[tuple[str, str]] | None:
+    """The keys PATH holds under the bare NAME, keyed from those ROWS alone.
+    None when a legacy same-line collision among them hides which keys they
+    are: the carry is then unresolvable, so the collision is neither keyed nor
+    refused here, and only a read of the colliding name itself refuses."""
+    kin = [r for r in rows if _carry_name(r.long_name) == name]
+    if keys.ambiguous_groups(kin, legacy_only=True):
+        return None
+    return {(path, n) for n in key_names(kin).values()}
+
+
+def _carry_name(name: str) -> str:
+    """The bare name a key or long NAME carries a mark under, its twin ordinal
+    cut; "" for an anonymous function."""
+    return keys.bare_name(keys.split_ordinal(name)[0])
+
+
+def carried_text(carried_from: str | None) -> str:
+    """What brief and explain print after a carried mark: the key it was
+    recorded under. "" for a mark under the function's own key."""
+    return "" if carried_from is None else f" (carried from {carried_from})"
 
 
 def _brief_churn(churn: dict, path: str) -> dict | None:
@@ -744,24 +806,25 @@ class _BriefLoader:
                                                   run_id=self.latest["id"])
         return key_of(self._file_keys[row.path], row)
 
-    def mark(self, row) -> float | None:
-        """The mark on the row's function. The marks are read once per batch,
-        and legacy identity is proved for the row's own file, the only file
-        whose mark a packet reads."""
+    def mark(self, row) -> BriefMark:
+        """The mark that judges the row's function. The marks are read once per
+        batch, and legacy identity is proved for the row's own file, the only
+        file whose mark a packet reads."""
         entries = self._once("marks", lambda: _ratchet_entries(self.root, self.cfg))
-        self._once(f"marks-proof:{row.path}",
-                   lambda: _ratchet_key_version(self.root, self.cfg,
-                                                lambda: self.scored_file(row.path), self.store,
-                                                entries))
-        return _brief_mark(entries, self.key(row))
+        version = self._once(f"marks-proof:{row.path}",
+                             lambda: _ratchet_key_version(self.root, self.cfg,
+                                                          lambda: self.scored_file(row.path),
+                                                          self.store, entries))
+        return _brief_mark(entries, self.key(row), self.scored_file(row.path), version != 0)
 
-    def mark_age(self, row, mark: float | None) -> int | None:
-        """How long the mark has stood. No mark, no history read: reading the
-        ratchet file's git log is a spawn, and an unmarked function owes none."""
-        if mark is None:
+    def mark_age(self, mark: BriefMark) -> int | None:
+        """How long the mark has stood, under the key it was recorded under, so
+        a carried mark's age is ratchet report's for its old key. No mark, no
+        history read: reading the ratchet file's git log is a spawn, and an
+        unmarked function owes none."""
+        if mark.value is None:
             return None
-        return packet.mark_age_days(self._once("mark_events", self._read_mark_events),
-                                    self.key(row))
+        return packet.mark_age_days(self._once("mark_events", self._read_mark_events), mark.key)
 
     def _read_mark_events(self) -> list:
         """The mark events off the marks file's whole history, renames
@@ -820,10 +883,9 @@ def _scope_config(cfg, name: str):
     return next((s for s in cfg.scopes if s.name == name), None)
 
 
-def _packet_gate(loader, row) -> dict:
-    mark = loader.mark(row)
-    return packet.gate_rule(ceiling=_row_ceiling(loader.cfg, row), mark=mark,
-                            mark_age_days=loader.mark_age(row, mark),
+def _packet_gate(loader, row, mark: BriefMark) -> dict:
+    return packet.gate_rule(ceiling=_row_ceiling(loader.cfg, row), mark=mark.value,
+                            mark_age_days=loader.mark_age(mark),
                             diff_uncovered_max=loader.cfg.diff_uncovered_max)
 
 
@@ -833,7 +895,7 @@ def _packet_commands(cfg, row, scope: str) -> dict:
                            f"no [crapkit.scoped_tests] template for scope {scope!r}")
 
 
-def _packet_context(loader, row, rows: list) -> dict:
+def _packet_context(loader, row, rows: list, mark: BriefMark) -> dict:
     """What the packet ADDED around the brief: the function's own text, the rest
     of its file, the rule it will be judged by, the lane that measures it, its
     history of attempts, and the commands to run next."""
@@ -843,7 +905,7 @@ def _packet_context(loader, row, rows: list) -> dict:
         "source": packet.function_source(loader.source(row.path), row.start, row.end),
         "file_functions": packet.file_functions(rows),
         "file_totals": packet.file_totals(rows, cfg.scope_targets, cfg.target),
-        "gate_rule": _packet_gate(loader, row),
+        "gate_rule": _packet_gate(loader, row, mark),
         "lane": packet.lane_record(packet.lane_for(scope, cfg.lanes)),
         **loader.freshness().fields(),
         "shallow": loader.shallow,
@@ -869,26 +931,31 @@ def _brief_packet(loader, row) -> dict:
     """
     rows = loader.scored_file(row.path)
     ceiling = _row_ceiling(loader.cfg, row)
+    # the handle first: a legacy-twin refusal names the run before any mark is read
+    handle = keys.handles(rows, run_id=loader.latest["id"])[lookup(row)]
+    mark = loader.mark(row)
     return {
         "run_id": loader.latest["id"], "commit": loader.latest["commit"],
         "path": row.path, "function": row.long_name,
-        "handle": keys.handles(rows, run_id=loader.latest["id"])[lookup(row)],
+        "handle": handle,
         "scored": dict(zip(SCORED_COLUMNS, row)),
         "target": ceiling,
         "remedy": row.remedy,
         **packet.budget(row, ceiling),
         **packet.measurement(row),
-        "ratchet_mark": loader.mark(row),
+        "ratchet_mark": mark.value,
+        "carried_from": mark.carried_from,
         "churn": _brief_churn(loader.churn(), row.path),
         "coupling": _brief_coupling(loader.coupling(), row.path),
         "duplication_twins": _brief_twins(loader, row),
         **_uncovered_fields(loader.uncovered(), row),
-        **_packet_context(loader, row, rows),
+        **_packet_context(loader, row, rows, mark),
     }
 
 
-def _mark_text(mark: float | None) -> str:
-    return "none" if mark is None else f"{mark:.4f}"
+def _mark_text(out: dict) -> str:
+    mark = out["ratchet_mark"]
+    return "none" if mark is None else f"{mark:.4f}{carried_text(out['carried_from'])}"
 
 
 def _churn_text(churn: dict | None) -> str:
@@ -937,7 +1004,7 @@ def _print_brief(as_json: bool, out: dict) -> None:
     print(f"{out['path']}:{s['start']}  {out['function']}")
     print(f"  ccn {s['ccn']} (cognitive {s['cognitive']})  cov {_cov_word(out)}  "
           f"crap {s['crap']:.1f} vs ceiling {out['target']}  -> {s['remedy']}")
-    print(f"  mark {_mark_text(out['ratchet_mark'])}  churn {_churn_text(out['churn'])}")
+    print(f"  mark {_mark_text(out)}  churn {_churn_text(out['churn'])}")
     print(f"  uncovered lines: {_brief_lines_text(out)}")
     _print_brief_neighbours(out)
     _print_brief_context(out)
@@ -1216,7 +1283,7 @@ def _worklist_for(root: Path, cfg, store, latest: dict, *, top: int, scopes: lis
     wl = build_worklist(rows, load_churn(root, cfg.churn_window_months),
                         floor=cfg.worklist_floor, top=top,
                         marks=_worklist_marks(store, cfg, run_id, scopes),
-                        ratchet=_worklist_ratchet(root, cfg, store, run_id))
+                        ratchet=_worklist_ratchet(root, cfg, store, run_id, rows))
     return _worklist_handles(wl, _Handles(store, run_id))
 
 
@@ -1227,14 +1294,41 @@ def _worklist_handles(wl: Worklist, handles: _Handles) -> Worklist:
     return wl._replace(active=active, dormant=dormant + wl.dormant[10:])
 
 
-def _worklist_ratchet(root: Path, cfg, store, run_id: int) -> RatchetMarks:
+def _worklist_ratchet(root: Path, cfg, store, run_id: int, rows: list) -> RatchetMarks:
     """The committed marks keyed for the run's rows, or nothing when the repo
     carries no marks file. The first mark under a key wins, as `keys.MarkIndex`
-    answers every reader."""
-    entries = _ratchet_entries(root, cfg, lambda: store.read_rows(run_id), store)
+    answers every reader. A ROWS function whose signature edit carried a mark
+    shows that mark, by `keys.carriers`, unless the marks file does not prove
+    its key identity."""
+    entries = _ratchet_entries(root, cfg)
     if not entries:
         return NO_RATCHET
-    return RatchetMarks(keys.MarkIndex(entries), store.twin_key_names(run_id))
+    own = RatchetMarks(keys.MarkIndex(entries), store.twin_key_names(run_id))
+    if _ratchet_key_version(root, cfg, lambda: store.read_rows(run_id), store, entries) == 0:
+        return own
+    carried = _carried_marks(store, run_id, own.marks, {r.path for r in rows if own.of(r) is None})
+    return own._replace(marks={**_marks_by_key(own.marks), **carried}) if carried else own
+
+
+def _carried_marks(store, run_id: int, index, unmarked: set[str]) -> dict:
+    """The mark each function a signature edit carried one to shows, by
+    keys.carriers over every function the run holds in the files of UNMARKED,
+    the ranked rows whose own key holds no mark, that also hold a mark."""
+    paths = unmarked & {key[0] for key in index.keys()}
+    marks = [key for key in index.keys() if key[0] in paths]
+    found = keys.carried_keys(_run_keys(store, run_id, paths), marks)
+    return {carrier: index.mark(mark) for mark, carrier in found.items()}
+
+
+def _run_keys(store, run_id: int, paths: set[str]) -> set[tuple[str, str]]:
+    """Every (path, key name) the run holds in PATHS."""
+    return {(path, name) for path in paths
+            for name in key_names(store.read_positions(run_id, path), run_id=run_id).values()}
+
+
+def _marks_by_key(index) -> dict:
+    """The index as a plain map of key to mark, for a reader that adds keys."""
+    return {key: index.mark(key) for key in index.keys()}
 
 
 def _worklist_marks(store, cfg, run_id: int, scopes: list) -> Marks:

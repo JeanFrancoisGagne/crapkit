@@ -79,10 +79,30 @@ def _cc_only_note(path: str, scope: str) -> str:
 
     It names that setting rather than a lane: the stale-artifact note used to
     win here and sent readers to commit and rerun coverage for a scope no lane
-    covers, which changes nothing.
+    covers, which changes nothing. A path in a language a registered reader
+    measures, and init writes no live lane for, also gets that reader's parser
+    and recipe: the scope can become measured.
     """
     return (f"scope {scope!r} sets coverage_optional = true, so no artifact "
-            f"can name uncovered lines for {path}")
+            f"can name uncovered lines for {path}{_reader_hint(path)}")
+
+
+def _reader_hint(path: str) -> str:
+    """The parser and lanes.md recipe for a path whose language a reader
+    measures and no live lane does, or "". The language is the one whose
+    extensions the path ends in, matched as scope assignment matches them."""
+    from .scaffold import LIVE_LANE_LANGUAGES
+    from .toolchain import measurable_languages, readers
+    from .universe import LANGUAGE_EXTENSIONS, _has_extension
+
+    readable = sorted(measurable_languages() - LIVE_LANE_LANGUAGES)
+    language = next((lang for lang in readable
+                     if _has_extension(path, LANGUAGE_EXTENSIONS[lang])), None)
+    if language is None:
+        return ""
+    parser = readers(language)[0][0]
+    return (f'; parser = "{parser}" reads {language}: declare its lane '
+            f"(docs/lanes.md#{parser}) and delete coverage_optional to measure it")
 
 
 def _no_lane_note(path: str, scope: str) -> str:

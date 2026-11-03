@@ -466,6 +466,46 @@ def build_parser() -> argparse.ArgumentParser:
                           "own selection, minus functions at or under their ratchet mark")
     rsc.set_defaults(func=_Handler("scoring", "cmd_rescore"))
 
+    scr = sub.add_parser(
+        "score", help="CRAP per function from a coverage file you already have, with no "
+                      "crapkit.toml; writes nothing",
+        description="Score the git-tracked source under each PATH against an existing coverage "
+                    "file, in memory: no crapkit.toml, no lane, no store, nothing written under "
+                    "the repo but the --junit report. Prints the functions over the limit, "
+                    "worst first, then "
+                    "`N functions, M over LIMIT`. The format is sniffed from the file's first "
+                    "bytes: an LCOV tracefile (TN: or SF: lines), a coverage.py JSON report "
+                    "(meta and files) or an Istanbul JSON report (entries that hold "
+                    "statementMap). Exit 0: the "
+                    "report, and no function over --fail-above. Exit 3: an unknown or "
+                    "unrecognized format (name it with --format) or a PATH with no tracked "
+                    "source. Exit 4: not a git repository. Exit 5: the coverage file measured "
+                    "no tracked file under PATH. Exit 6: a function scores above --fail-above.")
+    scr.add_argument("paths", nargs="+", metavar="PATH",
+                     help="directory or file to score, repo-relative; an untracked source file "
+                          "under it is skipped and named")
+    scr.add_argument("--repo", default=None,
+                     help="repository to score (default: the current directory; score reads "
+                          "no crapkit.toml, so it never walks up); a leading ~ is your home "
+                          "directory")
+    scr.add_argument("--coverage", required=True, metavar="FILE",
+                     help="the coverage file, relative to the repo or absolute" + _TYPED)
+    scr.add_argument("--format", default=None, metavar="NAME",
+                     help="the file's format when the sniff cannot tell, spelled as a lane's "
+                          "parser key spells it (default: sniffed); a name crapkit has no reader "
+                          "for exits 3 and lists the names it takes")
+    scr.add_argument("--fail-above", type=int, default=None, metavar="N",
+                     help="list the functions whose CRAP is above N, and exit 6 when there is one "
+                          "(default: list those above the default ceiling of 6, exit 0)")
+    scr.add_argument("--top", type=int, default=None, metavar="K",
+                     help="print only the worst K of them (default: all)")
+    scr.add_argument("--junit", default=None, metavar="FILE",
+                     help="also write a JUnit XML report, one test case per scored function and "
+                          "a failure for each one over the limit, for CI systems that show test "
+                          "reports; written whatever the exit, relative to the repo or absolute"
+                          + _TYPED)
+    scr.set_defaults(func=_Handler("score", "cmd_score"))
+
     dig = sub.add_parser("digest", help="delta between the last two scored runs; silent when unchanged")
     dig.add_argument("--repo", **_REPO_FLAG)
     dig.add_argument("--alert", action="store_true", help="pipe a non-quiet digest through alert_command")
@@ -594,11 +634,15 @@ def build_parser() -> argparse.ArgumentParser:
                      help="seed: mark over-target functions from the run verify would compare "
                           "against; "
                           "prune: drop marks whose functions left the codebase "
-                          "(a mark whose file git renamed follows it instead); "
+                          "(a mark whose file git renamed follows it instead, a mark a signature "
+                          "edit carried re-keys to its function at its recorded value, and a mark "
+                          "no single function carries stays, named with the move --function that "
+                          "re-keys it); "
                           "merge: 3-way git merge driver (BASE OURS THEIRS), which a "
                           "clone running crapkit through uvx configures as "
                           "`uvx crapkit ratchet merge %%O %%A %%B`; "
-                          "move: re-path marks at their recorded values (OLD NEW); "
+                          "move: re-path marks at their recorded values (OLD NEW), or re-key "
+                          "one function's mark (--function PATH OLD NEW); "
                           "report: the burn-down: open marks are the file's rows, committed or "
                           "not, or the rows its history last held when it is missing or blank, "
                           "and ages and repayments come from its git history")
@@ -610,6 +654,15 @@ def build_parser() -> argparse.ArgumentParser:
                      help="for merge: the three files git passes as %%O %%A %%B; "
                           "for move: OLD NEW" + _WHERE
                           + ", where a trailing '/' on OLD moves a directory")
+    # Three values on the flag, not a flag before FILE: argparse before 3.12.7
+    # gives a `*` positional nothing once an option precedes it, and refuses the
+    # three words keys' carry refusal prints for the user to paste.
+    rat.add_argument("--function", nargs=3, default=None, metavar=("PATH", "OLD", "NEW"),
+                     help="move only: re-key the mark of function OLD in file PATH to function NEW "
+                          "at its recorded value, after an edit to its signature; OLD names a mark "
+                          "in PATH by its key name, or a function name with #N for the Nth twin; "
+                          "NEW names a function the working tree's PATH holds, by name, handle or "
+                          "start line; reads PATH and the marks file only, no run; PATH" + _WHERE)
     rat.add_argument("--baseline", type=int, default=None, metavar="ID",
                      help="seed and prune: read run ID instead of the run verify would pick, "
                           "the audited way past a failed verify; refused for a failed verify, "

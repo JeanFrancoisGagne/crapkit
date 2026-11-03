@@ -147,8 +147,27 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # reached 3,943 once the marks history read one patch stream (mission-3-11),
 # and the sync met at 3,965. verify's per-scope stamp check (metric-stamp-05)
 # added 25. seed's per-scope stamps and `--scope` (metric-stamp-06) added 23.
-# The flip refusal's note (metric-stamp-07) added 1.
-SRC_DEFS = 4018
+# The flip refusal's note (metric-stamp-07) added 1. The lcov reader
+# (m1-readers-03) added 34. `crapkit score` (m1-readers-11) added 26.
+# The commented toolchain lanes and the reader note (m1-readers-04) added 15.
+# score's JUnit report (m1-readers-12) added 4. Deleting the single-number
+# stamp builders (metric-stamp-11) took 1 away, and the sync met at 4,096.
+# The Cobertura reader and covstream's XML walk (m1-readers-05) added 30.
+# The JaCoCo reader and the stanza's wrapper command (m1-readers-06) added 17.
+# On 090/mission-4 the one whole-key rewrite for marks (mission-4-01) added 2,
+# `ratchet move --function` (mission-4-02) added 16 and the merge driver's
+# move pairing (mission-4-05) added 10, and its sync with metric-stamp-11 met
+# at 4,045. ratchet report's move events (mission-4-06) added 5. The gate's
+# pardon through a carried mark (mission-4-03a) added 14. Both hooks naming a
+# carried mark and its refusal (mission-4-03b) added 5. verify's re-key of a
+# carried mark (mission-4-04) added 4, and the sync met at 4,199.
+# The Go coverprofile reader (m1-readers-07) added 24. On 090/integration
+# the refusal head line the hook and rescore --gate share (mission-4-10)
+# added 1, prune and seed keeping a carried mark (mission-4-07) added 8,
+# and brief, explain and the worklist reading a carried mark (mission-4-08)
+# added 7, and the sync met at 4,239. The repair that leaves a single-number
+# stamp only ever read (metric-stamp-11) added 1, and the sync met at 4,240.
+SRC_DEFS = 4240
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

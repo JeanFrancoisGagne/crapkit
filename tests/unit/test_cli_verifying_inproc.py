@@ -1223,7 +1223,7 @@ def test_a_staged_function_over_the_ceiling_refuses_the_commit(repo, capsys):
     code, out, err = run(["hook-precommit"], repo, capsys)
 
     assert (code, err) == (6, "")
-    assert "1 staged function(s) exceed the complexity ceiling of 6" in out, out
+    assert "1 staged function(s) exceed the CRAP ceiling of 6" in out, out
     assert "ccn   8  src/app.ts:" in out and "knotty" in out, out
     assert "decompose before committing" in out
 
@@ -1494,7 +1494,54 @@ def test_the_json_receipt_counts_what_the_tighten_did(marked_debt, capsys):
 
     _, out, _ = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
 
-    assert json.loads(out)["ratchet_changes"] == {"dropped": 1, "tightened": 1}
+    assert json.loads(out)["ratchet_changes"] == {"dropped": 1, "tightened": 1, "rekeyed": 0}
+
+
+# A mark recorded before knotty's signature changed: it carries to `knotty ( n )`.
+CARRIED_MARK = ("src/app.ts", "knotty ( n , m )", 100.0)
+
+
+def test_a_green_run_re_keys_a_carried_mark_and_counts_it(marked_debt, capsys):
+    write_marks(marked_debt, CARRIED_MARK, stamp=running_in(marked_debt), key_version=1)
+
+    code, out, _ = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+
+    assert code == 0
+    assert out.splitlines()[0].endswith(f"ratchet: 0 dropped, 1 tightened, 1 re-keyed -> git add {MARKS}")
+    text = (marked_debt / MARKS).read_text(encoding="utf-8")
+    assert "knotty ( n )\t16.0000" in text and "knotty ( n , m )" not in text, text
+
+
+@pytest.mark.parametrize("encoding, bom", [("utf-16-le", b"\xff\xfe"), ("utf-8", b"")])
+def test_a_re_key_keeps_the_file_s_encoding_line_endings_and_stamp_lines(marked_debt, capsys, encoding, bom):
+    text = dump_ratchet([RatchetEntry(*CARRIED_MARK)], file_name=MARKS, stamp=running_in(marked_debt),
+                        key_version=1).replace("\n", "\r\n")
+    (marked_debt / MARKS).write_bytes(bom + text.encode(encoding))
+
+    code, _, _ = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+
+    after = (marked_debt / MARKS).read_bytes()
+    assert code == 0 and after.startswith(bom)
+    written = after[len(bom):].decode(encoding)
+    assert "knotty ( n )\t16.0000\r\n" in written and "knotty ( n , m )" not in written
+    assert [line for line in written.split("\r\n") if line.startswith("#")] == [
+        line for line in text.split("\r\n") if line.startswith("#")]
+
+
+def test_a_marks_file_whose_key_identity_is_unproved_re_keys_nothing(marked_debt, capsys):
+    """Key version 0 holds the carried mark under its own key. The same mark in
+    a file whose key identity is proved re-keys, so the hold comes from the key
+    version and not from a re-key that never runs."""
+    write_marks(marked_debt, CARRIED_MARK, stamp=running_in(marked_debt))
+    before = (marked_debt / MARKS).read_bytes()
+
+    code, out, _ = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
+
+    assert (code, json.loads(out)["ratchet_changes"]) == (0, None)
+    assert (marked_debt / MARKS).read_bytes() == before
+    write_marks(marked_debt, CARRIED_MARK, stamp=running_in(marked_debt), key_version=1)
+    _, proved, _ = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
+    assert json.loads(proved)["ratchet_changes"] == {"dropped": 0, "tightened": 1, "rekeyed": 1}
 
 
 def test_a_green_run_with_nothing_to_move_leaves_the_marks_file_alone(marked_debt, capsys):

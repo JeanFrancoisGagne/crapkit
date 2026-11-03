@@ -1,17 +1,15 @@
-"""The two mission-4 probes, red today and pinned as strict xfail.
+"""The two mission-4 probes.
 
 A mark re-keyed on one side of a merge, or re-keyed in a commit long after it
-was seeded, reads today as one mark dropped and another added. Each probe below
-fails for that reason. mission-4 makes it pass by pairing the drop with the add
-through `keys.pair_moves`, and a strict xfail then fails the suite, which is
-the signal to drop the marker. The same shapes pass today as pairing rows in
+was seeded, reads by exact key as one mark dropped and another added. Both
+probes pass: `merge_ratchets` pairs the drop with the add through
+`keys.pair_moves`, and ratchet report reads the re-key as one move through
+`marks_history.revision_moves`. The same shapes are pairing rows in
 tests/unit/test_keys_resolve.py.
 """
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
 
 from crapkit.marks_history import marks_history
 from crapkit.ratchet import RatchetEntry, merge_ratchets
@@ -43,11 +41,11 @@ def test_the_rekey_history_holds_three_commits_with_their_marks_and_ages(tmp_pat
     assert [abs(age - days * DAY) <= 5 for age, days in zip(ages, (400, 30, 0))] == [True] * 3, ages
 
 
-@pytest.mark.xfail(strict=True, reason="mission-4-05: the merge driver keeps a tighten against a rename")
 def test_a_merge_keeps_the_tighten_against_a_rename():
-    """Ours re-keyed the mark at 7, theirs tightened the old key to 6. Today
-    the merge keeps the old key at 6 beside the new key at 7: the function's
-    mark loosens back to 7."""
+    """Ours re-keyed the mark at 7, theirs tightened the old key to 6. The
+    merge pairs ours's drop and add as one mark and keeps the tighten under
+    the new key; a merge by exact key kept the old key at 6 beside the new key
+    at 7, and the function's mark loosened back to 7."""
     base = [RatchetEntry(PATH, OLD, 7.0)]
     ours = [RatchetEntry(PATH, NEW, 7.0)]
     theirs = [RatchetEntry(PATH, OLD, 6.0)]
@@ -55,13 +53,14 @@ def test_a_merge_keeps_the_tighten_against_a_rename():
     assert merge_ratchets(base, ours, theirs) == [RatchetEntry(PATH, NEW, 6.0)]
 
 
-@pytest.mark.xfail(strict=True, reason="mission-4-06: ratchet report keeps a re-keyed mark's age")
 def test_ratchet_report_keeps_a_rekeyed_marks_age(tmp_path: Path):
     """The mark was seeded 400 days before the newest commit and re-keyed 30
-    days before it. Today its age restarts at the re-key and reads 30 days."""
+    days before it. Its age counts from the seed, and the re-key repaid
+    nothing; 0.8.1 restarted the age at the re-key and counted one repayment."""
     rekey_history(tmp_path)
 
     report = report_from_events(mark_events(marks_history(tmp_path, MARKS)))
 
     ages = {(row["path"], row["long_name"]): row["age_days"] for row in report["oldest"]}
     assert ages[(PATH, NEW)] == AGES[0]
+    assert report["dropped_total"] == 0

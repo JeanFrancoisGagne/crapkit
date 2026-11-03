@@ -27,7 +27,7 @@ which is optional and on every lane on this page.
 | `name` | The lane's id. It names the lane's log, `.crapkit/lane-<name>.log`, and what `coverage --lane` takes. A name Windows cannot use as a file name, or two names that differ only in case, is refused at load with exit 3. |
 | `command` | Runs through the shell at the repo root (or `cwd`). Its **exit code is recorded, not enforced**. A brownfield suite with 98 known failures still writes a valid artifact, and demanding green here would make such a repo unmeasurable. |
 | `artifact` | The coverage file the command writes, repo-relative. Its absence after the command and all its retries is the failure. Two lanes may not declare the same artifact path: reused paths cross-attribute coverage under `--reuse-artifacts`. It names one file. An empty value or one that names the root (`.`, `cov/..`) is refused at load with exit 3, and so is a `results_artifact` that names the root. `doctor` FAILs an `artifact` or `results_artifact` that names a directory, such as vitest's `coverage` report directory: point it at the report file inside. |
-| `parser` | `istanbul` or `coveragepy`. Nothing else exists. |
+| `parser` | `istanbul`, `coveragepy`, `lcov` ([lcov](#lcov)), `cobertura` ([Cobertura](#cobertura)), `jacoco` ([JaCoCo](#jacoco)) or `coverprofile` ([coverprofile](#coverprofile)). |
 | `scopes` | Which scopes this lane's numbers speak for. A scope no lane names can only score `no-lane`, and `doctor` fails on it. |
 | `results_artifact` | The JUnit report the same command writes. Two checks read it and neither runs without it: the [crashed-worker trust check](#a-junit-that-says-the-run-did-not-finish), which refuses a run the runner did not finish, and no-new-failures, which is `verify`'s exit 8. |
 
@@ -249,15 +249,15 @@ it is read from its command alone.
 
 ## Which languages a lane can measure
 
-Short answer: whichever ones your runner reports in one of two formats.
+Short answer: whichever ones your runner reports in one of six formats.
 
 A parser reads an artifact format, not a language. `coveragepy` reads coverage.py's JSON
 report. `istanbul` reads `coverage-final.json`, which vitest, jest and every other
-istanbul-shaped runner write. If your suite writes one of those two files, declare a lane and
-crapkit measures it. In practice that is Python plus the JavaScript and TypeScript family.
+istanbul-shaped runner write. `lcov` reads an lcov tracefile, so Rust (cargo-llvm-cov), Swift,
+Objective-C, C and C++ (`llvm-cov export`, or gcov through geninfo) get a lane ([lcov](#lcov)), `cobertura` reads Cobertura XML, so C and C++ through gcovr get one too ([Cobertura](#cobertura)), `jacoco` reads JaCoCo XML, so Java through Gradle or Maven gets one ([JaCoCo](#jacoco)), and `coverprofile` reads the profile `go test -coverprofile` writes, so Go gets one ([coverprofile](#coverprofile)).
 
-Anything else has no lane to declare today. Go's coverprofile, `cargo-llvm-cov`, Swift's
-llvm profdata, JaCoCo XML: crapkit reads none of them, and no config key unlocks one.
+Anything else has no lane to declare today,
+and no config key unlocks one.
 Somebody writing the parser is the only thing that changes that.
 
 **Those scopes run cc-only, which is a real answer, not a failure.** Complexity, the
@@ -265,6 +265,17 @@ worklist, the ratchet and the commit gate all work on a cc-only scope; `crap` is
 because the coverage half was never measured. The scope carries `coverage_optional = true`
 so `doctor` stops asking for a lane that cannot exist, and `crapkit init` writes that key
 for you. See [configuration.md](configuration.md#coverage_optional--true).
+
+`crapkit init` writes live lanes for pytest, Vitest and Jest only. When a repo-root file
+shows another toolchain whose report a parser reads (`Cargo.toml` for cargo llvm-cov,
+`bun.lock`, `bun.lockb` or `bunfig.toml` for Bun, `deno.json` or `deno.jsonc` for Deno, `CMakeLists.txt` for gcovr, `build.gradle` or `build.gradle.kts` for Gradle, `pom.xml` for Maven, `go.mod` for go test), init
+writes that toolchain's lane commented, with its parser (`lcov`, `cobertura` for gcovr, `jacoco` for Gradle and Maven, `coverprofile` for go test) and the scopes it would measure,
+and the scope keeps `coverage_optional = true`. `crapkit doctor` then prints a note per such
+scope naming the language, the parser and the toolchain. Uncomment the lane, delete
+`coverage_optional`, and follow
+[Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)
+for the marks. init reads markers at the repo root only: declare a nested crate's lane by hand,
+with `cwd` set to the crate's directory.
 
 A repo where **every** scope is cc-only declares no `[[lane]]` at all, and both `coverage`
 and `verify` run on it: the lane list is empty because there is nothing left to measure,
@@ -1230,7 +1241,7 @@ Staged from the git top, gated from `packages/api`, one directory down:
 ```
 $ git add -A                                   # run at the git top
 $ crapkit hook-precommit                       # run in packages/api
-crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 (with no coverage known, CRAP is at least ccn):
   ccn   8  calc/grade.py:17  rank( a , b , c , d , e )
 decompose before committing (coverage cannot save a function above the target).
 ```
@@ -2148,8 +2159,300 @@ The escape test runs on the path the runner wrote, with the prefix taken back of
 a `backend` scope, and a root scope (`.`) claims any key. Before 0.8.1 the reach test asked
 such keys, so a lane with `path_prefix`, or scoped to the root, scored every function
 untested with exit 0 on another tree's report; it now gets the refusal above.
-`path_prefix` is a coveragepy key, and the istanbul reader never reads it.
+`path_prefix` is a coveragepy and lcov key, and the istanbul reader never reads it.
 
 The reach test is `universe.owning_scope` over the lane's own scopes, the same predicate
 that assigns files to scopes, so a scope declaring individual files rather than
 directories is reached exactly and never reads as unmeasured.
+
+---
+
+## lcov
+
+`parser = "lcov"` reads an lcov tracefile: Rust, C, C++, Swift and Objective-C, and any
+other tool that writes one. Each `SF:` record gives its file's `DA` lines (hit or not) and
+its `BRDA` arms (taken or not). crapkit gives each line and each arm to the innermost
+function that holds it, so a closure's lines score the closure and not the function around
+it. A function with `BRDA` arms scores branch coverage, one with `DA` lines only scores
+statement coverage. `FN` and `FNDA` records are checked and then ignored: crapkit never
+reads a function's coverage from its call count. A tracefile records no per-line test
+contexts, so `explain --tests` has none to show.
+
+| Producer | Command the lane runs | Notes |
+|---|---|---|
+| cargo-llvm-cov (Rust) | `cargo llvm-cov --lcov --output-path target/lcov.info` | |
+| llvm-cov export (Swift, Objective-C, C and C++ through clang) | `llvm-cov export -format=lcov -instr-profile=default.profdata <binary> > cov.lcov` | `export` has no output-file option and writes to stdout; see the redirect trap below |
+| gcov through geninfo (C and C++ through gcc) | `lcov --capture --directory build --output-file cov.lcov` | |
+| bun | `bun test --coverage --coverage-reporter=lcov` | writes `coverage/lcov.info` |
+| deno | `deno test --coverage=cov && deno coverage cov --lcov --output=cov.lcov` | |
+| c8 | `c8 --reporter=lcov node test.js` | writes `coverage/lcov.info` |
+
+A crate in `core/`, measured by its own lane:
+
+```toml
+[[lane]]
+name = "rust"
+command = "cargo llvm-cov nextest --profile ci --lcov --output-path target/lcov.info"
+cwd = "core"
+artifact = "core/target/lcov.info"
+parser = "lcov"
+scopes = ["core"]
+results_artifact = "core/target/nextest/ci/junit.xml"
+```
+
+cargo-nextest writes that JUnit report once `core/.config/nextest.toml` holds
+`[profile.ci.junit]` with `path = "junit.xml"`, and `cargo llvm-cov nextest` runs it under
+coverage. cargo-llvm-cov writes absolute `SF:` paths, so the keys land on `core/src/...`
+with no `path_prefix`.
+
+A scope that was cc-only drops `coverage_optional = true` the day it gets the lane. Its
+marks were seeded with `crap = ccn`, so the next `verify` names the flip once for the scope,
+and `crapkit ratchet seed --scope NAME` reseeds it
+([Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)).
+
+### SF paths and `path_prefix`
+
+A relative `SF:` path is relative to where the producer ran. crapkit drops a leading `./`
+and joins the lane's `path_prefix` onto it, so a crate under `crates/core` that writes
+`SF:src/lib.rs` sets `path_prefix = "crates/core"` and keys `crates/core/src/lib.rs`. The
+lane's `cwd` is never joined. An absolute `SF:` path under this checkout becomes
+root-relative whatever its spelling (a lower-case drive, another letter case on a disk that
+ignores case, a link to the checkout, `\\?\C:`), and `path_prefix` is never joined onto it.
+An absolute path from another tree stays as written, and a lane whose every key is such a
+path refuses with exit 5 ([An artifact that measured a different tree](#an-artifact-that-measured-a-different-tree)).
+
+### The PowerShell 5.1 redirect trap
+
+`llvm-cov export` writes the tracefile to stdout, so the command redirects it:
+`llvm-cov export ... > cov.lcov`. A lane's command runs under sh on POSIX and cmd.exe on
+Windows, and both write the bytes as they come. Typed in Windows PowerShell 5.1, the same
+`>` writes UTF-16, and crapkit refuses the file by name with exit 5. From PowerShell 5.1,
+run `cmd /c "llvm-cov export ... > cov.lcov"`, or pipe the output through
+`| Out-File -Encoding utf8 cov.lcov`. cargo-llvm-cov writes the file itself with
+`--output-path`, so its lane needs no redirect. A run killed while it wrote
+the tracefile leaves a record with no `end_of_record`, which is refused with exit 5 too:
+`lcov artifact <path>: the record for SF:<key> has no end_of_record`. Rerun the lane.
+
+---
+
+## Cobertura
+
+`parser = "cobertura"` reads a Cobertura XML report: C and C++ through gcovr, and any other
+tool that writes one. Each `<class>` names a file, and each `<line>` under its `<lines>` gives
+a hit count. A `branch="true"` line's `condition-coverage` (`50% (1/2)`) gives the conditions
+it took of its total. crapkit gives each line and each condition to the innermost function
+that holds it, as it does for lcov: a function with condition lines scores branch coverage,
+one with line hits only scores statement coverage, and a branch line with no
+`condition-coverage` counts as a line. `<method>` elements are not read. Two classes that
+name one file merge by line: a line is hit when either hits it, and its conditions take the
+larger covered count over the one total both must report; two different totals for one line
+refuse the report with exit 5. A report records no per-line test contexts, so
+`explain --tests` has none to show.
+
+| Producer | Command the lane runs | Notes |
+|---|---|---|
+| gcovr (C and C++ through gcc) | `gcovr --root . --cobertura .crapkit/cov/cpp.xml` | after a build with `--coverage` and its tests; the recipe below |
+| coverage.py (Python) | `coverage xml -o .crapkit/cov/py.xml` | use `parser = "coveragepy"` instead; see the limit below |
+| istanbul's cobertura reporter (nyc, c8, jest, vitest) | `c8 --reporter=cobertura node test.js` | writes `coverage/cobertura-coverage.xml`; `parser = "istanbul"` reads the same run's JSON with function records |
+
+kcov (shell) and cargo-tarpaulin write Cobertura too. crapkit reads their reports by the same
+rules, and has no recorded fixture for either.
+
+A CMake repo, measured from its root: the lane `crapkit init` leaves commented when it finds a
+root `CMakeLists.txt`, with ctest's JUnit report added (`--output-junit`, CMake 3.21 and later,
+takes a path relative to the build directory, so `../../` lands it under `.crapkit/cov`):
+
+```toml
+[[lane]]
+name = "cpp"
+command = "cmake -S . -B build/crapkit-cov -DCMAKE_C_FLAGS=--coverage -DCMAKE_CXX_FLAGS=--coverage && cmake --build build/crapkit-cov && ctest --test-dir build/crapkit-cov --output-junit ../../.crapkit/cov/cpp-junit.xml && gcovr --root . --cobertura .crapkit/cov/cpp.xml"
+artifact = ".crapkit/cov/cpp.xml"
+parser = "cobertura"
+scopes = ["core"]
+results_artifact = ".crapkit/cov/cpp-junit.xml"
+```
+
+The command configures a coverage build beside the tree, builds it, runs its tests through
+ctest and writes the report keyed from the root. gcovr 7.2 does not create the report's
+directory; the lane does, before the command runs. The report also measures what the build
+compiled outside your sources (CMake's compiler probe under `build/`, the test files), which
+no scope claims.
+
+A scope that was cc-only drops `coverage_optional = true` the day it gets the lane, and the
+next `verify` names the flip once for the scope; `crapkit ratchet seed --scope NAME` reseeds
+it ([Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)).
+
+### Source roots
+
+A filename is relative to the report's `<source>` roots. crapkit keys it under the first
+`<source>`, in document order, under which it names a file in this checkout. An absolute
+source goes to the same placing rule as an absolute lcov key: under this checkout it becomes
+root-relative whatever its spelling (a lower-case drive, a junction or a link to the
+checkout), and `path_prefix` is never joined onto it. A relative source (gcovr's `.`,
+coverage.py's empty one), or a report with no `<sources>`, takes the lane's `path_prefix`.
+A filename no source places in this checkout keeps the first source's path, and a lane
+whose every key is from another tree refuses with exit 5
+([An artifact that measured a different tree](#an-artifact-that-measured-a-different-tree)).
+
+### A pytest lane writing Cobertura
+
+A pytest lane keeps every runner fact under `parser = "cobertura"`: the container refusal,
+doctor's pytest-cov probe, the narrowing refusal under `full_suite` and the junit hint all
+follow the runner. What it loses are coverage.py's own checks, which follow the coveragepy
+format: no data-file finding, no shard recipe after a killed parallel run, and no droppings
+list for init. Cobertura has many producers, so crapkit knows none of their files. For
+Python, keep `parser = "coveragepy"`.
+
+### What a refusal names
+
+The report goes to the XML parser as bytes, so its declaration and a byte-order mark decide
+the decode: a report declared `ISO-8859-1`, or written as UTF-16, reads. A report cut off by a
+killed run is refused naming the file, the line and the column, and a DTD that declares an
+entity is refused by name before anything expands. crapkit never fetches the DTD a
+`<!DOCTYPE>` names. A report with no `<class>` measured nothing and is refused too. Each is
+exit 5; rerun the lane.
+
+---
+
+## JaCoCo
+
+`parser = "jacoco"` reads a JaCoCo XML report: Java through Gradle's `jacocoTestReport` or
+Maven's JaCoCo plugin. Each `<package>` names its path (`com/acme`), and each `<sourcefile>`
+under it lists its `<line nr mi ci mb cb>` counters: missed and covered instructions, missed
+and covered branches. A line counts when it holds an instruction (`mi + ci > 0`) and is hit
+when one ran (`ci > 0`); a line with branches (`mb + cb > 0`) gives `mb + cb` branches with
+`cb` covered. crapkit gives each line and each branch to the innermost function that holds
+it, as it does for lcov and Cobertura: a method with branch lines scores branch coverage, one
+with line counters only scores statement coverage, and a lambda's lines score the lambda when
+the inventory holds a span for it. `<class>`, `<method>` and `<counter>` are not read: a method
+names only the first line that carries bytecode. An inner class (`Shapes$Box`) shares its
+outer class's `<sourcefile>`, so its lines count once. An aggregate report nests packages in
+`<group>` elements at any depth; crapkit reads through them. A report records no per-line
+test contexts, so `explain --tests` has none to show.
+
+| Producer | Command the lane runs | Notes |
+|---|---|---|
+| Gradle | `./gradlew test jacocoTestReport` (`gradlew test jacocoTestReport` under cmd.exe, `gradle test jacocoTestReport` with no wrapper) | needs `xml.required = true` on the report task; writes `build/reports/jacoco/test/jacocoTestReport.xml` |
+| Maven | `mvn org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test org.jacoco:jacoco-maven-plugin:0.8.12:report` | the goals by full coordinates, so the pom binds no plugin; writes `target/site/jacoco/jacoco.xml` |
+
+Pester writes JaCoCo XML for PowerShell too. crapkit reads its reports by the same rules, and
+has no recorded fixture for it.
+
+A Gradle repo, measured from its root: the lane `crapkit init` leaves commented when it finds
+a root `build.gradle` or `build.gradle.kts`. Gradle's JaCoCo plugin writes no XML report until
+the report task asks for one:
+
+```kotlin
+// build.gradle.kts
+plugins { java; jacoco }
+tasks.jacocoTestReport { reports { xml.required = true } }
+```
+
+```
+[[lane]]
+name = "java-gradle"
+command = "./gradlew test jacocoTestReport"
+artifact = "build/reports/jacoco/test/jacocoTestReport.xml"
+parser = "jacoco"
+path_prefix = "src/main/java"
+scopes = ["core"]
+```
+
+Gradle and Maven write one JUnit XML file per test class, and `results_artifact` names one
+file, so the lane declares none and `crapkit doctor` warns that the no-new-failures check
+cannot run for it.
+
+A Maven repo gets the same lane from a root `pom.xml`, named `java-maven`, with the command
+in the table above and `artifact = "target/site/jacoco/jacoco.xml"`. `prepare-agent` hands
+surefire the JaCoCo agent, and `report` runs after `test`, so a run that skips the tests
+writes no report.
+
+A scope that was cc-only drops `coverage_optional = true` the day it gets the lane, and the
+next `verify` names the flip once for the scope; `crapkit ratchet seed --scope NAME` reseeds
+it ([Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)).
+
+### Package paths and `path_prefix`
+
+JaCoCo keys a file by its package path and its sourcefile name (`com/acme/Shapes.java`), and
+a class in the default package by its name alone (`Greeter.java`). It records no source root,
+so `path_prefix` names it: `src/main/java` for a Gradle or Maven layout, or
+`svc/src/main/java` for a module in a subdirectory. A key under the prefix that names no file
+in this checkout scores nothing, and the lane says how many of the report's sourcefiles that
+leaves out (`N of the M sourcefile(s) in PATH name no file under path_prefix ...`). An
+aggregate report over several modules names each module's packages with no module path, so one
+lane over it can place only the module its prefix names: declare one lane per module, each
+with `path_prefix` at that module's source root. A Kotlin
+sourcefile in the same report scores once a scope claims Kotlin, and until then moves no
+score.
+
+### What a refusal names
+
+The report goes to the XML parser as bytes, so its declaration and a byte-order mark decide
+the decode. crapkit never opens the `report.dtd` every JaCoCo report's `<!DOCTYPE>` names,
+and a DTD that declares an entity is refused by name. A line with a missing or non-numeric
+counter (`ci` absent, `ci="-1"`, `mb="NaN"`), a line with no `nr`, a sourcefile or a package
+with no name, and a report with no `<sourcefile>` are each refused, naming the file and the
+line. Each is exit 5; rerun the lane.
+
+## coverprofile
+
+`parser = "coverprofile"` reads the Go coverprofile `go test -coverprofile` writes. Its first line
+names the mode (`mode: set`, `mode: count` or `mode: atomic`), and each other line is a block:
+`<import path>/<file>.go:<line>.<column>,<line>.<column> <statements> <count>`. crapkit counts
+a block's lines: every line from the block's first to its last counts when the block holds a
+statement, and is hit when any block over it ran. A block with no statement gives nothing, and
+a profile holds no branches, so a Go function scores statement coverage. crapkit gives each
+line to the innermost function that holds it, so a func literal's lines score the literal
+when the inventory holds a span for it. A profile records no per-line test contexts, so
+`explain --tests` has none to show.
+
+`go tool cover -func` counts statements, not lines, so its percentages differ from crapkit's
+`cov`: a function whose untested branch is one statement on two lines shows 80% there and
+6 of 8 lines here.
+
+A Go repo, measured from its root: the lane `crapkit init` leaves commented when it finds a
+root `go.mod`.
+
+```
+[[lane]]
+name = "go"
+command = "go test -coverprofile=.crapkit/cov/go.out ./..."
+artifact = ".crapkit/cov/go.out"
+parser = "coverprofile"
+scopes = ["cmd"]
+```
+
+- One lane per module, with `cwd` at the module. crapkit reads the `module` line of the
+  `go.mod` at the lane's `cwd`, or in the nearest directory above it inside the checkout, and
+  keys each import path under that module path to the file under that directory. An import
+  path from another module names no file here and scores nothing; the lane says how many
+  files that leaves out. `go.work` is not read, so a workspace of several modules declares
+  one lane per module.
+- Test packages (`./...`), not files. `go test x_test.go x.go` writes its blocks under
+  `command-line-arguments/`, which names no module, so none of them scores.
+- `-coverpkg=./...` measures every package from every test binary, so a function another
+  package's tests run counts as tested. Each binary writes its own copy of every block, and
+  crapkit keeps a line hit when any copy ran.
+- Two profiles of one mode concatenated by a CI script read as one: the second `mode:` line
+  is read past. Profiles of two modes are refused.
+- `path_prefix` is not read: go.mod places the keys.
+
+A scope that was cc-only drops `coverage_optional = true` the day it gets the lane, and the
+next `verify` names the flip once for the scope; `crapkit ratchet seed --scope NAME` reseeds
+it ([Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)).
+
+Measured once, on 2026-11-03: 15 s from `pip install` into a fresh venv to a covered worklist
+on github.com/google/go-cmp v0.7.0, through `crapkit init`, the go stanza uncommented,
+`crapkit coverage` and `crapkit worklist` (`tests/e2e/test_go_recipe_time.py`). The run used
+Python 3.12.15 and Go 1.26.8 in a `python:3.12` container on Linux x86_64 (an AMD Ryzen 9
+7950X desktop), with pip installing crapkit from a checkout of this release.
+
+### What a refusal names
+
+A profile is read as UTF-8 under the rule lcov takes: a byte-order mark is read past, and a
+profile Windows PowerShell 5.1 redirected (`go test ... > go.out`, UTF-16) or a path with a
+byte that is not UTF-8 is refused naming the bytes and the fix. A first line that is not a
+mode line (a run killed before it wrote the profile), a mode Go does not write, a block with
+a dropped count, a missing or malformed position range, a negative or non-numeric count, and a
+profile with no block are each refused, naming the line. A lane whose `cwd` has no `go.mod` at
+or above it is refused with the one-lane-per-module fix. Each is exit 5; rerun the lane.

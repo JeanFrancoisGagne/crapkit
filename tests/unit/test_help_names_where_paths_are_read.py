@@ -41,6 +41,17 @@ def test_ratchet_help_says_where_move_paths_are_read_from(capsys):
     assert f"for move: OLD NEW {WHERE}" in text, text
 
 
+def test_ratchet_help_names_the_function_form_and_where_its_path_is_read(capsys):
+    text = _help(capsys, "ratchet")
+
+    assert "re-key one function's mark (--function PATH OLD NEW)" in text, text
+    assert ("--function PATH OLD NEW move only: re-key the mark of function OLD in file PATH to "
+            "function NEW at its recorded value, after an edit to its signature; OLD names a mark "
+            "in PATH by its key name, or a function name with #N for the Nth twin; NEW names a "
+            "function the working tree's PATH holds, by name, handle or start line; reads PATH and "
+            f"the marks file only, no run; PATH {WHERE}") in text, text
+
+
 @pytest.mark.parametrize("command", ["explain", "brief", "rescore", "test-scoped"])
 def test_each_file_argument_help_names_the_spellings_it_reads(capsys, command):
     text = _help(capsys, command)

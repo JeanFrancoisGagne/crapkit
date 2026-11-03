@@ -63,16 +63,81 @@ def _coveragepy(root: Path) -> dict:
             "totals": {"covered_lines": 3}}
 
 
-CONTROLS = {"istanbul": _istanbul, "coveragepy": _coveragepy}
-KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py"}
+def _lcov(root: Path) -> list[str]:
+    """An lcov tracefile is lines, so its control is the list of them."""
+    return ["TN:", "SF:src/a.rs", "FN:1,5,f", "FNDA:1,f", "DA:1,1", "DA:2,1", "DA:3,1",
+            "DA:5,0", "BRDA:2,0,0,1", "BRDA:2,0,1,0", "end_of_record"]
+
+
+def _cobertura(root: Path) -> list[str]:
+    """A Cobertura report is XML, written here one element to a line, so its
+    control is the list of those lines, as lcov's is."""
+    return ['<?xml version="1.0" ?>', '<coverage version="test">',
+            "<sources><source>.</source></sources>", '<packages><package name="src"><classes>',
+            '<class name="a" filename="src/a.cpp"><methods/><lines>',
+            '<line number="1" hits="1"/>',
+            '<line number="2" hits="1" branch="true" condition-coverage="50% (1/2)"/>',
+            '<line number="3" hits="1"/>', '<line number="5" hits="0"/>',
+            "</lines></class>", "</classes></package></packages>", "</coverage>"]
+
+
+def _jacoco(root: Path) -> list[str]:
+    """A JaCoCo report is XML too, its control one element to a line, with the
+    DOCTYPE every producer writes."""
+    return ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+            '<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">',
+            '<report name="test">', '<package name="src">', '<sourcefile name="a.java">',
+            _JLINE_1, '<line nr="2" mi="0" ci="3" mb="1" cb="1"/>', _JLINE_3,
+            '<line nr="5" mi="2" ci="0" mb="0" cb="0"/>', "</sourcefile>", "</package>",
+            "</report>"]
+
+
+def _coverprofile(root: Path) -> list[str]:
+    """A Go coverprofile is lines too: the mode line, a block over lines 1-3
+    that ran and a block on line 5 that did not, under the module the root's
+    go.mod names (_go_module)."""
+    return ["mode: set", _GO_BLOCK, "example.com/m/src/a.go:5.1,5.9 1 0"]
+
+
+_JLINE_1 = '<line nr="1" mi="0" ci="2" mb="0" cb="0"/>'
+_JLINE_3 = '<line nr="3" mi="0" ci="1" mb="0" cb="0"/>'
+_GO_BLOCK = "example.com/m/src/a.go:1.10,3.2 3 1"
+CONTROLS = {"istanbul": _istanbul, "coveragepy": _coveragepy, "lcov": _lcov,
+            "cobertura": _cobertura, "jacoco": _jacoco, "coverprofile": _coverprofile}
+# The formats whose artifact is one JSON document.
+JSON_FORMATS = ["coveragepy", "istanbul"]
+# The formats whose artifact is XML: its declaration and a byte-order mark
+# decide the decode (test_coverage_cobertura holds Latin-1 and UTF-16 reports),
+# so the not-UTF-8 refusal is not theirs.
+XML_FORMATS = ["cobertura", "jacoco"]
+KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs",
+        "cobertura": "src/a.cpp", "jacoco": "src/a.java", "coverprofile": "src/a.go"}
 # An istanbul entry with statements is an instrumenter's own output, whose fnMap
 # lists every function it measured, so its rows carry full_listing
 # (coverage_istanbul._instrumented; test_coverage_istanbul pins both readings).
+# lcov, Cobertura, JaCoCo and Go coverprofile hand no function records: score's
+# evidence join builds them.
 ROWS = {"istanbul": [FnCoverage("f", 1, 6, True, 2, 1, 3, 2, full_listing=True)],
-        "coveragepy": [FnCoverage("f", 1, 5, True, 2, 1, 3, 2)]}
+        "coveragepy": [FnCoverage("f", 1, 5, True, 2, 1, 3, 2)],
+        "lcov": [], "cobertura": [], "jacoco": [], "coverprofile": []}
 # read()'s second value: the control's one file, its dead line 5 as missed_lines.
-# Both formats keep their own function records, so hit_lines is None.
+# istanbul and coverage.py keep their own function records, so hit_lines is
+# None; lcov's, Cobertura's and JaCoCo's evidence holds their hit lines and their arms.
 DEAD = FileEvidence(hit_lines=None, missed_lines=array("I", [5]))
+EVIDENCE = {"istanbul": DEAD, "coveragepy": DEAD,
+            "lcov": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),)),
+            "cobertura": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),)),
+            "jacoco": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),)),
+            "coverprofile": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ())}
+
+
+@pytest.fixture(autouse=True)
+def _go_module(request):
+    """A coverprofile keys an import path through the go.mod at the lane's cwd,
+    so each artifact root here holds one; no other format reads it."""
+    if "tmp_path" in request.fixturenames:
+        request.getfixturevalue("tmp_path").joinpath("go.mod").write_bytes(
+            b"module example.com/m\n")
 
 
 def _ist(doc: dict) -> dict:
@@ -102,7 +167,9 @@ def _bytes(root: Path, fmt: str, edit=None) -> bytes:
     doc = CONTROLS[fmt](root)
     if edit is not None:
         edit(doc)
-    return json.dumps(doc).encode("utf-8")
+    if fmt in JSON_FORMATS:
+        return json.dumps(doc).encode("utf-8")
+    return ("\n".join(doc) + "\n").encode("utf-8")
 
 
 def _read(root: Path, fmt: str, raw: bytes):
@@ -131,30 +198,37 @@ def test_every_format_reads_its_control_in_one_walk_with_the_digest_of_its_bytes
     per_file, evidence, digest = _read(tmp_path, fmt, raw)
 
     assert per_file == {KEYS[fmt]: ROWS[fmt]}
-    assert evidence == {KEYS[fmt]: DEAD}
+    assert evidence == {KEYS[fmt]: EVIDENCE[fmt]}
     assert digest == hashlib.sha256(raw).hexdigest()
 
 
 @pytest.mark.parametrize("layout", [{"indent": 2}, {"sort_keys": True}, {"ensure_ascii": False}],
                          ids=["indented", "sorted-keys", "raw-utf8"])
-@pytest.mark.parametrize("fmt", FORMATS)
+@pytest.mark.parametrize("fmt", JSON_FORMATS)
 def test_the_same_document_laid_out_another_way_reads_the_same(tmp_path, fmt, layout):
     raw = json.dumps(CONTROLS[fmt](tmp_path), **layout).encode("utf-8")
 
     assert _read(tmp_path, fmt, raw)[:2] == ({KEYS[fmt]: ROWS[fmt]}, {KEYS[fmt]: DEAD})
 
 
+def test_an_lcov_tracefile_with_crlf_endings_and_blank_lines_reads_the_same(tmp_path):
+    raw = _bytes(tmp_path, "lcov").replace(b"\n", b"\r\n\r\n")
+
+    assert _read(tmp_path, "lcov", raw)[:2] == ({KEYS["lcov"]: []},
+                                                {KEYS["lcov"]: EVIDENCE["lcov"]})
+
+
 @pytest.mark.parametrize("fmt", FORMATS)
 def test_a_utf8_byte_order_mark_is_read_past(tmp_path, fmt):
-    """A JSON artifact is JSON: a BOM is read past, as a PowerShell
-    `Out-File -Encoding utf8` copy or a Windows editor leaves one. The digest
-    stays the file's own bytes, mark included."""
+    """A BOM is read past, as a PowerShell `Out-File -Encoding utf8` copy or a
+    Windows editor leaves one. The digest stays the file's own bytes, mark
+    included."""
     raw = codecs.BOM_UTF8 + _bytes(tmp_path, fmt)
 
     per_file, evidence, digest = _read(tmp_path, fmt, raw)
 
     assert per_file == {KEYS[fmt]: ROWS[fmt]}
-    assert evidence == {KEYS[fmt]: DEAD}
+    assert evidence == {KEYS[fmt]: EVIDENCE[fmt]}
     assert digest == hashlib.sha256(raw).hexdigest()
 
 
@@ -172,7 +246,14 @@ def _utf16(order: str):
 
 
 def _latin1_name(raw: bytes) -> bytes:
-    return raw.replace(b'"f"', b'"caf\xe9"', 1)
+    """A name spelled café in Latin-1: the function name f as a JSON string
+    or the name field that ends an lcov FN record, or the file a.go of a Go
+    coverprofile block."""
+    for name, latin1 in ((b'"f"', b'"caf\xe9"'), (b",f\n", b",caf\xe9\n"),
+                         (b"/a.go:", b"/caf\xe9.go:")):
+        if name in raw:
+            return raw.replace(name, latin1, 1)
+    raise AssertionError("the control holds no name to respell")
 
 
 NOT_UTF8 = {
@@ -183,7 +264,7 @@ NOT_UTF8 = {
 
 
 @pytest.mark.parametrize("shape", list(NOT_UTF8))
-@pytest.mark.parametrize("fmt", FORMATS)
+@pytest.mark.parametrize("fmt", [fmt for fmt in FORMATS if fmt not in XML_FORMATS])
 def test_text_that_is_not_utf8_is_refused_naming_the_bytes(tmp_path, fmt, shape):
     recode, cause = NOT_UTF8[shape]
 
@@ -209,7 +290,7 @@ def test_an_artifact_with_nothing_in_it_is_refused_as_empty(tmp_path, fmt, raw):
 
 @pytest.mark.parametrize("raw", [b"[]", b'"cov"', b"null", b"{", b'{"a": {}} {}'],
                          ids=["an-array", "a-string", "null", "truncated", "two-documents"])
-@pytest.mark.parametrize("fmt", FORMATS)
+@pytest.mark.parametrize("fmt", JSON_FORMATS)
 def test_a_document_that_is_not_one_json_object_is_refused(tmp_path, fmt, raw):
     _holds(_refusal(tmp_path, fmt, raw), ["cov.json", REGENERATE])
 
@@ -225,34 +306,85 @@ def _counted_as(fmt: str, value):
     return lambda doc: _pyfn(doc)["summary"].update(covered_lines=value)
 
 
+def _swap(old: str, new: str):
+    """An edit that rewrites one line of the lcov, Cobertura, JaCoCo or
+    coverprofile control."""
+    return lambda lines: lines.__setitem__(lines.index(old), new)
+
+
+_LINE_3 = '<line number="3" hits="1"/>'
+
+
+def _da_first(lines: list[str]) -> None:
+    """A DA record moved ahead of the SF record it belongs to."""
+    lines.insert(0, lines.pop(lines.index("DA:3,1")))
+
+
 PROMISES = {
     "dropped-counter": {
         "istanbul": (lambda d: _ist(d)["s"].pop("1"), ["statement '1'", "`s`"]),
         "coveragepy": (lambda d: _pyfn(d)["summary"].pop("covered_lines"),
                        ["num_statements without covered_lines"]),
+        "lcov": (_swap("DA:3,1", "DA:3"), ["SF:src/a.rs", "DA:3", "needs a line and a count"]),
+        "cobertura": (_swap(_LINE_3, '<line number="3"/>'), ["src/a.cpp", "line 3 has no hits"]),
+        "jacoco": (_swap(_JLINE_3, '<line nr="3" mi="0" mb="0" cb="0"/>'),
+                   ["src/a.java", "line 3 has no ci"]),
+        "coverprofile": (_swap(_GO_BLOCK, "example.com/m/src/a.go:1.10,3.2 3"),
+                         ["src/a.go", "a statement count and a hit count"]),
     },
     "negative-count": {
         "istanbul": (_counted_as("istanbul", -1), ["s['0']", "nonnegative", "-1"]),
         "coveragepy": (_counted_as("coveragepy", -1), ["covered_lines", "nonnegative", "-1"]),
+        "lcov": (_swap("DA:3,1", "DA:3,-1"), ["DA:3,-1", "nonnegative", "'-1'"]),
+        "cobertura": (_swap(_LINE_3, '<line number="3" hits="-1"/>'),
+                      ["src/a.cpp", "line 3: hits '-1'", "nonnegative"]),
+        "jacoco": (_swap(_JLINE_3, '<line nr="3" mi="0" ci="-1" mb="0" cb="0"/>'),
+                   ["src/a.java", "line 3: ci '-1'", "nonnegative"]),
+        "coverprofile": (_swap(_GO_BLOCK, "example.com/m/src/a.go:1.10,3.2 3 -1"),
+                         ["src/a.go", "hit count '-1'", "nonnegative"]),
     },
     "count-a-string": {
         "istanbul": (_counted_as("istanbul", "1"), ["s['0']", "'1'"]),
         "coveragepy": (_counted_as("coveragepy", "2"), ["covered_lines", "'2'"]),
+        "lcov": (_swap("DA:3,1", "DA:3,one"), ["DA:3,one", "count 'one'"]),
+        "cobertura": (_swap(_LINE_3, '<line number="3" hits="one"/>'), ["line 3: hits 'one'"]),
+        "jacoco": (_swap(_JLINE_3, '<line nr="3" mi="0" ci="one" mb="0" cb="0"/>'),
+                   ["line 3: ci 'one'"]),
+        "coverprofile": (_swap(_GO_BLOCK, "example.com/m/src/a.go:1.10,3.2 3 one"),
+                         ["hit count 'one'"]),
     },
     "counter-group-null": {
         "istanbul": (lambda d: _ist(d).update(s=None), ["src/app.ts", "`s` holds null"]),
         "coveragepy": (lambda d: _pyfn(d).update(summary=None), ["f: no summary object"]),
+        "lcov": (_swap("DA:3,1", "DA:"), ["SF:src/a.rs", "DA:", "needs a line and a count"]),
+        "cobertura": (_swap(_LINE_3, '<line number="3" hits=""/>'), ["src/a.cpp", "hits ''"]),
+        "jacoco": (_swap(_JLINE_3, '<line nr="3" mi="0" ci="" mb="0" cb="0"/>'),
+                   ["src/a.java", "ci ''"]),
+        "coverprofile": (_swap(_GO_BLOCK, "example.com/m/src/a.go:1.10,3.2 3 "),
+                         ["src/a.go", "hit count ''"]),
     },
     "file-entry-null": {
         "istanbul": (lambda d: d.update({next(iter(d)): None}),
                      ["src/app.ts: the file entry holds null"]),
         "coveragepy": (lambda d: d["files"].update({"src/a.py": None}),
                        ["src/a.py: the file entry holds null"]),
+        "lcov": (_swap("SF:src/a.rs", "SF:"), ["an SF record names no file"]),
+        "cobertura": (_swap('<class name="a" filename="src/a.cpp"><methods/><lines>',
+                            '<class name="a"><methods/><lines>'), ["a class names no filename"]),
+        "jacoco": (_swap('<sourcefile name="a.java">', "<sourcefile>"),
+                   ["a sourcefile has no name"]),
+        "coverprofile": (_swap(_GO_BLOCK, ":1.10,3.2 3 1"), ["a block names no file"]),
     },
     "missing-required-field": {
         "istanbul": (lambda d: _ist(d)["fnMap"]["0"]["loc"].pop("end"), ["loc.end.line"]),
         "coveragepy": (lambda d: _pyfn(d).pop("start_line"),
                        ["no start_line", "coverage>=7.13.1"]),
+        "lcov": (_da_first, ["a DA record comes before any SF record"]),
+        "cobertura": (_swap(_LINE_3, '<line hits="1"/>'), ["src/a.cpp", "a line has no number"]),
+        "jacoco": (_swap(_JLINE_3, '<line mi="0" ci="1" mb="0" cb="0"/>'),
+                   ["src/a.java", "a line has no nr"]),
+        "coverprofile": (_swap(_GO_BLOCK, "example.com/m/src/a.go 3 1"),
+                         ["src/a.go", "a block needs a file and a position range"]),
     },
 }
 
@@ -275,13 +407,45 @@ def test_a_common_promise_is_refused_naming_the_field_and_the_fix(tmp_path, fmt,
 
 
 @pytest.mark.parametrize("number", ["NaN", "Infinity", "-Infinity", "1e999"])
-@pytest.mark.parametrize("fmt", FORMATS)
+@pytest.mark.parametrize("fmt", JSON_FORMATS)
 def test_a_count_that_is_not_a_finite_number_is_refused(tmp_path, fmt, number):
     raw = _bytes(tmp_path, fmt, _counted_as(fmt, "__COUNT__")).replace(b'"__COUNT__"',
                                                                       number.encode())
 
     _holds(_refusal(tmp_path, fmt, raw),
            ["cov.json", f"non-finite JSON number {number}", REGENERATE])
+
+
+@pytest.mark.parametrize("old, new", [("DA:3,1", "DA:3,nan"), ("DA:3,1", "DA:3,inf"),
+                                      ("BRDA:2,0,0,1", "BRDA:2,0,0,inf"),
+                                      ("BRDA:2,0,0,1", "BRDA:2,0,0,NaN")],
+                         ids=["da-nan", "da-inf", "brda-inf", "brda-nan"])
+def test_an_lcov_count_that_is_not_a_finite_number_is_refused(tmp_path, old, new):
+    text = _refusal(tmp_path, "lcov", _bytes(tmp_path, "lcov", _swap(old, new)))
+
+    _holds(text, ["cov.json", "SF:src/a.rs", new, "is not a nonnegative integer", REGENERATE])
+
+
+@pytest.mark.parametrize("counter, number", [("mb", "NaN"), ("cb", "inf"), ("ci", "1e999")])
+def test_a_jacoco_counter_that_is_not_a_finite_number_is_refused(tmp_path, counter, number):
+    counts = {"mi": "0", "ci": "1", "mb": "0", "cb": "0", counter: number}
+    line = '<line nr="3" ' + " ".join(f'{name}="{value}"' for name, value in counts.items()) + "/>"
+    text = _refusal(tmp_path, "jacoco", _bytes(tmp_path, "jacoco", _swap(_JLINE_3, line)))
+
+    _holds(text, ["cov.json", "src/a.java", f"line 3: {counter} '{number}'",
+                  "is not a nonnegative integer", REGENERATE])
+
+
+@pytest.mark.parametrize("field, line", [
+    ("hit count", "example.com/m/src/a.go:1.10,3.2 3 NaN"),
+    ("hit count", "example.com/m/src/a.go:1.10,3.2 3 inf"),
+    ("statement count", "example.com/m/src/a.go:1.10,3.2 1e999 1"),
+], ids=["count-nan", "count-inf", "statements-1e999"])
+def test_a_coverprofile_count_that_is_not_a_finite_number_is_refused(tmp_path, field, line):
+    text = _refusal(tmp_path, "coverprofile", _bytes(tmp_path, "coverprofile",
+                                                     _swap(_GO_BLOCK, line)))
+
+    _holds(text, ["cov.json", repr(line), field, "is not a nonnegative integer", REGENERATE])
 
 
 # --- what each format refuses in its own fields -----------------------------------
@@ -478,7 +642,9 @@ def test_a_coveragepy_lane_reads_the_contexts_of_one_file_through_its_adapter(tm
 # field a recorded artifact holds is removed once, so a reader added to _FORMATS
 # is checked field by field the day it lands.
 
-from coverage_fields import FIELDS, MAPS, WRONG, field_paths, generic, minimal_artifact  # noqa: E402
+from coverage_fields import (FIELDS, MAPS, WRONG, coverprofile_edit,  # noqa: E402
+                             coverprofile_locators, field_paths, generic, lcov_edit,
+                             lcov_locators, minimal_artifact, xml_edit, xml_locators)
 from crapkit.repotext import json_kind  # noqa: E402
 
 RECORDED = Path(__file__).parents[1] / "accuracy" / "coverage_oracles" / "recorded"
@@ -544,7 +710,28 @@ NULL_AS_ABSENT = {("coveragepy", locator) for locator in (
 # artifact nor a file key (coverage_py.judge_regions).
 FILE_UNNAMED = {("coveragepy", "files.*.functions"):
                 "coverage.py report has no function regions for any of its 1 file(s)"
-                " - needs coverage>=7.13.1"}
+                " - needs coverage>=7.13.1",
+                # With its SF line gone, the record's first line belongs to no file.
+                ("lcov", "SF"):
+                "lcov artifact cov.json: a FN record comes before any SF record; "
+                "regenerate the artifact with the coverage tool that wrote it",
+                # A class with no filename has no file to name.
+                ("cobertura", "class@filename"):
+                "cobertura artifact cov.json: a class names no filename; "
+                "regenerate the artifact with the coverage tool that wrote it",
+                # A JaCoCo key is its package path and sourcefile name: with either
+                # gone there is no key to name.
+                ("jacoco", "package@name"):
+                "jacoco artifact cov.json: a package has no name; "
+                "regenerate the artifact with the coverage tool that wrote it",
+                ("jacoco", "sourcefile@name"):
+                "jacoco artifact cov.json: package 'src': a sourcefile has no name; "
+                "regenerate the artifact with the coverage tool that wrote it",
+                # A coverprofile key is the block's file: with it gone there is
+                # no key to name.
+                ("coverprofile", "block.file"):
+                "coverprofile artifact cov.json: ':1.10,3.2 3 1': a block names no file; "
+                "regenerate the artifact with the coverage tool that wrote it"}
 
 
 def _row_id(row) -> str:
@@ -631,7 +818,7 @@ def test_every_format_has_rows_in_the_field_table():
     assert not rowless, f"coverage_fields.FIELDS has no rows for {rowless}"
 
 
-@pytest.mark.parametrize("fmt", FORMATS)
+@pytest.mark.parametrize("fmt", JSON_FORMATS)
 def test_the_minimal_artifact_reads_one_function_with_its_branches_and_a_dead_line(tmp_path, fmt):
     per_file, evidence = _outcome(tmp_path, fmt, minimal_artifact(fmt))
 
@@ -641,13 +828,23 @@ def test_the_minimal_artifact_reads_one_function_with_its_branches_and_a_dead_li
     assert evidence == {KEYS[fmt]: DEAD}
 
 
+def test_the_minimal_lcov_artifact_reads_its_lines_and_arms_and_no_function(tmp_path):
+    per_file, evidence = _outcome(tmp_path, "lcov", minimal_artifact("lcov"))
+
+    assert per_file == {KEYS["lcov"]: []}
+    (file,) = evidence.values()
+    assert (list(file.hit_lines), list(file.missed_lines), file.branches) == (
+        [1, 2, 3], [5], ((2, 2, 1),))
+
+
 @pytest.mark.parametrize("row", [pytest.param(row, id=_row_id(row)) for row in FIELDS])
 def test_every_row_names_a_field_the_minimal_artifact_holds(row):
     """A builder that leaves the field in, or a locator that names nothing,
-    writes the control: its drop and retype cases would test nothing."""
+    writes the control: its drop and retype cases would test nothing. A JSON
+    builder quotes the string, a line format writes it bare."""
     control = minimal_artifact(row.format)
 
-    assert b'"__retyped__"' in minimal_artifact(row.format, retype=(row.locator, "__retyped__"))
+    assert b"__retyped__" in minimal_artifact(row.format, retype=(row.locator, "__retyped__"))
     if row.absent is not None:
         assert minimal_artifact(row.format, drop=row.locator) != control
 
@@ -798,9 +995,153 @@ def test_removing_each_field_a_recorded_artifact_holds_refuses_or_reads_as_docum
     assert not broken, "\n".join(broken)
 
 
+# Every recorded lcov tracefile: the ones written beside other formats'
+# reports from the same runs, and the native producers' own.
+LCOV_RECORDED = [pytest.param(name, scenario, id=f"{name}-{scenario}")
+                 for name in ("coveragepy-reports-7.16.1", "vitest-istanbul-5.0.1", "c8-12.0.0",
+                              "cargo-llvm-cov-0.9.1", "llvm-cov-19.1.7")
+                 for scenario in ("call", "idle")]
+
+
+def _lcov_bytes(lines: list[str]) -> bytes:
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _lcov_unexplained(root: Path, lines: list[str], locator: str, base) -> str | None:
+    """Why removing the first field at `locator` breaks the table's promise."""
+    rows = [row for row in FIELDS if row.format == "lcov" and row.locator == locator]
+    edited = list(lines)
+    lcov_edit(edited, locator, None)
+    removed = _outcome(root, "lcov", _lcov_bytes(edited))
+    if removed == base:
+        return None
+    if isinstance(removed, str):
+        return None if any(row.named in removed for row in rows) else (
+            f"{locator}: refused with no row naming it: {removed}")
+    if any(row.absent is not None and not row.required and removed == row.absent.reads
+           for row in rows):
+        return None
+    return f"{locator}: removing it changed the reading, and no optional row documents it"
+
+
+@pytest.mark.parametrize("name, scenario", LCOV_RECORDED)
+def test_removing_each_field_a_recorded_lcov_artifact_holds_refuses_or_reads_as_documented(
+        tmp_path, name, scenario):
+    lines = (RECORDED / name / f"{scenario}.lcov").read_text(encoding="utf-8").splitlines()
+    base = _outcome(tmp_path, "lcov", _lcov_bytes(lines))
+
+    broken = [why for locator in lcov_locators(lines)
+              if (why := _lcov_unexplained(tmp_path, lines, locator, base))]
+
+    assert not broken, "\n".join(broken)
+
+
 def test_every_recording_is_one_of_its_formats():
     """A recording added under recorded/ in a format that has rows joins the
     completeness check; its producer's name says which format it is."""
     listed = {name for names in RECORDINGS.values() for name in names}
 
     assert listed <= {path.name for path in RECORDED.iterdir()}
+
+
+# Every recorded Cobertura report: gcovr's own, coverage.py's `coverage xml`
+# written beside its JSON and lcov from the same data file, and istanbul's
+# cobertura reporter through nyc, whose one <source> is the project root it ran in.
+COBERTURA_FIXTURES = Path(__file__).parents[1] / "fixtures" / "coverage" / "cobertura"
+ISTANBUL_ROOT = "/home/user/repo"
+COBERTURA_RECORDED = [pytest.param(RECORDED / name / f"{scenario}.xml", id=f"{name}-{scenario}")
+                      for name in ("gcovr-7.2", "coveragepy-reports-7.16.1")
+                      for scenario in ("call", "idle")] + [
+    pytest.param(COBERTURA_FIXTURES / f"nyc-18.0.0-{scenario}.xml", id=f"nyc-18.0.0-{scenario}")
+    for scenario in ("call", "idle")]
+
+
+def _xml_unexplained(root: Path, fmt: str, text: str, locator: str, base) -> str | None:
+    """Why removing the first field at `locator` breaks the table's promise."""
+    rows = [row for row in FIELDS if row.format == fmt and row.locator == locator]
+    removed = _outcome(root, fmt, xml_edit(text, locator, None).encode("utf-8"))
+    if removed == base:
+        return None
+    if isinstance(removed, str):
+        return None if any(row.named in removed for row in rows) else (
+            f"{locator}: refused with no row naming it: {removed}")
+    documented = [_outcome(root, fmt, xml_edit(text, locator, row.absent.value).encode("utf-8"))
+                  for row in rows if not row.required]
+    if removed in documented:
+        return None
+    return f"{locator}: removing it changed the reading, and no optional row documents it"
+
+
+@pytest.mark.parametrize("report", COBERTURA_RECORDED)
+def test_removing_each_field_a_recorded_cobertura_report_holds_refuses_or_reads_as_documented(
+        tmp_path, report):
+    text = report.read_text(encoding="utf-8").replace(ISTANBUL_ROOT, tmp_path.as_posix())
+    base = _outcome(tmp_path, "cobertura", text.encode("utf-8"))
+
+    broken = [why for locator in xml_locators("cobertura", text)
+              if (why := _xml_unexplained(tmp_path, "cobertura", text, locator, base))]
+
+    assert not isinstance(base, str), base
+    assert not broken, "\n".join(broken)
+
+
+# Every recorded JaCoCo report: Gradle's jacocoTestReport and Maven's
+# jacoco:report over one fixture repo, and the two over the Java probe.
+JACOCO_FIXTURES = Path(__file__).parents[1] / "fixtures" / "coverage" / "jacoco"
+JACOCO_RECORDED = [pytest.param(report, id=report.stem)
+                   for report in sorted(JACOCO_FIXTURES.glob("*.xml"))] + [
+    pytest.param(report, id=f"{report.parent.name}-{report.stem}")
+    for report in sorted(RECORDED.glob("jacoco-*/*.xml"))]
+
+
+@pytest.mark.parametrize("report", JACOCO_RECORDED)
+def test_removing_each_field_a_recorded_jacoco_report_holds_refuses_or_reads_as_documented(
+        tmp_path, report):
+    text = report.read_text(encoding="utf-8")
+    base = _outcome(tmp_path, "jacoco", text.encode("utf-8"))
+
+    broken = [why for locator in xml_locators("jacoco", text)
+              if (why := _xml_unexplained(tmp_path, "jacoco", text, locator, base))]
+
+    assert not isinstance(base, str), base
+    assert sorted(xml_locators("jacoco", text)) == sorted(
+        row.locator for row in FIELDS if row.format == "jacoco")
+    assert not broken, "\n".join(broken)
+
+
+# Every recorded Go coverprofile: go test's set, count and atomic profiles and a
+# -coverpkg run over the fixture repo, and the probe's recordings.
+GO_FIXTURES = Path(__file__).parents[1] / "fixtures" / "coverage" / "coverprofile"
+GO_RECORDED = [pytest.param(profile, id=profile.stem)
+               for profile in sorted(GO_FIXTURES.glob("*.out"))] + [
+    pytest.param(profile, id=f"{profile.parent.name}-{profile.stem}")
+    for profile in sorted(RECORDED.glob("go-*/*.out"))]
+
+
+def _go_unexplained(root: Path, lines: list[str], locator: str, base) -> str | None:
+    """Why removing the first field at `locator` breaks the table's promise."""
+    rows = [row for row in FIELDS if row.format == "coverprofile" and row.locator == locator]
+    edited = list(lines)
+    coverprofile_edit(edited, locator, None)
+    removed = _outcome(root, "coverprofile", _lcov_bytes(edited))
+    if removed == base:
+        return None
+    if isinstance(removed, str):
+        return None if any(row.named in removed for row in rows) else (
+            f"{locator}: refused with no row naming it: {removed}")
+    return f"{locator}: removing it changed the reading, and no optional row documents it"
+
+
+@pytest.mark.parametrize("profile", GO_RECORDED)
+def test_removing_each_field_a_recorded_coverprofile_holds_refuses_or_reads_as_documented(
+        tmp_path, profile):
+    lines = profile.read_text(encoding="utf-8").splitlines()
+    base = _outcome(tmp_path, "coverprofile", _lcov_bytes(lines))
+
+    broken = [why for locator in coverprofile_locators(lines)
+              if (why := _go_unexplained(tmp_path, lines, locator, base))]
+
+    assert not isinstance(base, str), base
+    assert sorted(coverprofile_locators(lines)) == sorted(
+        row.locator for row in FIELDS if row.format == "coverprofile")
+    assert not broken, "\n".join(broken)

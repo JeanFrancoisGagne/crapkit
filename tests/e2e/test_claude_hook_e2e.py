@@ -229,7 +229,47 @@ def fx_claimed_non_utf8_name(repo: Path) -> None:
     (repo / os.fsdecode(b"src/caf\xe9.py")).write_text(BREACH, encoding="utf-8", newline="\n")
 
 
+def classify(signature: str, branches: int) -> str:
+    """`def classify(SIGNATURE):` at ccn 1 + BRANCHES, 2 + 2 * BRANCHES lines long."""
+    return (f"def classify({signature}):\n"
+            + "".join(f"    if a == {n}:\n        return {n}\n" for n in range(branches)) + "    return b\n")
+
+
+SIGNED = classify("a, b, c=None", 6)
+
+
+def probed(repo: Path, edited: str) -> None:
+    """The signature probe: a cc-only scope at ceiling 6 whose HEAD holds
+    classify( a , b ) at ccn 7 under its seeded mark of 7.0000; the working
+    tree holds `edited`."""
+    init(repo)
+    write(repo, "crapkit.toml", TOML + "coverage_optional = true\n")
+    write(repo, "crapkit-ratchet.tsv", "# crapkit-analysis=5 lizard=1.24.0\npath\tlong_name\tcrap\n"
+                                       "calc/grade.py\tclassify( a , b )\t7.0000\n")
+    write(repo, "calc/grade.py", classify("a, b", 6))
+    commit(repo)
+    write(repo, "calc/grade.py", edited)
+
+
+def fx_carried_mark(repo: Path) -> None:
+    """Only the signature changed, so the mark carries to the new key."""
+    probed(repo, SIGNED)
+
+
+def fx_carried_rise(repo: Path) -> None:
+    """The signature changed and a branch was added: ccn 8 against the carried 7.0."""
+    probed(repo, classify("a, b, c=None", 7))
+
+
+def fx_twin_ambiguity(repo: Path) -> None:
+    """The edit left two functions with the new signature, so no mark carries."""
+    probed(repo, f"{SIGNED}\n\n{SIGNED}")
+
+
 FIXTURES = {
+    "carried_mark": fx_carried_mark,
+    "carried_rise": fx_carried_rise,
+    "twin_ambiguity": fx_twin_ambiguity,
     "measured_breach": fx_measured_breach,
     "broken_syntax": fx_broken_syntax,
     "no_toml": fx_no_toml,

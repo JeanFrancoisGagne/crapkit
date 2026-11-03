@@ -35,6 +35,12 @@ The report (docs/ratchet.md#reporting-the-burn-down, docs/agent-json.md
 - A mark enters when a commit adds its key; a commit that changes its value
   keeps the entry date; a commit that removes the key repays it, and a later
   re-add enters it again.
+- A commit that moves a mark keeps its entry date and repays nothing. In one
+  file, a key that left pairs with a key that arrived when they are the only
+  two of their bare name (the long name up to its first `(`, twin ordinal
+  cut) and neither is a twin or anonymous. Among the keys left over, a
+  key that left pairs with one that arrived in another file when they share
+  the key name and the mark and no other key that left or arrived does.
 - open is the marks on disk; a mark with no commit behind it entered at the
   anchor and is 0 days old.
 - age_days is whole days from entry to the anchor (floor).
@@ -182,6 +188,56 @@ def _on_disk(path: Path) -> dict:
     return _marks_of(path.read_bytes()) if path.exists() else {}
 
 
+def _ordinal(name: str) -> tuple[str, int]:
+    """A key name's long name and twin ordinal: `name#N` is twin N when N > 1."""
+    head, sep, tail = name.rpartition("#")
+    return (head, int(tail)) if sep and tail.isdigit() and int(tail) > 1 else (name, 1)
+
+
+def _bare(name: str) -> str:
+    """The bare name a mark carries under: the long name up to its first `(`."""
+    return _ordinal(name)[0].split("(")[0]
+
+
+def _rekeys(dropped: dict, added: dict) -> dict:
+    """The re-key rule, old key -> new key: in one file, exactly one key that left
+    and exactly one that arrived share a bare name, and neither is a twin or
+    anonymous."""
+    def under(keys, path: str, bare: str) -> list:
+        return [key for key in keys if key[0] == path and _bare(key[1]) == bare]
+
+    pairs = {}
+    for old in dropped:
+        gone, came = under(dropped, old[0], _bare(old[1])), under(added, old[0], _bare(old[1]))
+        lone = _bare(old[1]) and len(gone) == len(came) == 1
+        if lone and _ordinal(old[1])[1] == _ordinal(came[0][1])[1] == 1:
+            pairs[old] = came[0]
+    return pairs
+
+
+def _path_moves(dropped: dict, added: dict) -> dict:
+    """The path rule, old key -> new key: a key that left and one that arrived
+    with the same key name and the same mark, and no other that left or
+    arrived holds both."""
+    def holding(marks: dict, key) -> list:
+        return [other for other in marks if (other[1], marks[other]) == (key[1], marks[key])]
+
+    return {old: new for old in dropped for new in added
+            if (old[1], dropped[old]) == (new[1], added[new])
+            and len(holding(dropped, old)) == len(holding(added, new)) == 1}
+
+
+def moves(before: dict, after: dict) -> dict:
+    """old key -> new key for each mark the step from `before` to `after`
+    moved: re-keys first, then path moves among the keys left over."""
+    dropped = {key: crap for key, crap in before.items() if key not in after}
+    added = {key: crap for key, crap in after.items() if key not in before}
+    pairs = _rekeys(dropped, added)
+    left = {key: crap for key, crap in dropped.items() if key not in pairs}
+    arrived = set(pairs.values())
+    return {**pairs, **_path_moves(left, {k: c for k, c in added.items() if k not in arrived})}
+
+
 @dataclass
 class _Replay:
     entered: dict = field(default_factory=dict)
@@ -190,24 +246,30 @@ class _Replay:
     anchor: int = 0
 
     def step(self, version: Version) -> None:
-        for key in version.marks.keys() - self.last.keys():
+        moved = moves(self.last, version.marks)
+        for old, new in moved.items():
+            self.entered[new] = self.entered.pop(old)
+        for key in version.marks.keys() - self.last.keys() - set(moved.values()):
             self.entered[key] = version.at
-        for key in self.last.keys() - version.marks.keys():
+        for key in self.last.keys() - version.marks.keys() - moved.keys():
             del self.entered[key]
             self.dropped.append(version.at)
         self.last, self.anchor = version.marks, max(self.anchor, version.at)
 
     def uncommitted(self, working: dict) -> int:
+        """A mark the working tree moved counts once."""
         keys = self.last.keys() | working.keys()
-        return sum(1 for key in keys if self.last.get(key) != working.get(key))
+        return (sum(1 for key in keys if self.last.get(key) != working.get(key))
+                - len(moves(self.last, working)))
 
     def within(self, days: int) -> int:
         return sum(1 for stamp in self.dropped if self.anchor - stamp <= days * DAY)
 
 
-def _oldest(entered: dict, working: dict, anchor: int) -> list[dict]:
+def _oldest(entered: dict, working: dict, anchor: int, moved: dict) -> list[dict]:
+    """A working mark moved from a committed key (`moved`, new -> old) ages from it."""
     rows = [{"path": path, "long_name": name,
-             "age_days": (anchor - entered.get((path, name), anchor)) // DAY}
+             "age_days": (anchor - entered.get(moved.get((path, name), (path, name)), anchor)) // DAY}
             for path, name in working]
     return sorted(rows, key=lambda row: (-row["age_days"], row["path"], row["long_name"]))[:20]
 
@@ -218,9 +280,10 @@ def report(root: Path, name: str) -> dict:
     for version in versions(root, name):
         replay.step(version)
     working = _on_disk(root / name)
+    moved = {new: old for old, new in moves(replay.last, working).items()}
     return {"open": len(working), "dropped_total": len(replay.dropped),
             "anchor_ts": replay.anchor, "uncommitted": replay.uncommitted(working),
-            "oldest": _oldest(replay.entered, working, replay.anchor),
+            "oldest": _oldest(replay.entered, working, replay.anchor, moved),
             "dropped_last_30d": replay.within(30), "dropped_last_90d": replay.within(90)}
 
 

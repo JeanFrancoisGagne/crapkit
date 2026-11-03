@@ -47,6 +47,15 @@ def test_the_description_names_the_rule_check_gate_applies():
     assert "pardoned only while its crap is at or under its ratchet mark" in text, text
 
 
+def test_the_description_names_the_mark_a_signature_edit_carries():
+    """gate.carried lists a function its old signature's mark pardons; the
+    description is what tells a model a signature edit keeps the mark."""
+    text = description()
+
+    assert "or one its old signature carried" in text, text
+    assert len(text) <= 560 and text.count(". ") >= 2, len(text)
+
+
 def test_the_description_states_the_hooks_marked_rule():
     text = description()
 

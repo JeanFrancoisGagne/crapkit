@@ -29,8 +29,8 @@ table out, and an optional `--max-crap` gate. crapkit reads fourteen configured 
 lizard, runs your own test command as a lane and joins its artifact in the same run, ranks
 the result by churn, and holds it with a ratchet and the [gate surfaces](../README.md#the-gate). The other visible
 difference is the default: crap4py quotes the conventional 30, crapkit's `target` is 6,
-because 30 is a CRAP score that an untested `ccn 5` passes and 6 is a complexity ceiling
-coverage cannot buy past. Set `target = 30` if you want the crap4j number; the ratchet
+because 30 is a CRAP score that an untested `ccn 5` passes and a CRAP ceiling of 6 caps ccn
+at 6, which coverage cannot buy past. Set `target = 30` if you want the crap4j number; the ratchet
 makes that unnecessary for adoption, since seeded debt is never a finding until it rises.
 
 xenon is the closest neighbour in spirit, a threshold that fails CI. The differences are

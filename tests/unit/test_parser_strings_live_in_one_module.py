@@ -42,6 +42,7 @@ ALLOWED_NAMES = {
     ("scaffold.py", "_pytest_lane"): "init writes parser = coveragepy for the lane it detects",
     ("scaffold.py", "_js_routed_lane"): "init writes parser = istanbul for the lane it detects",
     ("scaffold.py", "_js_root_lane"): "init writes parser = istanbul for the lane it detects",
+    ("toolchain.py", "<module>"): "the toolchain table: the format each runner's report is read in",
 }
 
 

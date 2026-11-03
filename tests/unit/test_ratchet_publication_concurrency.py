@@ -207,5 +207,5 @@ def test_verify_receipt_hashes_the_exact_admitted_bom_bytes(marked_debt, capsys)
 
     output = json.loads(capsys.readouterr().out)
     assert output["ratchet_sha256"] == hashlib.sha256(before).hexdigest()
-    assert output["ratchet_changes"] == {"dropped": 0, "tightened": 1}
+    assert output["ratchet_changes"] == {"dropped": 0, "tightened": 1, "rekeyed": 0}
     assert load_ratchet(path.read_text(encoding="utf-8"))[0].crap == 16

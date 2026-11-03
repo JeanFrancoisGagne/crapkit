@@ -32,7 +32,8 @@ from crapkit.keys import MarkIndex
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
 
-from test_gate_hook_mapping import hook_refused
+from test_gate_cases import changed
+from test_gate_hook_mapping import COUNT_LINE, Hooked, hook_refused, record, staged_function
 
 MARK = RatchetEntry("src/mod.py", "legacy( n )", 63.6)
 
@@ -159,6 +160,63 @@ def marked(repo, capsys):
                    encoding="utf-8", newline="\n")
     capsys.readouterr()
     return repo
+
+
+# --- a carried mark on the commit gate -------------------------------------------
+#
+# The probe in a cc-only scope, where a staged function's CRAP is its ccn:
+# `classify( a , b )` was marked 7.0000 and a signature edit renamed it.
+
+OLD, NEW = "classify( a , b )", "classify( a , b , c = None )"
+CC = "cc/grade.py"
+PROBE_MARK = {(CC, OLD): 7.0}
+
+
+def probe(ccn: int, *names: str):
+    """The staged probe file: each of NAMES at CCN, ten lines apart."""
+    return changed(CC, *(staged_function(record(name, 1 + 10 * at, ccn, CC), "cc")
+                         for at, name in enumerate(names)))
+
+
+@pytest.fixture()
+def hooked(tmp_path, monkeypatch, capsys) -> Hooked:
+    return Hooked(tmp_path, monkeypatch, capsys)
+
+
+def test_a_carried_function_prints_the_carried_line_and_counts_as_pardoned(hooked):
+    code, out, err = hooked(probe(7, NEW), marks=PROBE_MARK, reason=False)
+
+    carried, count = err.splitlines()
+    assert (code, out) == (0, "")
+    assert carried.startswith(f"crapkit gate: {CC} {NEW} carries the mark 7.0000 recorded for {OLD}; ")
+    assert carried.endswith(f' ratchet move --function {CC} "{OLD}" "{NEW}"')
+    assert count + "\n" == COUNT_LINE.format(n=1)
+
+
+def test_a_marked_rise_on_a_carried_function_names_the_key_its_mark_sits_under(hooked):
+    code, out, err = hooked(probe(8, NEW), marks=PROBE_MARK, reason=False)
+
+    assert code == 6
+    assert f"  ccn   8  {CC}:1  {NEW}  mark 7.0000 (carried from {OLD})\n" in out
+    assert " carries the mark " not in err
+
+
+def test_an_ambiguous_carry_refuses_with_keys_sentence_under_each_row(hooked):
+    from crapkit.keys import resolve
+
+    code, out, _ = hooked(probe(7, NEW, NEW), marks=PROBE_MARK, reason=False)
+
+    sentence = resolve((CC, NEW), {(CC, NEW), (CC, f"{NEW}#2")}, PROBE_MARK).text
+    assert code == 6
+    assert f"  ccn   7  {CC}:1  {NEW}\n    {sentence}\n  ccn   7  {CC}:11  {NEW}\n    {sentence}\n" in out
+    assert "twins never carry a mark" in sentence and f'"{NEW}#2"' in sentence
+
+
+def test_the_grant_on_a_carried_rise_names_the_key_its_mark_was_recorded_under(hooked):
+    code, _, _ = hooked(probe(8, NEW), marks=PROBE_MARK)
+
+    (granted,) = hooked.grants
+    assert (code, [(v.path, v.long_name, v.key_name) for v in granted]) == (0, [(CC, NEW, OLD)])
 
 
 @pytest.mark.parametrize("consumer", list(_GATE_ARGV))

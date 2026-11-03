@@ -80,6 +80,7 @@ do next.
 | `params` | its parameters in order, each `{name, type}`, so a new test can call it without opening the file |
 | `notes` | the repo's and the scope's house rules, carried in from crapkit.toml |
 | `gate_rule` | `ceiling` is the number step 3 judges ccn against; `binds` is the gate's scope rule as one fixed sentence: print it, do not branch on it |
+| `ratchet_mark`, `carried_from` | the mark the gate judges this function by, also `gate_rule.ratchet_mark`. A `carried_from` key means a signature edit carried the mark from that key: it is your debt, not new debt, and a passing verify re-keys it |
 | `commands` | the literal strings for steps 3, 4 and 5, plus `refresh` and `refresh_writes_run` |
 | `scored_changes` | how many files the run scored hold other content now, your own edits included. Anything but `0`, `null` included: run `commands.refresh` before trusting `cov` or `source` |
 | `stale` | `true` means HEAD moved past the run's commit; it says nothing about the files |
@@ -179,7 +180,7 @@ what you are editing, `gate_rule.ceiling` is the number to land under.
 
 Prints the rescored table on stdout (`--json` for one object), violations on stderr:
 
-    crapkit gate: 1 rescored function(s) over their scope ceiling:
+    crapkit gate: 1 rescored function(s) exceed the CRAP ceiling of 6:
       GATE  crap    132.0  ccn  11 cov 0%  calc/grade.py:54  curve( scores , mode , floor , ceiling , skip_none )  -> decompose
 
 Three rules decide what it judges:
@@ -193,6 +194,10 @@ Three rules decide what it judges:
   coverage and refuses it only once its staged ccn alone passes the mark, so
   `rescore --gate` still fails first. Verify keeps exit 7 for a mark that rose in a
   function the diff never touched.
+  A function whose signature changed passes while exactly one mark in its file shares
+  its bare name and its CRAP stays at or under that mark: stderr prints one
+  `crapkit gate: ... carries the mark ...` line. Twins, or several candidates for the
+  name, exit 6 and print the `crapkit ratchet move --function` command that ends it.
   The marks file is read only when a changed function is over its ceiling, so a clean
   gate never reports a marks file it cannot parse; the next gate that breaches does.
 
@@ -348,7 +353,7 @@ block:
       ccn 8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
     the commit gate refuses a ccn past its mark, and a mark only falls: bring the ccn back to its mark or under it
 
-Decompose until the ccn sits at or under the mark; no seed raises it. A range across the
+Decompose until the ccn sits at or under the mark; no seed raises it. A mark that carried through a signature edit keeps the advisory silent the same way, and an advisory that names twins or several candidates asks for the `ratchet move --function` command it prints, not a new mark. A range across the
 mark whose ccn rose since HEAD may have passed it. The commit goes through with a warn,
 and the hook prints the warn block, with the ccn at HEAD (`new` for none) and now:
 
@@ -506,7 +511,9 @@ word:
   other file keeps its lines.
 - `flag: "cc-only"`: the scope sets `coverage_optional = true`, so no artifact was ever
   going to name lines for it. Nothing clears this one, and nothing should: `crap` is `ccn`
-  and the only remedy is `decompose`.
+  and the only remedy is `decompose`. When the note names a reader (`parser = "lcov"` and
+  a lanes.md recipe), adding that lane is a config change for the repo's owner, followed by
+  `crapkit ratchet seed --scope NAME`; an agent's remedy stays `decompose`.
 
 `[]` means the artifact answered and nothing is dark. The note is prose and may be
 reworded; `flag` is the contract. `flag: "excluded"` comes with `[]`: the lane's coverage
@@ -1043,7 +1050,7 @@ Every function you add or edit must sit at or under its scope's `target` in this
 own `crapkit.toml`: 6 for `src` and `tools`, 5 for `tools/accuracy`. The pre-commit hook
 runs `python -P -m crapkit hook-precommit` over the staged blobs:
 
-    crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+    crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 (with no coverage known, CRAP is at least ccn):
       ccn   7  calc/report.py:39  tally( rows , low , high , invert , label , pad , strict )
     decompose before committing (coverage cannot save a function above the target).
 

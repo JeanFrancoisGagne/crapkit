@@ -133,6 +133,53 @@ that twin, wherever it sits in the file. Twins whose CRAP is equal to 4 decimal 
 resolve to the first in the file.
 
 ---
+
+## A signature change keeps its mark
+
+New in 0.9.0. A key holds the function's parameters, so a signature edit gives it a new key
+that holds no mark. Before 0.9.0 the gates read that as new debt: `rescore --gate` exited 6
+and the advisory said to mark the debt again. **A mark now follows its function through a
+signature edit inside its file** when the old key has left the file and it is the one mark of
+the function's bare name that did. Its CRAP is judged against that mark by the usual rule: at
+or under it the function passes, above it the gates refuse it. Where a lane measures the scope,
+`rescore --gate` reads that CRAP from the coverage the baseline run holds under the old key.
+
+`ratchet seed` wrote `calc/grade.py classify( a , b ) 7.0000` in a cc-only scope at
+ceiling 6, and the edit changed only the signature, to `def classify(a, b, c=None):`, at
+ccn 7:
+
+```
+$ crapkit rescore calc/grade.py --gate
+crapkit gate: calc/grade.py classify( a , b , c = None ) carries the mark 7.0000 recorded for classify( a , b ); a passing verify re-keys it, or run crapkit ratchet move --function calc/grade.py "classify( a , b )" "classify( a , b , c = None )"
+rescore vs run 1 @ b3f1678eeff (coverage STALE, complexity fresh)
+   ccn   cov     crap  remedy      function
+     7     -      7.0  decompose   calc/grade.py:1  classify( a , b , c = None )  (coverage not measured)
+gate: 1 changed function(s) judged, 0 over ceiling 6
+$ crapkit verify
+crapkit gate: calc/grade.py classify( a , b , c = None ) carries the mark 7.0000 recorded for classify( a , b ); a passing verify re-keys it, or run crapkit ratchet move --function calc/grade.py "classify( a , b )" "classify( a , b , c = None )"
+verify OK @ 627b1606b2b vs baseline b3f1678eeff (2 changed files) ratchet: 0 dropped, 0 tightened, 1 re-keyed -> git add crapkit-ratchet.tsv
+  changed files: calc/grade.py, crapkit-ratchet.tsv
+```
+
+The line goes to stderr, once per carried function, and `check_gate`, `rescore --gate
+--json` and `verify --json` list the function as a `carried` item
+([agent JSON](agent-json.md#the-findings-list)). A second edit to ccn 8 passes the mark,
+and every gate refuses it with no carried line.
+
+**Twins never carry a mark, and neither does a name that several marks left or several
+unmarked functions took.** The gate cannot say which function the mark belongs to, so it
+pardons none, and the GATE line names every candidate key and the command that ends the
+ambiguity:
+
+```
+crapkit ratchet move --function calc/grade.py "classify( a , b )" "classify( a , b , c = None )#2"
+```
+
+`ratchet move --function` ([Moving marks by hand](#moving-marks-by-hand)) writes the mark
+under the key you name, and the carry is then an exact mark. Only a function over its
+ceiling asks for a mark, so one at or under its ceiling prints no carried line.
+
+---
 <a id="the-commit-gate-skips-marked-functions"></a>
 ## The commit gate refuses a marked function whose ccn passed its mark
 
@@ -253,7 +300,7 @@ Two more branches in the same function push it past 51.5698, and both refuse:
 
 ```
 $ crapkit rescore calc/grade.py --gate
-crapkit gate: 1 rescored function(s) over their scope ceiling:
+crapkit gate: 1 rescored function(s) exceed the CRAP ceiling of 6:
   GATE  crap     83.0  ccn  17 cov 39%  calc/grade.py:1  classify( score , attempts , late , bonus )  -> decompose
 EXIT=6
 
@@ -279,6 +326,33 @@ on the same tree passed. The advisory hook `crapkit claude-hook` holds the edite
 mark by the same rule, its ccn read against HEAD's: a ccn past the mark draws its marked block, a ccn rise
 across the mark its warn block, and the rest stays silent, so a session of green advisories no longer ends at a red commit.
 
+A mark that carried through a signature edit ([A signature change keeps its
+mark](#a-signature-change-keeps-its-mark)) pardons on both hooks the way an exact mark does,
+since 0.9.0. `hook-precommit` prints the carried line once on stderr, beside the count line
+that still counts the function, and `claude-hook` stays silent. The probe from that section,
+committed after the signature edit:
+
+```
+$ git commit -m "classify takes an optional c"
+crapkit gate: calc/grade.py classify( a , b , c = None ) carries the mark 7.0000 recorded for classify( a , b ); a passing verify re-keys it, or run crapkit ratchet move --function calc/grade.py "classify( a , b )" "classify( a , b , c = None )"
+crapkit gate: 1 staged function(s) carry a ratchet mark and were not gated - `crapkit verify` fails a mark that rises
+```
+
+A carried function whose ccn rose is held to the carried mark, and its base ccn is read
+under the key the mark was recorded under. A refusal or a warn row names that key after the
+mark, on both hooks:
+
+```
+  ccn   8  calc/grade.py:1  classify( a , b , c = None )  mark 7.0000 (carried from classify( a , b ))
+```
+
+`CRAPKIT_OVERRIDE_REASON` on that refusal keeps the mark under its old key and value, and
+adds no mark under the new key. Twins, or several candidates for one bare name, carry
+nothing: `hook-precommit` exits 6 and `claude-hook` exits 2, and under the function's row
+each prints the sentence that names every candidate key and the `ratchet move --function`
+command that ends the ambiguity. Run that command, and the next commit judges the function
+under its own mark.
+
 ---
 
 ## Seeding
@@ -303,6 +377,22 @@ then run `crapkit verify`, whose pass is the repo's first passing verdict. A see
 another crapkit version measured prints no such line, because verify refuses the stamp it
 signed; its own line names the run that restamps the marks
 ([the metric stamp](#the-metric-stamp)).
+
+**A carried function counts as marked.** After a signature edit
+([A signature change keeps its mark](#a-signature-change-keeps-its-mark)), seed reads the mark
+the function carries as its own and adds no second one: the probe prints `added 0, tightened 0`.
+At or over the mark nothing moves. Under it, seed moves the mark to the function's key at the
+lower value, and the line adds `, re-keyed 1` only then:
+
+```
+$ crapkit ratchet seed
+crapkit-ratchet.tsv: added 0, tightened 1, re-keyed 1 - 1 mark(s) vs run 2 (e34265226a3)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
+```
+
+A function whose carry keys refused gets no mark, outside a coverage flip: a new one at today's
+CRAP would let seed and prune swap signed debt for a mark that rose. seed prints the kept-marks
+line [prune prints](#pruning-and-renames); `ratchet move --function`, then seed, ends it.
 
 **Seed once, early.** Skipping it means a legacy repo's existing debt carries no marks, so
 the ratchet check has nothing to compare and coverage rot on untouched code goes unnoticed.
@@ -342,7 +432,7 @@ crapkit-ratchet.tsv: scope web: added 0, tightened 1 - 6 mark(s) vs run 9 (4f1c2
 ```
 
 A mark rises only on one move: the scope's coverage flips from `cc-only` or `no-lane` to a
-coverage reader. Its marks then take the run's values, and the line counts the rises:
+coverage reader. Its marks, refused twins' too, then take the run's values, and the line counts the rises:
 
 ```
 $ crapkit ratchet seed --scope web
@@ -646,7 +736,7 @@ were measured under, not which of them a given file exercised.
 
 ## Pruning, and renames
 
-`prune` drops marks whose function is absent from the latest run, and nothing else drops
+`prune` drops marks whose function left the latest run, and nothing else drops
 them. Absence alone is not proof the code left: an exclude glob or a lane outage removes rows
 too, and the per-verify update keeps stale entries rather than erasing an audited override's
 only diff-visible record. Running `prune` is you confirming.
@@ -656,12 +746,39 @@ $ crapkit ratchet prune
 crapkit-ratchet.tsv: pruned 0, followed 2 rename(s) (calc/grade.py -> calc/grading.py) - 2 mark(s) vs run 11 (7d09097ea8a)
 ```
 
+**A signature edit re-keys instead of dropping.** A mark whose key no function holds is not
+code that left when a signature edit carried it
+([A signature change keeps its mark](#a-signature-change-keeps-its-mark)): prune moves it to the
+function's key at its recorded value. After the probe's edit and `crapkit coverage`:
+
+```
+$ crapkit ratchet prune
+crapkit-ratchet.tsv: pruned 0, followed 0 rename(s), re-keyed 1 - 1 mark(s) vs run 2 (e34265226a3)
+```
+
+The file then holds `calc/grade.py classify( a , b , c = None ) 7.0000`; 0.8.1 printed
+`pruned 1` here and dropped the signed debt. `, re-keyed N` prints only when N is above 0.
+
+**A mark no single function carries stays.** Twins, or a name that several marks left or
+several unmarked functions took, leave the carry unable to say which function a mark belongs
+to. prune keeps those marks and prints one line per file, and seed prints the same line:
+
+```
+crapkit-ratchet.tsv: kept 2 mark(s) in calc/grade.py that no single function carries: classify( a , b ), classify( a , c ); run crapkit ratchet move --function calc/grade.py OLD NEW
+```
+
+Run that command with a kept mark as OLD and the function it belongs to as NEW
+([Moving marks by hand](#moving-marks-by-hand)); the next prune prints no such line. A mark
+with no unmarked function of its bare name left in its file is code that left, and prune
+drops it.
+
 **A rename follows instead of dropping.** Before pruning, crapkit asks git for renames since
 the store's first run and re-paths any mark that meets all three conditions:
 
 1. The function is gone from its recorded path.
 2. git calls that path renamed.
-3. The same key name exists at the destination.
+3. At the destination its key name names a function, or a function of its bare name could
+   carry it: a carry prune then re-keys, or an ambiguous one prune keeps.
 
 A *copy* fails condition 1 (the source survives), so a copy never moves a mark. Before and
 after `git mv calc/grade.py calc/grading.py`:
@@ -672,7 +789,11 @@ calc/grading.py	audit( rows , strict , cap , floor , verbose )	132.0000
 ```
 
 The count is marks, and the parenthesis names the renames they followed, `old -> new`, up
-to three and then `and N more`.
+to three and then `and N more`. A rename plus a signature edit follows, then re-keys, in one
+run: `pruned 0, followed 1 rename(s), re-keyed 1 (calc/grade.py -> calc/grading.py)`. A heavy
+edit that git no longer calls a rename leaves the mark at its old path, and prune drops it.
+A marks file with no `# crapkit-keys=1` line proves no carry, so prune follows and keeps only
+the marks whose own key a function holds, as 0.8.1 did.
 
 ### When the first run's commit is gone
 
@@ -752,6 +873,44 @@ scored row carries. `./calc/grading.py` and, on Windows, `calc\grading.py` name
 `calc/grading.py`. Typed from a directory below the root, a path is read from there: in
 `calc/`, `crapkit ratchet move grade.py grading.py` is the first example above. Under
 `--repo` the paths stay root-relative. The line names the paths as the marks file spells them.
+
+A mark's key holds its function's whole signature, so adding a parameter re-keys the
+function: after `def classify(a, b):` becomes `def classify(a, b, c=None):`, the mark
+under `classify( a , b )` keys no function. `--function PATH OLD NEW` moves that one mark
+to the function NEW names in PATH, at its recorded value:
+
+```
+$ crapkit ratchet move --function calc/grade.py "classify( a , b )" classify
+crapkit-ratchet.tsv: re-keyed 1 mark in calc/grade.py from classify( a , b ) to classify( a , b , c = None )
+```
+
+The row before and after, with every other byte of the file kept:
+
+```
+calc/grade.py	classify( a , b )	7.0000
+calc/grade.py	classify( a , b , c = None )	7.0000
+```
+
+Then `git add crapkit-ratchet.tsv` and commit it with the edit. OLD names a mark in PATH by
+its key name, or by a function name with `#N` for the Nth twin. NEW names a function the
+working tree's PATH holds by its key name, or as `brief` reads a name: a name, a handle such
+as `classify#2` or `(anonymous)#1`, or a start line. The command reads PATH and the marks
+file only: one lizard parse and no run, so it works right after an edit nothing measured.
+To move the second twin's mark, name both twins by their ordinal:
+`crapkit ratchet move --function calc/grade.py "classify( a )#2" "classify#2"`. When the
+commit gate cannot say which function a mark carries to, its refusal prints the
+`ratchet move --function` line that settles it.
+
+Each refusal exits 3, names PATH and its fix, and leaves the marks file as it was: OLD
+names no mark in PATH, or several; NEW names no function, or several (a bare name twins
+share names each twin, so it lists their handles); NEW's key already holds a mark; or
+PATH ends in `/`:
+
+```
+$ crapkit ratchet move --function calc/grade.py "classify( z )" classify
+crapkit: ratchet move --function: no mark named classify( z ) in calc/grade.py; its marks are "classify( a , b )"; name one of them as OLD
+EXIT=3
+```
 
 ---
 
@@ -924,6 +1083,51 @@ different key-format versions; stamps that merge are not enough.
 `ratchet merge` runs with no `crapkit.toml` in sight, because git invokes it from a temp
 directory. It is the one ratchet subcommand that needs no config.
 
+### A signature change on one branch, a tighten on the other
+
+On main, a verify tightened `classify( a , b )` in `calc/grade.py` from 7.0000 to 6.0000. On
+the feature branch, `classify` gained a parameter, and a passing verify re-keyed its mark to
+`classify( a , b , c = None )` at 7.0000. Merging the feature branch keeps one line, under the
+new key, at main's tightened value:
+
+```
+$ git merge feature -m "merge feature"
+ratchet merge: 1 mark(s)
+Auto-merging crapkit-ratchet.tsv
+Merge made by the 'ort' strategy.
+```
+
+```
+# crapkit-analysis=13 lizard=1.24.0
+# crapkit-keys=1
+path	long_name	crap
+calc/grade.py	classify( a , b , c = None )	6.0000
+```
+
+The driver compares each branch with the base before it merges. The feature branch dropped
+one key from `calc/grade.py` and added one under the same bare name, `classify`, and no other
+key of that name left or arrived in the file, so the two keys are one mark. Twins never pair,
+and two drops or two adds under one bare name do not pair: those merge key by key. A merge by
+exact key would keep the old key at 6.0000 beside the new one at 7.0000, and the function's
+mark would loosen back to 7.0000.
+
+A path move on one branch, by [`ratchet move`](#moving-marks-by-hand) or by `prune` after a
+`git mv`, and a tighten on the other merge the same way: a key that left one path and a key
+that arrived at another, under the same key name at the same value, are one mark when exactly
+one of each did.
+
+When both branches re-keyed one mark to different keys, the merged file keeps it under both
+keys at the merged value, and the driver exits 0 with one more line on stderr. Here main
+re-keyed it to `classify( a , b , d = 1 )` and tightened it to 6.0000:
+
+```
+$ git merge feature -m "merge feature"
+ratchet merge: 2 mark(s)
+ratchet merge: OURS and THEIRS moved one mark to different keys, so it stays under both: calc/grade.py "classify( a , b , c = None )" and calc/grade.py "classify( a , b , d = 1 )"; the next crapkit ratchet prune drops the one no function holds
+Auto-merging crapkit-ratchet.tsv
+Merge made by the 'ort' strategy.
+```
+
 ---
 
 ## Reporting the burn-down
@@ -956,8 +1160,8 @@ ratchet burn-down: 1 open mark(s), 0 repaid (0 in the last 30d, 0 in 90d)
       0d  calc/grade.py  classify( score , attempts , late , bonus )
 ```
 
-A mark with no commit behind it reports `0d`. The burn-down clock starts when you commit the
-file.
+A mark with no commit behind it reports `0d`. The burn-down clock starts when you commit the file.
+A move keeps the clock: a re-key (verify's, after a signature edit) or a path move (`ratchet move`, or `ratchet prune` following a `git mv`) carries the mark's age to its new key and repays nothing, so `dropped_total` does not grow. A move still on disk counts once in `uncommitted` and keeps the committed key's age.
 
 ### A history the checkout does not hold
 
@@ -994,8 +1198,8 @@ Two optional `[crapkit]` keys turn the report into a gate:
 
 | Key | Flags |
 |---|---|
-| `debt_max_age_months` | Open marks older than this, counted at 30 days per month. |
-| `repayment_min_per_30d` | A burn-down that repaid fewer marks than this in the last 30 days, while debt is open. |
+| `debt_max_age_months` | Open marks older than this, counted at 30 days per month. A re-key or a path move keeps a mark's age. |
+| `repayment_min_per_30d` | A burn-down that repaid fewer marks than this in the last 30 days, while debt is open. A re-key or a path move is not a repayment. |
 
 `--enforce` evaluates them and exits 1 on a violation:
 
@@ -1040,6 +1244,11 @@ A clean pass tightens it automatically. After a green `verify`:
   score.
 - A marked function absent from the run keeps its mark untouched. Absence is not proof the
   code is gone; that is what `prune` is for.
+- A mark a signature edit carried ([A signature change keeps its mark](#a-signature-change-keeps-its-mark))
+  moves to the function's key at the lower of its mark and its fresh score, or leaves the
+  file when the function is at or under its ceiling. A twin or an ambiguous name carries
+  nothing, so its line keeps its bytes, and a marks file whose key identity is unproved
+  re-keys nothing.
 
 The marks file is written only when its text would change, and never created to hold zero
 marks: a clean checkout with no marks file stays clean, and a stamped file whose marks all
@@ -1053,7 +1262,11 @@ verify OK @ 8c780bb18da vs baseline 8c780bb18da (3 changed files) ratchet: 6 dro
 ```
 
 `dropped` counts marks whose function is now at or under its ceiling; `tightened` counts
-marks that fell. The JSON receipt carries the same two numbers as `ratchet_changes`, `null`
+marks that fell. A carried mark that moved to its function's key counts as re-keyed, and as
+tightened too when it fell; the OK line adds `, 1 re-keyed` only when a mark moved, so
+`ratchet: 0 dropped, 0 tightened, 1 re-keyed -> git add crapkit-ratchet.tsv` follows the
+signature edit above, and a second verify writes nothing. The JSON receipt carries the
+same numbers as `ratchet_changes`, `null`
 when the tighten wrote nothing ([agent-json.md](agent-json.md#verify)). One rewrite moves no
 mark: a file written before stamping (the one `verify` warns about on stderr) is rewritten
 once to gain its stamp line, and the OK line says `ratchet: restamped -> git add
@@ -1077,6 +1290,17 @@ EXIT=7
 
 That run changed only a test file. The source function was untouched; deleting its coverage
 was enough.
+
+While a mark is still carried, the check reads the function that carries it. A carried
+`classify` that rose from 7 to 8 in a commit whose diff never touched it fails at exit 7,
+and the RATCHET line names both keys:
+
+```
+  RATCHET  calc/grade.py  classify( a , b , c = None ): 7.0 -> 8.0 (mark recorded for classify( a , b ))
+```
+
+The `ratchet_regression` item in `verify --json` carries `carried_from`, the mark's key,
+or `null` for a mark under the function's own key.
 
 A marks file that is missing, or holds nothing but blank lines, is not a repo that never
 marked any debt. `verify` then reads the newest marks the history from the baseline's commit
@@ -1252,7 +1476,7 @@ The pre-commit hook takes the same path through `CRAPKIT_OVERRIDE_REASON`:
 
 ```
 $ CRAPKIT_OVERRIDE_REASON="hotfix 412, decompose in the follow-up" git commit -m "add route"
-crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 (with no coverage known, CRAP is at least ccn):
   ccn   7  app/m.py:9  route( a , b , c , d )
 crapkit: override granted with full audit (hotfix 412, decompose in the follow-up).
 crapkit: clear CRAPKIT_OVERRIDE_REASON now (`unset CRAPKIT_OVERRIDE_REASON`) - while set it grants again on every commit.
