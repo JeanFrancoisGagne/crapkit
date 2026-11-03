@@ -273,6 +273,20 @@ def test_a_plain_seed_signs_no_line_for_a_scope_only_the_run_recorded(repo):
 
 # --- variations ------------------------------------------------------------------------
 
+def test_a_scoped_seed_keeps_line_1_as_the_file_wrote_it(repo):
+    """Only the scope's own line changes. A marks file renamed by hand still
+    names its old name on line 1, and the scoped seed leaves that line alone."""
+    cfg = configure(repo)
+    text = dump_ratchet([API, WEB], stamp=older_typescript(running(cfg)), key_version=1, file_name="marks.tsv")
+    (repo / MARKS).write_text(text, encoding="utf-8", newline="\n")
+    head = lines(repo)[0]
+    store_run(repo, [row(API, 50.0), row(WEB, 30.0)], running(cfg))
+
+    assert seed(repo, "web") == 0
+
+    assert lines(repo)[0] == head and ": marks.tsv " in head
+
+
 def test_a_scope_with_no_marks_takes_only_its_stamp_line(repo):
     cfg = configure(repo)
     write_marks(repo, [API], older_typescript(running(cfg)))
@@ -488,3 +502,15 @@ def test_a_rising_scope_adds_a_new_mark_raises_a_lower_one_and_lowers_a_higher_o
 
     assert (added, tightened) == (1, 1)
     assert {entry.long_name: entry.crap for entry in seeded} == {"new": 20.0, "render": 55.0, "lower": 12.0}
+
+
+def test_a_raised_mark_is_the_run_s_crap_at_four_decimals_and_an_equal_one_tightens_nothing():
+    """Accuracy check 1: a raised mark equals the run's CRAP rounded to 4 places.
+    A mark the run scores at exactly its value stays and counts no tighten."""
+    same = RatchetEntry("web/c.ts", "same", 25.0)
+    fresh = [row(WEB, 55.123456), row(same, 25.0)]
+
+    seeded, added, tightened = ratchet.seed_ratchet([WEB, same], fresh, target=6, raises=lambda path: True)
+
+    assert (added, tightened) == (0, 0)
+    assert {entry.long_name: entry.crap for entry in seeded} == {"render": 55.1235, "same": 25.0}
