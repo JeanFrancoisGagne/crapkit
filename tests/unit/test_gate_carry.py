@@ -157,3 +157,59 @@ def test_a_carry_changes_which_key_holds_the_mark_never_the_verdict(bound, mark)
     assert _kind(carried) == _kind(own)
     assert [b.mark for b in carried.carried + carried.marked_rise + carried.unproven] == \
         [b.mark for b in own.pardoned + own.marked_rise + own.unproven]
+
+
+# --- the base a carried function is asked about ----------------------------------
+#
+# A measured scope: a staged function's CRAP runs from its ccn to ccn^2 + ccn,
+# and a ceiling of 3 puts ccn 4 over it. The diff base holds the function under
+# the key its mark was recorded under, never under the key the edit gave it.
+
+class BaseFetch:
+    """The base fetch over {(path, key name): ccn}, recording each call's keys."""
+
+    def __init__(self, ccns: dict):
+        self.ccns, self.asked = ccns, []
+
+    def __call__(self, asked):
+        self.asked.append(asked)
+        return {key: self.ccns.get(key) for key in asked}
+
+
+def judged_at_base(name: str, marked: dict, bound: CrapBound, base: dict):
+    """The gate's result when NAME, the one function of PATH, sits at BOUND,
+    MARKED holds the marks and BASE the ccn at the diff base."""
+    fetch = BaseFetch(base)
+    change = ChangedFile(PATH, WHOLE, (Function(name, 1, 6, bound),))
+    return gate.judge([change], lambda scope: 3, Marks(marked), fetch), fetch
+
+
+@pytest.mark.parametrize("mark, bound, kind, asked", [
+    pytest.param(20.0, CrapBound(4, 20), "carried", [], id="at-its-mark-is-pardoned-and-never-asked"),
+    pytest.param(15.0, CrapBound(4, 20), "unproven", [((PATH, OLD),)], id="straddling-at-its-base-ccn"),
+    pytest.param(20.0, CrapBound(5, 30), "unproven_rise", [((PATH, OLD),)], id="straddling-past-its-base-ccn"),
+])
+def test_a_carried_function_is_asked_about_under_the_key_its_mark_carried_from(mark, bound, kind, asked):
+    """The fetch runs once per `gate.judge` call, with the carried key alone:
+    asked under the new key it found no function and read every straddling
+    carried function as a rise."""
+    result, fetch = judged_at_base(NEW, {(PATH, OLD): mark}, bound, {(PATH, OLD): 4})
+
+    (breach,) = getattr(result, kind)
+    assert (breach.carried_from, breach.mark, fetch.asked) == (OLD, mark, asked)
+    assert breach.base_ccn == (4 if asked else None)
+
+
+@pytest.mark.parametrize("bound", [CrapBound(4, 20), CrapBound(5, 30), CrapBound(3.5, 12)], ids=str)
+@pytest.mark.parametrize("base", [3, 4, 5, None])
+@pytest.mark.parametrize("mark", [3.5, 15.0, 20.0, 30.0])
+def test_a_carried_function_rises_as_it_would_under_its_own_key(bound, base, mark):
+    """Check 3 for the commit gate: with the same mark and the same base ccn
+    under the key that holds them, a carry and an exact mark give one verdict."""
+    carried, _ = judged_at_base(NEW, {(PATH, OLD): mark}, bound, {(PATH, OLD): base})
+    own, _ = judged_at_base(NEW, {(PATH, NEW): mark}, bound, {(PATH, NEW): base})
+
+    kinds = ("over_ceiling", "marked_rise", "unproven", "unproven_rise")
+    assert [len(getattr(carried, kind)) for kind in kinds] == [len(getattr(own, kind)) for kind in kinds]
+    assert (len(carried.carried), [b.base_ccn for b in carried.unproven + carried.unproven_rise]) == \
+        (len(own.pardoned), [b.base_ccn for b in own.unproven + own.unproven_rise])

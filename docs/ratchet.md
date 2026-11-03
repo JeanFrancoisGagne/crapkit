@@ -326,6 +326,33 @@ on the same tree passed. The advisory hook `crapkit claude-hook` holds the edite
 mark by the same rule, its ccn read against HEAD's: a ccn past the mark draws its marked block, a ccn rise
 across the mark its warn block, and the rest stays silent, so a session of green advisories no longer ends at a red commit.
 
+A mark that carried through a signature edit ([A signature change keeps its
+mark](#a-signature-change-keeps-its-mark)) pardons on both hooks the way an exact mark does,
+since 0.9.0. `hook-precommit` prints the carried line once on stderr, beside the count line
+that still counts the function, and `claude-hook` stays silent. The probe from that section,
+committed after the signature edit:
+
+```
+$ git commit -m "classify takes an optional c"
+crapkit gate: calc/grade.py classify( a , b , c = None ) carries the mark 7.0000 recorded for classify( a , b ); a passing verify re-keys it, or run crapkit ratchet move --function calc/grade.py "classify( a , b )" "classify( a , b , c = None )"
+crapkit gate: 1 staged function(s) carry a ratchet mark and were not gated - `crapkit verify` fails a mark that rises
+```
+
+A carried function whose ccn rose is held to the carried mark, and its base ccn is read
+under the key the mark was recorded under. A refusal or a warn row names that key after the
+mark, on both hooks:
+
+```
+  ccn   8  calc/grade.py:1  classify( a , b , c = None )  mark 7.0000 (carried from classify( a , b ))
+```
+
+`CRAPKIT_OVERRIDE_REASON` on that refusal keeps the mark under its old key and value, and
+adds no mark under the new key. Twins, or several candidates for one bare name, carry
+nothing: `hook-precommit` exits 6 and `claude-hook` exits 2, and under the function's row
+each prints the sentence that names every candidate key and the `ratchet move --function`
+command that ends the ambiguity. Run that command, and the next commit judges the function
+under its own mark.
+
 ---
 
 ## Seeding

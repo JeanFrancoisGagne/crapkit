@@ -21,7 +21,8 @@ here once:
   name that left the file. A carried pardon is the `carried` finding; a carry
   keys refuses pardons nothing and names the ambiguity on the breach.
 - The rise. An unproven function whose ccn rose above its ccn at the diff
-  base, or that the base holds no function under its key, is an unproven rise:
+  base, or that the base holds no function under its key (a carried one's
+  under the key its mark carried from), is an unproven rise:
   the edit may have broken the mark, and only coverage can say. The base is
   asked once, and only when an unproven function exists.
 - Unread. A changed file no reader could read is refused: its zero records are
@@ -258,8 +259,23 @@ def _rises(found: dict[str, tuple[Breach, ...]], base_ccn: BaseCcn | None) -> di
 
 def _asked(unproven: tuple[Breach, ...], base_ccn: BaseCcn) -> list[Breach]:
     """Each unproven breach with its ccn at the base, one call for every key."""
-    answers = base_ccn(tuple(dict.fromkeys((breach.path, breach.key_name) for breach in unproven)))
-    return [breach._replace(base_ccn=answers[(breach.path, breach.key_name)]) for breach in unproven]
+    answers = base_ccn(tuple(dict.fromkeys(map(_base_key, unproven))))
+    return [breach._replace(base_ccn=answers[_base_key(breach)]) for breach in unproven]
+
+
+def _base_key(breach: Breach) -> Key:
+    """The key the base holds the function under: a carried function's old key,
+    since the edit that carried its mark renamed it; asked under the new one, the
+    base held no function and every straddling carry read as a rise."""
+    return breach.path, breach.carried_from or breach.key_name
+
+
+def carried_note(breach: Breach) -> str:
+    """What every hook prints after a carried breach's mark: the key the mark was
+    recorded under. "" for a mark under the function's own key, and for a row
+    built without the field (the docs contract renders the blocks from one)."""
+    carried_from = getattr(breach, "carried_from", None)
+    return "" if carried_from is None else f" (carried from {carried_from})"
 
 
 def _split(asked: list[Breach]) -> dict[str, tuple[Breach, ...]]:

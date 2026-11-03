@@ -156,6 +156,26 @@ def test_a_reason_grants_a_marked_rise_and_keeps_its_mark_byte_for_byte(marked, 
     assert MARKS not in staged_names(marked)
 
 
+def test_a_reason_grants_a_carried_rise_and_keeps_the_mark_under_its_old_key(marked, capsys):
+    """A signature edit renamed knotty ( m ) to knotty ( n ) and its mark of
+    7.3333 carried; then the ccn rose to 9. The grant keeps the mark under the
+    key it was recorded under, at its value, and adds none under the new key."""
+    before = committed(marked, ("src/app.ts", "knotty ( m )", "7.3333"))
+    start = grow(marked)
+
+    code, out, err = run(["hook-precommit"], marked, capsys)
+
+    assert code == 0, out + err
+    assert out.splitlines() == [
+        RISE_HEAD, f"  ccn   9  src/app.ts:{start}  {KNOTTY}  mark 7.3333 (carried from knotty ( m ))", GRANTED,
+        KEPT.format(path="src/app.ts", name="knotty ( m )", mark="7.3333"), *clear_lines(capsys)]
+    assert alerts(marked) == [f"crapkit OVERRIDE ({REASON}): src/app.ts:{start} {KNOTTY} crap=90.0"]
+    assert runs_and_overrides(marked) == [("hook", [("src/app.ts", "knotty ( m )", 90.0, REASON)])]
+    assert hashlib.sha256((marked / MARKS).read_bytes()).digest() == hashlib.sha256(before).digest()
+    assert [(e.long_name, e.crap) for e in RatchetFile.read(marked / MARKS).entries] == [("knotty ( m )", 7.3333)]
+    assert MARKS not in staged_names(marked)
+
+
 @pytest.mark.parametrize(("source", "mark"), [pytest.param("cc/rules.ts", "8.0000", id="cc-only"),
                                               pytest.param("src/fresh.ts", "72.0000", id="measured")])
 def test_a_mixed_grant_marks_the_new_breach_keeps_the_marked_one_and_stages_the_file(
