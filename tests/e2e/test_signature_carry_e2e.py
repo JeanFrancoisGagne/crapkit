@@ -11,6 +11,12 @@ candidates for one bare name, refuse and name each key and the
 `ratchet move --function` command that ends the ambiguity. In a scope a lane
 measures, rescore reads the carried function's CRAP from the coverage the
 baseline holds under the old key, so the same probe passes there too.
+
+A passing verify then re-keys the mark: the marks file holds the new key at
+the same value, the OK line counts `1 re-keyed`, and a second verify writes
+nothing. While the mark is still carried, verify's ratchet check reads the
+function that carries it, so a rise past the mark fails at exit 7 even when
+the diff never touched it.
 """
 from __future__ import annotations
 
@@ -392,3 +398,79 @@ def test_a_measured_carry_past_its_mark_fails_rescore_gate_and_verify(measured):
     (breach,) = json.loads(gate.stdout)["gate"]["breaches"]
     assert (breach["cov"], breach["crap"], breach["mark_ambiguity"]) == (1.0, 8.0, None)
     assert carried_lines(gate.stderr) == carried_lines(verified.stderr) == []
+
+
+REKEYED_TAIL = f"ratchet: 0 dropped, 0 tightened, 1 re-keyed -> git add {MARKS}"
+
+
+def test_a_passing_verify_re_keys_the_probe_once_and_says_so(seeded):
+    repo = edited(seeded, SIGNED)
+
+    first = run_cli(repo, "verify", env_extra=NO_REASON)
+    marks = (repo / MARKS).read_text(encoding="utf-8")
+    payload = run_cli(repo, "verify", "--json", env_extra=NO_REASON)
+
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert first.stdout.splitlines()[0].endswith(REKEYED_TAIL), first.stdout
+    assert f"calc/grade.py\t{NEW}\t7.0000" in marks and f"\t{OLD}\t" not in marks, marks
+    assert payload.returncode == 0 and json.loads(payload.stdout)["ratchet_changes"] is None
+    assert (repo / MARKS).read_text(encoding="utf-8") == marks
+
+
+def test_the_json_receipt_counts_the_re_key(seeded):
+    res = run_cli(edited(seeded, SIGNED), "verify", "--json", env_extra=NO_REASON)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert json.loads(res.stdout)["ratchet_changes"] == {"dropped": 0, "tightened": 0, "rekeyed": 1}
+
+
+def test_no_tighten_keeps_the_old_key_and_the_next_passing_verify_re_keys_it(seeded):
+    repo = edited(seeded, SIGNED)
+
+    held = run_cli(repo, "verify", "--no-tighten", env_extra=NO_REASON)
+    kept = (repo / MARKS).read_text(encoding="utf-8")
+    moved = run_cli(repo, "verify", env_extra=NO_REASON)
+
+    assert (held.returncode, moved.returncode) == (0, 0), held.stderr + moved.stderr
+    assert f"\t{OLD}\t7.0000" in kept
+    assert moved.stdout.splitlines()[0].endswith(REKEYED_TAIL), moved.stdout
+
+
+def risen(repo: Path) -> Path:
+    """The carried function at ccn 8, committed and measured, so verify's diff
+    since its baseline touches nothing."""
+    edited(repo, "def classify(a, b, c=None):\n" + body(7))
+    git_commit_all(repo, "rise")
+    res = run_cli(repo, "coverage", env_extra=NO_REASON)
+    assert res.returncode == 0, res.stdout + res.stderr
+    return repo
+
+
+def test_an_untouched_carried_function_that_rose_fails_the_ratchet_check(seeded):
+    repo = risen(seeded)
+    before = (repo / MARKS).read_bytes()
+
+    res = run_cli(repo, "verify", "--json", env_extra=NO_REASON)
+    text = run_cli(repo, "verify", env_extra=NO_REASON)
+
+    assert (res.returncode, text.returncode) == (7, 7), res.stdout + res.stderr
+    (item,) = [f for f in json.loads(res.stdout)["findings"] if f["kind"] == "ratchet_regression"]
+    assert (item["long_name"], item["recorded"], item["fresh_crap"], item["carried_from"]) == (
+        NEW, 7.0, 8.0, OLD)
+    assert f"  RATCHET  calc/grade.py  {NEW}: 7.0 -> 8.0 (mark recorded for {OLD})" in text.stdout
+    assert (repo / MARKS).read_bytes() == before
+
+
+ALERTED = TOML.replace("target = 6\n", f"target = 6\nalert_command = '\"{sys.executable}\" -c \"\"'\n")
+
+
+def test_an_override_on_a_touched_carried_rise_is_refused_and_writes_no_mark(tmp_path):
+    repo = edited(seed(git_init_repo(tmp_path), ALERTED), "def classify(a, b, c=None):\n" + body(7))
+    before = (repo / MARKS).read_bytes()
+
+    res = run_cli(repo, "verify", "--override", "signed off", env_extra=NO_REASON)
+
+    assert res.returncode == 6, res.stdout + res.stderr
+    assert f"  RATCHET  calc/grade.py  {NEW}: 7.0 -> 8.0 (mark recorded for {OLD})" in res.stdout
+    assert "ratchet regression" in res.stderr and "raise the mark by hand and commit it" in res.stderr
+    assert (repo / MARKS).read_bytes() == before

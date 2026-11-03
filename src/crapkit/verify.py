@@ -19,7 +19,7 @@ import shlex
 from typing import Any, NamedTuple
 
 from .gate import WHOLE, ChangedFile, CrapBound, Function, GateResult, Unread, UnreadableName, judge
-from .keys import MarkIndex, mark_key, rows_by_key
+from .keys import MarkIndex, carried_keys, mark_key, rows_by_key
 from .merge import UNREAD_ADVICE
 from .ratchet import RatchetEntry
 from .repopath import file_separators
@@ -185,11 +185,15 @@ def _key_arg(key: str) -> str:
 
 
 class RatchetRegression(NamedTuple):
+    """A marked function whose CRAP rose past its mark. `long_name` is the
+    function's key name; `carried_from` the key the mark was recorded under
+    when a signature edit carried it, None for an exact mark."""
     path: str
     long_name: str
     recorded: float
     fresh_crap: float
     dirty: bool = False
+    carried_from: str | None = None
 
 
 class UncoveredViolation(NamedTuple):
@@ -380,7 +384,8 @@ def _unread_file_line(u: Unread, dirty: bool) -> str:
 
 
 def _ratchet_line(r: RatchetRegression, dirty: bool) -> str:
-    return f"  RATCHET  {r.path}  {r.long_name}: {r.recorded} -> {r.fresh_crap}{_dirty_tag(dirty)}"
+    carried = "" if r.carried_from is None else f" (mark recorded for {r.carried_from})"
+    return f"  RATCHET  {r.path}  {r.long_name}: {r.recorded} -> {r.fresh_crap}{carried}{_dirty_tag(dirty)}"
 
 
 def _failure_line(test_id: str, dirty: bool) -> str:
@@ -733,18 +738,28 @@ def _worst_first(row: ScoredRow | GateViolation) -> tuple:
 
 
 def _ratchet_regressions(fresh, ratchet, dirty) -> list[RatchetRegression]:
+    """Each mark the function it judges rose past: the function under the
+    mark's own key, or the one `keys.carriers` says carries it."""
     worst_by_key = rows_by_key(fresh)
+    marks = MarkIndex(ratchet)
+    carried = carried_keys(worst_by_key, marks.keys())
     regressions = []
-    for entry in MarkIndex(ratchet).entries():
-        row = worst_by_key.get(mark_key(entry))
+    for entry in marks.entries():
+        key = carried.get(mark_key(entry), mark_key(entry))
+        row = worst_by_key.get(key)
         # Compare at the precision the mark is STORED at: marks live as 4dp
         # strings, and cov = covered/total makes longer decimals routine — an
         # unrounded compare wedges an unchanged tree against its own mark.
         if row is not None and round(row.crap, 4) > entry.crap:
-            regressions.append(RatchetRegression(entry.path, entry.long_name, entry.crap,
-                                                 round(row.crap, 4), entry.path in dirty))
+            regressions.append(_regression(entry, key, round(row.crap, 4), dirty))
     regressions.sort(key=_largest_rise_first)
     return regressions
+
+
+def _regression(entry: RatchetEntry, key: tuple[str, str], fresh: float, dirty) -> RatchetRegression:
+    """The rise of the function under KEY past ENTRY's mark."""
+    carried_from = None if key == mark_key(entry) else entry.long_name
+    return RatchetRegression(key[0], key[1], entry.crap, fresh, key[0] in dirty, carried_from)
 
 
 def _largest_rise_first(r: RatchetRegression) -> tuple:
@@ -758,16 +773,19 @@ def _largest_rise_first(r: RatchetRegression) -> tuple:
 def unmarked_over_ceiling(fresh: list[ScoredRow], ratchet: list[RatchetEntry], target: int,
                           scope_targets: dict[str, int] | None = None) -> list[ScoredRow]:
     """Standing debt nothing guards: the worst row per ratchet key that sits over
-    its ceiling with no mark under that key, worst first.
+    its ceiling with no mark under that key and none `keys.carriers` carries to
+    it, worst first.
 
     The gate judges touched functions only and the ratchet check compares marks
     only, so a rise on one of these (coverage loss included) reaches no finding.
     A marked function that rose is a regression already; this is the debt
     `ratchet seed` was never run on.
     """
-    marks = MarkIndex(ratchet)
-    rows = [row for key, row in rows_by_key(fresh).items()
-            if over_ceiling(row.crap, _ceiling(row, target, scope_targets)) and key not in marks]
+    worst = rows_by_key(fresh)
+    marks = MarkIndex(ratchet).keys()
+    guarded = {*marks, *carried_keys(worst, marks).values()}
+    rows = [row for key, row in worst.items()
+            if over_ceiling(row.crap, _ceiling(row, target, scope_targets)) and key not in guarded]
     rows.sort(key=_worst_first)
     return rows
 

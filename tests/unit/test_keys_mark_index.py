@@ -133,14 +133,14 @@ def test_the_update_keeps_both_lines_and_counts_the_key_once():
 
     assert updated == marks(("src/a.py", "f( x )", 20.0), ("src/a.py", "f( x )", 12.5))
     assert keys.MarkIndex(updated).mark(("src/a.py", "f( x )")) == 20.0
-    assert ratchet.ratchet_delta(TWICE, updated) == ratchet.RatchetDelta(dropped=0, tightened=1)
+    assert ratchet.ratchet_delta(TWICE, updated) == ratchet.RatchetDelta(dropped=0, tightened=1, rekeyed=0)
 
 
 def test_the_update_counts_a_dropped_key_once():
     fresh = [row("src/a.py", "f( x )", 10, 5.0)]
 
     assert ratchet.update_ratchet(TWICE, fresh, target=8) == []
-    assert ratchet.ratchet_delta(TWICE, []) == ratchet.RatchetDelta(dropped=1, tightened=0)
+    assert ratchet.ratchet_delta(TWICE, []) == ratchet.RatchetDelta(dropped=1, tightened=0, rekeyed=0)
 
 
 def test_the_tighten_guard_refuses_a_key_once():
