@@ -258,7 +258,8 @@ def test_doctor_warns_for_a_single_number_file_whose_scope_has_a_lane_0_8_x_neve
     start(repo, capsys)
     text = (repo / MARKS).read_text(encoding="utf-8")
     entries, _ = ratchet.read_ratchet(text)
-    (repo / MARKS).write_text(ratchet.dump_ratchet(entries, stamp=ratchet.metric_version(),
+    (repo / MARKS).write_text(ratchet.dump_ratchet(entries, stamp=ratchet.MetricStamp.parse(
+                                                       f"crapkit-analysis=13 lizard={ratchet.read_stamp(text).lizard}"),
                                                    key_version=ratchet.read_key_version(text),
                                                    file_name=MARKS), encoding="utf-8", newline="\n")
     monkeypatch.setitem(coverage_format._FORMATS, "lcov", coverage_format._FORMATS["coveragepy"])

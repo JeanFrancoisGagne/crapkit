@@ -33,7 +33,8 @@ from crapkit.errors import GitError
 from crapkit.gitio import blob_at, file_revisions
 from crapkit.marks_history import (Move, MarksRevision, held_history, marks_at, marks_history,
                                    moves, newest_committed_marks)
-from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version, read_ratchet
+from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, read_ratchet
+from stamps import FIXED, stamp_lines
 from crapkit.ratchet_report import crap_by_key, held_event, mark_events, report_from_events
 from crapkit.ratchetfile import RatchetFile
 from crapkit.records import encode_record, record_lines
@@ -55,7 +56,7 @@ def git(root: Path, *args: str, date: str = "2026-01-01T12:00:00+00:00") -> str:
 
 def marks(crap: float) -> str:
     entry = RatchetEntry("src/a.py", "hot( n )", crap)
-    return dump_ratchet([entry], stamp=metric_version(), key_version=KEY_VERSION)
+    return dump_ratchet([entry], stamp=FIXED, key_version=KEY_VERSION, file_name=MARKS)
 
 
 def commit_file(root: Path, rel: str, text: str | None, message: str, date: str) -> str:
@@ -667,7 +668,7 @@ def _merged(root: Path, base: list[str], side_a: list[str], side_b: list[str]) -
     """`base`, a branch to `side_a` and one to `side_b`, merged back with --no-ff."""
     def write(names: list[str], message: str, day: int) -> None:
         entries = [RatchetEntry("src/app.ts", name, 20.0) for name in names]
-        commit_file(root, MARKS, dump_ratchet(entries, stamp=metric_version()), message,
+        commit_file(root, MARKS, dump_ratchet(entries, stamp=FIXED, file_name=MARKS), message,
                     f"2026-01-{day:02d}T12:00:00+00:00")
 
     git(root, "init", "-q", "-b", "main")
@@ -708,7 +709,7 @@ RENAMED = "2026-06-01T12:00:00+00:00"
 
 def several(*names: str) -> str:
     entries = [RatchetEntry("src/a.py", f"{name}( n )", 12.0) for name in names]
-    return dump_ratchet(entries, stamp=metric_version(), key_version=KEY_VERSION)
+    return dump_ratchet(entries, stamp=FIXED, key_version=KEY_VERSION, file_name=MARKS)
 
 
 def stamp(date: str) -> int:
@@ -1012,7 +1013,7 @@ def _seeded(*marked: tuple[str, str, float]) -> bytes:
     the header and one row per mark; with no marks, what `ratchet prune`
     leaves when it repays every one."""
     entries = [RatchetEntry(path, name, crap) for path, name, crap in marked]
-    return dump_ratchet(entries, stamp=metric_version(), key_version=KEY_VERSION).encode()
+    return dump_ratchet(entries, stamp=FIXED, key_version=KEY_VERSION, file_name=MARKS).encode()
 
 
 def _dated(root: Path, *steps: tuple[str, dict]) -> Path:
@@ -1175,7 +1176,7 @@ OTHER_HISTORIES = [
                  id="e2e-encoding-nul"),
     pytest.param(_encoding_e2e(lambda seeded: seeded.replace(b"\n", b"\r\n")), "resaves",
                  id="e2e-encoding-crlf"),
-    pytest.param(_one_commit(f"# {metric_version()}\npath\tlong_name\tcrap\n"
+    pytest.param(_one_commit(f"{stamp_lines(FIXED)}path\tlong_name\tcrap\n"
                              "src/a.ts\tf\t20.0000\nsrc/gone.ts\t(anonymous)#2\t99.0000\n"), "same",
                  id="unit-a-deleted-files-legacy-mark"),
     pytest.param(_legacy_b, "same", id="unit-brief-mark-proves-only-its-file"),

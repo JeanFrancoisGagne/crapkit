@@ -89,8 +89,11 @@ _POOL_THRESHOLD = 16
 # three are literals: tools/accuracy/change_control.py reads them with
 # ast.literal_eval and imports no crapkit.
 #
-# Through 0.8.1 the single number below was the whole rule, and its history
-# follows. Version 13, 0.8.1's one bump, carries N22's coveragepy reader change:
+# ANALYSIS_VERSION is the tables' revision and no stamp source: the run record,
+# the JSON version blocks, `--version --json` and change control read it, and
+# no metric stamp is built from it. Through 0.8.1 the single number below was
+# the whole rule and signed every marks file as `crapkit-analysis=N`, and its
+# history follows. Version 13, 0.8.1's one bump, carries N22's coveragepy reader change:
 # a coverage.py function region starts at the start_line the report writes.
 ANALYSIS_VERSION = 13  # 0.8.1's one bump from 11; 12 was an unreleased step. The
 #                       nesting column reads crapkit's cognitive pass in every

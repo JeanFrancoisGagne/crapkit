@@ -321,10 +321,8 @@ def test_brief_ages_a_marked_function_whose_name_a_past_revision_saved_in_cp1252
     """brief died in the history read. The cp1252 revision's name reads as
     `caf\\ufffd( n )`, which keys no function, so `café( n )`'s mark counts
     from the UTF-8 revision that brought it."""
-    from crapkit.ratchet import metric_version
-
     config = CONFIG + b"coverage_optional = true\n"
-    stamped = f"# {metric_version()}\n# crapkit-keys=1\npath\tlong_name\tcrap\n".encode()
+    stamped = STAMPED
     root = repository(tmp_path)
     commit(root, files={b"crapkit.toml": config, b"src/app.py": CAFE_SOURCE.encode()}, age_days=5)
     commit(root, files={MARKS.encode(): stamped + b"src/app.py\tcaf\xe9( n )\t8.0000\n"}, age_days=3)

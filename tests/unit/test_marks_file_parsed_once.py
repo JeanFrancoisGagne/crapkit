@@ -18,6 +18,7 @@ from cli_inproc_repo import add_knotty, git, seed_artifacts, template_repo  # no
 import pytest
 
 from crapkit import ratchet
+from stamps import running_in, stamp_lines
 from crapkit.cli import main
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
@@ -103,7 +104,7 @@ def measured(template_repo, tmp_path, capsys):
     seed_artifacts(root)
     assert main(["coverage", "--reuse-artifacts", "--repo", str(root)]) == 0
     (root / "crapkit-ratchet.tsv").write_text(
-        f"# {ratchet.metric_version()}\npath\tlong_name\tcrap\nsrc/app.ts\tghost\t99.0000\n",
+        f"{stamp_lines(running_in(root))}path\tlong_name\tcrap\nsrc/app.ts\tghost\t99.0000\n",
         encoding="utf-8", newline="\n")
     capsys.readouterr()
     return root
