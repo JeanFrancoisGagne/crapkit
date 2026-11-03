@@ -71,6 +71,7 @@ class Outputs:
             self.__exit__()
             raise ToolError(f"crapkit cannot move {name} aside under .crapkit/aside before "
                             f"the lane runs ({exc}); close whatever holds it and rerun") from exc
+        _make_parents(self._root, self._names)
         return self
 
     def _set_aside(self, index: int, name: str) -> None:
@@ -103,6 +104,18 @@ class Outputs:
                 self.leftovers[name] = _sha256(self._root / name)
         shutil.rmtree(self._dir, ignore_errors=True)
         _prune_empty(self._dir.parent)
+
+
+def _make_parents(root: Path, names) -> None:
+    """Create the directory of each declared file that lies under the root: a
+    runner that does not create its report's directory (`go test
+    -coverprofile`) then runs as written in a fresh clone. A directory outside
+    the root is the repo owner's to make."""
+    base = root.resolve()
+    for name in names:
+        parent = (root / name).resolve().parent
+        if parent.is_relative_to(base):
+            parent.mkdir(parents=True, exist_ok=True)
 
 
 def _cleared(path: Path, name: str) -> None:

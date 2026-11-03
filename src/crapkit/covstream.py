@@ -12,15 +12,18 @@ Both shapes are split the same way. An istanbul artifact IS the {path: coverage}
 object, so its members are files. A coverage.py report wraps them one level down
 in "files", so the walk descends into that member and hands the rest back whole.
 
-Two pieces serve every format, so no reader hashes or decodes on its own:
+Three pieces serve every format, so no reader hashes or decodes on its own:
 
 - `HashingReader` feeds each byte a consumer reads into one sha256, the digest
   of every coverage artifact crapkit reads. The JSON walk's window reads
   through it, and so do the four other formats: Cobertura and JaCoCo XML,
-  which go to `xml.etree.ElementTree.iterparse` as bytes, and lcov and Go
-  coverprofile, which go through `lines`.
+  which go through `xml_elements`, and lcov and Go coverprofile, which go
+  through `lines`.
 - `lines` splits a machine-written line format (lcov, Go coverprofile) under
   the decode rule the JSON walk takes, `repotext.JsonStream`.
+- `xml_elements` hands an XML report's bytes to the stdlib parser, so the
+  declaration and a byte-order mark decide the decode, and yields the wanted
+  elements one at a time.
 """
 from __future__ import annotations
 
@@ -28,8 +31,10 @@ import hashlib
 import json
 import math
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import IO, Iterator
+from typing import IO, Iterable, Iterator
+from xml.parsers import expat
 
 from .errors import ConfigError, ToolError
 from .repotext import JsonStream, utf16_marked
@@ -139,6 +144,102 @@ def lines(reader: HashingReader, what: str, chunk: int = CHUNK) -> Iterator[str]
         rest = rest[start:]
     if rest:
         yield rest
+
+
+class _EntityDeclared(Exception):
+    """A DTD declared an entity: raised from expat's declaration callback, so
+    the parse stops before the entity is ever expanded."""
+
+
+def _refuse_entity(name: str, *_declaration) -> None:
+    raise _EntityDeclared(name)
+
+
+class _Elements:
+    """expat's element callbacks: each wanted element and what it holds is
+    built, handed over once its end tag is read, and then dropped; an element
+    outside every wanted one is never built, so memory follows the largest
+    wanted element and not the report."""
+
+    def __init__(self, tags: Iterable[str]) -> None:
+        self._tags = frozenset(tags)
+        self._open: list[ET.Element | None] = []
+        self.done: list[ET.Element] = []
+        self.started = False
+
+    def start(self, tag: str, attrib: dict[str, str]) -> None:
+        self.started = True
+        parent = self._open[-1] if self._open else None
+        if parent is not None:
+            parent = ET.SubElement(parent, tag, attrib)
+        elif tag in self._tags:
+            parent = ET.Element(tag, attrib)
+        self._open.append(parent)
+
+    def text(self, data: str) -> None:
+        """Text before an element's first child; a coverage report keeps none
+        after one."""
+        element = self._open[-1] if self._open else None
+        if element is not None and not len(element):
+            element.text = (element.text or "") + data
+
+    def end(self, tag: str) -> None:
+        element = self._open.pop()
+        if element is not None and tag in self._tags:
+            self.done.append(element)
+
+    def drain(self) -> list[ET.Element]:
+        done, self.done = self.done, []
+        return done
+
+
+def _xml_parser(built: _Elements):
+    """An expat parser that reads no external DTD or entity, and stops at the
+    first entity a DTD declares. With no encoding named, the declaration and
+    a byte-order mark decide the decode."""
+    parser = expat.ParserCreate()
+    parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
+    parser.EntityDeclHandler = _refuse_entity
+    parser.StartElementHandler = built.start
+    parser.EndElementHandler = built.end
+    parser.CharacterDataHandler = built.text
+    parser.buffer_text = True
+    return parser
+
+
+_NO_ELEMENTS = expat.errors.codes[expat.errors.XML_ERROR_NO_ELEMENTS]
+
+
+def _xml_refusal(what: str, error: expat.ExpatError, started: bool) -> ToolError:
+    """A file with no element is empty, not broken: the tool never wrote it."""
+    if error.code == _NO_ELEMENTS and not started:
+        return ToolError(f"{what} is empty: the file holds no XML element; rerun the lane so "
+                         "its coverage tool writes it")
+    return ToolError(f"{what}: the XML ends or breaks at line {error.lineno}, column "
+                     f"{error.offset + 1} ({expat.ErrorString(error.code)}); {REGENERATE}")
+
+
+def xml_elements(reader: HashingReader, what: str, tags: Iterable[str],
+                 chunk: int = CHUNK) -> Iterator[ET.Element]:
+    """Each element whose tag is in `tags`, whole, as its end tag is read.
+
+    The report's bytes go to expat as they are. No DTD's system or public id
+    is opened, a DTD that declares an entity is refused naming it before any
+    expansion, and a parse error names `what`, the line and the column. Each
+    refusal is a ToolError (exit 5)."""
+    built = _Elements(tags)
+    parser = _xml_parser(built)
+    try:
+        while raw := reader.read(max(chunk, 1)):
+            parser.Parse(raw, False)
+            yield from built.drain()
+        parser.Parse(b"", True)
+    except _EntityDeclared as declared:
+        raise ToolError(f"{what} declares the entity {str(declared)!r} in its DTD; crapkit "
+                        f"expands no entity a coverage report declares: {REGENERATE}") from None
+    except expat.ExpatError as error:
+        raise _xml_refusal(what, error, built.started) from None
+    yield from built.drain()
 
 
 class _Window:

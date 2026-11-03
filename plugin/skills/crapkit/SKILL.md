@@ -35,6 +35,7 @@ session works in does not hold those pages.
 | Boy-scout scan of the file | `file_functions` and `file_totals` in the packet |
 | A lane command crapkit refuses on Windows | Write the value in double quotes. cmd.exe does not treat `'` as a quote, so a single-quoted value reaches the runner one word per space and the guard reads a positional |
 | `crapkit doctor` WARNs that a lane declares no `results_artifact` | Coverage is measured either way. Two checks go dark for that lane's scopes until it names a junit file: the crashed-worker trust check, and exit 8, the no-new-failures check |
+| `crapkit doctor` notes that a reader can measure a cc-only scope | Adding the lane is the repo owner's call: uncomment the lane init left, delete `coverage_optional`, then `crapkit ratchet seed --scope NAME`. Until then the remedy stays `decompose` |
 | `trend` or `report` writing in a checkout you meant to keep read-only | Both fill a per-run rollup cache in the store. `commands.refresh_writes_run` marks a new coverage run; it does not promise that the other packet commands leave the filesystem unchanged |
 | `mutate` left worktrees behind | Every worker uses a kept worktree, including the default of one. `crapkit mutate --drop-pool` reclaims them. See [mutation worktrees](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees) for preparation, concurrent runs and cleanup |
 
@@ -81,7 +82,7 @@ means no artifact named lines for this file, and `flag` says which case you are 
 
 - `untested`: write the first test at the public seam, then `crapkit coverage`. The lines appear. The exception is `remedy: split-lines`: another function shares the source lines, or a Python def's body starts on the line its signature ends, so no test moves the score. Put each definition on its own lines, and such a def's body on its own line after the signature, first.
 - `measured`: the file's bytes changed since a lane measured it. Rerun `crapkit coverage`; committing changes nothing.
-- `cc-only`: the scope sets `coverage_optional`, so only decompose clears it. Most languages land here, because only Python and JS/TS have coverage parsers.
+- `cc-only`: the scope sets `coverage_optional`, so only decompose clears it. Every scope init writes no live lane for lands here (init writes live lanes for pytest, Vitest and Jest). When a reader can measure the scope's language, the note names its parser and lanes.md recipe.
 - `no-lane`: no lane measures this scope, so no test run can name lines. Declare a `[[lane]]` for it, or set `coverage_optional` when no test can reach it. `next-item` never hands one out; `brief` can.
 
 An `uncovered_lines` of `[]` means the artifact answered and nothing is dark. An `excluded`

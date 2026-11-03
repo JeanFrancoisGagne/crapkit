@@ -222,6 +222,31 @@ every declared lane fails, `coverage` prints a closing count, `crapkit: every la
 nothing to show and there is no partial run for `verify` to refuse against. Read the lane
 lines above that count; it repeats none of them.
 
+## A coverage artifact crapkit refuses, by format
+
+The lane wrote its artifact and crapkit refused to read it, exit 5. The line names the
+artifact and what is wrong with it.
+
+| Format | Signature | Cause and fix |
+|---|---|---|
+| lcov | `lcov.info is not UTF-8 (first bytes ff fe = UTF-16)` | `llvm-cov export ... > x.lcov` typed in Windows PowerShell 5.1 wrote UTF-16. `llvm-cov export` has no output-file option: run `cmd /c "llvm-cov export ... > x.lcov"` or pipe it through `Out-File -Encoding utf8 x.lcov` (cargo-llvm-cov writes its own file with `--output-path`), then rerun the lane |
+| lcov | `lcov artifact PATH: the record for SF:KEY has no end_of_record` | the run was killed while it wrote the tracefile, so its last record is cut off. Rerun the lane |
+| lcov | `measured N file(s), none of them under the paths its scopes declare` with absolute `SF:` paths | the `SF:` keys name another tree: see the next section. A relative key that misses every scope wants `path_prefix` |
+| cobertura | `cobertura artifact PATH is empty: the file holds no XML element` or a missing artifact | gcovr ran without `--cobertura FILE`, so it printed its text summary and wrote no XML. Add `--cobertura` with the lane's artifact path, then rerun the lane |
+| cobertura | `cobertura artifact PATH: the XML ends or breaks at line L, column C` | the run was killed while it wrote the report, so the XML is cut off. Rerun the lane |
+| cobertura | `measured N file(s), none of them under the paths its scopes declare` with absolute paths | the report's `<source>` root is another checkout: see the next section. A relative source that misses every scope wants `path_prefix` |
+| cobertura | `cobertura artifact PATH declares the entity NAME in its DTD` | the report's DTD declares an entity, which no Cobertura producer writes; crapkit expands none. Regenerate the report with its producer |
+| jacoco | a missing artifact after the tests passed | the report task never ran after `test`: the command runs `test` alone, or Maven's `report` goal came before `test`. Run `test jacocoTestReport` (Gradle) or `prepare-agent test report` (Maven), then rerun the lane |
+| jacoco | a missing artifact, with `build/reports/jacoco/test/html/` written | Gradle's `jacocoTestReport` writes no XML by default. Set `reports { xml.required = true }` on the task, then rerun the lane |
+| jacoco | `measured N file(s), none of them under the paths its scopes declare`, or functions the tests run at `cov` 0.0 | the report was built from another checkout's classes or `.exec` file (JaCoCo's log says `Execution data for class ... does not match`), or its package paths sit under a source root `path_prefix` does not name. Rebuild and rerun the lane here, with `path_prefix` at the source root (`src/main/java`) |
+| coverprofile | `measured N file(s), none of them under the paths its scopes declare`, or functions the tests run at `cov` 0.0 | the command's package list left out the scope's packages (`go test ./pkg/a` for a scope over `pkg/b`). Run `go test -coverprofile=... ./...` from the module, then rerun the lane |
+| coverprofile | `the first line ... is not a mode line` | a run killed before it wrote the profile, or a file that is not a Go coverprofile. Rerun the lane and let `go test` finish |
+| coverprofile | `no go.mod at its cwd ... or above it in this checkout` | the lane's `cwd` sits outside every module. Set `cwd` to the module's directory, one lane per module |
+| coverprofile | `N of the M file(s) in PATH sit outside module ...`, naming `command-line-arguments/` | a `go test file.go` run, whose blocks name no package, or a profile from another module. Test packages (`./...`) from the module, one lane per module |
+| jacoco | `N of the M sourcefile(s) in PATH name no file under path_prefix`, or `measured N file(s), none of them under the paths its scopes declare`, in a multi-module build | one lane over an aggregate report places only the module its `path_prefix` names, and the other modules' functions score untested. Declare one lane per module, each with `path_prefix` at that module's source root |
+
+[docs: lcov](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#lcov).
+
 ## "measured N file(s), none of them under the paths its scopes declare"
 
 The lane wrote a real artifact, and none of the paths in it reach the scopes the lane
@@ -234,7 +259,7 @@ them:
 |---|---|---|
 | absolute or drive-lettered (`C:/…`) and resolving **outside** this checkout, or climbing out of it (`../…`) | the lane FAILS, **exit 5**; its scopes fall back to `no-lane` | the run measured a different tree: a stale artifact, or the wrong environment. A `python -m pytest` lane binds to whatever venv the shell has active, which in a second worktree is the other checkout's: run the suite through the project's own manager (`uv run python -m pytest …`). On an istanbul lane the reader rebases every path under this checkout's root, so an escaped path means the artifact was written elsewhere: rerun the suite here rather than reusing one copied in or restored from a CI cache. A `../` climb lands here whatever it points at: it is relative to a working directory the artifact never recorded |
 | absolute or drive-lettered and resolving **under** this checkout | the lane FAILS, **exit 5**; its scopes fall back to `no-lane` | right tree, wrong spelling: the runner reported absolute paths and crapkit joins on root-relative ones, so the join finds nothing. Nothing about the environment is wrong. Turn the spelling off at the runner, then rerun the lane: coverage.py takes `relative_files = true` under `[tool.coverage.run]` in pyproject.toml (or `[run] relative_files = true` in .coveragerc), and an istanbul reporter takes its own `cwd`/`root` option |
-| repo-relative but rooted one level down (`faro/core.py` where the scope is `src`), or no paths at all | a **warning** on stderr and **exit 0**: the run scores on, with every function in those scopes `untested` | the runner reports relative to a subdirectory: set `path_prefix` on the lane (coveragepy only; the istanbul reader never reads that key). Or it is the greenfield shape, a suite that imports none of the scoped source yet, where `untested` is the right answer and there is nothing to fix |
+| repo-relative but rooted one level down (`faro/core.py` where the scope is `src`), or no paths at all | a **warning** on stderr and **exit 0**: the run scores on, with every function in those scopes `untested` | the runner reports relative to a subdirectory: set `path_prefix` on the lane (coveragepy and lcov; the istanbul reader never reads that key). Or it is the greenfield shape, a suite that imports none of the scoped source yet, where `untested` is the right answer and there is nothing to fix |
 
 So a green `crapkit coverage` can still be carrying this: `lane 'py' measured N file(s) …
 so every function in those scopes will score untested`. Nothing in either exit-5 row applies

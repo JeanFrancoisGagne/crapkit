@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from array import array
 from typing import NamedTuple
 
@@ -70,6 +71,28 @@ WRONG = {
     "line numbers": [None, 5, "5", {"5": 1}, ["5"], [1.5], [True], [None]],
     "string": [5, 1.5, True, [1], {}, None],
     "boolean": ["2", 1, 1.5, [1], {}, None],
+    # lcov is text: a field holds whatever characters stand between its commas,
+    # so its wrong values are text too. A path, a block or branch id, a checksum
+    # and a whole record payload take any text, so nothing retypes them.
+    "lcov line": ["x", "-1", "1.5", "nan", ""],
+    "lcov count": ["x", "-1", "1.5", "nan", "inf", ""],
+    "lcov taken": ["x", "-1", "1.5", "inf", ""],
+    "lcov path": [],
+    "lcov text": [],
+    "lcov record": [],
+    # A Cobertura or JaCoCo attribute is text too. A filename, a source and a
+    # package or sourcefile name take any text.
+    "xml line": ["x", "-1", "1.5", "nan", ""],
+    "xml count": ["x", "-1", "1.5", "nan", "inf", ""],
+    "xml boolean": ["x", "1", "True", ""],
+    "xml conditions": ["x", "50%", "(1/2)", "50% (3/2)", ""],
+    "xml path": [],
+    # A Go coverprofile is text too: the mode line's word, a block's position
+    # range and its two counts. A file path takes any text.
+    "go mode": ["x", "SET", "1", ""],
+    "go range": ["x", "1.1", "1.1,2", "-1.1,2.2", ""],
+    "go count": ["x", "-1", "1.5", "nan", "inf", ""],
+    "go path": [],
 }
 
 # Per format, the keys whose members are ids (a file, a function, a counter), not
@@ -77,9 +100,17 @@ WRONG = {
 MAPS = {
     "istanbul": {"", "fnMap", "f", "statementMap", "s", "branchMap", "b"},
     "coveragepy": {"files", "functions", "classes", "contexts"},
+    "lcov": set(),
+    "cobertura": set(),
+    "jacoco": set(),
+    "coverprofile": set(),
 }
 
-FILE_KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py"}
+FILE_KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs",
+             "cobertura": "src/a.cpp", "jacoco": "src/a.java", "coverprofile": "src/a.go"}
+# The module path the minimal coverprofile's import paths sit under: the
+# contract suite writes a go.mod naming it at each artifact's root.
+GO_MODULE = "example.com/m"
 
 _FN = "*.fnMap.*"
 _B0, _B1 = "*.branchMap.0", "*.branchMap.1"
@@ -99,6 +130,20 @@ def _reads(format: str, *functions: FnCoverage, dead: tuple[int, ...] = (5,)) ->
 _F = FnCoverage("f", 1, 6, True, 4, 2, 3, 2, full_listing=True)
 _F_WIDER = _F._replace(statements_total=4, statements_covered=3)
 _PY_F = FnCoverage("f", 1, 5, True, 2, 1, 3, 2)
+# lcov hands no function records: its one file reads as its DA lines 1-3 hit,
+# line 5 missed, and the two arms on line 2, one taken.
+_LCOV_READS = ({FILE_KEYS["lcov"]: []},
+               {FILE_KEYS["lcov"]: FileEvidence(array("I", [1, 2, 3]), array("I", [5]),
+                                                ((2, 2, 1),))})
+_LCOV_ANY_RECORD = "function records give no evidence, so the file reads the same"
+# Cobertura hands no function records either: its one class reads as lines 1-3
+# hit, line 5 missed, and line 2's two conditions, one taken.
+_COBERTURA_READS = ({FILE_KEYS["cobertura"]: []},
+                    {FILE_KEYS["cobertura"]: FileEvidence(array("I", [1, 2, 3]), array("I", [5]),
+                                                          ((2, 2, 1),))})
+_COBERTURA_LINES_ONLY = ({FILE_KEYS["cobertura"]: []},
+                         {FILE_KEYS["cobertura"]: FileEvidence(array("I", [1, 2, 3]),
+                                                               array("I", [5]))})
 
 FIELDS = [
     Field("istanbul", "*", True, "object", None, "the file entry"),
@@ -203,7 +248,77 @@ FIELDS = [
     Field("coveragepy", f"{_PY_FN}.summary.excluded_lines", False, "count",
           ReadsAs(0, "no line of the function is excluded", _reads("coveragepy", _PY_F)),
           "excluded_lines"),
+
+    # lcov: TAG is the first record with that tag, TAG.n its n-th comma field.
+    Field("lcov", "SF", True, "lcov path", (), "SF"),
+    Field("lcov", "DA.1", True, "lcov line", (), "DA"),
+    Field("lcov", "DA.2", True, "lcov count", (), "DA"),
+    Field("lcov", "DA.3", False, "lcov text",
+          ReadsAs("", "the checksum is not read", _LCOV_READS), "DA"),
+    Field("lcov", "BRDA.1", True, "lcov line", (), "BRDA"),
+    Field("lcov", "BRDA.2", True, "lcov text", (), "BRDA"),
+    Field("lcov", "BRDA.3", True, "lcov text", (), "BRDA"),
+    Field("lcov", "BRDA.4", True, "lcov taken", (), "BRDA"),
+    Field("lcov", "FN", False, "lcov record", ReadsAs("1,6,f", _LCOV_ANY_RECORD, _LCOV_READS),
+          "FN"),
+    Field("lcov", "FN.1", True, "lcov line", (), "FN"),
+    # lcov 1's name, or lcov 2's end line; a name may hold commas, so it is never typed.
+    Field("lcov", "FN.2", True, "lcov text", (), "FN"),
+    Field("lcov", "FNDA", False, "lcov record", ReadsAs("1,f", _LCOV_ANY_RECORD, _LCOV_READS),
+          "FNDA"),
+    Field("lcov", "FNDA.1", True, "lcov count", (), "FNDA"),
+    Field("lcov", "FNDA.2", True, "lcov text", (), "FNDA"),
+
+    # Cobertura: TAG@ATTRIBUTE is an attribute of the first TAG element that
+    # holds it, a bare TAG the text of the first TAG element.
+    Field("cobertura", "source", False, "xml path",
+          ReadsAs(".", "with no source a filename keys as written, under path_prefix",
+                  _COBERTURA_READS), "source"),
+    Field("cobertura", "class@filename", True, "xml path", (), "filename"),
+    Field("cobertura", "line@number", True, "xml line", (), "number"),
+    Field("cobertura", "line@hits", True, "xml count", (), "hits"),
+    Field("cobertura", "line@branch", False, "xml boolean",
+          ReadsAs("false", "a line with no branch attribute holds no branch", _COBERTURA_READS),
+          "branch"),
+    Field("cobertura", "line@condition-coverage", False, "xml conditions",
+          ReadsAs("0% (0/0)", "a branch line with no condition-coverage gives line evidence "
+                  "only", _COBERTURA_LINES_ONLY), "condition-coverage"),
+
+    # JaCoCo: the same TAG@ATTRIBUTE spelling. Every line attribute is
+    # required; the default package's name is empty, never absent.
+    Field("jacoco", "package@name", True, "xml path", (), "a package has no name"),
+    Field("jacoco", "sourcefile@name", True, "xml path", (), "a sourcefile has no name"),
+    Field("jacoco", "line@nr", True, "xml line", (), "nr"),
+    Field("jacoco", "line@mi", True, "xml count", (), "mi"),
+    Field("jacoco", "line@ci", True, "xml count", (), "ci"),
+    Field("jacoco", "line@mb", True, "xml count", (), "mb"),
+    Field("jacoco", "line@cb", True, "xml count", (), "cb"),
+
+    # Go coverprofile: `mode` is the first line's mode word, `block.FIELD` a
+    # field of the first block line. Every field is required.
+    Field("coverprofile", "mode", True, "go mode", (), "mode"),
+    Field("coverprofile", "block.file", True, "go path", (), "a block names no file"),
+    Field("coverprofile", "block.range", True, "go range", (), "position range"),
+    Field("coverprofile", "block.statements", True, "go count", (), "statement count"),
+    Field("coverprofile", "block.count", True, "go count", (), "hit count"),
 ]
+
+
+def lcov_locators(lines: list[str]) -> list[str]:
+    """Each field `lines` holds, in the order the lines first hold it: TAG for a
+    record some row reads whole (SF, FN, FNDA), and TAG.n for each comma field
+    of a record whose fields rows read. A DA or BRDA record is a member, as a
+    map's member is in JSON: dropping one is another artifact."""
+    locators = {row.locator for row in FIELDS if row.format == "lcov"}
+    whole = {locator for locator in locators if "." not in locator}
+    fielded = {locator.partition(".")[0] for locator in locators if "." in locator}
+    found: dict[str, None] = {}
+    for line in lines:
+        tag, _, payload = line.partition(":")
+        fields = range(1, payload.count(",") + 2) if tag in fielded else ()
+        found.update(dict.fromkeys([tag] if tag in whole else []))
+        found.update(dict.fromkeys(f"{tag}.{n}" for n in fields))
+    return list(found)
 
 
 # --- the minimal artifacts ---------------------------------------------------------
@@ -276,7 +391,157 @@ def _json_artifact(make):
     return build
 
 
-_BUILDERS = {"istanbul": _json_artifact(_istanbul), "coveragepy": _json_artifact(_coveragepy)}
+def _lcov() -> list[str]:
+    """One record: a function on lines 1-6, DA lines 1-3 hit (the first with a
+    checksum) and line 5 missed, and two arms on line 2, one taken."""
+    return [f"SF:{FILE_KEYS['lcov']}", "FN:1,6,f", "FNDA:1,f", "DA:1,1,abc", "DA:2,1",
+            "DA:3,1", "DA:5,0", "BRDA:2,0,0,1", "BRDA:2,0,1,0", "end_of_record"]
+
+
+def _lcov_at(lines: list[str], locator: str) -> tuple[int, str, int]:
+    """(index of the first record with the locator's tag, the tag, its field
+    number, 0 for the whole payload)."""
+    tag, _, field = locator.partition(".")
+    index = next(i for i, line in enumerate(lines) if line.startswith(tag + ":"))
+    return index, tag, int(field or 0)
+
+
+def lcov_edit(lines: list[str], locator: str, value: str | None) -> None:
+    """Drop (value None) or set the field at `locator`. A dropped field takes
+    every field after it too, so `DA.2` leaves `DA:1`."""
+    index, tag, field = _lcov_at(lines, locator)
+    if field == 0:
+        if value is None:
+            del lines[index]
+        else:
+            lines[index] = f"{tag}:{value}"
+        return
+    fields = lines[index][len(tag) + 1:].split(",")
+    fields = fields[:field - 1] if value is None else [
+        *fields[:field - 1], value, *fields[field:]]
+    lines[index] = f"{tag}:{','.join(fields)}"
+
+
+def _lcov_artifact(drop: str | None = None, retype: tuple[str, object] | None = None) -> bytes:
+    lines = _lcov()
+    if drop is not None:
+        lcov_edit(lines, drop, None)
+    if retype is not None:
+        lcov_edit(lines, retype[0], str(retype[1]))
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _cobertura() -> str:
+    """One class: lines 1-3 hit and line 5 missed, line 1 marked no branch and
+    line 2 a branch line with one of its two conditions taken, under `.`."""
+    return ('<?xml version="1.0" ?>\n<coverage><sources><source>.</source></sources>'
+            '<packages><package name="src"><classes>'
+            f'<class name="a" filename="{FILE_KEYS["cobertura"]}"><methods/><lines>'
+            '<line number="1" hits="1" branch="false"/>'
+            '<line number="2" hits="1" branch="true" condition-coverage="50% (1/2)"/>'
+            '<line number="3" hits="1"/><line number="5" hits="0"/>'
+            "</lines></class></classes></package></packages></coverage>\n")
+
+
+def _jacoco() -> str:
+    """One sourcefile in package `src`: lines 1-3 hit and line 5 missed, line 2
+    a branch line with one of its two branches covered."""
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><!DOCTYPE report PUBLIC '
+            '"-//JACOCO//DTD Report 1.1//EN" "report.dtd"><report name="test">'
+            '<package name="src"><sourcefile name="a.java">'
+            '<line nr="1" mi="0" ci="2" mb="0" cb="0"/><line nr="2" mi="0" ci="3" mb="1" cb="1"/>'
+            '<line nr="3" mi="0" ci="1" mb="0" cb="0"/><line nr="5" mi="2" ci="0" mb="0" cb="0"/>'
+            "</sourcefile></package></report>\n")
+
+
+def _xml_at(text: str, locator: str):
+    """The match of the field at `locator`: its group 1 is the whole field (an
+    attribute with its leading space, or an element), or None."""
+    tag, _, attribute = locator.partition("@")
+    if attribute:
+        return re.search(rf'<{tag}\b[^>]*?( {attribute}="[^"]*")', text)
+    return re.search(f"(<{tag}>[^<]*</{tag}>)", text)
+
+
+def xml_locators(format: str, text: str) -> list[str]:
+    """Each of the format's row locators the report holds."""
+    return [row.locator for row in FIELDS
+            if row.format == format and _xml_at(text, row.locator)]
+
+
+def xml_edit(text: str, locator: str, value: str | None) -> str:
+    """Drop (value None) or set the field at `locator`."""
+    found = _xml_at(text, locator)
+    tag, _, attribute = locator.partition("@")
+    if value is None:
+        new = ""
+    else:
+        new = f' {attribute}="{value}"' if attribute else f"<{tag}>{value}</{tag}>"
+    return text[:found.start(1)] + new + text[found.end(1):]
+
+
+def _xml_artifact(make):
+    def build(drop: str | None = None, retype: tuple[str, object] | None = None) -> bytes:
+        text = make()
+        if drop is not None:
+            text = xml_edit(text, drop, None)
+        if retype is not None:
+            text = xml_edit(text, retype[0], str(retype[1]))
+        return text.encode("utf-8")
+    return build
+
+
+def _coverprofile() -> list[str]:
+    """A set-mode profile of one file: a block over lines 1-3 that ran and a
+    block on line 5 that did not."""
+    written = f"{GO_MODULE}/{FILE_KEYS['coverprofile']}"
+    return ["mode: set", f"{written}:1.10,3.2 3 1", f"{written}:5.1,5.9 1 0"]
+
+
+_GO_BLOCK = re.compile(r"(?P<file>.*):(?P<range>[^ ]*) (?P<statements>[^ ]*) (?P<count>.*)")
+
+
+def coverprofile_locators(lines: list[str]) -> list[str]:
+    """Each row locator `lines` holds: the mode line, and each field of the
+    first block line. A later block is a member, as an lcov DA record is."""
+    blocks = [line for line in lines[1:] if not line.startswith("mode:")]
+    found = ["mode"] if lines and lines[0].startswith("mode:") else []
+    return found + [f"block.{field}" for field in ("file", "range", "statements", "count")
+                    if blocks and _GO_BLOCK.fullmatch(blocks[0])]
+
+
+def coverprofile_edit(lines: list[str], locator: str, value: str | None) -> None:
+    """Drop (value None) or set the field at `locator`. The mode dropped takes
+    its line; a block's range dropped takes the `:` before it, and a count
+    dropped takes the space before it."""
+    if locator == "mode":
+        if value is None:
+            del lines[0]
+        else:
+            lines[0] = f"mode: {value}"
+        return
+    index = next(i for i, line in enumerate(lines) if i and not line.startswith("mode:"))
+    parts = _GO_BLOCK.fullmatch(lines[index]).groupdict()
+    parts[locator.partition(".")[2]] = value
+    file, span = parts["file"] or "", parts["range"]
+    position = file if span is None else f"{file}:{span}"
+    lines[index] = " ".join(part for part in (position, parts["statements"], parts["count"])
+                            if part is not None)
+
+
+def _coverprofile_artifact(drop: str | None = None,
+                           retype: tuple[str, object] | None = None) -> bytes:
+    lines = _coverprofile()
+    if drop is not None:
+        coverprofile_edit(lines, drop, None)
+    if retype is not None:
+        coverprofile_edit(lines, retype[0], str(retype[1]))
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+_BUILDERS = {"istanbul": _json_artifact(_istanbul), "coveragepy": _json_artifact(_coveragepy),
+             "lcov": _lcov_artifact, "cobertura": _xml_artifact(_cobertura),
+             "jacoco": _xml_artifact(_jacoco), "coverprofile": _coverprofile_artifact}
 
 
 def minimal_artifact(format: str, drop: str | None = None,

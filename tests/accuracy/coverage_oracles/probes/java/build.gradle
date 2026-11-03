@@ -1,0 +1,27 @@
+// The Java probe's Gradle build. regenerate.py passes -PprobeOut so each
+// scenario compiles, tests and reports into a build directory of its own.
+plugins {
+    id 'java'
+    id 'jacoco'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}
+
+jacoco {
+    toolVersion = '0.8.12'
+}
+
+layout.buildDirectory = file(findProperty('probeOut') ?: 'build')
+
+jacocoTestReport {
+    reports {
+        xml.required = true
+        csv.required = true
+    }
+}

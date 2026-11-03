@@ -908,3 +908,253 @@ def test_a_package_json_that_names_nothing_detects_no_lane():
     longer read as this: cli.admin refuses them by name before scaffold sees
     them (test_outside_input_encodings)."""
     assert detect_lanes(frozenset(), _package()) == ()
+
+
+# --- a toolchain shown by a repo-root file, through `crapkit init` -----------------
+
+_CC_ONLY = "every scope is cc-only (coverage_optional = true) and needs no lane"
+_UPGRADE = "docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one"
+
+
+def _init_repo(root, files: dict[str, str]):
+    """A git repo holding `files`, added to the index, as init reads it."""
+    import subprocess
+
+    for rel, text in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="\n")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    return root
+
+
+def _init(root, capsys) -> tuple[int, str]:
+    from crapkit.cli import main
+
+    code = main(["init", "--repo", str(root)])
+    return code, capsys.readouterr().out
+
+
+def test_the_next_step_of_a_cc_only_rust_repo_names_the_commented_lane():
+    from crapkit.cli.admin import _next_step
+
+    line = _next_step({"core": ("rust",)}, (), frozenset({"Cargo.toml"}))
+
+    assert line.startswith(_CC_ONLY + "; ")
+    assert "rust (cargo llvm-cov)" in line and _UPGRADE in line
+    assert "no coverage parser reads" not in line
+
+
+def test_the_next_step_of_a_go_repo_with_no_go_mod_is_the_first_clause_only():
+    from crapkit.cli.admin import _next_step
+
+    line = _next_step({"cmd": ("go",)}, ())
+
+    assert line.startswith(_CC_ONLY + " - next: run `")
+    assert "commented" not in line and "no coverage parser reads" not in line
+
+
+def test_init_on_a_rust_repo_writes_the_commented_lane_and_names_it(tmp_path, capsys):
+    root = _init_repo(tmp_path, {"Cargo.toml": "[package]\nname = \"core\"\n",
+                                 "core/lib.rs": "pub fn f() {}\n"})
+
+    code, out = _init(root, capsys)
+    text = (root / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert code == 0
+    assert '# command = "cargo llvm-cov --lcov --output-path .crapkit/cov/rust.lcov"' in text
+    assert "coverage_optional = true" in text
+    assert _CC_ONLY in out and "rust (cargo llvm-cov)" in out
+
+
+def test_init_on_a_cmake_repo_writes_the_commented_gcovr_lane_and_names_it(tmp_path, capsys):
+    root = _init_repo(tmp_path, {"CMakeLists.txt": "project(core CXX)\n",
+                                 "core/shapes.cpp": "int f() { return 1; }\n"})
+
+    code, out = _init(root, capsys)
+    text = (root / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert code == 0
+    assert ('# command = "cmake -S . -B build/crapkit-cov -DCMAKE_C_FLAGS=--coverage '
+            "-DCMAKE_CXX_FLAGS=--coverage && cmake --build build/crapkit-cov && ctest "
+            '--test-dir build/crapkit-cov && gcovr --root . --cobertura .crapkit/cov/cpp.xml"'
+            ) in text
+    assert '# artifact = ".crapkit/cov/cpp.xml"' in text and '# parser = "cobertura"' in text
+    assert "coverage_optional = true" in text
+    assert _CC_ONLY in out and "cpp (gcovr)" in out
+
+
+def test_the_next_step_of_a_cc_only_cmake_repo_names_the_commented_gcovr_lane():
+    from crapkit.cli.admin import _next_step
+
+    line = _next_step({"core": ("cpp",)}, (), frozenset({"CMakeLists.txt"}))
+
+    assert line.startswith(_CC_ONLY + "; ")
+    assert "cpp (gcovr)" in line and _UPGRADE in line
+
+
+def test_init_reads_markers_at_the_repo_root_only(tmp_path, capsys):
+    """A nested crate's lane is the owner's to declare with `cwd`."""
+    root = _init_repo(tmp_path, {"svc/Cargo.toml": "[package]\nname = \"svc\"\n",
+                                 "svc/lib.rs": "pub fn f() {}\n"})
+
+    code, out = _init(root, capsys)
+
+    assert code == 0
+    assert "cargo llvm-cov" not in (root / "crapkit.toml").read_text(encoding="utf-8")
+    assert "commented lane" not in out
+
+
+def test_init_on_an_initialized_rust_repo_leaves_crapkit_toml_byte_identical(tmp_path, capsys):
+    from crapkit.errors import ConfigError
+
+    root = _init_repo(tmp_path, {"Cargo.toml": "[package]\nname = \"core\"\n",
+                                 "core/lib.rs": "pub fn f() {}\n"})
+    _init(root, capsys)
+    before = (root / "crapkit.toml").read_bytes()
+
+    try:
+        _init(root, capsys)
+    except ConfigError:
+        pass
+
+    assert (root / "crapkit.toml").read_bytes() == before
+
+
+# --- Java: the gradle and maven rows ------------------------------------------------
+
+_JAVA = {"core": ("java",)}
+_GRADLE_NOTE = ("# # jacocoTestReport writes this XML only with reports { xml.required = true } "
+                "in the build script")
+_GRADLE_TAIL = ['# artifact = "build/reports/jacoco/test/jacocoTestReport.xml"',
+                '# parser = "jacoco"', '# path_prefix = "src/main/java"', '# scopes = ["core"]', ""]
+_MAVEN_STANZA = ["# [[lane]]", '# name = "java-maven"',
+                 '# command = "mvn org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test '
+                 'org.jacoco:jacoco-maven-plugin:0.8.12:report"',
+                 '# artifact = "target/site/jacoco/jacoco.xml"', '# parser = "jacoco"',
+                 '# path_prefix = "src/main/java"', '# scopes = ["core"]', ""]
+
+
+def _gradle_stanza(command: str) -> list[str]:
+    return [_GRADLE_NOTE, "# [[lane]]", '# name = "java-gradle"', f'# command = "{command}"',
+            *_GRADLE_TAIL]
+
+
+def _stanzas(text: str) -> list[str]:
+    """The lines under the toolchain heading, through the blank after the last stanza."""
+    lines = text.split("\n")
+    at = next(i for i, line in enumerate(lines) if line.startswith("# Lanes for the toolchains"))
+    return lines[at + 1:]
+
+
+@pytest.mark.parametrize("markers, cmd, command", [
+    ({"build.gradle.kts"}, False, "gradle test jacocoTestReport"),
+    ({"build.gradle", "gradlew"}, False, "./gradlew test jacocoTestReport"),
+    ({"build.gradle.kts", "gradlew"}, True, "gradlew test jacocoTestReport"),
+], ids=["no-wrapper", "wrapper-sh", "wrapper-cmd"])
+def test_a_gradle_repo_gets_the_commented_gradle_stanza_for_its_shell(monkeypatch, markers, cmd,
+                                                                     command):
+    from crapkit import config
+
+    monkeypatch.setattr(config, "SHELL_IS_CMD", cmd)
+
+    text = starter_toml(_JAVA, markers=frozenset(markers))
+
+    assert _stanzas(text)[:len(_GRADLE_TAIL) + 4] == _gradle_stanza(command)
+    assert "coverage_optional = true" in text
+
+
+def test_a_maven_repo_gets_the_commented_maven_stanza():
+    text = starter_toml(_JAVA, markers=frozenset({"pom.xml"}))
+
+    assert _stanzas(text)[:len(_MAVEN_STANZA)] == _MAVEN_STANZA
+    assert "coverage_optional = true" in text
+
+
+def test_both_java_markers_give_both_stanzas_in_table_order(monkeypatch):
+    from crapkit import config
+
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+
+    text = starter_toml(_JAVA, markers=frozenset({"pom.xml", "build.gradle"}))
+
+    gradle = _gradle_stanza("gradle test jacocoTestReport")
+    assert _stanzas(text)[:len(gradle) + len(_MAVEN_STANZA)] == gradle + _MAVEN_STANZA
+
+
+def test_the_uncommented_gradle_stanza_loads_with_its_path_prefix(monkeypatch):
+    from crapkit import config
+    from crapkit.config import load_config_text
+
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    text = starter_toml(_JAVA, markers=frozenset({"build.gradle"}))
+    lines = text.split("\n")
+    at = lines.index("# [[lane]]")
+    end = lines.index("", at)
+    body = [line[2:] for line in lines[at:end]]
+    kept = [line for line in lines[:at] + body + lines[end:] if line != "coverage_optional = true"]
+
+    cfg = load_config_text("\n".join(kept))
+
+    assert [(lane.name, lane.parser, lane.path_prefix, lane.scopes) for lane in cfg.lanes] == [
+        ("java-gradle", "jacoco", "src/main/java", ("core",))]
+
+
+def test_init_on_a_gradle_repo_writes_the_commented_gradle_lane_and_names_it(tmp_path, capsys):
+    root = _init_repo(tmp_path, {"build.gradle.kts": "plugins { java }\n",
+                                 "src/main/java/core/Shapes.java": "class Shapes {}\n"})
+
+    code, out = _init(root, capsys)
+    text = (root / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert code == 0
+    assert '# command = "gradle test jacocoTestReport"' in text
+    assert '# parser = "jacoco"' in text and '# path_prefix = "src/main/java"' in text
+    assert _GRADLE_NOTE in text and "coverage_optional = true" in text
+    assert _CC_ONLY in out and "java-gradle (gradle)" in out
+
+
+# --- Go: the go test row ----------------------------------------------------------
+
+_GO = {"cmd": ("go",)}
+_GO_STANZA = ["# [[lane]]", '# name = "go"',
+              '# command = "go test -coverprofile=.crapkit/cov/go.out ./..."',
+              '# artifact = ".crapkit/cov/go.out"', '# parser = "coverprofile"',
+              '# scopes = ["cmd"]', ""]
+
+
+def test_a_root_go_mod_gives_the_commented_go_stanza_and_keeps_coverage_optional():
+    text = starter_toml(_GO, markers=frozenset({"go.mod"}))
+
+    assert _stanzas(text)[:len(_GO_STANZA)] == _GO_STANZA
+    assert "coverage_optional = true" in text
+
+
+def test_the_uncommented_go_stanza_loads_as_a_coverprofile_lane():
+    from crapkit.config import load_config_text
+
+    text = starter_toml(_GO, markers=frozenset({"go.mod"}))
+    lines = text.split("\n")
+    at = lines.index("# [[lane]]")
+    end = lines.index("", at)
+    body = [line[2:] for line in lines[at:end]]
+    kept = [line for line in lines[:at] + body + lines[end:] if line != "coverage_optional = true"]
+
+    cfg = load_config_text("\n".join(kept))
+
+    assert [(lane.name, lane.parser, lane.artifact, lane.scopes) for lane in cfg.lanes] == [
+        ("go", "coverprofile", ".crapkit/cov/go.out", ("cmd",))]
+
+
+def test_init_on_a_go_repo_writes_the_commented_go_lane_and_names_it(tmp_path, capsys):
+    root = _init_repo(tmp_path, {"go.mod": "module example.com/app\n",
+                                 "cmd/main.go": "package main\n\nfunc main() {}\n"})
+
+    code, out = _init(root, capsys)
+    text = (root / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert code == 0
+    assert '# command = "go test -coverprofile=.crapkit/cov/go.out ./..."' in text
+    assert '# parser = "coverprofile"' in text and "coverage_optional = true" in text
+    assert _CC_ONLY in out and "go (go test)" in out

@@ -168,9 +168,12 @@ def _bare_python() -> str:
 
 
 def _present_markers(root: Path) -> frozenset[str]:
+    """The repo-root files init detects a runner by: pytest's config files and
+    every toolchain row's markers. Root only; a nested file is not read."""
     from ..scaffold import PYTEST_MARKERS
+    from ..toolchain import MARKERS
 
-    return frozenset(name for name in PYTEST_MARKERS if (root / name).is_file())
+    return frozenset(name for name in MARKERS.union(PYTEST_MARKERS) if (root / name).is_file())
 
 
 def _marker_texts(root: Path) -> dict[str, str]:
@@ -250,25 +253,35 @@ def _package_object(root: Path, rel: str) -> dict | None:
         print(f"crapkit: init skipped {rel}: {exc}", file=sys.stderr)
         return None
 
-def _next_step(scopes: dict, lanes: tuple) -> str:
+def _next_step(scopes: dict, lanes: tuple, markers: frozenset[str] = frozenset()) -> str:
     """What to run next, which is not the same sentence in all three cases.
 
-    A repo whose every language is cc-only was told to declare a lane per
-    coverage command. There is no lane to declare: neither parser reads Go,
-    Rust, shell or the six others, `init` just wrote `coverage_optional` for
-    each scope, and `crapkit coverage` scores them from complexity alone.
+    A repo whose every scope is cc-only was told to declare a lane per
+    coverage command. It needs none: `init` just wrote `coverage_optional` for
+    each scope, and `crapkit coverage` scores them from complexity alone. A
+    commented lane init left for a detected toolchain is named, since
+    uncommenting it is how such a scope becomes measured.
     """
-    from ..scaffold import cc_only_scope
+    from ..scaffold import cc_only_scope, commented_lanes
 
     if lanes:
         return (f"detected {len(lanes)} lane(s) from this repo's own files: "
                 f"{', '.join(lane.name for lane in lanes)} - next: run `{_self()} coverage`")
     if all(cc_only_scope(languages) for languages in scopes.values()):
-        return ("no coverage parser reads this repo's languages, so every scope is "
-                "cc-only (coverage_optional = true) and needs no lane - next: run "
+        return ("every scope is cc-only (coverage_optional = true) and needs no lane"
+                f"{_commented_note(commented_lanes(scopes, lanes, markers))} - next: run "
                 f"`{_self()} coverage`")
     return ("next: declare a [[lane]] per coverage command (see the commented template), "
             f"then run `{_self()} coverage`")
+
+
+def _commented_note(commented: tuple) -> str:
+    """The clause naming the commented lanes init wrote, or "" for none."""
+    if not commented:
+        return ""
+    names = ", ".join(f"{lane.stanza.name} ({lane.toolchain})" for lane in commented)
+    return (f"; init left a commented lane for {names}: uncomment it to measure, see "
+            "docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one")
 
 
 def _unrouted_workspaces_note(written: tuple, package_json) -> str | None:
@@ -320,11 +333,12 @@ def _lane_runs(lane, runner) -> str:
     return f"lane {lane.name!r} runs {runner.name} ({where})"
 
 
-def _print_init_summary(scopes: dict, lanes: tuple, package_json=None) -> None:
+def _print_init_summary(scopes: dict, lanes: tuple, package_json=None,
+                        markers: frozenset[str] = frozenset()) -> None:
     from ..scaffold import live_lanes
 
     print(f"wrote crapkit.toml with {len(scopes)} scope(s): {', '.join(scopes)}")
-    print(_next_step(scopes, lanes))
+    print(_next_step(scopes, lanes, markers))
     note = _unrouted_workspaces_note(live_lanes(lanes, scopes), package_json)
     if note:
         print(note)
@@ -730,16 +744,17 @@ def cmd_init(args: argparse.Namespace) -> int:
     # too: they decide which scoped-test form each scope gets.
     interpreter = _interpreter(root, tuple(scopes))
     packages = _package_json(root)
-    lanes = detect_lanes(_present_markers(root), packages, interpreter=interpreter)
+    markers = _present_markers(root)
+    lanes = detect_lanes(markers, packages, interpreter=interpreter)
     text = starter_toml(scopes, lanes, interpreter=interpreter,
                         testpaths=pytest_testpaths(_marker_texts(root)),
-                        tracked=files, package_json=packages)
+                        tracked=files, package_json=packages, markers=markers)
     # Self-check: never write a config crapkit cannot read back. The probe asks
     # the lanes as they load, with the launcher token read for this OS.
     written = load_config_text(text)
     gitignore = _extend_gitignore(root, live_lanes(lanes, scopes))
     toml_path.write_text(text, encoding="utf-8", newline="\n")
-    _print_init_summary(scopes, lanes, packages)
+    _print_init_summary(scopes, lanes, packages, markers)
     _warn_missing_pytest_cov(root, written.lanes, PackageMap(packages, {}))
     _print_gitignore_step(gitignore)
     return 0
@@ -938,6 +953,51 @@ def _lane_start_problem(root: Path, lane) -> str | None:
     word, code = dead
     return (f"lane {lane.name!r}: {_shell_label()} cannot run {quoted_path(word)} (exit {code}) - "
             "the lane cannot start, so its scopes can only ever score no-lane")
+
+
+_UPGRADE_ANCHOR = "docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one"
+
+
+def _doctor_cc_only_readers(root: Path, cfg) -> list[Finding]:
+    """A note per coverage_optional scope holding a language a registered reader
+    measures and init writes no live lane for: that scope can become measured.
+    A reader that needs a marker file counts only when the root holds one.
+    A note, so doctor's exit code and `doctor --json` stay as they were."""
+    from ..scaffold import LIVE_LANE_LANGUAGES
+    from ..toolchain import detected, measurable_languages
+
+    markers = _present_markers(root)
+    readable = measurable_languages(markers) - LIVE_LANE_LANGUAGES
+    present = frozenset(row.name for row in detected(markers))
+    found = [(scope.name, _readable_languages(scope, readable)) for scope in cfg.scopes]
+    return [Finding("note", _reader_note(name, languages, present))
+            for name, languages in found if languages]
+
+
+def _readable_languages(scope, readable: frozenset[str]) -> list[str]:
+    """The languages of a coverage_optional scope that a reader can measure;
+    none for a scope that opted into coverage."""
+    if not scope.coverage_optional:
+        return []
+    return [language for language in scope.languages if language in readable]
+
+
+def _reader_note(scope: str, languages: list[str], present: frozenset[str]) -> str:
+    readers = "; ".join(f"{language} through {_language_readers(language, present)}"
+                        for language in languages)
+    return (f"scope {scope!r} is cc-only, and a reader can measure {readers}; "
+            f"adding that lane and deleting coverage_optional measures it ({_UPGRADE_ANCHOR})")
+
+
+def _language_readers(language: str, present: frozenset[str]) -> str:
+    """Each parser and toolchain that measures `language`, the toolchain spelled
+    as doctor's runner line spells it: the toolchains `present`, those whose
+    marker the repo root holds, or every one when the root holds none."""
+    from ..toolchain import readers
+
+    every = readers(language)
+    named = [(parser, name) for parser, name in every if name in present] or every
+    return ", ".join(f'parser = "{parser}" from {name}' for parser, name in named)
 
 
 def _doctor_lane_summary(cfg) -> Finding:
@@ -1680,6 +1740,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_path_names(cfg, raw, files)
             + _doctor_lanes(root, cfg, packages)
             + _doctor_runners(cfg, packages)
+            + _doctor_cc_only_readers(root, cfg)
             + _doctor_inputs(root, cfg.lanes)
             + _doctor_stamps(root, cfg.lanes)
             + _doctor_artifact_litter(cfg)

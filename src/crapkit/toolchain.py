@@ -20,6 +20,29 @@ from types import MappingProxyType
 from typing import NamedTuple
 
 
+class Stanza(NamedTuple):
+    """The commented lane init writes for a toolchain it detects. Each command
+    runs from the repo root. `wrapper` is a root file that, when present, runs
+    the stanza through it: `wrapped` holds that command under sh, then under
+    cmd.exe. `path_prefix` is the source root the report's keys sit under, and
+    `notes` are comment lines the lane needs; init prints each only when set."""
+    name: str
+    command: str
+    artifact: str
+    parser: str
+    path_prefix: str | None = None
+    wrapper: str | None = None
+    wrapped: tuple[str, str] | None = None
+    notes: tuple[str, ...] = ()
+
+    def resolved(self, markers: frozenset[str], cmd: bool) -> Stanza:
+        """The stanza as init writes it: through its wrapper when the repo root
+        holds one, spelled for the shell lane commands run under."""
+        if self.wrapper not in markers:
+            return self
+        return self._replace(command=self.wrapped[cmd])
+
+
 class Toolchain(NamedTuple):
     """One runner's facts. A fact the row does not carry yet is None, or empty
     where empty is the whole fact (no extra flags, no environment)."""
@@ -48,7 +71,58 @@ class Toolchain(NamedTuple):
     # What doctor tells a lane that declares no results_artifact: the junit
     # reporter's flags and the key. `{name}` is the lane's name.
     junit_hint: str | None = None
+    # The crapkit languages the runner measures.
+    languages: tuple[str, ...] = ()
+    # The parsers crapkit's recipes pair with it, each a key of
+    # coverage_format._FORMATS (a table test holds that, so no import here).
+    formats: tuple[str, ...] = ()
+    # Repo-root files that show init the toolchain is in use.
+    markers: tuple[str, ...] = ()
+    # The commented lane init writes when it finds one of `markers`.
+    stanza: Stanza | None = None
+    # True when the row's format places its keys through a marker file, so a
+    # repo without one has nothing this row's reader can measure (go.mod).
+    needs_marker: bool = False
 
+
+_JS =("javascript", "typescript", "tsx")
+# Each stanza command is the one that recorded its fixture under
+# tests/fixtures/coverage/lcov/, cobertura/, jacoco/ or coverprofile/, so init
+# never prints a command no run wrote.
+_BUN_STANZA = Stanza("bun", "bun test --coverage --coverage-reporter=lcov "
+                            "--coverage-dir=.crapkit/cov/bun",
+                     ".crapkit/cov/bun/lcov.info", "lcov")
+_DENO_STANZA = Stanza("deno", "deno test --coverage=.crapkit/cov/deno-raw && deno coverage "
+                              "--lcov --output=.crapkit/cov/deno.lcov .crapkit/cov/deno-raw",
+                      ".crapkit/cov/deno.lcov", "lcov")
+_RUST_STANZA = Stanza("rust", "cargo llvm-cov --lcov --output-path .crapkit/cov/rust.lcov",
+                      ".crapkit/cov/rust.lcov", "lcov")
+# A CMake build with gcc's --coverage beside the tree, its tests run by ctest,
+# then gcovr's Cobertura report keyed from the root.
+_CPP_STANZA = Stanza("cpp", "cmake -S . -B build/crapkit-cov -DCMAKE_C_FLAGS=--coverage "
+                            "-DCMAKE_CXX_FLAGS=--coverage && cmake --build build/crapkit-cov && "
+                            "ctest --test-dir build/crapkit-cov && gcovr --root . --cobertura "
+                            ".crapkit/cov/cpp.xml",
+                     ".crapkit/cov/cpp.xml", "cobertura")
+# Gradle's JaCoCo plugin writes its XML report only when the report task turns
+# it on, and a root gradlew wrapper runs the Gradle version the repo pins.
+_GRADLE_STANZA = Stanza("java-gradle", "gradle test jacocoTestReport",
+                        "build/reports/jacoco/test/jacocoTestReport.xml", "jacoco",
+                        path_prefix="src/main/java", wrapper="gradlew",
+                        wrapped=("./gradlew test jacocoTestReport",
+                                 "gradlew test jacocoTestReport"),
+                        notes=("jacocoTestReport writes this XML only with "
+                               "reports { xml.required = true } in the build script",))
+# The JaCoCo plugin's goals by their full coordinates, so the pom needs no edit:
+# prepare-agent hands surefire the agent, report reads the run's jacoco.exec.
+_JACOCO_MAVEN_PLUGIN = "org.jacoco:jacoco-maven-plugin:0.8.12"
+_MAVEN_STANZA = Stanza("java-maven", f"mvn {_JACOCO_MAVEN_PLUGIN}:prepare-agent test "
+                                f"{_JACOCO_MAVEN_PLUGIN}:report",
+                       "target/site/jacoco/jacoco.xml", "jacoco", path_prefix="src/main/java")
+# Every package of the module, never file arguments: the profile keys import
+# paths, and the root go.mod places them, so the lane needs no path_prefix.
+_GO_STANZA = Stanza("go", "go test -coverprofile=.crapkit/cov/go.out ./...",
+                    ".crapkit/cov/go.out", "coverprofile")
 
 _ROWS = (
     # pytest raises Interrupted at the END of collection when any module fails
@@ -64,7 +138,8 @@ _ROWS = (
               junit_flags="--junitxml={cov}/junit-py.xml",
               extra_flags=" --continue-on-collection-errors",
               junit_hint=("add --junitxml=.crapkit/cov/junit-{name}.xml to the command and "
-                          'results_artifact = ".crapkit/cov/junit-{name}.xml" to the lane')),
+                          'results_artifact = ".crapkit/cov/junit-{name}.xml" to the lane'),
+              languages=("python",), formats=("coveragepy",)),
     # Each JS runner spells "write the coverage report here" its own way and
     # rejects the other's spelling outright. vitest ships its junit reporter, so
     # its flags cost the repo nothing. vitest also writes no coverage report
@@ -80,7 +155,8 @@ _ROWS = (
               related_tests="npx vitest related --run {files}",
               junit_hint=("add --reporter=default --reporter=junit "
                           "--outputFile=.crapkit/cov/{name}/junit.xml to the command and "
-                          'results_artifact = ".crapkit/cov/{name}/junit.xml" to the lane')),
+                          'results_artifact = ".crapkit/cov/{name}/junit.xml" to the lane'),
+              languages=(*_JS, "vue"), formats=("istanbul",)),
     # jest needs the separate `jest-junit` package, and naming a reporter jest
     # cannot resolve turns a working lane into an error, so its flags are
     # written only when package.json already carries it. jest-junit takes no
@@ -98,15 +174,56 @@ _ROWS = (
               junit_hint=("add the jest-junit package, --reporters=default --reporters=jest-junit "
                           'to the command, JEST_JUNIT_OUTPUT_DIR = ".crapkit/cov/{name}" and '
                           'JEST_JUNIT_OUTPUT_NAME = "junit.xml" to its [lane.env], and '
-                          'results_artifact = ".crapkit/cov/{name}/junit.xml" to the lane')),
-    Toolchain("bun", (("bun",),)),
-    Toolchain("deno", (("deno",),)),
-    Toolchain("cargo llvm-cov", (("cargo", "llvm-cov"),)),
-    Toolchain("go test", (("go", "test"),)),
-    Toolchain("c8", (("c8",),)),
+                          'results_artifact = ".crapkit/cov/{name}/junit.xml" to the lane'),
+              languages=_JS, formats=("istanbul",)),
+    Toolchain("bun", (("bun",),), languages=_JS, formats=("lcov",),
+              markers=("bun.lock", "bun.lockb", "bunfig.toml"), stanza=_BUN_STANZA),
+    Toolchain("deno", (("deno",),), languages=_JS, formats=("lcov",),
+              markers=("deno.json", "deno.jsonc"), stanza=_DENO_STANZA),
+    Toolchain("cargo llvm-cov", (("cargo", "llvm-cov"),), languages=("rust",), formats=("lcov",),
+              markers=("Cargo.toml",), stanza=_RUST_STANZA),
+    Toolchain("gcovr", (("gcovr",),), languages=("cpp",), formats=("cobertura",),
+              markers=("CMakeLists.txt",), stanza=_CPP_STANZA),
+    Toolchain("gradle", (("gradle",), ("gradlew",)), languages=("java",), formats=("jacoco",),
+              markers=("build.gradle", "build.gradle.kts"), stanza=_GRADLE_STANZA),
+    Toolchain("maven", (("mvn",), ("mvnw",)), languages=("java",), formats=("jacoco",),
+              markers=("pom.xml",), stanza=_MAVEN_STANZA),
+    Toolchain("go test", (("go", "test"),), languages=("go",), formats=("coverprofile",),
+              markers=("go.mod",), stanza=_GO_STANZA, needs_marker=True),
+    Toolchain("c8", (("c8",),), languages=_JS, formats=("istanbul", "lcov")),
 )
 
 TOOLCHAINS = MappingProxyType({row.name: row for row in _ROWS})
+# Every repo-root file some row's markers or stanza wrapper names: what init
+# reads to detect a row and to pick its stanza's command.
+MARKERS = frozenset([*(marker for row in _ROWS for marker in row.markers),
+                     *(row.stanza.wrapper for row in _ROWS if row.stanza and row.stanza.wrapper)])
+
+
+def detected(markers) -> tuple[Toolchain, ...]:
+    """The rows whose markers are among the repo-root files `markers`, in
+    table order."""
+    present = frozenset(markers)
+    return tuple(row for row in _ROWS if present.intersection(row.markers))
+
+
+def measurable_languages(markers: frozenset[str] = frozenset()) -> frozenset[str]:
+    """Every language some row measures in a format crapkit reads. A row that
+    needs its marker counts only when the repo-root files `markers` hold one,
+    so a caller that cannot see the root names no such row's language."""
+    return frozenset(lang for row in _ROWS if row.formats and _usable(row, markers)
+                     for lang in row.languages)
+
+
+def _usable(row: Toolchain, markers: frozenset[str]) -> bool:
+    return not row.needs_marker or bool(markers.intersection(row.markers))
+
+
+def readers(language: str) -> tuple[tuple[str, str], ...]:
+    """(parser, row name) for each format a row that measures `language`
+    writes, in table order."""
+    return tuple((parser, row.name) for row in _ROWS if language in row.languages
+                 for parser in row.formats)
 
 
 # --- which row a lane runs ------------------------------------------------------
@@ -117,8 +234,9 @@ TOOLCHAINS = MappingProxyType({row.name: row for row in _ROWS})
 # only they are `spelled`, and a runner refusal or hint keys on those alone.
 
 # A token spells a runner as its bare name, a path's last part, or either with
-# one of these extensions: `.venv\Scripts\pytest.exe`, `node_modules/.bin/vitest.cmd`.
-_SPELLED_EXTENSIONS = (".cmd", ".exe", ".js", ".cjs", ".mjs")
+# one of these extensions: `.venv\Scripts\pytest.exe`, `node_modules/.bin/vitest.cmd`,
+# Gradle's Windows wrapper `gradlew.bat`.
+_SPELLED_EXTENSIONS = (".cmd", ".bat", ".exe", ".js", ".cjs", ".mjs")
 # The rows a single token spells, by that token.
 _ONE_WORD = MappingProxyType({spelling[0]: row.name for row in _ROWS
                               for spelling in row.words if len(spelling) == 1})
