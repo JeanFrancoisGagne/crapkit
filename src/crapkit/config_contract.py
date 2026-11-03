@@ -173,14 +173,16 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                'description': 'repo-relative coverage '
                                                                               'artifact the command '
                                                                               'writes'},
-                                                  'parser': {'enum': ['istanbul', 'coveragepy']},
+                                                  'parser': {'enum': ['istanbul', 'coveragepy',
+                                                                      'lcov']},
                                                   'scopes': {'type': 'array',
                                                              'items': {'type': 'string'}},
                                                   'cwd': {'type': 'string'},
                                                   'path_prefix': {'type': 'string',
                                                                   'description': 'prefix joined onto '
-                                                                                 'coverage.py relative '
-                                                                                 'paths'},
+                                                                                 'the relative keys of '
+                                                                                 'coverage.py and lcov '
+                                                                                 'artifacts'},
                                                   'env': {'type': 'object',
                                                           'additionalProperties': {'type': 'string'}},
                                                   'inputs': {'type': 'array',

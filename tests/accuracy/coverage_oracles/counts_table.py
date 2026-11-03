@@ -2,7 +2,7 @@
 
 Every row is one function the artifact names: its path and start line, its branch
 and statement counts, whether it was called, and the arms and statement lines
-behind the counts. Two readers:
+behind the counts. Three readers:
 
 - coverage.py: one row per entry of a file's "functions" regions (coverage.py
   7.6 and later), split by coverage.py itself. The branch arms are the region's
@@ -25,6 +25,8 @@ behind the counts. Two readers:
       stays outside it. This is what ran inside which body.
   A negative branch count, which @vitest/coverage-v8 derives by subtraction and
   can underflow, reads as not taken.
+- lcov: lcov_rows gives each span the caller names (path, start, end) the DA
+  lines and BRDA arms on the lines it holds and no inner span holds.
 
 ratio() is the README's coverage term: branches, else statements, else called.
 table() reads every recorded artifact of a corpus through its crapkit.toml
@@ -38,6 +40,7 @@ import json
 import math
 from pathlib import Path
 import tomllib
+from typing import NamedTuple
 
 END = math.inf
 
@@ -274,6 +277,74 @@ def lcov_lines(text: str) -> dict[str, dict[int, int]]:
         tag, _, rest = line.partition(":")
         LCOV_LINE_TAGS.get(tag, lambda *_: None)(rest, found, current)
     return found
+
+
+class LcovFile(NamedTuple):
+    """One SF path's counts as the producer wrote them: its summary lines (LF,
+    LH, BRF, BRH) and, per line, the BRDA arms and the arms taken."""
+    summary: dict[str, int]
+    arms: dict[int, tuple[int, int]]
+
+
+def _arm(rest: str, file: LcovFile) -> None:
+    """BRDA:<line>,<block>,<branch>,<taken>; `-` is a block that never ran."""
+    line, taken = int(rest.split(",")[0]), rest.rsplit(",", 1)[1]
+    total, hit = file.arms.get(line, (0, 0))
+    file.arms[line] = (total + 1, hit + (taken != "-" and int(taken) > 0))
+
+
+def lcov_files(text: str) -> dict[str, LcovFile]:
+    """{SF path: LcovFile} from an lcov tracefile, the last record of a path
+    the one kept (the recordings write each path once)."""
+    found: dict[str, LcovFile] = {}
+    file = None
+    for line in text.splitlines():
+        tag, _, rest = line.partition(":")
+        if tag == "SF":
+            file = found[rest] = LcovFile({}, {})
+        elif tag == "BRDA":
+            _arm(rest, file)
+        elif tag in ("LF", "LH", "BRF", "BRH"):
+            file.summary[tag] = int(rest)
+    return found
+
+
+def lcov_arms(text: str) -> dict[str, list[tuple[str, bool]]]:
+    """{SF path: [(arm, taken)]} in file order. An arm is named `<line>.<k>`,
+    k its order among its line's BRDA records; `-` and 0 are not taken."""
+    found: dict[str, list[tuple[str, bool]]] = {}
+    arms: list = []
+    for line in text.splitlines():
+        tag, _, rest = line.partition(":")
+        if tag == "SF":
+            arms = found.setdefault(rest, [])
+        elif tag == "BRDA":
+            number, taken = rest.split(",")[0], rest.rsplit(",", 1)[1]
+            k = sum(name.startswith(number + ".") for name, _ in arms)
+            arms.append((f"{number}.{k}", taken != "-" and int(taken) > 0))
+    return found
+
+
+def _owner(spans: list[tuple[str, int, int]], path: str, line: int) -> tuple | None:
+    """The innermost span of the path holding the line: the fewest lines."""
+    holders = [span for span in spans if span[0] == path and span[1] <= line <= span[2]]
+    return min(holders, key=lambda span: span[2] - span[1], default=None)
+
+
+def lcov_rows(text: str, spans: list[tuple[str, int, int]]) -> list[Counts]:
+    """One row per (path, start, end) span: the DA lines and BRDA arms on the
+    lines it holds and no inner span holds."""
+    lines, arms = lcov_lines(text), lcov_arms(text)
+    rows = []
+    for span in spans:
+        path = span[0]
+        own = [(n, c) for n, c in sorted(lines.get(path, {}).items()) if _owner(spans, path, n) == span]
+        mine = [(name, taken) for name, taken in arms.get(path, [])
+                if _owner(spans, path, int(name.split(".")[0])) == span]
+        rows.append(Counts(path, "", span[1], span[2], tuple(name for name, _ in mine),
+                           tuple(name for name, taken in mine if taken), tuple(n for n, _ in own),
+                           tuple(n for n, c in own if c > 0), any(c > 0 for _, c in own)))
+    return rows
 
 
 # --- a corpus's recorded artifacts ---------------------------------------------------------

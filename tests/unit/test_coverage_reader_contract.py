@@ -63,16 +63,29 @@ def _coveragepy(root: Path) -> dict:
             "totals": {"covered_lines": 3}}
 
 
-CONTROLS = {"istanbul": _istanbul, "coveragepy": _coveragepy}
-KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py"}
+def _lcov(root: Path) -> list[str]:
+    """An lcov tracefile is lines, so its control is the list of them."""
+    return ["TN:", "SF:src/a.rs", "FN:1,5,f", "FNDA:1,f", "DA:1,1", "DA:2,1", "DA:3,1",
+            "DA:5,0", "BRDA:2,0,0,1", "BRDA:2,0,1,0", "end_of_record"]
+
+
+CONTROLS = {"istanbul": _istanbul, "coveragepy": _coveragepy, "lcov": _lcov}
+# The formats whose artifact is one JSON document.
+JSON_FORMATS = ["coveragepy", "istanbul"]
+KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs"}
 # An istanbul entry with statements is an instrumenter's own output, whose fnMap
 # lists every function it measured, so its rows carry full_listing
 # (coverage_istanbul._instrumented; test_coverage_istanbul pins both readings).
+# lcov hands no function records: score's evidence join builds them.
 ROWS = {"istanbul": [FnCoverage("f", 1, 6, True, 2, 1, 3, 2, full_listing=True)],
-        "coveragepy": [FnCoverage("f", 1, 5, True, 2, 1, 3, 2)]}
+        "coveragepy": [FnCoverage("f", 1, 5, True, 2, 1, 3, 2)],
+        "lcov": []}
 # read()'s second value: the control's one file, its dead line 5 as missed_lines.
-# Both formats keep their own function records, so hit_lines is None.
+# istanbul and coverage.py keep their own function records, so hit_lines is
+# None; lcov's evidence holds its hit lines and its arms.
 DEAD = FileEvidence(hit_lines=None, missed_lines=array("I", [5]))
+EVIDENCE = {"istanbul": DEAD, "coveragepy": DEAD,
+            "lcov": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),))}
 
 
 def _ist(doc: dict) -> dict:
@@ -102,7 +115,9 @@ def _bytes(root: Path, fmt: str, edit=None) -> bytes:
     doc = CONTROLS[fmt](root)
     if edit is not None:
         edit(doc)
-    return json.dumps(doc).encode("utf-8")
+    if fmt in JSON_FORMATS:
+        return json.dumps(doc).encode("utf-8")
+    return ("\n".join(doc) + "\n").encode("utf-8")
 
 
 def _read(root: Path, fmt: str, raw: bytes):
@@ -131,30 +146,37 @@ def test_every_format_reads_its_control_in_one_walk_with_the_digest_of_its_bytes
     per_file, evidence, digest = _read(tmp_path, fmt, raw)
 
     assert per_file == {KEYS[fmt]: ROWS[fmt]}
-    assert evidence == {KEYS[fmt]: DEAD}
+    assert evidence == {KEYS[fmt]: EVIDENCE[fmt]}
     assert digest == hashlib.sha256(raw).hexdigest()
 
 
 @pytest.mark.parametrize("layout", [{"indent": 2}, {"sort_keys": True}, {"ensure_ascii": False}],
                          ids=["indented", "sorted-keys", "raw-utf8"])
-@pytest.mark.parametrize("fmt", FORMATS)
+@pytest.mark.parametrize("fmt", JSON_FORMATS)
 def test_the_same_document_laid_out_another_way_reads_the_same(tmp_path, fmt, layout):
     raw = json.dumps(CONTROLS[fmt](tmp_path), **layout).encode("utf-8")
 
     assert _read(tmp_path, fmt, raw)[:2] == ({KEYS[fmt]: ROWS[fmt]}, {KEYS[fmt]: DEAD})
 
 
+def test_an_lcov_tracefile_with_crlf_endings_and_blank_lines_reads_the_same(tmp_path):
+    raw = _bytes(tmp_path, "lcov").replace(b"\n", b"\r\n\r\n")
+
+    assert _read(tmp_path, "lcov", raw)[:2] == ({KEYS["lcov"]: []},
+                                                {KEYS["lcov"]: EVIDENCE["lcov"]})
+
+
 @pytest.mark.parametrize("fmt", FORMATS)
 def test_a_utf8_byte_order_mark_is_read_past(tmp_path, fmt):
-    """A JSON artifact is JSON: a BOM is read past, as a PowerShell
-    `Out-File -Encoding utf8` copy or a Windows editor leaves one. The digest
-    stays the file's own bytes, mark included."""
+    """A BOM is read past, as a PowerShell `Out-File -Encoding utf8` copy or a
+    Windows editor leaves one. The digest stays the file's own bytes, mark
+    included."""
     raw = codecs.BOM_UTF8 + _bytes(tmp_path, fmt)
 
     per_file, evidence, digest = _read(tmp_path, fmt, raw)
 
     assert per_file == {KEYS[fmt]: ROWS[fmt]}
-    assert evidence == {KEYS[fmt]: DEAD}
+    assert evidence == {KEYS[fmt]: EVIDENCE[fmt]}
     assert digest == hashlib.sha256(raw).hexdigest()
 
 
@@ -172,7 +194,10 @@ def _utf16(order: str):
 
 
 def _latin1_name(raw: bytes) -> bytes:
-    return raw.replace(b'"f"', b'"caf\xe9"', 1)
+    """The function name f spelled café in Latin-1: a JSON string, or the
+    name field that ends an lcov FN record."""
+    name = b'"f"' if b'"f"' in raw else b",f\n"
+    return raw.replace(name, name.replace(b"f", b"caf\xe9"), 1)
 
 
 NOT_UTF8 = {
@@ -209,7 +234,7 @@ def test_an_artifact_with_nothing_in_it_is_refused_as_empty(tmp_path, fmt, raw):
 
 @pytest.mark.parametrize("raw", [b"[]", b'"cov"', b"null", b"{", b'{"a": {}} {}'],
                          ids=["an-array", "a-string", "null", "truncated", "two-documents"])
-@pytest.mark.parametrize("fmt", FORMATS)
+@pytest.mark.parametrize("fmt", JSON_FORMATS)
 def test_a_document_that_is_not_one_json_object_is_refused(tmp_path, fmt, raw):
     _holds(_refusal(tmp_path, fmt, raw), ["cov.json", REGENERATE])
 
@@ -225,34 +250,50 @@ def _counted_as(fmt: str, value):
     return lambda doc: _pyfn(doc)["summary"].update(covered_lines=value)
 
 
+def _swap(old: str, new: str):
+    """An edit that rewrites one line of the lcov control."""
+    return lambda lines: lines.__setitem__(lines.index(old), new)
+
+
+def _da_first(lines: list[str]) -> None:
+    """A DA record moved ahead of the SF record it belongs to."""
+    lines.insert(0, lines.pop(lines.index("DA:3,1")))
+
+
 PROMISES = {
     "dropped-counter": {
         "istanbul": (lambda d: _ist(d)["s"].pop("1"), ["statement '1'", "`s`"]),
         "coveragepy": (lambda d: _pyfn(d)["summary"].pop("covered_lines"),
                        ["num_statements without covered_lines"]),
+        "lcov": (_swap("DA:3,1", "DA:3"), ["SF:src/a.rs", "DA:3", "needs a line and a count"]),
     },
     "negative-count": {
         "istanbul": (_counted_as("istanbul", -1), ["s['0']", "nonnegative", "-1"]),
         "coveragepy": (_counted_as("coveragepy", -1), ["covered_lines", "nonnegative", "-1"]),
+        "lcov": (_swap("DA:3,1", "DA:3,-1"), ["DA:3,-1", "nonnegative", "'-1'"]),
     },
     "count-a-string": {
         "istanbul": (_counted_as("istanbul", "1"), ["s['0']", "'1'"]),
         "coveragepy": (_counted_as("coveragepy", "2"), ["covered_lines", "'2'"]),
+        "lcov": (_swap("DA:3,1", "DA:3,one"), ["DA:3,one", "count 'one'"]),
     },
     "counter-group-null": {
         "istanbul": (lambda d: _ist(d).update(s=None), ["src/app.ts", "`s` holds null"]),
         "coveragepy": (lambda d: _pyfn(d).update(summary=None), ["f: no summary object"]),
+        "lcov": (_swap("DA:3,1", "DA:"), ["SF:src/a.rs", "DA:", "needs a line and a count"]),
     },
     "file-entry-null": {
         "istanbul": (lambda d: d.update({next(iter(d)): None}),
                      ["src/app.ts: the file entry holds null"]),
         "coveragepy": (lambda d: d["files"].update({"src/a.py": None}),
                        ["src/a.py: the file entry holds null"]),
+        "lcov": (_swap("SF:src/a.rs", "SF:"), ["an SF record names no file"]),
     },
     "missing-required-field": {
         "istanbul": (lambda d: _ist(d)["fnMap"]["0"]["loc"].pop("end"), ["loc.end.line"]),
         "coveragepy": (lambda d: _pyfn(d).pop("start_line"),
                        ["no start_line", "coverage>=7.13.1"]),
+        "lcov": (_da_first, ["a DA record comes before any SF record"]),
     },
 }
 
@@ -275,13 +316,23 @@ def test_a_common_promise_is_refused_naming_the_field_and_the_fix(tmp_path, fmt,
 
 
 @pytest.mark.parametrize("number", ["NaN", "Infinity", "-Infinity", "1e999"])
-@pytest.mark.parametrize("fmt", FORMATS)
+@pytest.mark.parametrize("fmt", JSON_FORMATS)
 def test_a_count_that_is_not_a_finite_number_is_refused(tmp_path, fmt, number):
     raw = _bytes(tmp_path, fmt, _counted_as(fmt, "__COUNT__")).replace(b'"__COUNT__"',
                                                                       number.encode())
 
     _holds(_refusal(tmp_path, fmt, raw),
            ["cov.json", f"non-finite JSON number {number}", REGENERATE])
+
+
+@pytest.mark.parametrize("old, new", [("DA:3,1", "DA:3,nan"), ("DA:3,1", "DA:3,inf"),
+                                      ("BRDA:2,0,0,1", "BRDA:2,0,0,inf"),
+                                      ("BRDA:2,0,0,1", "BRDA:2,0,0,NaN")],
+                         ids=["da-nan", "da-inf", "brda-inf", "brda-nan"])
+def test_an_lcov_count_that_is_not_a_finite_number_is_refused(tmp_path, old, new):
+    text = _refusal(tmp_path, "lcov", _bytes(tmp_path, "lcov", _swap(old, new)))
+
+    _holds(text, ["cov.json", "SF:src/a.rs", new, "is not a nonnegative integer", REGENERATE])
 
 
 # --- what each format refuses in its own fields -----------------------------------
@@ -478,7 +529,8 @@ def test_a_coveragepy_lane_reads_the_contexts_of_one_file_through_its_adapter(tm
 # field a recorded artifact holds is removed once, so a reader added to _FORMATS
 # is checked field by field the day it lands.
 
-from coverage_fields import FIELDS, MAPS, WRONG, field_paths, generic, minimal_artifact  # noqa: E402
+from coverage_fields import (FIELDS, MAPS, WRONG, field_paths, generic, lcov_edit,  # noqa: E402
+                             lcov_locators, minimal_artifact)
 from crapkit.repotext import json_kind  # noqa: E402
 
 RECORDED = Path(__file__).parents[1] / "accuracy" / "coverage_oracles" / "recorded"
@@ -544,7 +596,11 @@ NULL_AS_ABSENT = {("coveragepy", locator) for locator in (
 # artifact nor a file key (coverage_py.judge_regions).
 FILE_UNNAMED = {("coveragepy", "files.*.functions"):
                 "coverage.py report has no function regions for any of its 1 file(s)"
-                " - needs coverage>=7.13.1"}
+                " - needs coverage>=7.13.1",
+                # With its SF line gone, the record's first line belongs to no file.
+                ("lcov", "SF"):
+                "lcov artifact cov.json: a FN record comes before any SF record; "
+                "regenerate the artifact with the coverage tool that wrote it"}
 
 
 def _row_id(row) -> str:
@@ -631,7 +687,7 @@ def test_every_format_has_rows_in_the_field_table():
     assert not rowless, f"coverage_fields.FIELDS has no rows for {rowless}"
 
 
-@pytest.mark.parametrize("fmt", FORMATS)
+@pytest.mark.parametrize("fmt", JSON_FORMATS)
 def test_the_minimal_artifact_reads_one_function_with_its_branches_and_a_dead_line(tmp_path, fmt):
     per_file, evidence = _outcome(tmp_path, fmt, minimal_artifact(fmt))
 
@@ -641,13 +697,23 @@ def test_the_minimal_artifact_reads_one_function_with_its_branches_and_a_dead_li
     assert evidence == {KEYS[fmt]: DEAD}
 
 
+def test_the_minimal_lcov_artifact_reads_its_lines_and_arms_and_no_function(tmp_path):
+    per_file, evidence = _outcome(tmp_path, "lcov", minimal_artifact("lcov"))
+
+    assert per_file == {KEYS["lcov"]: []}
+    (file,) = evidence.values()
+    assert (list(file.hit_lines), list(file.missed_lines), file.branches) == (
+        [1, 2, 3], [5], ((2, 2, 1),))
+
+
 @pytest.mark.parametrize("row", [pytest.param(row, id=_row_id(row)) for row in FIELDS])
 def test_every_row_names_a_field_the_minimal_artifact_holds(row):
     """A builder that leaves the field in, or a locator that names nothing,
-    writes the control: its drop and retype cases would test nothing."""
+    writes the control: its drop and retype cases would test nothing. A JSON
+    builder quotes the string, a line format writes it bare."""
     control = minimal_artifact(row.format)
 
-    assert b'"__retyped__"' in minimal_artifact(row.format, retype=(row.locator, "__retyped__"))
+    assert b"__retyped__" in minimal_artifact(row.format, retype=(row.locator, "__retyped__"))
     if row.absent is not None:
         assert minimal_artifact(row.format, drop=row.locator) != control
 
@@ -794,6 +860,47 @@ def test_removing_each_field_a_recorded_artifact_holds_refuses_or_reads_as_docum
 
     broken = [why for locator, path in field_paths(fmt, doc).items()
               if (why := _unexplained(tmp_path, fmt, doc, locator, path, base))]
+
+    assert not broken, "\n".join(broken)
+
+
+# Every recorded lcov tracefile: the ones written beside other formats'
+# reports from the same runs, and the native producers' own.
+LCOV_RECORDED = [pytest.param(name, scenario, id=f"{name}-{scenario}")
+                 for name in ("coveragepy-reports-7.16.1", "vitest-istanbul-5.0.1", "c8-12.0.0",
+                              "cargo-llvm-cov-0.9.1", "llvm-cov-19.1.7")
+                 for scenario in ("call", "idle")]
+
+
+def _lcov_bytes(lines: list[str]) -> bytes:
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _lcov_unexplained(root: Path, lines: list[str], locator: str, base) -> str | None:
+    """Why removing the first field at `locator` breaks the table's promise."""
+    rows = [row for row in FIELDS if row.format == "lcov" and row.locator == locator]
+    edited = list(lines)
+    lcov_edit(edited, locator, None)
+    removed = _outcome(root, "lcov", _lcov_bytes(edited))
+    if removed == base:
+        return None
+    if isinstance(removed, str):
+        return None if any(row.named in removed for row in rows) else (
+            f"{locator}: refused with no row naming it: {removed}")
+    if any(row.absent is not None and not row.required and removed == row.absent.reads
+           for row in rows):
+        return None
+    return f"{locator}: removing it changed the reading, and no optional row documents it"
+
+
+@pytest.mark.parametrize("name, scenario", LCOV_RECORDED)
+def test_removing_each_field_a_recorded_lcov_artifact_holds_refuses_or_reads_as_documented(
+        tmp_path, name, scenario):
+    lines = (RECORDED / name / f"{scenario}.lcov").read_text(encoding="utf-8").splitlines()
+    base = _outcome(tmp_path, "lcov", _lcov_bytes(lines))
+
+    broken = [why for locator in lcov_locators(lines)
+              if (why := _lcov_unexplained(tmp_path, lines, locator, base))]
 
     assert not broken, "\n".join(broken)
 

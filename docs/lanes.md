@@ -27,7 +27,7 @@ which is optional and on every lane on this page.
 | `name` | The lane's id. It names the lane's log, `.crapkit/lane-<name>.log`, and what `coverage --lane` takes. A name Windows cannot use as a file name, or two names that differ only in case, is refused at load with exit 3. |
 | `command` | Runs through the shell at the repo root (or `cwd`). Its **exit code is recorded, not enforced**. A brownfield suite with 98 known failures still writes a valid artifact, and demanding green here would make such a repo unmeasurable. |
 | `artifact` | The coverage file the command writes, repo-relative. Its absence after the command and all its retries is the failure. Two lanes may not declare the same artifact path: reused paths cross-attribute coverage under `--reuse-artifacts`. It names one file. An empty value or one that names the root (`.`, `cov/..`) is refused at load with exit 3, and so is a `results_artifact` that names the root. `doctor` FAILs an `artifact` or `results_artifact` that names a directory, such as vitest's `coverage` report directory: point it at the report file inside. |
-| `parser` | `istanbul` or `coveragepy`. Nothing else exists. |
+| `parser` | `istanbul`, `coveragepy` or `lcov` ([lcov](#lcov)). |
 | `scopes` | Which scopes this lane's numbers speak for. A scope no lane names can only score `no-lane`, and `doctor` fails on it. |
 | `results_artifact` | The JUnit report the same command writes. Two checks read it and neither runs without it: the [crashed-worker trust check](#a-junit-that-says-the-run-did-not-finish), which refuses a run the runner did not finish, and no-new-failures, which is `verify`'s exit 8. |
 
@@ -249,15 +249,15 @@ it is read from its command alone.
 
 ## Which languages a lane can measure
 
-Short answer: whichever ones your runner reports in one of two formats.
+Short answer: whichever ones your runner reports in one of three formats.
 
 A parser reads an artifact format, not a language. `coveragepy` reads coverage.py's JSON
 report. `istanbul` reads `coverage-final.json`, which vitest, jest and every other
-istanbul-shaped runner write. If your suite writes one of those two files, declare a lane and
-crapkit measures it. In practice that is Python plus the JavaScript and TypeScript family.
+istanbul-shaped runner write. `lcov` reads an lcov tracefile, so Rust (cargo-llvm-cov), Swift,
+Objective-C, C and C++ (`llvm-cov export`, or gcov through geninfo) get a lane ([lcov](#lcov)).
 
-Anything else has no lane to declare today. Go's coverprofile, `cargo-llvm-cov`, Swift's
-llvm profdata, JaCoCo XML: crapkit reads none of them, and no config key unlocks one.
+Anything else has no lane to declare today. Go's coverprofile, Cobertura and JaCoCo XML:
+crapkit reads none of them, and no config key unlocks one.
 Somebody writing the parser is the only thing that changes that.
 
 **Those scopes run cc-only, which is a real answer, not a failure.** Complexity, the
@@ -2148,8 +2148,76 @@ The escape test runs on the path the runner wrote, with the prefix taken back of
 a `backend` scope, and a root scope (`.`) claims any key. Before 0.8.1 the reach test asked
 such keys, so a lane with `path_prefix`, or scoped to the root, scored every function
 untested with exit 0 on another tree's report; it now gets the refusal above.
-`path_prefix` is a coveragepy key, and the istanbul reader never reads it.
+`path_prefix` is a coveragepy and lcov key, and the istanbul reader never reads it.
 
 The reach test is `universe.owning_scope` over the lane's own scopes, the same predicate
 that assigns files to scopes, so a scope declaring individual files rather than
 directories is reached exactly and never reads as unmeasured.
+
+---
+
+## lcov
+
+`parser = "lcov"` reads an lcov tracefile: Rust, C, C++, Swift and Objective-C, and any
+other tool that writes one. Each `SF:` record gives its file's `DA` lines (hit or not) and
+its `BRDA` arms (taken or not). crapkit gives each line and each arm to the innermost
+function that holds it, so a closure's lines score the closure and not the function around
+it. A function with `BRDA` arms scores branch coverage, one with `DA` lines only scores
+statement coverage. `FN` and `FNDA` records are checked and then ignored: crapkit never
+reads a function's coverage from its call count. A tracefile records no per-line test
+contexts, so `explain --tests` has none to show.
+
+| Producer | Command the lane runs | Notes |
+|---|---|---|
+| cargo-llvm-cov (Rust) | `cargo llvm-cov --lcov --output-path target/lcov.info` | |
+| llvm-cov export (Swift, Objective-C, C and C++ through clang) | `llvm-cov export -format=lcov -instr-profile=default.profdata <binary> > cov.lcov` | `export` has no output-file option and writes to stdout; see the redirect trap below |
+| gcov through geninfo (C and C++ through gcc) | `lcov --capture --directory build --output-file cov.lcov` | |
+| bun | `bun test --coverage --coverage-reporter=lcov` | writes `coverage/lcov.info` |
+| deno | `deno test --coverage=cov && deno coverage cov --lcov --output=cov.lcov` | |
+| c8 | `c8 --reporter=lcov node test.js` | writes `coverage/lcov.info` |
+
+A crate in `core/`, measured by its own lane:
+
+```toml
+[[lane]]
+name = "rust"
+command = "cargo llvm-cov nextest --profile ci --lcov --output-path target/lcov.info"
+cwd = "core"
+artifact = "core/target/lcov.info"
+parser = "lcov"
+scopes = ["core"]
+results_artifact = "core/target/nextest/ci/junit.xml"
+```
+
+cargo-nextest writes that JUnit report once `core/.config/nextest.toml` holds
+`[profile.ci.junit]` with `path = "junit.xml"`, and `cargo llvm-cov nextest` runs it under
+coverage. cargo-llvm-cov writes absolute `SF:` paths, so the keys land on `core/src/...`
+with no `path_prefix`.
+
+A scope that was cc-only drops `coverage_optional = true` the day it gets the lane. Its
+marks were seeded with `crap = ccn`, so the next `verify` names the flip once for the scope,
+and `crapkit ratchet seed --scope NAME` reseeds it
+([Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)).
+
+### SF paths and `path_prefix`
+
+A relative `SF:` path is relative to where the producer ran. crapkit drops a leading `./`
+and joins the lane's `path_prefix` onto it, so a crate under `crates/core` that writes
+`SF:src/lib.rs` sets `path_prefix = "crates/core"` and keys `crates/core/src/lib.rs`. The
+lane's `cwd` is never joined. An absolute `SF:` path under this checkout becomes
+root-relative whatever its spelling (a lower-case drive, another letter case on a disk that
+ignores case, a link to the checkout, `\\?\C:`), and `path_prefix` is never joined onto it.
+An absolute path from another tree stays as written, and a lane whose every key is such a
+path refuses with exit 5 ([An artifact that measured a different tree](#an-artifact-that-measured-a-different-tree)).
+
+### The PowerShell 5.1 redirect trap
+
+`llvm-cov export` writes the tracefile to stdout, so the command redirects it:
+`llvm-cov export ... > cov.lcov`. A lane's command runs under sh on POSIX and cmd.exe on
+Windows, and both write the bytes as they come. Typed in Windows PowerShell 5.1, the same
+`>` writes UTF-16, and crapkit refuses the file by name with exit 5. From PowerShell 5.1,
+run `cmd /c "llvm-cov export ... > cov.lcov"`, or pipe the output through
+`| Out-File -Encoding utf8 cov.lcov`. cargo-llvm-cov writes the file itself with
+`--output-path`, so its lane needs no redirect. A run killed while it wrote
+the tracefile leaves a record with no `end_of_record`, which is refused with exit 5 too:
+`lcov artifact <path>: the record for SF:<key> has no end_of_record`. Rerun the lane.

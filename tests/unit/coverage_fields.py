@@ -70,6 +70,15 @@ WRONG = {
     "line numbers": [None, 5, "5", {"5": 1}, ["5"], [1.5], [True], [None]],
     "string": [5, 1.5, True, [1], {}, None],
     "boolean": ["2", 1, 1.5, [1], {}, None],
+    # lcov is text: a field holds whatever characters stand between its commas,
+    # so its wrong values are text too. A path, a block or branch id, a checksum
+    # and a whole record payload take any text, so nothing retypes them.
+    "lcov line": ["x", "-1", "1.5", "nan", ""],
+    "lcov count": ["x", "-1", "1.5", "nan", "inf", ""],
+    "lcov taken": ["x", "-1", "1.5", "inf", ""],
+    "lcov path": [],
+    "lcov text": [],
+    "lcov record": [],
 }
 
 # Per format, the keys whose members are ids (a file, a function, a counter), not
@@ -77,9 +86,10 @@ WRONG = {
 MAPS = {
     "istanbul": {"", "fnMap", "f", "statementMap", "s", "branchMap", "b"},
     "coveragepy": {"files", "functions", "classes", "contexts"},
+    "lcov": set(),
 }
 
-FILE_KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py"}
+FILE_KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs"}
 
 _FN = "*.fnMap.*"
 _B0, _B1 = "*.branchMap.0", "*.branchMap.1"
@@ -99,6 +109,12 @@ def _reads(format: str, *functions: FnCoverage, dead: tuple[int, ...] = (5,)) ->
 _F = FnCoverage("f", 1, 6, True, 4, 2, 3, 2, full_listing=True)
 _F_WIDER = _F._replace(statements_total=4, statements_covered=3)
 _PY_F = FnCoverage("f", 1, 5, True, 2, 1, 3, 2)
+# lcov hands no function records: its one file reads as its DA lines 1-3 hit,
+# line 5 missed, and the two arms on line 2, one taken.
+_LCOV_READS = ({FILE_KEYS["lcov"]: []},
+               {FILE_KEYS["lcov"]: FileEvidence(array("I", [1, 2, 3]), array("I", [5]),
+                                                ((2, 2, 1),))})
+_LCOV_ANY_RECORD = "function records give no evidence, so the file reads the same"
 
 FIELDS = [
     Field("istanbul", "*", True, "object", None, "the file entry"),
@@ -203,7 +219,44 @@ FIELDS = [
     Field("coveragepy", f"{_PY_FN}.summary.excluded_lines", False, "count",
           ReadsAs(0, "no line of the function is excluded", _reads("coveragepy", _PY_F)),
           "excluded_lines"),
+
+    # lcov: TAG is the first record with that tag, TAG.n its n-th comma field.
+    Field("lcov", "SF", True, "lcov path", (), "SF"),
+    Field("lcov", "DA.1", True, "lcov line", (), "DA"),
+    Field("lcov", "DA.2", True, "lcov count", (), "DA"),
+    Field("lcov", "DA.3", False, "lcov text",
+          ReadsAs("", "the checksum is not read", _LCOV_READS), "DA"),
+    Field("lcov", "BRDA.1", True, "lcov line", (), "BRDA"),
+    Field("lcov", "BRDA.2", True, "lcov text", (), "BRDA"),
+    Field("lcov", "BRDA.3", True, "lcov text", (), "BRDA"),
+    Field("lcov", "BRDA.4", True, "lcov taken", (), "BRDA"),
+    Field("lcov", "FN", False, "lcov record", ReadsAs("1,6,f", _LCOV_ANY_RECORD, _LCOV_READS),
+          "FN"),
+    Field("lcov", "FN.1", True, "lcov line", (), "FN"),
+    # lcov 1's name, or lcov 2's end line; a name may hold commas, so it is never typed.
+    Field("lcov", "FN.2", True, "lcov text", (), "FN"),
+    Field("lcov", "FNDA", False, "lcov record", ReadsAs("1,f", _LCOV_ANY_RECORD, _LCOV_READS),
+          "FNDA"),
+    Field("lcov", "FNDA.1", True, "lcov count", (), "FNDA"),
+    Field("lcov", "FNDA.2", True, "lcov text", (), "FNDA"),
 ]
+
+
+def lcov_locators(lines: list[str]) -> list[str]:
+    """Each field `lines` holds, in the order the lines first hold it: TAG for a
+    record some row reads whole (SF, FN, FNDA), and TAG.n for each comma field
+    of a record whose fields rows read. A DA or BRDA record is a member, as a
+    map's member is in JSON: dropping one is another artifact."""
+    locators = {row.locator for row in FIELDS if row.format == "lcov"}
+    whole = {locator for locator in locators if "." not in locator}
+    fielded = {locator.partition(".")[0] for locator in locators if "." in locator}
+    found: dict[str, None] = {}
+    for line in lines:
+        tag, _, payload = line.partition(":")
+        fields = range(1, payload.count(",") + 2) if tag in fielded else ()
+        found.update(dict.fromkeys([tag] if tag in whole else []))
+        found.update(dict.fromkeys(f"{tag}.{n}" for n in fields))
+    return list(found)
 
 
 # --- the minimal artifacts ---------------------------------------------------------
@@ -276,7 +329,48 @@ def _json_artifact(make):
     return build
 
 
-_BUILDERS = {"istanbul": _json_artifact(_istanbul), "coveragepy": _json_artifact(_coveragepy)}
+def _lcov() -> list[str]:
+    """One record: a function on lines 1-6, DA lines 1-3 hit (the first with a
+    checksum) and line 5 missed, and two arms on line 2, one taken."""
+    return [f"SF:{FILE_KEYS['lcov']}", "FN:1,6,f", "FNDA:1,f", "DA:1,1,abc", "DA:2,1",
+            "DA:3,1", "DA:5,0", "BRDA:2,0,0,1", "BRDA:2,0,1,0", "end_of_record"]
+
+
+def _lcov_at(lines: list[str], locator: str) -> tuple[int, str, int]:
+    """(index of the first record with the locator's tag, the tag, its field
+    number, 0 for the whole payload)."""
+    tag, _, field = locator.partition(".")
+    index = next(i for i, line in enumerate(lines) if line.startswith(tag + ":"))
+    return index, tag, int(field or 0)
+
+
+def lcov_edit(lines: list[str], locator: str, value: str | None) -> None:
+    """Drop (value None) or set the field at `locator`. A dropped field takes
+    every field after it too, so `DA.2` leaves `DA:1`."""
+    index, tag, field = _lcov_at(lines, locator)
+    if field == 0:
+        if value is None:
+            del lines[index]
+        else:
+            lines[index] = f"{tag}:{value}"
+        return
+    fields = lines[index][len(tag) + 1:].split(",")
+    fields = fields[:field - 1] if value is None else [
+        *fields[:field - 1], value, *fields[field:]]
+    lines[index] = f"{tag}:{','.join(fields)}"
+
+
+def _lcov_artifact(drop: str | None = None, retype: tuple[str, object] | None = None) -> bytes:
+    lines = _lcov()
+    if drop is not None:
+        lcov_edit(lines, drop, None)
+    if retype is not None:
+        lcov_edit(lines, retype[0], str(retype[1]))
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+_BUILDERS = {"istanbul": _json_artifact(_istanbul), "coveragepy": _json_artifact(_coveragepy),
+             "lcov": _lcov_artifact}
 
 
 def minimal_artifact(format: str, drop: str | None = None,

@@ -216,6 +216,7 @@ paths_to_mutate = [
     "src/crapkit/coupling.py",
     "src/crapkit/coupling_cache.py",
     "src/crapkit/coverage_istanbul.py",
+    "src/crapkit/coverage_lcov.py",
     "src/crapkit/coverage_py.py",
     "src/crapkit/covstream.py",
     "src/crapkit/diffparse.py",

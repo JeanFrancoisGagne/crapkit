@@ -32,7 +32,7 @@ PINNED = (13,
           {"cpp": 13, "go": 13, "java": 13, "javascript": 13, "objectivec": 13,
            "powershell": 13, "python": 13, "rust": 13, "shell": 13, "swift": 13, "tsx": 13,
            "typescript": 13, "vue": 13, "zig": 13},
-          {"coveragepy": 1, "istanbul": 1})
+          {"coveragepy": 1, "istanbul": 1, "lcov": 1})
 FIRSTS = {"ANALYSIS_VERSIONS": 13, "READER_VERSIONS": 1}
 RULE = ("raise the language's or reader's number and ANALYSIS_VERSION by one in one change, "
         "then update PINNED in tests/unit/test_analysis_versions.py")
@@ -79,8 +79,8 @@ def _moved(revision: int = 0, languages: dict | None = None, readers: dict | Non
 
 @pytest.mark.parametrize("moved", [
     _moved(languages={"kotlin": 13}),
-    _moved(readers={"lcov": 1}),
-    _moved(languages={"kotlin": 13, "csharp": 13}, readers={"lcov": 1, "cobertura": 1}),
+    _moved(readers={"gocover": 1}),
+    _moved(languages={"kotlin": 13, "csharp": 13}, readers={"gocover": 1, "cobertura": 1}),
 ], ids=["language", "reader", "both"])
 def test_a_key_added_at_its_first_number_passes_with_the_revision_unchanged(moved):
     assert pin_breaks(PINNED, moved) == []
@@ -88,7 +88,7 @@ def test_a_key_added_at_its_first_number_passes_with_the_revision_unchanged(move
 
 @pytest.mark.parametrize("moved, broken", [
     (_moved(languages={"kotlin": 14}), "ANALYSIS_VERSIONS['kotlin'] enters at 14, not 13"),
-    (_moved(readers={"lcov": 2}), "READER_VERSIONS['lcov'] enters at 2, not 1"),
+    (_moved(readers={"gocover": 2}), "READER_VERSIONS['gocover'] enters at 2, not 1"),
     (_moved(revision=1, languages={"kotlin": 13}), "ANALYSIS_VERSION is 14, pinned 13"),
     (_moved(languages={"go": 14}), "ANALYSIS_VERSIONS['go'] is 14, pinned 13"),
     (_moved(revision=1, languages={"go": 14}), "ANALYSIS_VERSIONS['go'] is 14, pinned 13"),

@@ -5,13 +5,17 @@ model and the driver's calls, never from a producer's output. Three checks:
 
 1. Each committed recording states exactly those arms and statements, read with
    counts_table (json.load, no crapkit). A producer that moved, or a table that
-   is wrong, fails here before it can reach a score.
+   is wrong, fails here before it can reach a score. An lcov recording is read
+   with str.split and its lines go to the table's spans.
 2. On push, this interpreter's coverage.py 7.16.1 run over the Python probe
    states them too, and equals the committed 7.16.1 recording.
 3. crapkit's scored cov and flag for every function equal the README's term
    over those counts, after the README floor for a Python def-line layout.
    Where crapkit and the ground truth part, a rulings row says why. A
    coverage.py recording with no start_line is refused instead (ruling CO-B2).
+
+Cross-format: one c8 run's istanbul JSON and lcov give each probe function the
+same cov, and each function where the two part is a named finding (C8_FINDINGS).
 
 Every producer's recording is replayed on push. In the nightly tier
 regenerate.py reruns each producer over the probes and the fresh artifact must
@@ -33,7 +37,8 @@ from accuracy.coverage_oracles import counts_table, ground_table, mini_repo, pro
 from accuracy.kit import rulings, runlog, tiers
 
 LIVE = "coveragepy-live"
-RECORDED = sorted(name for name in ground_table.FAMILIES if name != LIVE)
+RECORDED = sorted(name for name in {**ground_table.FAMILIES, **ground_table.LCOV_FAMILIES}
+                  if name != LIVE)
 PROBES = {**{name: probes for name, (_, probes) in probe_repo.PRODUCERS.items()},
           LIVE: probe_repo.PYTHON}
 # (producer family or name, function, scenario) -> the rulings row that explains
@@ -54,7 +59,7 @@ TYPED = ("ts", "tsx", "vue")
 
 
 def _ruling(producer: str, row: ground_table.Truth) -> str | None:
-    family = ground_table.FAMILIES[producer]
+    family = ground_table.family(producer)
     if (family, row.function) in SPAN_OVERLAP and row.path.split("/")[0] in TYPED:
         return "CO-B5"
     return (KNOWN.get((producer, row.function, row.scenario))
@@ -63,15 +68,19 @@ def _ruling(producer: str, row: ground_table.Truth) -> str | None:
 
 # --- 1 and 2: the recordings state the hand-worked arms ------------------------------------------
 
-def _producer_rows(producer: str, artifact: dict) -> dict:
-    """{(path, function or start): counts} with the producer's own attribution."""
-    if ground_table.FAMILIES[producer] == "coveragepy":
+def _producer_rows(producer: str, artifact, spans: list) -> dict:
+    """{(path, function or start): counts} with the producer's own attribution;
+    an lcov tracefile names no function, so its lines go to the table's spans."""
+    family = ground_table.family(producer)
+    if family == "coveragepy":
         return {(row.path, row.name): row for row in counts_table.coveragepy_rows(artifact)}
+    if family == "llvm":
+        return {(row.path, row.start): row for row in counts_table.lcov_rows(artifact, spans)}
     return {(row.path, row.start): row for row in counts_table.istanbul_rows(artifact, "position")}
 
 
 def _key(producer: str, row: ground_table.Truth):
-    python = ground_table.FAMILIES[producer] == "coveragepy"
+    python = ground_table.family(producer) == "coveragepy"
     return (row.path, row.function if python else row.start)
 
 
@@ -114,15 +123,18 @@ def _checked_rows(producer: str, scenario: str) -> list[ground_table.Truth]:
     return [row for row in rows if row.modelled and _ruling(producer, row) != "CO3"]
 
 
-def _mismatches(producer: str, scenario: str, artifact: dict) -> list[str]:
-    found = _producer_rows(producer, artifact)
-    lines = (_mismatch(producer, row, found) for row in _checked_rows(producer, scenario))
+def _mismatches(producer: str, scenario: str, artifact) -> list[str]:
+    rows = _checked_rows(producer, scenario)
+    found = _producer_rows(producer, artifact, sorted({(row.path, row.start, row.end) for row in rows}))
+    lines = (_mismatch(producer, row, found) for row in rows)
     return [line for line in lines if line]
 
 
-def _recorded(producer: str, scenario: str) -> dict:
-    path = probe_repo.RECORDED / producer / f"{scenario}.json"
-    return json.loads(path.read_bytes())
+def _recorded(producer: str, scenario: str):
+    """A JSON recording as its value, an lcov one as its text."""
+    path = probe_repo.artifact(producer, scenario)
+    data = path.read_bytes()
+    return data.decode("utf-8") if path.suffix == ".lcov" else json.loads(data)
 
 
 @pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
@@ -155,7 +167,7 @@ def test_the_def_line_layouts_read_the_same_called_or_not():
         assert call["one_line"].stmts_run == idle["one_line"].stmts_run == (85,)
 
 
-PYTHON_RECORDED = [name for name in RECORDED if ground_table.FAMILIES[name] == "coveragepy"]
+PYTHON_RECORDED = [name for name in RECORDED if ground_table.family(name) == "coveragepy"]
 
 
 def _named_rows(producer: str, scenario: str) -> dict:
@@ -324,6 +336,56 @@ def _truth_covs(truth: dict, functions: tuple) -> dict:
     return {name: float(ground_table.crapkit_expected(truth[name])[0]) for name in functions}
 
 
+# --- cross-format: one c8 run, read as istanbul JSON and as lcov ------------------------------
+#
+# c8 12.0.0 writes both reports from one run of the mjs probe, so the two
+# readings share one set of counts. crapkit's cov agrees on every other
+# function; each function where the two part is a named finding below:
+# (istanbul cov, lcov cov) to 4 places, and why they part.
+C8 = "c8-12.0.0"
+C8_PROBE = "mjs/shapes.mjs"
+_ARMS_BY_LINE = ("c8 writes the callback's function-block arm on line 46, the callback's first line, and lcov's "
+                 "join gives each arm to the innermost span holding its line: withCallback keeps its own block "
+                 "arm on line 45 (1 of 1) and the callback takes line 46's arm and the untaken arm on line 50 "
+                 "(1 of 2). The istanbul reading of the same run gives each 2 of 3")
+_NO_CALL_COUNT = ("an uncalled function: c8 writes no BRDA arm for it, so lcov scores its DA lines, and the line "
+                  "named here runs at import outside the function (the module's binding, the class body); the "
+                  "lcov reader reads no call count (FNDA), and the istanbul reading scores the function 0")
+C8_FINDINGS = {
+    "call": {"withCallback ( values )": ((0.6667, 1.0), _ARMS_BY_LINE),
+             "(anonymous)": ((0.6667, 0.5), _ARMS_BY_LINE)},
+    "idle": {"arrow ( value )": ((0.0, 1.0), f"line 60, {_NO_CALL_COUNT}"),
+             "method ( value )": ((0.0, 0.1667), f"line 86, {_NO_CALL_COUNT}")},
+}
+
+
+def _c8_covs(top: Path, parser: str, recording: Path) -> dict[str, float]:
+    """{function: crapkit's cov} for the mjs probe scored from one recording."""
+    toml = mini_repo.config([mini_repo.scope("s", ["mjs"], ["javascript"])],
+                            [mini_repo.lane("cov", parser, ["s"])])
+    driver = mini_repo.build(top, {"crapkit.toml": toml,
+                                   C8_PROBE: (probe_repo.PROBES / C8_PROBE).read_bytes(),
+                                   "recorded/cov.json": recording.read_bytes()})
+    result = driver.run("coverage", "--export", "scored.tsv")
+    assert result.code == 0, result.stderr
+    text = (driver.root / "scored.tsv").read_bytes().decode("utf-8")
+    return {row.name: row.cov for row in probe_repo.read_scored(text)}
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+def test_one_c8_run_reads_the_same_through_istanbul_and_lcov(tmp_path, scenario):
+    istanbul = _c8_covs(tmp_path / "istanbul", "istanbul",
+                        probe_repo.RECORDED / C8 / f"{scenario}.json")
+    lcov = _c8_covs(tmp_path / "lcov", "lcov", probe_repo.RECORDED / C8 / f"{scenario}.lcov")
+
+    parted = {name: (round(cov, 4), round(lcov[name], 4)) for name, cov in istanbul.items()
+              if lcov[name] != cov}
+
+    assert set(istanbul) == set(lcov)
+    assert parted == {name: covs for name, (covs, _) in C8_FINDINGS[scenario].items()}
+
+
 # --- nightly: the producers rerun ---------------------------------------------------------------
 
 REGENERATE = probe_repo.HERE / "regenerate.py"
@@ -425,3 +487,75 @@ def test_the_probe_root_is_spelled_as_the_producers_report_it(tmp_path, monkeypa
         (root, out)))
 
     assert seen and all(path == path.resolve() for pair in seen for path in pair)
+
+
+# --- lcov: crapkit's evidence is the tracefile's own counts ---------------------------
+#
+# counts_table reads each tracefile with str.split and no crapkit: DA counts per
+# line, BRDA arms per line, and the LF, LH, BRF and BRH lines the producer
+# summed. crapkit's per-file evidence must say the same about every SF path.
+# crapkit reads the file in a child process, as the CLI checks run it, so this
+# file imports nothing of crapkit.
+
+LCOV_RECORDINGS = ["c8-12.0.0", "cargo-llvm-cov-0.9.1", "coveragepy-reports-7.16.1",
+                   "llvm-cov-19.1.7", "vitest-istanbul-5.0.1"]
+_LCOV_READ = """
+import json, sys
+from pathlib import Path
+from crapkit import coverage_lcov
+from crapkit.config import Lane
+path = Path(sys.argv[1])
+lane = Lane(name="lcov", command="x", artifact=path.name, parser="lcov", scopes=("src",))
+evidence = coverage_lcov.read(lane, path.parent, path)[1]
+print(json.dumps({key: [list(e.hit_lines), list(e.missed_lines), [list(b) for b in e.branches]]
+                  for key, e in evidence.items()}))
+"""
+
+
+def _lcov_evidence(path: Path) -> dict:
+    """{key: [hit lines, missed lines, [line, arms, taken] triples]} as crapkit reads it."""
+    child = hang_guard.run([sys.executable, "-c", _LCOV_READ, str(path)], text=True,
+                           encoding="utf-8")
+    assert child.returncode == 0, child.stderr
+    return json.loads(child.stdout)
+
+
+def _split_records(text: str) -> str:
+    """Each SF record written as two records of the same SF, its DA and BRDA
+    lines dealt between them in turn, the way two test runs of one file merge:
+    a reader that keeps the second record instead of merging loses half."""
+    out: list[str] = []
+    halves: tuple[list[str], list[str]] = ([], [])
+    for line in text.splitlines():
+        tag = line.partition(":")[0]
+        if tag == "SF":
+            sf, halves = line, ([], [])
+        elif tag in ("DA", "BRDA"):
+            halves[len(halves[0]) > len(halves[1])].append(line)
+        elif tag == "end_of_record":
+            out += [sf, *halves[0], "end_of_record", sf, *halves[1], "end_of_record"]
+    return "\n".join(out) + "\n"
+
+
+@pytest.mark.parametrize("split", [False, True], ids=["as-recorded", "split-in-two-records"])
+@pytest.mark.parametrize("scenario", ["call", "idle"])
+@pytest.mark.parametrize("name", LCOV_RECORDINGS)
+def test_crapkit_reads_each_lcov_recording_as_its_own_counts(tmp_path, name, scenario, split):
+    path = probe_repo.RECORDED / name / f"{scenario}.lcov"
+    text = path.read_text(encoding="utf-8")
+    lines, files = counts_table.lcov_lines(text), counts_table.lcov_files(text)
+    if split:
+        path = tmp_path / path.name
+        path.write_text(_split_records(text), encoding="utf-8")
+
+    evidence = _lcov_evidence(path)
+
+    assert sorted(evidence) == sorted(sf.removeprefix("./") for sf in lines)
+    for sf, counts in lines.items():
+        (hit, missed, branches), wrote = evidence[sf.removeprefix("./")], files[sf]
+        assert hit == sorted(n for n, count in counts.items() if count > 0)
+        assert missed == sorted(n for n, count in counts.items() if count == 0)
+        assert {line: (total, taken) for line, total, taken in branches} == wrote.arms
+        assert (len(hit) + len(missed), len(hit)) == (wrote.summary["LF"], wrote.summary["LH"])
+        assert (sum(total for _, total, _ in branches), sum(taken for _, _, taken in branches)) == (
+            wrote.summary["BRF"], wrote.summary["BRH"])
