@@ -252,9 +252,9 @@ INJECT_NOW = EPOCH + 10 * DAY
 # and an edit may add one starting "++ ": in a -U0 diff they read "--- " and "+++ ".
 
 
-def gated(name: str, tag: str = "a", doc: str = "") -> str:
+def gated(name: str, tag: str = "a", doc: str = "", params: str = "x") -> str:
     ifs = "".join(f"    if x == {i}:\n        return {i}\n" for i in range(4))
-    return f'def {name}(x):\n    """{name}\n{doc}"""\n{ifs}    return \'{tag}\'\n\n\n'
+    return f'def {name}({params}):\n    """{name}\n{doc}"""\n{ifs}    return \'{tag}\'\n\n\n'
 
 
 GATED_TEXT = (gated("f0") + gated("f1") + gated("f2", doc="-- note\n") + gated("f3")
@@ -296,9 +296,10 @@ DIFF_CASES = Spec(steps=(
 
 
 # --- renames, moves and copies after a seed (docs/ratchet.md#pruning-and-renames) --------
-# Five files of gated functions are seeded; then one commit moves, copies and renames
+# Six files of gated functions are seeded; then one commit moves, copies and renames
 # them. RENAME_MOVES says what each file becomes and hand_renames.tsv where the docs'
-# three conditions put its marks after `ratchet prune`, worked by hand.
+# three conditions put its marks after `ratchet prune`, worked by hand. src/f.py's
+# rename adds a parameter, so its mark reaches the destination only through the carry.
 
 
 def _heavy(name: str) -> str:
@@ -309,8 +310,8 @@ def _heavy(name: str) -> str:
 
 RENAME_BASE = {"crapkit.toml": config(), "src/a.py": gated("fa") + gated("ga"),
                "src/b.py": gated("fb"), "src/c.py": gated("fc"), "src/d.py": gated("fd") + gated("gd"),
-               "src/e.py": gated("fe")}
-RENAMES = Spec(steps=(Commit(files=RENAME_BASE, date=EPOCH, message="five files"),))
+               "src/e.py": gated("fe"), "src/f.py": gated("ff")}
+RENAMES = Spec(steps=(Commit(files=RENAME_BASE, date=EPOCH, message="six files"),))
 RENAME_MOVES = {
     # old path: (new path, new text, None when the old path is removed)
     "exact move": ("src/a.py", "src/moved/a.py", None),
@@ -318,6 +319,7 @@ RENAME_MOVES = {
     "heavy edit": ("src/c.py", "src/c2.py", _heavy("fc")),
     "light edit": ("src/d.py", "src/d2.py", gated("fd") + gated("gd", tag="edited")),
     "function renamed": ("src/e.py", "src/e2.py", gated("fe_new")),
+    "rename plus signature": ("src/f.py", "src/f2.py", gated("ff", params="x, y=None")),
 }
 RENAMES_NOW = EPOCH + 2 * DAY
 RENAMES_NESTED = Spec(root="pkg", steps=(

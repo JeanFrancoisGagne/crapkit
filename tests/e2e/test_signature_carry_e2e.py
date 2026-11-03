@@ -17,6 +17,10 @@ the same value, the OK line counts `1 re-keyed`, and a second verify writes
 nothing. While the mark is still carried, verify's ratchet check reads the
 function that carries it, so a rise past the mark fails at exit 7 even when
 the diff never touched it.
+
+`ratchet prune` re-keys the carried mark at its value instead of dropping it,
+and `ratchet seed` counts the carried function as marked. A mark twins cannot
+carry stays, named on one line with the move that ends it.
 """
 from __future__ import annotations
 
@@ -358,3 +362,126 @@ def test_an_override_on_a_touched_carried_rise_is_refused_and_writes_no_mark(tmp
     assert f"  RATCHET  calc/grade.py  {NEW}: 7.0 -> 8.0 (mark recorded for {OLD})" in res.stdout
     assert "ratchet regression" in res.stderr and "raise the mark by hand and commit it" in res.stderr
     assert (repo / MARKS).read_bytes() == before
+
+
+# --- prune and seed keep the carried mark ---------------------------------------------
+
+def measured_edit(repo: Path, source: str) -> Path:
+    """SOURCE committed and measured: run 2, the run prune and seed read."""
+    edited(repo, source)
+    git_commit_all(repo, "edit")
+    res = run_cli(repo, "coverage", env_extra=NO_REASON)
+    assert res.returncode == 0, res.stdout + res.stderr
+    return repo
+
+
+def mark_lines(repo: Path) -> list[str]:
+    return [line for line in (repo / MARKS).read_text(encoding="utf-8").splitlines()
+            if line.startswith("calc/")]
+
+
+def kept_lines(stdout: str) -> list[str]:
+    return [line for line in stdout.splitlines() if " that no single function carries: " in line]
+
+
+RE_KEYED = f"{MARKS}: pruned 0, followed 0 rename(s), re-keyed 1 - 1 mark(s) vs run 2 "
+KEPT = f"{MARKS}: kept 1 mark(s) in calc/grade.py that no single function carries: {OLD}; run "
+KEPT_TAIL = " ratchet move --function calc/grade.py OLD NEW"
+
+
+def test_prune_re_keys_the_probe_s_carried_mark_at_its_value(seeded):
+    """0.8.1 printed `pruned 1` here and dropped the signed debt."""
+    res = run_cli(measured_edit(seeded, SIGNED), "ratchet", "prune", env_extra=NO_REASON)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert res.stdout.startswith(RE_KEYED), res.stdout
+    assert mark_lines(seeded) == [f"calc/grade.py\t{NEW}\t7.0000"]
+    assert kept_lines(res.stdout) == []
+
+
+def test_seed_adds_no_second_mark_for_the_probe(seeded):
+    """0.8.1 added a mark under the new key and kept the old one."""
+    res = run_cli(measured_edit(seeded, SIGNED), "ratchet", "seed", env_extra=NO_REASON)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert res.stdout.startswith(f"{MARKS}: added 0, tightened 0 - 1 mark(s)"), res.stdout
+    assert mark_lines(seeded) == [f"calc/grade.py\t{OLD}\t7.0000"]
+
+
+@pytest.mark.parametrize("run_id, line", [
+    pytest.param("2", RE_KEYED, id="after-the-edit"),
+    pytest.param("1", f"{MARKS}: pruned 0, followed 0 rename(s) - 1 mark(s) vs run 1 ", id="before-the-edit"),
+])
+def test_prune_with_baseline_reads_the_named_run(seeded, run_id, line):
+    res = run_cli(measured_edit(seeded, SIGNED), "ratchet", "prune", "--baseline", run_id,
+                  env_extra=NO_REASON)
+
+    assert res.returncode == 0 and res.stdout.startswith(line), res.stdout + res.stderr
+
+
+def test_prune_keeps_a_mark_twins_cannot_carry_until_the_move_it_names_runs(seeded):
+    repo = measured_edit(seeded, TWINS)
+
+    first = run_cli(repo, "ratchet", "prune", env_extra=NO_REASON)
+    kept = mark_lines(repo)
+    moved = run_cli(repo, "ratchet", "move", "--function", "calc/grade.py", OLD, NEW, env_extra=NO_REASON)
+    again = run_cli(repo, "ratchet", "prune", env_extra=NO_REASON)
+
+    assert first.stdout.startswith(f"{MARKS}: pruned 0, followed 0 rename(s) - 1 mark(s)"), first.stdout
+    (line,) = kept_lines(first.stdout)
+    assert line.startswith(KEPT) and line.endswith(KEPT_TAIL) and line.isascii(), line
+    assert kept == [f"calc/grade.py\t{OLD}\t7.0000"]
+    assert (moved.returncode, again.returncode) == (0, 0), moved.stderr + again.stderr
+    assert kept_lines(again.stdout) == []
+    assert mark_lines(repo) == [f"calc/grade.py\t{NEW}\t7.0000"]
+
+
+def test_seed_marks_no_twin_while_the_carry_is_refused(seeded):
+    res = run_cli(measured_edit(seeded, TWINS), "ratchet", "seed", env_extra=NO_REASON)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert res.stdout.startswith(f"{MARKS}: added 0, tightened 0 - 1 mark(s)"), res.stdout
+    (line,) = kept_lines(res.stdout)
+    assert line.startswith(KEPT) and line.endswith(KEPT_TAIL), line
+    assert mark_lines(seeded) == [f"calc/grade.py\t{OLD}\t7.0000"]
+
+
+def unproved(repo: Path) -> Path:
+    """The marks file without its key stamp line: its key identity is unproved."""
+    path = repo / MARKS
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    path.write_text("".join(line for line in lines if not line.startswith("# crapkit-keys=")),
+                    encoding="utf-8", newline="")
+    git_commit_all(repo, "unproved")
+    return repo
+
+
+def test_an_unproved_marks_file_prunes_and_seeds_by_the_exact_key(seeded):
+    repo = measured_edit(unproved(seeded), SIGNED)
+    before = (repo / MARKS).read_bytes()
+
+    seeded_res = run_cli(repo, "ratchet", "seed", env_extra=NO_REASON)
+    seeded_lines = mark_lines(repo)
+    (repo / MARKS).write_bytes(before)
+    pruned = run_cli(repo, "ratchet", "prune", env_extra=NO_REASON)
+
+    assert seeded_res.stdout.startswith(f"{MARKS}: added 1, tightened 0 - 2 mark(s)"), seeded_res.stdout
+    assert seeded_lines == [f"calc/grade.py\t{OLD}\t7.0000", f"calc/grade.py\t{NEW}\t7.0000"]
+    assert pruned.stdout.startswith(f"{MARKS}: pruned 1, followed 0 rename(s) - 0 mark(s)"), pruned.stdout
+    assert kept_lines(seeded_res.stdout + pruned.stdout) == []
+
+
+def test_a_seed_that_flips_the_scope_to_measured_re_keys_the_carried_mark_at_the_run_s_value(seeded):
+    """A seed that flips a scope from cc-only to measured replaces the scope's
+    marks with the run's values, a carried mark included."""
+    (seeded / "gen_cov.py").write_text(GEN_COV, encoding="utf-8")
+    (seeded / "crapkit.toml").write_text(MEASURED_TOML, encoding="utf-8")
+    repo = measured_edit(seeded, "def classify(a, b, c=None):\n" + body(7))
+
+    res = run_cli(repo, "ratchet", "seed", "--scope", "calc", env_extra=NO_REASON)
+
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert res.stdout.startswith(f"{MARKS}: scope calc: added 0, tightened 0, re-keyed 1, raised 1 "
+                                 f"(first calc/grade.py {NEW} 7.0000 -> 8.0000) - 1 mark(s)"), res.stdout
+    assert mark_lines(repo) == [f"calc/grade.py\t{NEW}\t8.0000"]
+    assert kept_lines(res.stdout) == []
