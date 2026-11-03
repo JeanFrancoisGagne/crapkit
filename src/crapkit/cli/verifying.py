@@ -519,8 +519,8 @@ def _held_marks(store: SnapshotStore, cfg, commit: str, run_id: int, ratchet,
     return frozenset((r.path, r.long_name) for r in refusals)
 
 
-def _write_marks_if_changed(saved, prior: list[RatchetEntry], updated: list[RatchetEntry], cfg, *,
-                            key_version: int | None = None) -> RatchetDelta | None:
+def _write_marks_if_changed(saved, prior: list[RatchetEntry], updated: list[RatchetEntry], cfg,
+                            scored, *, key_version: int | None = None) -> RatchetDelta | None:
     """Rewrite the marks file only when its text would change, and never create
     one to hold zero marks. Returns what the write did, or None when the file
     was left alone. The write signs the running per-scope stamp, so a
@@ -534,6 +534,8 @@ def _write_marks_if_changed(saved, prior: list[RatchetEntry], updated: list[Ratc
     nothing to write, and a text that matches the disk has nothing to say. An
     emptied file is left empty too: restamped into a header with no rows, it
     asked for a `git add` that committed the lost marks as a valid empty file.
+    SCORED are the rows the tighten read, which name each re-keyed mark's
+    carrier for the counts.
     """
     from ..ratchet import ratchet_delta, running_stamp
 
@@ -542,7 +544,7 @@ def _write_marks_if_changed(saved, prior: list[RatchetEntry], updated: list[Ratc
     text = saved.measured(updated, running_stamp(cfg), marked_scopes(prior, cfg), keys=key_version)
     if not saved.publish(text):
         return None
-    return ratchet_delta(prior, updated)
+    return ratchet_delta(prior, updated, scored)
 
 
 def _settle_verify(store: SnapshotStore, run_id: int, verdict,
@@ -564,12 +566,24 @@ def _settle_verify(store: SnapshotStore, run_id: int, verdict,
     check_verdict(verdict, _verify_exit_code(verdict), kept=UNSETTLED)
     changes = None
     if verdict.ok and not verdict.overridden and not args.no_tighten:
-        hold = _held_marks(store, cfg, commit, run_id, ratchet, scored)
+        hold = _held_marks(store, cfg, commit, run_id, ratchet, scored) | _unproved_carries(
+            ratchet, scored, key_version)
         updated = update_ratchet(ratchet, scored, target=cfg.target,
                                  scope_targets=cfg.scope_targets, hold=hold)
-        changes = _write_marks_if_changed(saved, ratchet, updated, cfg, key_version=key_version)
+        changes = _write_marks_if_changed(saved, ratchet, updated, cfg, scored, key_version=key_version)
     store.set_verdict_ok(run_id, verdict.ok, findings=sum(dirty_counts(verdict)))
     return changes
+
+
+def _unproved_carries(ratchet, scored, key_version: int | None) -> frozenset[tuple[str, str]]:
+    """The carried marks of a marks file whose key identity is unproved (key
+    version 0): no row proves which function their key named, so the tighten
+    holds them under their own keys and none is re-keyed."""
+    from ..keys import MarkIndex, carried_keys, rows_by_key
+
+    if key_version != 0:
+        return frozenset()
+    return frozenset(carried_keys(rows_by_key(scored), MarkIndex(ratchet).keys()))
 
 
 def _release_claims(store: SnapshotStore, git, cfg, scored) -> None:
@@ -802,14 +816,6 @@ def _verify_result(verdict, run_id: int | None, baseline: dict, commit: str, ran
     }
 
 
-def _uncarried(unmarked: list, carried) -> list:
-    """The standing debt less each function a carried mark judged: its mark sits
-    under its old key, so telling the reader to seed it would add a second one.
-    A twin never carries, so a carried function's key name is its long name."""
-    held = {(c.path, c.key_name) for c in carried}
-    return [row for row in unmarked if (row.path, row.long_name) not in held]
-
-
 def _warn_standing_debt(unmarked: list) -> None:
     """One stderr line for the over-ceiling functions no mark covers.
 
@@ -885,10 +891,13 @@ def _receipt(tool_versions: dict, saved, judged: _JudgedMarks,
 
 
 def _marks_moved(changes: dict) -> str:
-    """`6 dropped, 1 tightened`, or `restamped` for the one rewrite that moves
-    no mark: a file written before stamping gains its stamp line."""
-    if changes["dropped"] or changes["tightened"]:
-        return f"{changes['dropped']} dropped, {changes['tightened']} tightened"
+    """`6 dropped, 1 tightened`, with `, 1 re-keyed` only when a mark moved to
+    the key of the function that carries it, or `restamped` for the one
+    rewrite that moves no mark: a file written before stamping gains its
+    stamp line."""
+    rekeyed = f", {changes['rekeyed']} re-keyed" if changes["rekeyed"] else ""
+    if changes["dropped"] or changes["tightened"] or rekeyed:
+        return f"{changes['dropped']} dropped, {changes['tightened']} tightened{rekeyed}"
     return "restamped"
 
 
@@ -1113,8 +1122,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     uncovered = diff_uncovered(ranges, missing_by_path(root, cfg, folded=run.dead_lines),
                                scored) if ranges else []
     _warn_diff_uncovered(uncovered)
-    unmarked = _uncarried(unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets),
-                          verdict.carried)
+    unmarked = unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets)
     _warn_standing_debt(unmarked)
     verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)

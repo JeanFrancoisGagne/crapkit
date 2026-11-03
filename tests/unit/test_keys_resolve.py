@@ -408,3 +408,74 @@ def test_hypothesis_pair_moves_agrees_with_the_independent_model():
         assert_pairing_agrees(dropped, added - dropped)
 
     check()
+
+
+# --- keys.carriers: the same rule, asked from the mark's side ----------------------
+
+# (case, the file's functions, the marked keys, {mark name: answer, or the names a refusal holds})
+CARRIERS = [
+    ("the probe carries", at(NEW), at(OLD), {OLD: Carry(key(OLD), key(NEW))}),
+    ("a mark whose key a function holds is absent", at(OLD, NEW), at(OLD), {}),
+    ("twins refuse", at(NEW, TWIN), at(OLD), {OLD: [NEW, TWIN, OLD]}),
+    ("two leaving marks of one bare name refuse", at(NEW), at(OLD, "classify( x )"),
+     {OLD: [NEW, OLD, "classify( x )"], "classify( x )": [NEW, OLD, "classify( x )"]}),
+    ("two unmarked functions of one bare name refuse", at(NEW, "classify( q )"), at(OLD),
+     {OLD: [NEW, "classify( q )", OLD]}),
+    ("no unmarked function of the bare name: absent", at("grade( a )"), at(OLD), {}),
+    ("a fixed classify( a ) leaves the carry in place", at("classify( a )", NEW),
+     at("classify( a )", OLD), {OLD: Carry(key(OLD), key(NEW))}),
+    ("a mark in another file never carries here", at(NEW), at(OLD, path=OTHER), {}),
+]
+
+
+@pytest.mark.parametrize("case, functions, marked, wanted", CARRIERS, ids=[r[0] for r in CARRIERS])
+def test_carriers_answers_the_hand_table(case, functions, marked, wanted):
+    found = keys.carriers(functions, marked)
+
+    assert sorted(found) == sorted(key(name) for name in wanted)
+    for name, answer in wanted.items():
+        if isinstance(answer, Carry):
+            assert found[key(name)] == answer
+        else:
+            assert isinstance(found[key(name)], Refused)
+            assert_names_the_ambiguity(found[key(name)].text, answer)
+
+
+def assert_carriers_agree_with_resolve(functions: set, marked: set) -> None:
+    """Each answer `carriers` gives a mark is the one `resolve` gives each
+    unmarked function of its bare name, and every Carry `resolve` gives is one
+    `carriers` gives."""
+    found = keys.carriers(functions, marked)
+    for function in functions - marked:
+        answer = keys.resolve(function, functions, marked)
+        if isinstance(answer, Carry):
+            assert found[answer.old_key] == answer
+        elif isinstance(answer, Refused):
+            assert answer in found.values()
+    for mark, answer in found.items():
+        assert mark in marked - functions
+        if isinstance(answer, Carry):
+            assert keys.resolve(answer.new_key, functions, marked) == answer
+
+
+CARRY_POOL = [OLD, NEW, TWIN, "classify( x )", "classify( q )", "grade( a )", "(anonymous) ( z )"]
+
+
+def test_carriers_agree_with_resolve_on_every_small_file():
+    for parts in itertools.product(range(4), repeat=len(CARRY_POOL)):
+        functions = at(*cast(CARRY_POOL, parts, 1, 2))
+        assert_carriers_agree_with_resolve(functions, at(*cast(CARRY_POOL, parts, 2, 3)))
+
+
+def test_hypothesis_carriers_agree_with_resolve():
+    hypothesis, st, quiet = hypothesis_or_skip()
+    names = long_names(st)
+
+    @quiet
+    @hypothesis.given(functions=st.sets(names, max_size=6), left=st.sets(names, max_size=4),
+                      data=st.data())
+    def check(functions, left, data):
+        kept = data.draw(st.sets(st.sampled_from(sorted(functions)))) if functions else set()
+        assert_carriers_agree_with_resolve(at(*functions), at(*kept) | at(*(left - functions)))
+
+    check()

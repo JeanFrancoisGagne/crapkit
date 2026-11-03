@@ -156,7 +156,8 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # ratchet report's move events (mission-4-06) added 5.
 # The gate's pardon through a carried mark (mission-4-03a) added 14.
 # Both hooks naming a carried mark and its refusal (mission-4-03b) added 5.
-SRC_DEFS = 4069
+# verify's re-key of a carried mark (mission-4-04) added 4.
+SRC_DEFS = 4073
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):
