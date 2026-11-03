@@ -203,7 +203,8 @@
               "coveragepy",
               "lcov",
               "cobertura",
-              "jacoco"
+              "jacoco",
+              "coverprofile"
             ]
           },
           "scopes": {
@@ -217,7 +218,7 @@
           },
           "path_prefix": {
             "type": "string",
-            "description": "prefix joined onto the relative keys of coverage.py and lcov artifacts and the relative sources of Cobertura reports, and the source root JaCoCo package paths sit under"
+            "description": "prefix joined onto the relative keys of coverage.py and lcov artifacts and the relative sources of Cobertura reports, and the source root JaCoCo package paths sit under; a Go coverprofile does not read it (go.mod places its keys)"
           },
           "env": {
             "type": "object",

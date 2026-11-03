@@ -175,7 +175,7 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                               'writes'},
                                                   'parser': {'enum': ['istanbul', 'coveragepy',
                                                                       'lcov', 'cobertura',
-                                                                      'jacoco']},
+                                                                      'jacoco', 'coverprofile']},
                                                   'scopes': {'type': 'array',
                                                              'items': {'type': 'string'}},
                                                   'cwd': {'type': 'string'},
@@ -188,7 +188,10 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                                  'Cobertura reports, '
                                                                                  'and the source root '
                                                                                  'JaCoCo package paths '
-                                                                                 'sit under'},
+                                                                                 'sit under; a Go '
+                                                                                 'coverprofile does not '
+                                                                                 'read it (go.mod '
+                                                                                 'places its keys)'},
                                                   'env': {'type': 'object',
                                                           'additionalProperties': {'type': 'string'}},
                                                   'inputs': {'type': 'array',

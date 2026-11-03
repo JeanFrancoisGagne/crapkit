@@ -27,7 +27,7 @@ which is optional and on every lane on this page.
 | `name` | The lane's id. It names the lane's log, `.crapkit/lane-<name>.log`, and what `coverage --lane` takes. A name Windows cannot use as a file name, or two names that differ only in case, is refused at load with exit 3. |
 | `command` | Runs through the shell at the repo root (or `cwd`). Its **exit code is recorded, not enforced**. A brownfield suite with 98 known failures still writes a valid artifact, and demanding green here would make such a repo unmeasurable. |
 | `artifact` | The coverage file the command writes, repo-relative. Its absence after the command and all its retries is the failure. Two lanes may not declare the same artifact path: reused paths cross-attribute coverage under `--reuse-artifacts`. It names one file. An empty value or one that names the root (`.`, `cov/..`) is refused at load with exit 3, and so is a `results_artifact` that names the root. `doctor` FAILs an `artifact` or `results_artifact` that names a directory, such as vitest's `coverage` report directory: point it at the report file inside. |
-| `parser` | `istanbul`, `coveragepy`, `lcov` ([lcov](#lcov)), `cobertura` ([Cobertura](#cobertura)) or `jacoco` ([JaCoCo](#jacoco)). |
+| `parser` | `istanbul`, `coveragepy`, `lcov` ([lcov](#lcov)), `cobertura` ([Cobertura](#cobertura)), `jacoco` ([JaCoCo](#jacoco)) or `coverprofile` ([coverprofile](#coverprofile)). |
 | `scopes` | Which scopes this lane's numbers speak for. A scope no lane names can only score `no-lane`, and `doctor` fails on it. |
 | `results_artifact` | The JUnit report the same command writes. Two checks read it and neither runs without it: the [crashed-worker trust check](#a-junit-that-says-the-run-did-not-finish), which refuses a run the runner did not finish, and no-new-failures, which is `verify`'s exit 8. |
 
@@ -249,15 +249,15 @@ it is read from its command alone.
 
 ## Which languages a lane can measure
 
-Short answer: whichever ones your runner reports in one of five formats.
+Short answer: whichever ones your runner reports in one of six formats.
 
 A parser reads an artifact format, not a language. `coveragepy` reads coverage.py's JSON
 report. `istanbul` reads `coverage-final.json`, which vitest, jest and every other
 istanbul-shaped runner write. `lcov` reads an lcov tracefile, so Rust (cargo-llvm-cov), Swift,
-Objective-C, C and C++ (`llvm-cov export`, or gcov through geninfo) get a lane ([lcov](#lcov)), `cobertura` reads Cobertura XML, so C and C++ through gcovr get one too ([Cobertura](#cobertura)), and `jacoco` reads JaCoCo XML, so Java through Gradle or Maven gets one ([JaCoCo](#jacoco)).
+Objective-C, C and C++ (`llvm-cov export`, or gcov through geninfo) get a lane ([lcov](#lcov)), `cobertura` reads Cobertura XML, so C and C++ through gcovr get one too ([Cobertura](#cobertura)), `jacoco` reads JaCoCo XML, so Java through Gradle or Maven gets one ([JaCoCo](#jacoco)), and `coverprofile` reads the profile `go test -coverprofile` writes, so Go gets one ([coverprofile](#coverprofile)).
 
-Anything else has no lane to declare today. Go's coverprofile:
-crapkit does not read it, and no config key unlocks it.
+Anything else has no lane to declare today,
+and no config key unlocks one.
 Somebody writing the parser is the only thing that changes that.
 
 **Those scopes run cc-only, which is a real answer, not a failure.** Complexity, the
@@ -268,8 +268,8 @@ for you. See [configuration.md](configuration.md#coverage_optional--true).
 
 `crapkit init` writes live lanes for pytest, Vitest and Jest only. When a repo-root file
 shows another toolchain whose report a parser reads (`Cargo.toml` for cargo llvm-cov,
-`bun.lock`, `bun.lockb` or `bunfig.toml` for Bun, `deno.json` or `deno.jsonc` for Deno, `CMakeLists.txt` for gcovr, `build.gradle` or `build.gradle.kts` for Gradle, `pom.xml` for Maven), init
-writes that toolchain's lane commented, with its parser (`lcov`, `cobertura` for gcovr, `jacoco` for Gradle and Maven) and the scopes it would measure,
+`bun.lock`, `bun.lockb` or `bunfig.toml` for Bun, `deno.json` or `deno.jsonc` for Deno, `CMakeLists.txt` for gcovr, `build.gradle` or `build.gradle.kts` for Gradle, `pom.xml` for Maven, `go.mod` for go test), init
+writes that toolchain's lane commented, with its parser (`lcov`, `cobertura` for gcovr, `jacoco` for Gradle and Maven, `coverprofile` for go test) and the scopes it would measure,
 and the scope keeps `coverage_optional = true`. `crapkit doctor` then prints a note per such
 scope naming the language, the parser and the toolchain. Uncomment the lane, delete
 `coverage_optional`, and follow
@@ -2393,3 +2393,66 @@ and a DTD that declares an entity is refused by name. A line with a missing or n
 counter (`ci` absent, `ci="-1"`, `mb="NaN"`), a line with no `nr`, a sourcefile or a package
 with no name, and a report with no `<sourcefile>` are each refused, naming the file and the
 line. Each is exit 5; rerun the lane.
+
+## coverprofile
+
+`parser = "coverprofile"` reads the Go coverprofile `go test -coverprofile` writes. Its first line
+names the mode (`mode: set`, `mode: count` or `mode: atomic`), and each other line is a block:
+`<import path>/<file>.go:<line>.<column>,<line>.<column> <statements> <count>`. crapkit counts
+a block's lines: every line from the block's first to its last counts when the block holds a
+statement, and is hit when any block over it ran. A block with no statement gives nothing, and
+a profile holds no branches, so a Go function scores statement coverage. crapkit gives each
+line to the innermost function that holds it, so a func literal's lines score the literal
+when the inventory holds a span for it. A profile records no per-line test contexts, so
+`explain --tests` has none to show.
+
+`go tool cover -func` counts statements, not lines, so its percentages differ from crapkit's
+`cov`: a function whose untested branch is one statement on two lines shows 80% there and
+6 of 8 lines here.
+
+A Go repo, measured from its root: the lane `crapkit init` leaves commented when it finds a
+root `go.mod`.
+
+```
+[[lane]]
+name = "go"
+command = "go test -coverprofile=.crapkit/cov/go.out ./..."
+artifact = ".crapkit/cov/go.out"
+parser = "coverprofile"
+scopes = ["cmd"]
+```
+
+- One lane per module, with `cwd` at the module. crapkit reads the `module` line of the
+  `go.mod` at the lane's `cwd`, or in the nearest directory above it inside the checkout, and
+  keys each import path under that module path to the file under that directory. An import
+  path from another module names no file here and scores nothing; the lane says how many
+  files that leaves out. `go.work` is not read, so a workspace of several modules declares
+  one lane per module.
+- Test packages (`./...`), not files. `go test x_test.go x.go` writes its blocks under
+  `command-line-arguments/`, which names no module, so none of them scores.
+- `-coverpkg=./...` measures every package from every test binary, so a function another
+  package's tests run counts as tested. Each binary writes its own copy of every block, and
+  crapkit keeps a line hit when any copy ran.
+- Two profiles of one mode concatenated by a CI script read as one: the second `mode:` line
+  is read past. Profiles of two modes are refused.
+- `path_prefix` is not read: go.mod places the keys.
+
+A scope that was cc-only drops `coverage_optional = true` the day it gets the lane, and the
+next `verify` names the flip once for the scope; `crapkit ratchet seed --scope NAME` reseeds
+it ([Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)).
+
+Measured once, on 2026-11-03: 15 s from `pip install` into a fresh venv to a covered worklist
+on github.com/google/go-cmp v0.7.0, through `crapkit init`, the go stanza uncommented,
+`crapkit coverage` and `crapkit worklist` (`tests/e2e/test_go_recipe_time.py`). The run used
+Python 3.12.15 and Go 1.26.8 in a `python:3.12` container on Linux x86_64 (an AMD Ryzen 9
+7950X desktop), with pip installing crapkit from a checkout of this release.
+
+### What a refusal names
+
+A profile is read as UTF-8 under the rule lcov takes: a byte-order mark is read past, and a
+profile Windows PowerShell 5.1 redirected (`go test ... > go.out`, UTF-16) or a path with a
+byte that is not UTF-8 is refused naming the bytes and the fix. A first line that is not a
+mode line (a run killed before it wrote the profile), a mode Go does not write, a block with
+a dropped count, a missing or malformed position range, a negative or non-numeric count, and a
+profile with no block are each refused, naming the line. A lane whose `cwd` has no `go.mod` at
+or above it is refused with the one-lane-per-module fix. Each is exit 5; rerun the lane.

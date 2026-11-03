@@ -961,12 +961,14 @@ _UPGRADE_ANCHOR = "docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one
 def _doctor_cc_only_readers(root: Path, cfg) -> list[Finding]:
     """A note per coverage_optional scope holding a language a registered reader
     measures and init writes no live lane for: that scope can become measured.
+    A reader that needs a marker file counts only when the root holds one.
     A note, so doctor's exit code and `doctor --json` stay as they were."""
     from ..scaffold import LIVE_LANE_LANGUAGES
     from ..toolchain import detected, measurable_languages
 
-    readable = measurable_languages() - LIVE_LANE_LANGUAGES
-    present = frozenset(row.name for row in detected(_present_markers(root)))
+    markers = _present_markers(root)
+    readable = measurable_languages(markers) - LIVE_LANE_LANGUAGES
+    present = frozenset(row.name for row in detected(markers))
     found = [(scope.name, _readable_languages(scope, readable)) for scope in cfg.scopes]
     return [Finding("note", _reader_note(name, languages, present))
             for name, languages in found if languages]

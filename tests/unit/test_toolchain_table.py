@@ -6,6 +6,7 @@ dicts as they stood at the merge base, never computed from the table, so a row
 that drifts from what init used to write fails here before init's goldens move.
 """
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 LCOV = ROOT / "tests" / "fixtures" / "coverage" / "lcov"
 COBERTURA = ROOT / "tests" / "fixtures" / "coverage" / "cobertura"
 JACOCO = ROOT / "tests" / "fixtures" / "coverage" / "jacoco"
+COVERPROFILE = ROOT / "tests" / "fixtures" / "coverage" / "coverprofile"
 
 # The runners mission-1 names, by the row name every reader keys on.
 MISSION_1 = ("pytest", "vitest", "jest", "bun", "deno", "cargo llvm-cov", "gcovr", "gradle", "maven",
@@ -90,10 +92,16 @@ def test_the_pytest_row_carries_the_flags_the_pytest_lane_wrote():
     assert pytest_row.junit_env == ()
 
 
-def test_the_row_without_facts_yet_carries_its_spelling_alone():
+def test_the_go_test_row_is_the_ticket_spelling():
+    """Every package of the module, never file arguments, and no path_prefix:
+    the root go.mod places the profile's import paths."""
     row = TOOLCHAINS["go test"]
 
-    assert row == Toolchain("go test", row.words)
+    assert row == Toolchain("go test", (("go", "test"),), languages=("go",),
+                            formats=("coverprofile",), markers=("go.mod",), stanza=row.stanza,
+                            needs_marker=True)
+    assert row.stanza == toolchain.Stanza("go", "go test -coverprofile=.crapkit/cov/go.out ./...",
+                                          ".crapkit/cov/go.out", "coverprofile")
 
 
 def test_every_format_a_row_names_is_a_registered_parser():
@@ -108,7 +116,7 @@ def test_every_stanza_row_has_markers_languages_and_the_stanzas_parser():
     stanzas = [row for row in TOOLCHAINS.values() if row.stanza]
 
     assert [row.name for row in stanzas] == ["bun", "deno", "cargo llvm-cov", "gcovr", "gradle",
-                                             "maven"]
+                                             "maven", "go test"]
     for row in stanzas:
         assert row.markers and row.languages and row.formats, row.name
         assert row.stanza.parser in row.formats, row.name
@@ -126,6 +134,7 @@ def test_every_stanza_row_has_markers_languages_and_the_stanzas_parser():
     ("gcovr", ("cpp",), ("cobertura",), ("CMakeLists.txt",)),
     ("gradle", ("java",), ("jacoco",), ("build.gradle", "build.gradle.kts")),
     ("maven", ("java",), ("jacoco",), ("pom.xml",)),
+    ("go test", ("go",), ("coverprofile",), ("go.mod",)),
     ("c8", ("javascript", "typescript", "tsx"), ("istanbul", "lcov"), ()),
 ])
 def test_each_row_carries_its_languages_formats_and_markers(name, languages, formats, markers):
@@ -136,10 +145,10 @@ def test_each_row_carries_its_languages_formats_and_markers(name, languages, for
 
 def test_the_stanza_commands_are_the_ones_the_fixture_readme_records():
     """init never prints a command no run wrote: each stanza command is the one
-    tests/fixtures/coverage/lcov/, cobertura/ or jacoco/README.md records for
-    its fixture."""
+    tests/fixtures/coverage/lcov/, cobertura/, jacoco/ or coverprofile/README.md
+    records for its fixture."""
     readme = "".join((folder / "README.md").read_text(encoding="utf-8")
-                     for folder in (LCOV, COBERTURA, JACOCO))
+                     for folder in (LCOV, COBERTURA, JACOCO, COVERPROFILE))
     recorded = dict(re.findall(r"^- Stanza `([^`]+)`: `([^`]+)`", readme, re.M))
     stanzas = {row.stanza.name: row.stanza.command for row in TOOLCHAINS.values() if row.stanza}
 
@@ -237,6 +246,21 @@ def test_each_java_stanza_recording_reads_through_the_jacoco_reader(recording, t
     assert sorted(evidence) == ["src/main/java/Greeter.java", "src/main/java/com/acme/Shapes.java"]
 
 
+def test_the_go_stanza_recording_reads_through_the_coverprofile_reader(tmp_path):
+    from crapkit.config import Lane
+    from crapkit.coverage_format import lane_format
+
+    shutil.copytree(COVERPROFILE / "go-repo", tmp_path, dirs_exist_ok=True)
+    artifact = tmp_path / "go.out"
+    artifact.write_bytes((COVERPROFILE / "go-1.26.8-set.out").read_bytes())
+    lane = Lane(name="go", command="true", artifact="go.out", parser="coverprofile", scopes=())
+
+    _, evidence, _ = lane_format(lane).read(lane, tmp_path, artifact)
+
+    assert sorted(evidence) == ["internal/calc/calc.go", "shapes.go"]
+    assert all(file.hit_lines and file.missed_lines for file in evidence.values())
+
+
 def test_the_rust_stanza_is_the_ticket_spelling():
     stanza = TOOLCHAINS["cargo llvm-cov"].stanza
 
@@ -253,10 +277,18 @@ def test_the_measurable_languages_and_the_live_lane_languages():
     assert LIVE_LANE_LANGUAGES == frozenset({"python", "javascript", "typescript", "tsx", "vue"})
 
 
+def test_go_is_measurable_only_beside_a_go_mod():
+    """coverprofile places its keys through go.mod and refuses a lane with none
+    above its cwd, so a repo without one has no Go reader to name."""
+    assert "go" not in toolchain.measurable_languages(frozenset({"Cargo.toml"}))
+    assert "go" in toolchain.measurable_languages(frozenset({"go.mod"}))
+
+
 def test_readers_name_each_parser_and_toolchain_for_a_language():
     assert toolchain.readers("rust") == (("lcov", "cargo llvm-cov"),)
     assert toolchain.readers("cpp") == (("cobertura", "gcovr"),)
     assert toolchain.readers("java") == (("jacoco", "gradle"), ("jacoco", "maven"))
+    assert toolchain.readers("go") == (("coverprofile", "go test"),)
     assert toolchain.readers("zig") == ()
 
 

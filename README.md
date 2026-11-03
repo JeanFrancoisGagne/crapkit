@@ -544,7 +544,7 @@ scores on complexity alone.
 | JavaScript | `.js` `.jsx` `.mjs` `.cjs` | istanbul |
 | Vue | `.vue` | istanbul, when your vitest run reports on `.vue` files |
 | Swift | `.swift` | lcov, once a lane is declared; cc-only until then |
-| Go | `.go` | none: cc-only |
+| Go | `.go` | coverprofile, once a lane is declared; cc-only until then |
 | Rust | `.rs` | lcov, once a lane is declared; cc-only until then |
 | shell | `.sh` `.bash` | none: cc-only |
 | PowerShell | `.ps1` `.psm1` | none: cc-only |

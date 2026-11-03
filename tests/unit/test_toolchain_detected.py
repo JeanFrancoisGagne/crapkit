@@ -24,7 +24,8 @@ from crapkit.toolchain import detected
     ({"gradlew"}, []),
     ({"bun.lock", "bun.lockb", "bunfig.toml"}, ["bun"]),
     (set(), []),
-    ({"go.mod"}, []),
+    ({"go.mod"}, ["go test"]),
+    ({"go.mod", "pom.xml"}, ["maven", "go test"]),
     ({"pyproject.toml", "package.json"}, []),
 ], ids=lambda value: ",".join(sorted(value)) if isinstance(value, set) else None)
 def test_each_marker_names_its_toolchain_in_table_order(markers, names):

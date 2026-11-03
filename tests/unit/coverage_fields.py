@@ -87,6 +87,12 @@ WRONG = {
     "xml boolean": ["x", "1", "True", ""],
     "xml conditions": ["x", "50%", "(1/2)", "50% (3/2)", ""],
     "xml path": [],
+    # A Go coverprofile is text too: the mode line's word, a block's position
+    # range and its two counts. A file path takes any text.
+    "go mode": ["x", "SET", "1", ""],
+    "go range": ["x", "1.1", "1.1,2", "-1.1,2.2", ""],
+    "go count": ["x", "-1", "1.5", "nan", "inf", ""],
+    "go path": [],
 }
 
 # Per format, the keys whose members are ids (a file, a function, a counter), not
@@ -97,10 +103,14 @@ MAPS = {
     "lcov": set(),
     "cobertura": set(),
     "jacoco": set(),
+    "coverprofile": set(),
 }
 
 FILE_KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs",
-             "cobertura": "src/a.cpp", "jacoco": "src/a.java"}
+             "cobertura": "src/a.cpp", "jacoco": "src/a.java", "coverprofile": "src/a.go"}
+# The module path the minimal coverprofile's import paths sit under: the
+# contract suite writes a go.mod naming it at each artifact's root.
+GO_MODULE = "example.com/m"
 
 _FN = "*.fnMap.*"
 _B0, _B1 = "*.branchMap.0", "*.branchMap.1"
@@ -283,6 +293,14 @@ FIELDS = [
     Field("jacoco", "line@ci", True, "xml count", (), "ci"),
     Field("jacoco", "line@mb", True, "xml count", (), "mb"),
     Field("jacoco", "line@cb", True, "xml count", (), "cb"),
+
+    # Go coverprofile: `mode` is the first line's mode word, `block.FIELD` a
+    # field of the first block line. Every field is required.
+    Field("coverprofile", "mode", True, "go mode", (), "mode"),
+    Field("coverprofile", "block.file", True, "go path", (), "a block names no file"),
+    Field("coverprofile", "block.range", True, "go range", (), "position range"),
+    Field("coverprofile", "block.statements", True, "go count", (), "statement count"),
+    Field("coverprofile", "block.count", True, "go count", (), "hit count"),
 ]
 
 
@@ -473,9 +491,57 @@ def _xml_artifact(make):
     return build
 
 
+def _coverprofile() -> list[str]:
+    """A set-mode profile of one file: a block over lines 1-3 that ran and a
+    block on line 5 that did not."""
+    written = f"{GO_MODULE}/{FILE_KEYS['coverprofile']}"
+    return ["mode: set", f"{written}:1.10,3.2 3 1", f"{written}:5.1,5.9 1 0"]
+
+
+_GO_BLOCK = re.compile(r"(?P<file>.*):(?P<range>[^ ]*) (?P<statements>[^ ]*) (?P<count>.*)")
+
+
+def coverprofile_locators(lines: list[str]) -> list[str]:
+    """Each row locator `lines` holds: the mode line, and each field of the
+    first block line. A later block is a member, as an lcov DA record is."""
+    blocks = [line for line in lines[1:] if not line.startswith("mode:")]
+    found = ["mode"] if lines and lines[0].startswith("mode:") else []
+    return found + [f"block.{field}" for field in ("file", "range", "statements", "count")
+                    if blocks and _GO_BLOCK.fullmatch(blocks[0])]
+
+
+def coverprofile_edit(lines: list[str], locator: str, value: str | None) -> None:
+    """Drop (value None) or set the field at `locator`. The mode dropped takes
+    its line; a block's range dropped takes the `:` before it, and a count
+    dropped takes the space before it."""
+    if locator == "mode":
+        if value is None:
+            del lines[0]
+        else:
+            lines[0] = f"mode: {value}"
+        return
+    index = next(i for i, line in enumerate(lines) if i and not line.startswith("mode:"))
+    parts = _GO_BLOCK.fullmatch(lines[index]).groupdict()
+    parts[locator.partition(".")[2]] = value
+    file, span = parts["file"] or "", parts["range"]
+    position = file if span is None else f"{file}:{span}"
+    lines[index] = " ".join(part for part in (position, parts["statements"], parts["count"])
+                            if part is not None)
+
+
+def _coverprofile_artifact(drop: str | None = None,
+                           retype: tuple[str, object] | None = None) -> bytes:
+    lines = _coverprofile()
+    if drop is not None:
+        coverprofile_edit(lines, drop, None)
+    if retype is not None:
+        coverprofile_edit(lines, retype[0], str(retype[1]))
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
 _BUILDERS = {"istanbul": _json_artifact(_istanbul), "coveragepy": _json_artifact(_coveragepy),
              "lcov": _lcov_artifact, "cobertura": _xml_artifact(_cobertura),
-             "jacoco": _xml_artifact(_jacoco)}
+             "jacoco": _xml_artifact(_jacoco), "coverprofile": _coverprofile_artifact}
 
 
 def minimal_artifact(format: str, drop: str | None = None,
