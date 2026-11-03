@@ -629,7 +629,7 @@ with a count on stderr (`staged function(s) carry a ratchet mark and were not ga
 says the same about a staged file no `[[scope]]` claims, so a new directory is never ungated in silence.
 A passed function whose ccn rose since the diff base gets a warn on stderr instead of the
 count (`staged marked function(s) rose in ccn and may pass their ratchet mark`), and the
-commit still goes through: add tests or decompose before `verify` judges it.
+commit still goes through: add tests or decompose before `verify` judges it. A mark that carried through a signature edit pardons on both hooks the same way, and `hook-precommit` adds one carried line naming both keys; twins, or several candidates for one bare name, carry nothing, and both hooks name every key and the `ratchet move --function` command ([A signature change keeps its mark](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#a-signature-change-keeps-its-mark)).
 
 Every gate refuses a changed file no reader could read, exit 6, because it judged none of
 the functions in it: `crapkit gate: 1 staged file(s) could not be read, so no function in

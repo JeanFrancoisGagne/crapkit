@@ -1,0 +1,32 @@
+{
+  "case": "twin_ambiguity",
+  "why": "The edit leaves two functions with the probe's new signature, classify( a , b , c = None ) and its #2 twin, both at ccn 7. Twins never carry a mark, so neither takes the mark of 7.0000 that left under classify( a , b ): the unmarked block names both, keys' sentence under each row names every candidate key and the ratchet move --function command that settles it, and the closing line keeps its bytes.",
+  "fixture": "twin_ambiguity",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "def classify(a, b):",
+      "new_string": "def classify(a, b, c=None):"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {
+    "exit": 2,
+    "stderr": [
+      "crapkit: calc/grade.py defines classify( a , b , c = None ) more than once; each one takes its own ratchet key - the first as written, later ones suffixed #2, #3 in file order",
+      "crapkit advisory: 2 function(s) over ceiling 6 in calc/grade.py (the edit landed; nothing was blocked)",
+      "  ccn 7  calc/grade.py:1  classify( a , b , c = None )",
+      "    calc/grade.py: no mark carries to \"classify( a , b , c = None )\", \"classify( a , b , c = None )#2\" under the name classify: twins never carry a mark; the marks that left the file are \"classify( a , b )\"; ratchet move --function is the explicit form: crapkit ratchet move --function calc/grade.py \"classify( a , b )\" \"classify( a , b , c = None )\" or crapkit ratchet move --function calc/grade.py \"classify( a , b )\" \"classify( a , b , c = None )#2\"",
+      "  ccn 7  calc/grade.py:17  classify( a , b , c = None )",
+      "    calc/grade.py: no mark carries to \"classify( a , b , c = None )\", \"classify( a , b , c = None )#2\" under the name classify: twins never carry a mark; the marks that left the file are \"classify( a , b )\"; ratchet move --function is the explicit form: crapkit ratchet move --function calc/grade.py \"classify( a , b )\" \"classify( a , b , c = None )\" or crapkit ratchet move --function calc/grade.py \"classify( a , b )\" \"classify( a , b , c = None )#2\"",
+      "the commit gate enforces this; decompose there or mark the debt"
+    ]
+  }
+}

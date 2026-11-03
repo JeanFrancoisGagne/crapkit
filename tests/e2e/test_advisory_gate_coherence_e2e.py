@@ -123,8 +123,9 @@ def gate(repo: Path) -> subprocess.CompletedProcess:
 
 
 # A listed function: `  ccn N  path:line  name`, `ccn B -> N` on a warn row, and
-# `  mark M.MMMM` after the name on a marked row. Both surfaces print all three.
-_ROW = re.compile(r"^  ccn (?:\S+ -> )?\s*\d+  \S+:\d+  (.+?)(?:  mark \d+\.\d{4})?$")
+# `  mark M.MMMM` after the name on a marked row, with `(carried from KEY)` after
+# a carried mark. Both surfaces print all of them.
+_ROW = re.compile(r"^  ccn (?:\S+ -> )?\s*\d+  \S+:\d+  (.+?)(?:  mark \d+\.\d{4}(?: \(carried from .+\))?)?$")
 
 
 def named(text: str) -> set[str]:
@@ -216,6 +217,49 @@ def test_a_ccn_rise_across_the_mark_warns_on_both_surfaces(repo: Path, tmp_path:
     assert (mid_session.returncode, at_commit.returncode) == (2, 0), mid_session.stderr + at_commit.stderr
     assert named(mid_session.stderr) == named(at_commit.stderr) == {"legacy( n )"}
     assert "ccn 8 -> 9" in mid_session.stderr and "ccn 8 -> 9" in at_commit.stderr
+
+
+OLD, NEW = "classify( a , b )", "classify( a , b , c = None )"
+
+
+def classify(signature: str, ccn: int = 7) -> str:
+    body = "".join(f"    if a == {i}:\n        return {i}\n" for i in range(ccn - 1))
+    return f"def classify({signature}):\n{body}    return b\n"
+
+
+def probed(root: Path) -> Path:
+    """The signature probe: `classify( a , b )` at ccn 7 under its mark of
+    7.0000 in a cc-only scope, where a staged function's CRAP is its ccn."""
+    root.mkdir()
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "core.autocrlf", "false")
+    write(root, "crapkit.toml", CONFIG + "coverage_optional = true\n")
+    write(root, "crapkit-ratchet.tsv", MARKS.replace("legacy( n )\t63.6000", f"{OLD}\t7.0000"))
+    write(root, "src/mod.py", classify("a, b"))
+    git(root, "add", "-A")
+    git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init")
+    return root
+
+
+SIGNED = classify("a, b, c=None")
+
+
+@pytest.mark.parametrize(("source", "codes", "functions"), [
+    pytest.param(SIGNED, (0, 0), set(), id="the-probe"),
+    pytest.param(classify("a, b, c=None", 8), (2, 6), {NEW}, id="past-the-carried-mark"),
+    pytest.param(f"{SIGNED}\n\n{SIGNED}", (2, 6), {NEW}, id="twins"),
+])
+def test_a_carried_mark_draws_one_verdict_on_both_surfaces(tmp_path: Path, source, codes, functions):
+    """The signature edit carries its mark: green on both. Past the carried
+    mark, or left with a twin no mark carries to, red on both, and the advisory
+    names exactly the functions the gate refuses."""
+    root = probed(tmp_path / "probe")
+    stage(root, source)
+
+    mid_session, at_commit = advisory(root, tmp_path), gate(root)
+
+    assert (mid_session.returncode, at_commit.returncode) == codes, mid_session.stderr + at_commit.stdout
+    assert named(mid_session.stderr) == named(at_commit.stdout) == functions
 
 
 @ANY_BYTE_NAMES

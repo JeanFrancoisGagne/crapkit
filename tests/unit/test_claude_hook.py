@@ -593,6 +593,35 @@ def test_a_warn_row_names_the_ccn_head_held():
     assert claude_hook._worded("calc/grade.py", result, 6)[1] == "  ccn 7 -> 9  calc/grade.py:1  sprawl( n )  mark 40.0000"
 
 
+# A signature edit renamed sprawl( m ) to sprawl( n ); its mark carried.
+FROM = "sprawl( m )"
+AMBIGUITY = ('calc/grade.py: no mark carries to "sprawl( n )", "sprawl( n )#2" under the name sprawl: '
+             'twins never carry a mark; the marks that left the file are "sprawl( m )"; ratchet move '
+             '--function is the explicit form: crapkit ratchet move --function calc/grade.py "sprawl( m )" '
+             '"sprawl( n )" or crapkit ratchet move --function calc/grade.py "sprawl( m )" "sprawl( n )#2"')
+CARRIED_MAPPING = {
+    "carried": (_breach(8, mark=72.0)._replace(carried_from=FROM), []),
+    "marked_rise": (_breach(8, mark=3.0)._replace(carried_from=FROM),
+                    [PAST_MARK[0], f"{PAST_MARK[1]} (carried from {FROM})", PAST_MARK[2]]),
+    "unproven_rise": (_breach(8, mark=40.0)._replace(carried_from=FROM),
+                      [NEW_RISE[0], f"{NEW_RISE[1]} (carried from {FROM})", NEW_RISE[2]]),
+    "over_ceiling": (_breach(8)._replace(mark_ambiguity=AMBIGUITY),
+                     [*UNMARKED[:2], f"    {AMBIGUITY}", UNMARKED[2]]),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(CARRIED_MAPPING))
+def test_a_carried_or_ambiguous_finding_maps_to_silence_or_to_mission_3_s_blocks(kind):
+    """A carried pardon says nothing, as an exact one does; a rise on a carried
+    function names the key its mark sits under; a refused carry prints keys'
+    sentence under the function's row, and the closing line keeps its bytes."""
+    from crapkit.gate import GateResult
+
+    breach, lines = CARRIED_MAPPING[kind]
+
+    assert claude_hook._worded("calc/grade.py", GateResult(**{kind: (breach,)}), 6) == lines
+
+
 # --- one bound builder for both hooks ------------------------------------------
 
 @pytest.mark.parametrize("optional", [False, True], ids=["measured", "cc-only"])

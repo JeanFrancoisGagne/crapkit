@@ -24,6 +24,7 @@ session works in does not hold those pages.
 | Before committing | `crapkit rescore FILE --gate` |
 | The gate says a staged function rose past its ratchet mark | The commit is refused: its ccn alone puts its CRAP above the mark at any coverage. Bring the ccn back to the mark or under it; the mark does not rise |
 | The gate says a staged marked function rose in ccn and may pass its ratchet mark | The commit went through, but the higher ccn may have taken its CRAP past the mark, and `crapkit verify` judges that with coverage. Add tests that run the new branches, or decompose, before `verify` runs |
+| The gate says a staged function carries the mark recorded for another key | A signature edit renamed the function, and the mark its old key held counts for it: the count line counts it, and a rise names the old key as `(carried from OLD)`. The line names the move: a passing `crapkit verify` re-keys the mark, or run the `crapkit ratchet move --function` command it prints |
 | Where does new code go | `crapkit worklist --top N`, `crapkit coupling`, `crapkit duplication` |
 | Which branches need tests | `uncovered_lines` and `est_uncovered_paths` in the packet |
 | Running the owning scope's tests | `commands.scoped_tests`, run verbatim, never retyped |
