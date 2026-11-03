@@ -16,6 +16,7 @@ feeds it bytes in the shape `git log --raw` prints.
 from __future__ import annotations
 
 import codecs
+import json
 import os
 import re
 import subprocess
@@ -353,6 +354,50 @@ def test_the_events_say_what_each_revision_changed(saved_every_way):
     ]
 
 
+def _report_json(root: Path, capsys) -> dict:
+    capsys.readouterr()
+    assert main(["ratchet", "report", "--json", "--repo", str(root)]) == 0
+    return json.loads(capsys.readouterr().out)
+
+
+def _brief_ages(root: Path, keys_: list) -> dict:
+    """Each key's age as brief reads it: _BriefLoader's one read of the marks
+    events, then packet.mark_age_days, the value gate_rule.mark_age_days carries."""
+    from types import SimpleNamespace
+
+    from crapkit import packet
+    from crapkit.cli.queue import _BriefLoader
+
+    events = _BriefLoader(root, SimpleNamespace(ratchet_file=MARKS), None, {})._read_mark_events()
+    return {key_: packet.mark_age_days(events, key_) for key_ in keys_}
+
+
+def test_a_ratchet_move_commit_keeps_every_age_and_repayment_count(saved_every_way, capsys):
+    """The history gains a commit of `ratchet move src/a.py src/b.py`, dated with
+    the newest commit so the anchor stays: ratchet report --json and brief read
+    every moved mark at the age it had under src/a.py, and the move repays none."""
+    (saved_every_way / "crapkit.toml").write_text(
+        '[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src"]\n'
+        'languages = ["python"]\n', encoding="utf-8")
+    git(saved_every_way, "reset", "-q", "--hard")
+    before = _report_json(saved_every_way, capsys)
+    assert main(["ratchet", "move", "src/a.py", "src/b.py", "--repo", str(saved_every_way)]) == 0
+    raw_commit(saved_every_way, files={MARKS.encode(): (saved_every_way / MARKS).read_bytes()},
+               age_days=10)
+
+    after = _report_json(saved_every_way, capsys)
+
+    def moved(rows: list[dict]) -> list:
+        return [{**row, "path": "src/b.py"} for row in rows]
+
+    assert after["oldest"] == moved(before["oldest"]) and len(after["oldest"]) == 5
+    counts = ("open", "dropped_total", "dropped_last_30d", "dropped_last_90d")
+    assert {k: after[k] for k in counts} == {k: before[k] for k in counts}
+    assert abs(after["anchor_ts"] - before["anchor_ts"]) <= 5, "each commit reads its own clock"
+    assert _brief_ages(saved_every_way, [("src/b.py", r["long_name"]) for r in after["oldest"]]) == {
+        ("src/b.py", r["long_name"]): r["age_days"] for r in after["oldest"]}
+
+
 def test_a_legacy_bare_twin_key_reads_as_twin_one_as_the_mark_index_does(saved_every_way):
     """The first of a name keeps the bare key, so a mark written before the
     ordinal is twin #1: the revision reads it as keys.MarkIndex does."""
@@ -379,8 +424,11 @@ def test_a_key_a_revision_lists_twice_reads_its_first_mark(tmp_path):
 # _rename_patch), held_history and cli/ratchet_cmds' _with_head_revision, and
 # ratchet_report's mark_events over those patches. It calls no crapkit git
 # read. On every UTF-8 history the unit and e2e suites build, the new rule over
-# revisions gives the same events and the same report, with two declared
-# exceptions. A revision that changes only a row's bytes (its line ending, its
+# revisions gives the same events and the same report, with three declared
+# exceptions. A drop and an add the pairing model pairs (a re-key inside one
+# file, or a path move) read as one "moved" event where 0.8.1 read a repayment
+# and a new mark: _frozen_moves applies that change to every history, and on a
+# history with no move it changes nothing. A revision that changes only a row's bytes (its line ending, its
 # place in the file, the file's closing newline) reads as a clock tick where
 # 0.8.1 read an update at the value the mark held (C37); the report is the
 # same, and `resaves=True` holds a history to exactly that. A revision that
@@ -523,9 +571,48 @@ def _frozen_mark_events(patches: list[tuple], *, resaves: bool = False) -> list[
                 held.pop(key, None)
             else:
                 held[key] = crap
-        events += changed or [(ts, None, "observed", 0.0)]
+        events += _frozen_moves(ts, changed) or [(ts, None, "observed", 0.0)]
         events += [(ts, None, "held", crap_by_key(read_ratchet(text)[0])) for text in texts]
     return events
+
+
+def model_path_pairs(dropped: dict, added: dict) -> set:
+    """docs/ratchet.md's path move: a key that left and a key that arrived,
+    each mapped to its mark, with the same key name and the same mark, and no
+    other key that left or arrived holds both."""
+    from collections import Counter
+
+    gone = Counter((key[1], crap) for key, crap in dropped.items())
+    came = Counter((key[1], crap) for key, crap in added.items())
+    arrived = {(key[1], crap): key for key, crap in added.items()}
+    return {(old, arrived[(old[1], crap)]) for old, crap in dropped.items()
+            if gone[(old[1], crap)] == came[(old[1], crap)] == 1}
+
+
+def model_moves(dropped: dict, added: dict) -> set:
+    """Check 2's pairing: test_keys_resolve.py's carry model inside each file,
+    then the path model over the keys left over."""
+    from test_keys_resolve import model_pairs
+
+    pairs = set()
+    for path in {k[0] for k in dropped} & {k[0] for k in added}:
+        pairs |= model_pairs(path, set(dropped), set(added))[0]
+    paired = {k for pair in pairs for k in pair}
+    return pairs | model_path_pairs({k: c for k, c in dropped.items() if k not in paired},
+                                    {k: c for k, c in added.items() if k not in paired})
+
+
+def _frozen_moves(ts: int, changed: list[tuple]) -> list[tuple]:
+    """mission-4-06's declared change applied to one revision's 0.8.1 events:
+    each drop and add the pairing model pairs is one "moved" event keyed
+    (old key, new key) at the new value, listed after the adds and updates."""
+    added = {k: crap for _, k, kind, crap in changed if kind == "added"}
+    pairs = model_moves({k: crap for _, k, kind, crap in changed if kind == "dropped"}, added)
+    paired = {k for pair in pairs for k in pair}
+    kept = [event for event in changed if event[1] not in paired]
+    return ([event for event in kept if event[2] != "dropped"]
+            + [(ts, pair, "moved", added[pair[1]]) for pair in sorted(pairs)]
+            + [event for event in kept if event[2] == "dropped"])
 
 
 def _same_events_both_ways(root: Path, rel: str = MARKS, *, resaves: bool = False,
@@ -608,8 +695,8 @@ def test_the_new_rule_gives_the_0_8_1_events_on_record_v1_rows(tmp_path):
 
     assert "@crapkit-record-v1" in (tmp_path / MARKS).read_text(encoding="utf-8")
     assert [(k, kind) for _, k, kind, _ in events] == [
-        (("#src/a.py", "f( )"), "added"), (("src/a b.py", "f( )"), "added"),
-        (("#src/a.py", "f( )"), "dropped")]
+        (("#src/a.py", "f( )"), "added"),
+        ((("#src/a.py", "f( )"), ("src/a b.py", "f( )")), "moved")], "one mark moved path"
 
 
 def test_a_resave_that_changes_only_line_endings_moves_only_the_clock(tmp_path):
@@ -1406,18 +1493,16 @@ def test_a_range_whose_base_is_not_an_ancestor_names_both_ends(tmp_path):
 
 
 def _model_moves(root: Path) -> set:
-    """Check 2: test_keys_resolve.py's pairing model over each consecutive
-    pair of the revisions `git log` lists, each read by _oracle_marks, as
-    (time, old key, new key)."""
-    from test_keys_resolve import model_pairs
-
+    """Check 2: model_moves (test_keys_resolve.py's pairing model inside a
+    file, then the path model) over each consecutive pair of the revisions
+    `git log` lists, each read by _oracle_marks, as (time, old key, new key)."""
     found, before = set(), {}
     for sha, at in map(str.split, git(root, "log", "--reverse", "--format=%H %at", "--",
                                       MARKS).splitlines()):
         marks = _oracle_marks(root, sha, MARKS)
-        dropped, added = before.keys() - marks.keys(), marks.keys() - before.keys()
-        for path in {k[0] for k in dropped | added}:
-            found |= {(int(at), *pair) for pair in model_pairs(path, dropped, added)[0]}
+        dropped = {k: crap for k, crap in before.items() if k not in marks}
+        added = {k: crap for k, crap in marks.items() if k not in before}
+        found |= {(int(at), *pair) for pair in model_moves(dropped, added)}
         before = marks
     return found
 
@@ -1439,7 +1524,28 @@ def _moved_a_lot(root: Path) -> None:
     write(20, ("a.py", "f( x )", "9.0"), ("b.py", "g( )", "5.0"), ("a.py", "h( z )", "7.0"))
 
 
-@pytest.mark.parametrize("build", [rekey.rekey_history, _moved_a_lot])
+def _moved_paths(root: Path) -> None:
+    """A path move, a directory move of three files, two files that move f( )
+    at one value (no pair), a path move that also changes the value (no pair),
+    and a path move beside a re-key in one commit."""
+    def write(age: int, *marked: tuple[str, str, str]) -> None:
+        body = rekey.STAMP + "\n# crapkit-keys=1\npath\tlong_name\tcrap\n"
+        body += "".join(f"{path}\t{name}\t{crap}\n" for path, name, crap in marked)
+        raw_commit(root, files={MARKS.encode(): body.encode("utf-8")}, age_days=age)
+
+    repository(root)
+    write(50, ("calc/grade.py", "grade( x )", "9.0"), ("d/x.py", "x( )", "3.0"),
+          ("d/y.py", "y( )", "4.0"), ("d/z.py", "z( )", "5.0"), ("p.py", "f( )", "2.0"),
+          ("q.py", "f( )", "2.0"), ("v.py", "v( )", "6.0"), ("k.py", "k( a )", "8.0"))
+    write(40, ("calc/grading.py", "grade( x )", "9.0"), ("e/x.py", "x( )", "3.0"),
+          ("e/y.py", "y( )", "4.0"), ("e/z.py", "z( )", "5.0"), ("r.py", "f( )", "2.0"),
+          ("s.py", "f( )", "2.0"), ("w.py", "v( )", "5.5"), ("k.py", "k( a )", "8.0"))
+    write(30, ("calc/grading.py", "grade( x , y )", "9.0"), ("e/x.py", "x( )", "3.0"),
+          ("e/y.py", "y( )", "4.0"), ("f/z.py", "z( )", "5.0"), ("r.py", "f( )", "2.0"),
+          ("s.py", "f( )", "2.0"), ("w.py", "v( )", "5.5"), ("k.py", "k( a , b )", "8.0"))
+
+
+@pytest.mark.parametrize("build", [rekey.rekey_history, _moved_a_lot, _moved_paths])
 def test_the_independent_pairing_model_equals_moves(tmp_path, build):
     build(tmp_path)
 
@@ -1612,8 +1718,8 @@ def test_a_crap_that_is_not_finite_holds_no_mark(tmp_path, at):
     pytest.param(["lib/a.py", "src/a.py"], id="two-rows"),
 ])
 @pytest.mark.parametrize("at", [0, _row_of(4096), BIG])
-def test_a_mark_moved_to_a_path_that_ends_in_its_old_one_enters_and_repays(tmp_path, at,
-                                                                            paths):
+def test_a_mark_moved_to_a_path_that_ends_in_its_old_one_reads_as_the_rows_it_moved(tmp_path, at,
+                                                                                     paths):
     """`ratchet move` takes a mark from a.py to lib/a.py, so the old row's text
     is the tail of the new one. The carry looks for the place the two
     revisions agree again by finding an old row's text in the new revision;
@@ -1625,8 +1731,11 @@ def test_a_mark_moved_to_a_path_that_ends_in_its_old_one_enters_and_repays(tmp_p
 
     events = _read_after_the_base(tmp_path, [big_text(old), big_text(new)])
 
-    assert events == ([(1, (path, "f( )"), "added", 9.0) for path in paths]
-                      + [(1, ("a.py", "f( )"), "dropped", 9.0)])
+    if len(paths) == 1:  # one mark left a.py and one arrived under its name: a path move
+        assert events == [(1, (("a.py", "f( )"), ("lib/a.py", "f( )")), "moved", 9.0)]
+    else:
+        assert events == ([(1, (path, "f( )"), "added", 9.0) for path in paths]
+                          + [(1, ("a.py", "f( )"), "dropped", 9.0)])
 
 
 def test_runs_of_rows_added_and_removed_enter_and_repay_each_mark(tmp_path):

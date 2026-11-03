@@ -25,9 +25,10 @@ revisions, in pipe transport alone. The readers:
   it, and mission-5 lists the marks added since the baseline against it, so a
   mark the baseline already held is not new debt.
 - `moves` answers each mark a revision moved to a new key, the keys it dropped
-  and added paired by keys.pair_moves. mission-4 reads it so ratchet report
-  keeps a re-keyed mark's age, and mission-5 reads the moves since the
-  baseline's commit.
+  and added paired by `revision_moves`: a re-key by keys.pair_moves, a path
+  move by keys.pair_path_moves. ratchet report and brief read each revision's
+  moves through it, so a moved mark keeps its age, and mission-5 reads the
+  moves since the baseline's commit.
 
 The log walks no renames on its own (gitio.file_revisions says why), so when
 the first commit that touched the marks file renamed it with `git mv`, this
@@ -50,7 +51,7 @@ from typing import NamedTuple
 from .errors import GitError
 from .gitio import (FileRevision, PatchRows, ancestry, blob_at, commit_renames, file_revisions,
                     object_blobs, proven_ancestor, shallow_fix)
-from .keys import Key, mark_key, pair_moves
+from .keys import Key, mark_key, pair_moves, pair_path_moves
 from .ratchet import read_ratchet
 from .ratchetfile import RatchetFile
 from .repotext import marks_text, plain_utf8
@@ -77,8 +78,10 @@ class MarksRevision(NamedTuple):
 
 
 class Move(NamedTuple):
-    """One mark a commit moved: `old_key` left `path`, `new_key` arrived in
-    it, and keys.pair_moves pairs the two. Keys are (path, key name)."""
+    """One mark a commit moved: `old_key` left, `new_key` arrived in `path`.
+    keys.pair_moves pairs a re-key inside one file; keys.pair_path_moves
+    pairs a path move, whose `old_key` names the path it left. Keys are
+    (path, key name)."""
     commit: str
     time: int
     path: str
@@ -117,7 +120,7 @@ def moves(root: Path, rev_range: str | None, ratchet_file: str) -> list[Move]:
     if rev_range is not None:
         _check_range(root, rev_range)
     return [move for revision in _revisions(root, ratchet_file, rev_range)
-            for move in _moved(revision)]
+            for move in revision_moves(revision)]
 
 
 def _check_range(root: Path, rev_range: str) -> None:
@@ -128,16 +131,35 @@ def _check_range(root: Path, rev_range: str) -> None:
                        f"ancestor of {head}{shallow_fix(root)}")
 
 
-def _moved(revision: MarksRevision) -> list[Move]:
+def revision_moves(revision: MarksRevision) -> list[Move]:
+    """Each mark one revision moved, the one pairing every reader uses:
+    the re-keys keys.pair_moves pairs inside each file, then the path moves
+    keys.pair_path_moves pairs among the keys left over. ratchet_report reads
+    it, so a report and a brief cannot disagree on what moved."""
+    before, after = revision.before or {}, revision.marks or {}
+    dropped = _only_in(before, after, revision.changed)
+    added = _only_in(after, before, revision.changed)
+    pairs = _file_moves(dropped, added)
+    pairs += _path_moves(before, after, dropped, added, pairs)
+    return [Move(revision.commit, revision.time, new[0], old, new) for old, new in pairs]
+
+
+def _path_moves(before: dict, after: dict, dropped: set, added: set,
+                pairs: list[tuple[Key, Key]]) -> list[tuple[Key, Key]]:
+    """keys.pair_path_moves over the keys no re-key paired, each mapped to
+    the mark it held."""
+    paired = {key for pair in pairs for key in pair}
+    return pair_path_moves({key: before[key] for key in dropped - paired},
+                           {key: after[key] for key in added - paired})
+
+
+def _file_moves(dropped: set, added: set) -> list[tuple[Key, Key]]:
     """Keys pair only within a path, so each path pairs only its own keys:
     with every key handed to pair_moves once per path, moves over a history
     whose first revision adds 40,303 marks across 37,000 paths took 438 s."""
-    before, after = revision.before or {}, revision.marks or {}
-    dropped = _by_path(_only_in(before, after, revision.changed))
-    added = _by_path(_only_in(after, before, revision.changed))
-    return [Move(revision.commit, revision.time, path, old, new)
-            for path in sorted(dropped.keys() & added.keys())
-            for old, new in pair_moves(path, dropped[path], added[path]).pairs]
+    gone, came = _by_path(dropped), _by_path(added)
+    return [pair for path in sorted(gone.keys() & came.keys())
+            for pair in pair_moves(path, gone[path], came[path]).pairs]
 
 
 def _only_in(side: dict, other: dict, keys: frozenset | None) -> set:

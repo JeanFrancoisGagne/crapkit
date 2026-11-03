@@ -370,6 +370,29 @@ BURN_TIGHTEN = Spec(steps=BURN.steps[:1] + (
                                                      (*_C, "9.0000"))},
            date=EPOCH + 40 * DAY, message="tighten a"),
 ))
+# Moves (docs/ratchet.md#reporting-the-burn-down): a re-key on day 100, a re-key
+# with a tighten on day 200, a path move on day 300 and a new mark on day 400.
+_A_SIGNED = ("src/a.py", "fa( x , y )")
+_B_SIGNED = ("src/b.py", "fb( x , z )")
+_C_MOVED = ("src/e.py", "fc( x )")
+BURN_MOVES = Spec(steps=(
+    Commit(files={"crapkit.toml": config(), **_BURN_SOURCES,
+                  "crapkit-ratchet.tsv": marks_file((*_A, "12.0000"), (*_B, "8.0000"),
+                                                    (*_C, "9.0000"))},
+           date=EPOCH, message="seed a, b and c"),
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A_SIGNED, "12.0000"), (*_B, "8.0000"),
+                                                     (*_C, "9.0000"))},
+           date=EPOCH + 100 * DAY, message="re-key a"),
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A_SIGNED, "12.0000"), (*_B_SIGNED, "6.0000"),
+                                                     (*_C, "9.0000"))},
+           date=EPOCH + 200 * DAY, message="re-key and tighten b"),
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A_SIGNED, "12.0000"), (*_B_SIGNED, "6.0000"),
+                                                     (*_C_MOVED, "9.0000"))},
+           date=EPOCH + 300 * DAY, message="move c to src/e.py"),
+    Commit(files={"crapkit-ratchet.tsv": marks_file((*_A_SIGNED, "12.0000"), (*_B_SIGNED, "6.0000"),
+                                                     (*_C_MOVED, "9.0000"), (*_D, "7.0000"))},
+           date=EPOCH + 400 * DAY, message="add d"),
+))
 # Seeded by crapkit itself, so the marks carry the stamp this crapkit writes.
 BURN_SEEDABLE = Spec(steps=(Commit(files={"crapkit.toml": config(), **_BURN_SOURCES},
                                    date=EPOCH, message="sources"),))
