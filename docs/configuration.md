@@ -10,7 +10,7 @@ leave alone:
 
 | Dial | Key | Decides |
 |---|---|---|
-| the ceiling | `[crapkit] target` | what counts as too complex, repo-wide or per scope |
+| the CRAP ceiling | `[crapkit] target` | the highest CRAP a function may score, repo-wide or per scope |
 | the floor | `[crapkit] worklist_floor` | how small a function has to be before the queue ignores it |
 | what is scored at all | `[exclude] globs` | which files leave the corpus for good |
 | what is measured | `[[lane]]` | which command produces coverage, and for which scopes |
@@ -199,7 +199,7 @@ says how.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `target` | int >= 1 | `6` | The repo-wide CRAP ceiling. A `[[scope]]` may override it. Drives the gate, the `remedy` column, the ratchet drop threshold and every over-target count. |
+| `target` | int >= 1 | `6` | The repo-wide CRAP ceiling: the highest CRAP a function may score. At 6 it also caps ccn at 6, because coverage can at best bring CRAP down to ccn; the commit hook, which has no coverage, refuses a function whose ccn alone exceeds it. A `[[scope]]` may override it. Drives the gate, the `remedy` column, the ratchet drop threshold and every over-target count. |
 | `churn_window_months` | int >= 1 | `12` | How far back `git log` is read for churn weighting, coupling and the worklist rank, counted back from HEAD's commit date, never from today. The months are counted on the UTC calendar, whatever `TZ` says, so a CI runner and a laptop cut the same window; a day the earlier month lacks rolls into the next, as git rolls it (6 months before Aug 31 is Mar 3). A commit counts when its commit date is at or after that instant. |
 | `worklist_floor` | int >= 1 | `5` | Minimum ccn for queue admission, in `worklist` and `next-item` alike. Printed in the worklist header as `floor ccn>=5`. It has no CLI flag. Two rules reach under it: files whose churn weight is in the top 10% are promoted down to ccn 3, and a function scoring over its ceiling is admitted whatever its ccn. |
 | `worklist_top` | int >= 1 | `50` | Cap on the worklist active list. `worklist --top N` overrides it per call. |
@@ -274,7 +274,7 @@ still apply.
 | `name` | string | yes | | The scope's id. Lanes reference it, `--scope` filters on it (exact, not substring; a name no scope declares is a configuration error, exit 3, naming the declared scopes). |
 | `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file, so `paths = ["core/hot.py"]` claims one file and editing it marks that scope's lane changed. The **deepest** declared path wins when two claim the same file; see [Scope matching](#scope-matching). Written the way git writes one: a leading `./`, a leading or trailing `/` and a `\` separator are all normalized away, so `./src`, `src\` and `src` are one path. A path holding `..` or a drive letter is refused, because no tracked file can match it. |
 | `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`, `rust`, `shell`, `powershell`, `cpp`, `objectivec`, `vue`, `java`, `zig`. A file joins the scope only when both its path prefix and its extension match. |
-| `target` | int >= 1 | no | the repo `target` | This scope's ceiling. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
+| `target` | int >= 1 | no | the repo `target` | This scope's CRAP ceiling, with the same rule as the repo `target`. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
 | `coverage_optional` | bool | no | `false` | Code no test can reach, or a scope init writes no live lane for. See below. |
 | `notes` | array of string | no | `[]` | House rules for this scope alone. They follow the repo-wide `[crapkit] notes` into every packet `brief` builds for a function this scope owns. |
 

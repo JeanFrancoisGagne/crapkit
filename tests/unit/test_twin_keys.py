@@ -370,7 +370,7 @@ def test_a_brief_packet_reports_the_mark_on_the_twin_it_picked(marked_repo):
     loader = _BriefLoader(repo, cfg, store, {"id": run_id, "commit": "a" * 40})
     rows = store.read_scored_file(run_id, "src/iso_cost.py")
 
-    marks = {row.start: loader.mark(row) for row in rows}
+    marks = {row.start: loader.mark(row).value for row in rows}
 
     assert marks == {7: 66.0714, 18: 30.0}
 

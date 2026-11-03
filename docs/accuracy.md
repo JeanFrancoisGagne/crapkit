@@ -122,6 +122,8 @@ or no longer (fixed). `python tools/docs/generate.py` writes this table, the
 | Merged mark value | `mark_carry` | `test_merge_values.py::test_every_hand_merge_writes_the_hand_marks` | 0 | 0 | 0 |
 | Gate pardon over a carried mark | `mark_carry` | `test_carry_pardon.py::test_every_hand_row_gets_its_answer_from_the_gate` | 0 | 0 | 0 |
 | ratchet_changes counts | `mark_carry` | `test_ratchet_changes.py::test_every_hand_row_gets_its_counts_from_the_update` | 0 | 0 | 0 |
+| prune and seed counts | `mark_carry` | `test_prune_seed.py::test_every_hand_row_gets_its_counts_from_prune_and_seed` | 0 | 0 | 0 |
+| Carried mark in the packet and the worklist | `mark_carry` | `test_brief_marks.py::test_every_hand_row_gets_its_mark_and_age_from_the_packet` | 0 | 0 | 0 |
 | Runtime invariant verdict | `runtime_guards` | `test_invariant_verdict.py::test_crapkit_stops_exactly_where_the_documented_bounds_do` | 2 | 3 | 0 |
 | CRAP score | `score_model` | `test_crap.py::test_reduced_grid_matches_the_exact_value` | 6 | 0 | 1 |
 | Function coverage ratio | `score_model` | `test_counts_join.py::test_every_scored_row_matches_its_artifact_counts` | 1 | 2 | 0 |

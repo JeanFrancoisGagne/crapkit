@@ -29,7 +29,8 @@ from typing import ClassVar, NamedTuple
 
 from .invariants import check_dump, check_marks_kept
 from .invocation import _self
-from .keys import Key, MarkIndex, carried_keys, mark_key, pair_moves, pair_path_moves, rows_by_key, split_ordinal
+from .keys import (Carry, Key, MarkIndex, Refused, carried_keys, carriers, mark_key, pair_moves,
+                   pair_path_moves, resolve, rows_by_key, split_ordinal)
 from .score import ScoredRow, over_ceiling
 from .records import decode_record, encode_record, record_lines
 
@@ -1302,35 +1303,82 @@ def _no_path(path: str) -> bool:
 
 def seed_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target: int,
                  scope_targets: dict[str, int] | None = None, scope=None,
-                 raises=None) -> tuple[list[RatchetEntry], int, int]:
+                 raises=None, carry: bool = True) -> tuple[list[RatchetEntry], int, int]:
     """First-class mark entry: record every over-ceiling function at its current CRAP.
 
     `scope` and `raises` are path predicates. Rows outside `scope` are left out
     and the marks there stay as they are (None takes every path). A mark never
     rises, seeding included, except where `raises` admits its path: there the
-    mark takes the run's value. `raised_marks` lists the rises."""
+    mark takes the run's value. `raised_marks` lists the rises.
+
+    The mark `keys.carriers` carries to a function judges it as its own would,
+    and moves to its key through `rekey_marks` when it falls or rises. A refused
+    carry marks no function outside `raises`. `carry` False, for a marks file
+    whose key identity is unproved, reads each mark under its own key only."""
     rises = raises or _no_path
     marks = MarkIndex(prior).working_copy()
-    added = tightened = 0
-    for key, row in _over_ceiling(fresh, target, scope_targets or {}, scope or _every_path):
-        a, t = _place_mark(marks, key, row, rises)
-        added += a
-        tightened += t
-    seeded = sorted(marks.values(), key=lambda e: (e.path, e.long_name))
+    judges = _judges(marks, fresh, rises) if carry else {}
+    rows = _over_ceiling(fresh, target, scope_targets or {}, scope)
+    seeded, added, tightened = _settled(marks, [_place_mark(marks, judges.get(key, key), key, row, rises)
+                                                for key, row in rows])
     check_marks_kept(_held(prior, rises), _held(seeded, rises), adds=True)
     return seeded, added, tightened
 
 
+def _settled(marks: dict, placed: list) -> tuple[list[RatchetEntry], int, int]:
+    """The seeded marks, each carried one moved to its function's key through
+    `rekey_marks`, then the added and tightened counts of PLACED."""
+    seeded = rekey_marks(list(marks.values()), [p.move for p in placed if p.move])[0]
+    return seeded, sum(p.added for p in placed), sum(p.tightened for p in placed)
+
+
 def _over_ceiling(fresh: list[ScoredRow], target: int, ceilings: dict, admits) -> list[tuple]:
-    """(key, row) for each row whose path `admits` takes and whose CRAP is over its scope's ceiling."""
+    """(key, row) for each row whose path `admits` takes (None takes every
+    path) and whose CRAP is over its scope's ceiling."""
+    admits = admits or _every_path
     return [(key, row) for key, row in rows_by_key(fresh).items()
             if admits(row.path) and over_ceiling(row.crap, ceilings.get(row.scope, target))]
 
 
-def _place_mark(marks: dict, key: tuple, row: ScoredRow, rises) -> tuple[int, int]:
-    """Mark `row` at the run's value where `rises` admits its path, else only lower; (added, tightened)."""
-    place = _raise_mark if rises(row.path) else _seed_mark
-    return place(marks, key, row.crap)
+def _judges(marks: dict, fresh: list[ScoredRow], rises) -> dict:
+    """{function key: the key of the mark that judges it} for each function
+    `keys.carriers` answers for: its carried mark's key, or None when the
+    carry was refused, since no single mark judges it. Where `rises` admits
+    the path, a refused function's own key judges it: the flip replaces the
+    scope's marks with the run's values."""
+    functions = set(rows_by_key(fresh))
+    answers = carriers(functions, marks)
+    judges: dict = {answer.new_key: old for old, answer in answers.items() if isinstance(answer, Carry)}
+    refused = {old[0] for old, answer in answers.items() if isinstance(answer, Refused)}
+    judges.update((key, None) for key in _refused_functions(functions, marks, refused, rises))
+    return judges
+
+
+def _refused_functions(functions: set, marks: dict, paths: set, rises) -> list:
+    """The unmarked functions in PATHS, outside those `rises` admits, that
+    `keys.resolve` refuses a mark."""
+    return [key for key in functions - set(marks)
+            if key[0] in paths and not rises(key[0]) and isinstance(resolve(key, functions, marks), Refused)]
+
+
+class _Placed(NamedTuple):
+    """One function's seed: the counts and the (mark key, function key) move, or None."""
+    added: int
+    tightened: int
+    move: tuple | None
+
+
+def _place_mark(marks: dict, judge, key: tuple, row: ScoredRow, rises) -> _Placed:
+    """Mark `row` under the mark JUDGE names, at the run's value where `rises`
+    admits its path, else only lower. A carried mark (JUDGE is not KEY) moves
+    to KEY when its value changed or its scope takes the run's; JUDGE None
+    places nothing."""
+    if judge is None:
+        return _Placed(0, 0, None)
+    raising = rises(row.path)
+    added, tightened = (_raise_mark if raising else _seed_mark)(marks, judge, row.crap)
+    moves = judge != key and (tightened or raising)
+    return _Placed(added, tightened, (judge, key) if moves else None)
 
 
 def _held(entries: list[RatchetEntry], rises) -> list[RatchetEntry]:
@@ -1339,7 +1387,8 @@ def _held(entries: list[RatchetEntry], rises) -> list[RatchetEntry]:
 
 
 def _seed_mark(marks: dict, key: tuple, crap: float) -> tuple[int, int]:
-    """Place one mark; returns (added, tightened) deltas. A mark never rises."""
+    """Place one mark under KEY, the key of the mark that judges the function;
+    returns (added, tightened) deltas. A mark never rises."""
     old = marks.get(key)
     mark = round(crap, 4)
     if old is not None and mark >= old.crap:
@@ -1357,10 +1406,15 @@ def _raise_mark(marks: dict, key: tuple, crap: float) -> tuple[int, int]:
     return 0, int(marks[key].crap < old.crap)
 
 
-def raised_marks(prior: list[RatchetEntry], seeded: list[RatchetEntry]) -> list[tuple[RatchetEntry, float]]:
-    """(mark, the mark it replaced) for each mark of `seeded` above `prior`'s, in file order."""
+def raised_marks(prior: list[RatchetEntry], seeded: list[RatchetEntry],
+                 fresh: list[ScoredRow]) -> list[tuple[RatchetEntry, float]]:
+    """(mark, the mark it replaced) for each mark of `seeded` above `prior`'s,
+    in file order. FRESH are the rows the seed read: a mark seed moved to the
+    key of the function `keys.carriers` carries it to is read against the
+    mark it carried."""
     before = MarkIndex(prior)
-    olds = ((entry, before.mark(mark_key(entry))) for entry in seeded)
+    carried = {new: old for old, new in carried_keys(rows_by_key(fresh), before.keys()).items()}
+    olds = ((entry, before.mark(carried.get(mark_key(entry), mark_key(entry)))) for entry in seeded)
     return [(entry, old) for entry, old in olds if old is not None and entry.crap > old]
 
 
@@ -1419,37 +1473,69 @@ def move_marks(entries: list[RatchetEntry], old: str,
     return _repath(entries, lambda e: _same_name(e, _moved_path(e.path, old, new)))
 
 
-def _rename_target(entry: RatchetEntry, present: set, renames: dict[str, str]) -> str | None:
-    """Where a mark should follow a renamed file, or None to leave it alone.
-
-    Three conditions, all required: the function is gone from its recorded path,
-    git calls that path renamed, and the SAME key name exists at the new one. A
-    copy fails the first (the source survives), so its mark never travels.
-    """
-    if mark_key(entry) in present:
-        return None
-    dest = renames.get(entry.path)
-    if dest is None or (dest, entry.long_name) not in present:
-        return None
-    return dest
+def _renamed_keys(prior: list[RatchetEntry], functions: set, renames: dict[str, str]) -> list[tuple]:
+    """(mark key, the same key name at the path git renamed its file to) for
+    each mark whose key no longer names a function at its recorded path. A copy
+    keeps its source, so its mark never travels."""
+    return [(mark_key(e), (renames[e.path], e.long_name)) for e in prior
+            if e.path in renames and mark_key(e) not in functions]
 
 
-def follow_renames(prior: list[RatchetEntry], fresh: list[ScoredRow],
-                   renames: dict[str, str]) -> tuple[list[RatchetEntry], int]:
+def follow_renames(prior: list[RatchetEntry], fresh: list[ScoredRow], renames: dict[str, str], *,
+                   carry: bool = True) -> tuple[list[RatchetEntry], int]:
     """Marks for renamed files, re-pathed. Runs BEFORE prune so a rename reads as a
-    move, not as code that left the repo and forfeits its high-water mark."""
+    move, not as code that left the repo and forfeits its high-water mark.
+
+    A mark follows its renamed file when, at the new path, its key names a
+    function or `keys.carriers` answers for it: a carry, which prune then
+    re-keys, or a refusal, which prune keeps and names. `carry` False, for a
+    marks file whose key identity is unproved, follows only the same key."""
+    functions = set(rows_by_key(fresh))
+    renamed = _renamed_keys(prior, functions, renames)
+    answers = _rename_answers(prior, functions, renamed) if carry else {}
+    follows = {old: new for old, new in renamed if new in functions or new in answers}
+    return _repath(prior, lambda e: follows.get(mark_key(e)))
+
+
+def _rename_answers(prior: list[RatchetEntry], functions: set, renamed: list[tuple]) -> dict:
+    """`keys.carriers`' answers for the marks once each renamed one sits at its new path."""
+    stayed = MarkIndex(prior).keys() - {old for old, _ in renamed}
+    return carriers(functions, stayed | {new for _, new in renamed})
+
+
+def exact_marks(prior: list[RatchetEntry], fresh: list[ScoredRow]) -> list[RatchetEntry]:
+    """The marks whose own key a row of FRESH holds: all that prune keeps of a
+    marks file whose key identity is unproved (key version 0), where no row
+    proves which function a mark's key named, so no mark carries."""
     present = set(rows_by_key(fresh))
-    return _repath(prior, lambda e: _same_name(e, _rename_target(e, present, renames)))
+    return [e for e in prior if mark_key(e) in present]
+
+
+def ambiguous_marks(prior: list[RatchetEntry], fresh: list[ScoredRow]) -> dict[str, list[str]]:
+    """The marks `keys.carriers` refused, as {path: sorted key names}: no
+    single function carries them, so prune keeps them and seed marks none of
+    the functions that could carry them. `ratchet move --function` ends it."""
+    answers = carriers(set(rows_by_key(fresh)), MarkIndex(prior).keys())
+    found: dict[str, list[str]] = {}
+    for path, name in sorted(old for old, answer in answers.items() if isinstance(answer, Refused)):
+        found.setdefault(path, []).append(name)
+    return found
 
 
 def prune_ratchet(prior: list[RatchetEntry],
                   fresh: list[ScoredRow]) -> tuple[list[RatchetEntry], int]:
-    """Deliberate mark exit: drop entries whose function is absent from the run.
-    The automatic update keeps them (an exclude glob or a lane outage also removes
-    rows); prune is the human confirming the code is really gone."""
-    present = set(rows_by_key(fresh))
-    kept = [e for e in prior if mark_key(e) in present]
-    return kept, len(prior) - len(kept)
+    """Deliberate mark exit: drop the marks whose function left the run, and
+    count them. The automatic update keeps them (an exclude glob or a lane
+    outage also removes rows); prune is the human confirming the code is gone.
+
+    A mark whose key no row holds asks `keys.carriers`: a carry moves it to its
+    carrier's key at its recorded value (`rekey_marks`), a refusal keeps it
+    under its own (`ambiguous_marks` names it), and no answer means it left."""
+    functions = set(rows_by_key(fresh))
+    answers = carriers(functions, MarkIndex(prior).keys())
+    kept = [e for e in prior if mark_key(e) in functions or mark_key(e) in answers]
+    moves = [(old, answer.new_key) for old, answer in answers.items() if isinstance(answer, Carry)]
+    return rekey_marks(kept, moves)[0], len(prior) - len(kept)
 
 
 def _jumped(previous: float, fresh: float, factor: float) -> bool:

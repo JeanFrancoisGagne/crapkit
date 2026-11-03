@@ -1223,7 +1223,7 @@ def test_a_staged_function_over_the_ceiling_refuses_the_commit(repo, capsys):
     code, out, err = run(["hook-precommit"], repo, capsys)
 
     assert (code, err) == (6, "")
-    assert "1 staged function(s) exceed the complexity ceiling of 6" in out, out
+    assert "1 staged function(s) exceed the CRAP ceiling of 6" in out, out
     assert "ccn   8  src/app.ts:" in out and "knotty" in out, out
     assert "decompose before committing" in out
 

@@ -320,6 +320,18 @@ def _carried_gate_payload(capsys) -> dict:
     return json.loads(capsys.readouterr().out)
 
 
+def _carried(out: dict, repo: Path, capsys) -> None:
+    """brief and explain over a mark whose key `knotty ( m )` left src/app.ts,
+    which keys.resolve carries to `knotty ( n )`, so carried_from prints a key;
+    the marks file is gone after."""
+    marks = marks_in(repo, [RatchetEntry("src/app.ts", "knotty ( m )", 80.0)], KEY_VERSION)
+    (repo / MARKS).write_text(marks, encoding="utf-8", newline="\n")
+    _print_all(out, repo, capsys, (("brief --json", ("brief", "src/app.ts", "knotty", "--json")),
+                                   ("explain --json", ("explain", "src/app.ts", "knotty", "--json")),
+                                   ("worklist --json", ("worklist", "--json"))))
+    (repo / MARKS).unlink()
+
+
 def _override(out: dict, repo: Path, capsys) -> None:
     with open(repo / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
         fh.write(KNOTTY.replace("knotty", "knottier"))
@@ -343,6 +355,7 @@ def payloads(repo, capsys, monkeypatch, tmp_path_factory) -> dict[str, list]:
     seed_artifacts(repo)
     out: dict[str, list] = {}
     _print_all(out, repo, capsys, _READS)
+    _carried(out, repo, capsys)
     out["doctor --json"] = _doctor_payloads(repo, capsys)
     _print_all(out, repo, capsys, _CLAIMS)
     _forget_content(repo)
@@ -504,6 +517,46 @@ def test_the_gate_block_lists_a_carry_and_names_a_refused_one(payloads):
     assert [b["path"] for b in gate["breaches"]] == ["src/twin.py", "src/twin.py"]
     assert all("twins never carry a mark" in b["mark_ambiguity"] for b in gate["breaches"])
     assert "carried_marks" not in json.dumps(payloads)
+
+
+@NOT_UTF8_NAMES
+def test_brief_and_explain_name_the_key_a_carried_mark_was_recorded_under(payloads):
+    """The carried run prints the old key beside the carried value; every
+    other run prints null, the read before any mark carried."""
+    briefs = {(p["ratchet_mark"], p["carried_from"]) for p in payloads["brief --json"]}
+    explained = {(f["ratchet_mark"], f["carried_from"]) for p in payloads["explain --json"]
+                 for f in p["functions"]}
+
+    assert (80.0, "knotty ( m )") in briefs and (80.0, "knotty ( m )") in explained
+    assert {carried for _, carried in briefs | explained} == {None, "knotty ( m )"}
+
+
+def test_the_worklist_and_the_text_brief_show_a_carried_mark_only_under_a_proved_identity(repo, capsys):
+    """A keyed marks file carries `knotty ( m )`'s mark to `knotty ( n )`; the
+    same mark in a file with no key line proves nothing, so nothing carries."""
+    add_knotty(repo)
+    commit_all(repo, "knotty")
+    seed_artifacts(repo)
+    run_json(repo, capsys, "coverage", "--reuse-artifacts", "--json")
+    marks, shown, told = [RatchetEntry("src/app.ts", "knotty ( m )", 80.0)], [], []
+    for version in (KEY_VERSION, 0):
+        (repo / MARKS).write_text(marks_in(repo, marks, version), encoding="utf-8", newline="\n")
+        rows = run_json(repo, capsys, "worklist", "--json")["active"]
+        shown += [row["ratchet_mark"] for row in rows if row["function"] == "knotty ( n )"]
+        main(["brief", "src/app.ts", "knotty", "--repo", str(repo)])
+        told += [line for line in capsys.readouterr().out.splitlines() if line.startswith("  mark ")]
+
+    assert shown == [80.0, None]
+    assert [line.split("  churn ")[0] for line in told] == [
+        "  mark 80.0000 (carried from knotty ( m ))", "  mark none"]
+
+
+def test_get_function_brief_declares_carried_from_as_brief_does():
+    served = _served("brief --json")["properties"]["carried_from"]
+
+    assert served == PAYLOADS["brief --json"]["carried_from"] == added_field(
+        "brief --json", "carried_from").schema()
+    assert served["type"] == ("string", "null")
 
 
 @NOT_UTF8_NAMES

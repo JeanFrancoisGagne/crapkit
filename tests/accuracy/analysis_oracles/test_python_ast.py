@@ -161,7 +161,12 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # pardon through a carried mark (mission-4-03a) added 14. Both hooks naming a
 # carried mark and its refusal (mission-4-03b) added 5. verify's re-key of a
 # carried mark (mission-4-04) added 4, and the sync met at 4,199.
-SRC_DEFS = 4223
+# The Go coverprofile reader (m1-readers-07) added 24. On 090/integration
+# the refusal head line the hook and rescore --gate share (mission-4-10)
+# added 1, prune and seed keeping a carried mark (mission-4-07) added 8,
+# and brief, explain and the worklist reading a carried mark (mission-4-08)
+# added 7, and the sync met at 4,239.
+SRC_DEFS = 4239
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

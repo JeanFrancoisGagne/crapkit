@@ -59,10 +59,10 @@ class Violation(NamedTuple):
     # the ordinal counts every function of that name in the file, and a gate
     # handed only the breaching ones would number the second twin as the first.
     key_name: str = ""
-    # The ceiling the function was judged against: its scope's, which a scope
-    # `target` can set below the repo's. The refusal printed the repo target, so
-    # a ccn-6 breach of a target-5 scope read "exceed the complexity ceiling of
-    # 6". None only on a Violation built by hand with no scope behind it.
+    # The CRAP ceiling the function was judged against: its scope's, which a
+    # scope `target` can set below the repo's. The refusal names this one, so a
+    # ccn-6 breach of a target-5 scope names 5, not the repo's 6. None only on a
+    # Violation built by hand with no scope behind it.
     ceiling: int | None = None
     # The high end of the CRAP bound the gate judged it on, ccn^2 + ccn or ccn
     # in a cc-only scope: the mark an override grant writes.
@@ -146,9 +146,10 @@ def _base_rows(blobs: dict[str, bytes | None]) -> list[FunctionRecord]:
 
 
 def file_ceilings(cfg, in_scope, checked_files) -> dict[str, int]:
-    """The ccn ceiling each file is judged against: its scope's, read through
-    `Config.ceiling_of`. `rescore --gate` decides on this same map, so a
-    mid-session verdict and the commit's cannot disagree."""
+    """The CRAP ceiling each file is judged against: its scope's, read through
+    `Config.ceiling_of`. A blob's CRAP is at least its ccn, so a ccn past this
+    ceiling refuses the function. `rescore --gate` decides on this same map, so
+    a mid-session verdict and the commit's cannot disagree."""
     scope_of = {f: scope for scope, files in in_scope.items() for f in files}
     return {rel: cfg.ceiling_of(scope_of.get(rel, "")) for rel in checked_files}
 

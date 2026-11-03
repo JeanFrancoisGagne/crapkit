@@ -337,7 +337,7 @@
 </table></div>
 
 <h3>cc-only is a real answer, not a gap</h3>
-<p>crapkit reads six artifact formats, <code>coveragepy</code>, <code>istanbul</code>, <code>lcov</code>, <code>cobertura</code>, <code>jacoco</code> and <code>coverprofile</code>, and a scope no lane measures scores <code>crap = ccn</code> under <code>coverage_optional = true</code>, with no lane to run. That costs less than it sounds, because <strong>the ceiling is a ccn ceiling</strong> (<a href="#score">§02</a>). Coverage cannot rescue a function above target in any language. What a cc-only scope loses is the ability to <em>earn</em> a pass below the ceiling with tests, and the dark-lines detail in the packet. What it keeps is the whole gate: a ccn-9 function still fails, still ranks, still gets a packet.</p>
+<p>crapkit reads six artifact formats, <code>coveragepy</code>, <code>istanbul</code>, <code>lcov</code>, <code>cobertura</code>, <code>jacoco</code> and <code>coverprofile</code>, and a scope no lane measures scores <code>crap = ccn</code> under <code>coverage_optional = true</code>, with no lane to run. That costs less than it sounds, because <strong>the CRAP ceiling caps ccn too</strong> (<a href="#score">§02</a>). Coverage cannot rescue a function above target in any language. What a cc-only scope loses is the ability to <em>earn</em> a pass below the ceiling with tests, and the dark-lines detail in the packet. What it keeps is the whole gate: a ccn-9 function still fails, still ranks, still gets a packet.</p>
 <p><code>crapkit init</code> writes live lanes for pytest, Vitest and Jest only, so it writes <code>coverage_optional = true</code> on every scope it writes no live lane for, and leaves it off any scope one of those lanes can still reach. When a repo-root file shows cargo llvm-cov (<code>Cargo.toml</code>), Bun or Deno, init also leaves that toolchain's lane commented in <code>crapkit.toml</code>, the scope stays cc-only, and <code>doctor</code> notes that a reader can measure it (<a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one">docs/upgrading.md</a>). A repo made entirely of those scopes therefore declares no <code>[[lane]]</code> at all, and <code>crapkit coverage</code> runs it anyway: the scored run it writes is the baseline <code>worklist</code>, <code>next-item</code>, <code>rescore</code>, <code>ratchet seed</code> and <code>verify</code> all read. Exit 3 survives for the case it was written for, a scope with neither a lane nor the key, and the message names that scope.</p>
 <p>To measure a cc-only scope, declare a lane whose runner writes one of those formats, delete the scope's <code>coverage_optional</code>, and run <code>crapkit ratchet seed --scope NAME</code> once <code>verify</code> names the flip.</p>
 
@@ -416,7 +416,7 @@
 <h2 id="dials"><span class="sn">05</span>The dials</h2>
 <p class="lede">Every threshold in this handbook is a default, not a constant. These are the keys people change first.</p>
 <pre><code>[crapkit]
-target = 6                  # THE dial: the CRAP ceiling, and with it the ccn ceiling
+target = 6                  # THE dial: the CRAP ceiling, which also caps ccn
 churn_window_months = 12    # how far back "hot" looks
 worklist_floor = 5          # admission floor for the risk map (never hides over-ceiling debt)
 worklist_top = 50           # rows the worklist prints, and rows the report page renders
@@ -764,7 +764,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
   <text x="450" y="262" text-anchor="middle" class="sm mono">notes.repo · notes.scope: the written-down traps</text>
   <text x="450" y="280" text-anchor="middle" class="sm mono">attempts · regrowth: has someone tried this before, did it hold</text>
   <path class="arrow" d="M450 206 V 216"/>
-  <text x="450" y="330" text-anchor="middle" class="sm">32 top-level fields (additive-only, so this number only grows) · schema pinned at 1 · full reference in docs/agent-json.md</text>
+  <text x="450" y="330" text-anchor="middle" class="sm">33 top-level fields (additive-only, so this number only grows) · schema pinned at 1 · full reference in docs/agent-json.md</text>
 </svg>
 <figcaption>The packet, grouped by the question each field answers. Nothing here requires opening the file.</figcaption>
 </figure>
@@ -1016,7 +1016,7 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
 <pre><code>$ git add packages/api/app/route.py
 $ cd packages/api
 $ crapkit hook-precommit                    # what the git hook runs
-crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 (with no coverage known, CRAP is at least ccn):
   ccn  10  app/route.py:1  route( kind , hot , live , admin )
 decompose before committing (coverage cannot save a function above the target).</code></pre>
 <p>A file staged <em>above</em> the crapkit root is outside that diff by design, and the gate no longer names it. The hook git runs does the <code>cd</code> for you: git starts it at the top, and with no <code>crapkit.toml</code> there the gate runs in each crapkit root below that owns a staged file and prints paths from the top, <code>packages/api/app/route.py:1</code>. The Enforcement block above arms it from <code>packages/api</code> as written, and a docs-only commit at the top passes with one note.</p>

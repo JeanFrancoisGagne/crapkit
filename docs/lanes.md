@@ -1241,7 +1241,7 @@ Staged from the git top, gated from `packages/api`, one directory down:
 ```
 $ git add -A                                   # run at the git top
 $ crapkit hook-precommit                       # run in packages/api
-crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 (with no coverage known, CRAP is at least ccn):
   ccn   8  calc/grade.py:17  rank( a , b , c , d , e )
 decompose before committing (coverage cannot save a function above the target).
 ```
