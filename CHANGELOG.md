@@ -42,6 +42,7 @@
 
 <!-- 0.9.0:mission-4 -->
 - `crapkit ratchet move --function PATH OLD NEW` re-keys one mark at its recorded value: after a signature edit, the mark under OLD moves to the function NEW names in the working tree's PATH, and every other byte of `crapkit-ratchet.tsv` stays. It reads PATH and the marks file only, with one lizard parse and no run or store, and each refusal exits 3 naming PATH and its fix: OLD names no mark, NEW names no function or several (a bare name twins share lists their handles), NEW's key already holds a mark, or PATH ends in `/`. Through 0.8.1 `ratchet move` re-pathed marks only, and the way out was a hand edit of the marks file. [Moving marks by hand](docs/ratchet.md#moving-marks-by-hand)
+- The marks merge driver keeps a tighten made on one branch when the other branch re-keyed the same mark after a signature change, or moved it to another path with `crapkit ratchet move` or `prune` after a `git mv`: the merged file holds one line, under the new key, at the tightened value, where it kept the old key at the lower value beside the new key at the higher one. When both branches re-keyed one mark to different keys, it keeps both keys at the merged value, exits 0 and names both on stderr; the next `crapkit ratchet prune` drops the one no function holds. [A signature change on one branch, a tighten on the other](docs/ratchet.md#a-signature-change-on-one-branch-a-tighten-on-the-other)
 <!-- /0.9.0:mission-4 -->
 
 <!-- 0.9.0:m1-readers -->

@@ -216,6 +216,34 @@ def test_pairs_and_refusals_are_independent_per_bare_name():
     assert_names_the_ambiguity(moves.refused[0].text, ["grade( a )", "grade( b )", "grade( c )"])
 
 
+# --- pair_path_moves ------------------------------------------------------------
+
+MOVED_TO = "calc/grading.py"
+
+# (case, the dropped marks, the added marks, the pairs)
+PATH_MOVES = [
+    ("one of each pairs", {key("f( )"): 7.0}, {key("f( )", MOVED_TO): 7.0}, [(key("f( )"), key("f( )", MOVED_TO))]),
+    ("two of each give no pair", {key("f( )"): 7.0, key("f( )", OTHER): 7.0},
+     {key("f( )", MOVED_TO): 7.0, key("f( )", "lib/f.py"): 7.0}, []),
+    ("two drops and one add give no pair", {key("f( )"): 7.0, key("f( )", OTHER): 7.0},
+     {key("f( )", MOVED_TO): 7.0}, []),
+    ("a different value gives no pair", {key("f( )"): 7.0}, {key("f( )", MOVED_TO): 6.5}, []),
+    ("another key name gives no pair", {key(OLD): 7.0}, {key(NEW, MOVED_TO): 7.0}, []),
+    ("a twin pairs with the same twin key name", {key("f( )#2"): 7.0}, {key("f( )#2", MOVED_TO): 7.0},
+     [(key("f( )#2"), key("f( )#2", MOVED_TO))]),
+    ("a twin never pairs with its bare name", {key("f( )#2"): 7.0}, {key("f( )", MOVED_TO): 7.0}, []),
+    ("pairs are independent per key name and value", {key("f( )"): 7.0, key("g( )"): 7.0, key("h( )"): 3.0},
+     {key("f( )", MOVED_TO): 7.0, key("g( )", MOVED_TO): 7.0, key("h( )", MOVED_TO): 3.0},
+     [(key("f( )"), key("f( )", MOVED_TO)), (key("g( )"), key("g( )", MOVED_TO)),
+      (key("h( )"), key("h( )", MOVED_TO))]),
+]
+
+
+@pytest.mark.parametrize("case, dropped, added, pairs", PATH_MOVES, ids=[r[0] for r in PATH_MOVES])
+def test_pair_path_moves_answers_the_hand_table(case, dropped, added, pairs):
+    assert keys.pair_path_moves(dropped, added) == pairs
+
+
 # The mission-4 probe shapes (tests/unit/test_mission4_probes.py), as pairing rows.
 
 def test_the_merge_probe_pairs_ours_rename():

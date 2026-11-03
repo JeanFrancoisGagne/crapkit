@@ -150,7 +150,8 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # The flip refusal's note (metric-stamp-07) added 1.
 # The one whole-key rewrite for marks (mission-4-01) added 2.
 # `ratchet move --function` (mission-4-02) added 16.
-SRC_DEFS = 4036
+# The merge driver's move pairing (mission-4-05) added 10.
+SRC_DEFS = 4046
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

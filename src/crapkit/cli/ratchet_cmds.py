@@ -187,8 +187,21 @@ def _ratchet_merge(files: list) -> int:
     merged = merge_ratchets(*sides)
     saved[1].publish(_merged_text(saved, merged, stamps.stamp))
     print(f"ratchet merge: {len(merged)} mark(s)")
+    _print_split_moves(sides)
     _print_stamp_notes(stamps.came_from, sides)
     return 0
+
+
+def _print_split_moves(sides: list) -> None:
+    """One stderr line per mark OURS and THEIRS moved to different keys. The
+    merge keeps it under both, since the driver cannot tell which key a
+    function holds, and the next prune drops the other."""
+    from ..ratchet import split_moves
+
+    for keys in split_moves(*sides):
+        named = " and ".join(f'{path} "{name}"' for path, name in keys)
+        print(f"ratchet merge: OURS and THEIRS moved one mark to different keys, so it stays under both: "
+              f"{named}; the next {_self()} ratchet prune drops the one no function holds", file=sys.stderr)
 
 
 def _merged_text(saved: list, merged: list, stamp: MetricStamp) -> str:
