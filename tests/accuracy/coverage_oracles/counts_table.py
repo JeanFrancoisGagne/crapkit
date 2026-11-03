@@ -27,6 +27,8 @@ behind the counts. Three readers:
   can underflow, reads as not taken.
 - lcov: lcov_rows gives each span the caller names (path, start, end) the DA
   lines and BRDA arms on the lines it holds and no inner span holds.
+- Cobertura: cobertura_files reads each class's line hits and condition-coverage
+  with ElementTree, and the line-rate and branch-rate the producer wrote.
 
 ratio() is the README's coverage term: branches, else statements, else called.
 table() reads every recorded artifact of a corpus through its crapkit.toml
@@ -39,8 +41,10 @@ from fractions import Fraction
 import json
 import math
 from pathlib import Path
+import re
 import tomllib
 from typing import NamedTuple
+import xml.etree.ElementTree as ET
 
 END = math.inf
 
@@ -383,4 +387,39 @@ def table(corpus: Path) -> dict[tuple[str, int], list[Counts]]:
     for lane in _lanes(corpus):
         for row in _lane_rows(corpus, lane):
             found.setdefault((row.path, row.start), []).append(row)
+    return found
+
+
+class CoberturaClass(NamedTuple):
+    """One <class> as the producer wrote it: each line's hits, each branch
+    line's (total, covered) from its condition-coverage, and the class's own
+    line-rate and branch-rate."""
+    filename: str
+    hits: dict[int, int]
+    conditions: dict[int, tuple[int, int]]
+    line_rate: float
+    branch_rate: float
+
+
+_CONDITION = re.compile(r"[0-9.]+% \(([0-9]+)/([0-9]+)\)")
+
+
+def _conditions(line: ET.Element) -> tuple[int, int] | None:
+    found = _CONDITION.fullmatch(line.get("condition-coverage") or "")
+    if line.get("branch") != "true" or found is None:
+        return None
+    return int(found[2]), int(found[1])
+
+
+def cobertura_classes(data: bytes) -> list[CoberturaClass]:
+    """Every <class> of a Cobertura report, in document order. The lines under
+    <methods> are not read: the class's own <lines> list every line."""
+    found = []
+    for cls in ET.fromstring(data).iter("class"):
+        lines = cls.findall("lines/line")
+        conditions = {int(line.get("number")): _conditions(line) for line in lines}
+        found.append(CoberturaClass(
+            cls.get("filename"), {int(line.get("number")): int(line.get("hits")) for line in lines},
+            {number: pair for number, pair in conditions.items() if pair},
+            float(cls.get("line-rate")), float(cls.get("branch-rate"))))
     return found

@@ -175,6 +175,9 @@ modules = ["tests/deploy/test_score_command_cells.py"]
 [packets.m1-readers-04]
 modules = ["tests/deploy/test_cc_only_reader_cells.py"]
 
+[packets.m1-readers-05]
+modules = ["tests/deploy/test_mission1_reader_cells.py"]
+
 # --- every-harness rows -----------------------------------------------------------
 # What a nightly run takes of each row: "all" its cells on all 17 harnesses,
 # "core" on the 3 core-image ones. The header says how a row's tests name it.
@@ -647,6 +650,43 @@ lin-up-lcov-vscode-test-electron = { packet = "m1-readers-03", cadence = "nightl
 # m1-readers-11: `uvx crapkit score` on the candidate wheel over a committed tracefile, exit 6 above N
 lin-score-uvx = { packet = "m1-readers-11", cadence = "push", os = "linux", image = "core" }
 win-score-uvx = { packet = "m1-readers-11", cadence = "push", os = "windows" }
+# m1-readers-05: a cobertura lane's cov and add-tests over MCP, every harness, fresh and upgrade; the 0.8.1 cc-only C++ upgrade; a Windows absolute <source>
+lin-cobertura-aider = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-amp = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-claude-agent-sdk = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-claude-agent-sdk-py = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-claude-code = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-cobertura-cline = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-codex = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-cobertura-continue = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-copilot-cli = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-crush = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-cursor-agent = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-cobertura-gemini-cli = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-goose = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-junie = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-omp = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-opencode = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-vscode-test-electron = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-aider = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-amp = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-claude-agent-sdk = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-claude-agent-sdk-py = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-claude-code = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-up-cobertura-cline = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-codex = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-up-cobertura-continue = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-copilot-cli = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-crush = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-cursor-agent = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-up-cobertura-gemini-cli = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-goose = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-junie = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-omp = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-opencode = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-vscode-test-electron = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+"lin-up-0.8.1-cc-only-cpp" = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core" }
+win-cobertura-absolute-source = { packet = "m1-readers-05", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
 # m1-readers-04: init writes a Rust repo's lane commented and doctor notes the lcov reader, every harness fresh; the 0.8.1 upgrade keeps crapkit.toml
 lin-cc-only-reader-aider = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
 lin-cc-only-reader-amp = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }

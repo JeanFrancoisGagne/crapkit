@@ -22,7 +22,8 @@ CPython 3.12.14): node producers read CRAPKIT_ACCURACY_NODE_ROOT, or
 tools/accuracy/node; Python producers each get a venv built by `uv` under
 CRAPKIT_ACCURACY_PRODUCERS (default ~/.cache/crapkit-accuracy/producers). The two
 lcov recordings were made in debian:trixie-slim with Debian's clang and llvm
-19.1.7, rustc 1.99.1 and cargo-llvm-cov 0.9.1 on PATH.
+19.1.7, rustc 1.99.1 and cargo-llvm-cov 0.9.1 on PATH; gcovr-7.2's Cobertura
+and lcov, in the same image with Debian's g++ 14.2.0 and gcovr 7.2.
 """
 from __future__ import annotations
 
@@ -156,12 +157,24 @@ _LLVM_COV = Producer(f"llvm-cov-{LLVM}", "native", (
     versions=((("clang++", "--version"), f"clang version {LLVM}"),
               (("llvm-cov", "--version"), f"LLVM version {LLVM}")))
 
+# gcc's gcov counters over the C++ probe, written by gcovr as Cobertura and as
+# lcov from one run: the gcno and gcda files land in {out}, so gcovr searches it.
+GCOVR = "7.2"
+GCC = "14.2.0"
+_GCOVR = Producer(f"gcovr-{GCOVR}", "native", (
+    ("g++", "--coverage", "-O0", "-o", "{out}/drive", "cpp/drive.cpp", "cpp/shapes.cpp"),
+    ("{out}/drive", "{s}"),
+    ("gcovr", "--root", ".", "--filter", "cpp/shapes.cpp", "--cobertura", "{out}/artifact.xml",
+     "--lcov", "{out}/artifact.lcov", "{out}")),
+    {".xml": "artifact.xml", ".lcov": "artifact.lcov"},
+    versions=((("gcovr", "--version"), f"gcovr {GCOVR}"), (("g++", "--version"), f") {GCC}")))
+
 PRODUCERS = {producer.name: producer for producer in (
     _coveragepy("7.16.1"), _coveragepy("7.13.0"), _coveragepy("7.10.6"), _coverage_reports(),
     _pytest_cov("5.0.0", "8.3.5"), _pytest_cov("7.1.0", "9.1.1"),
     _pytest_cov("7.1.0", "9.1.1", ("--cov-context=test",), "-contexts", "py/coveragerc-contexts"),
     _vitest("v8"), _vitest("istanbul"), _jest("babel"), _jest("v8"), _NYC, _C8, _CARGO,
-    _LLVM_COV)}
+    _LLVM_COV, _GCOVR)}
 
 
 # --- where the tools come from ----------------------------------------------------------------
@@ -334,6 +347,8 @@ def record_one(producer: Producer, root: Path, scenario: str, out: Path, dest: P
 
 def _counts(path: Path) -> list:
     import counts_table
+    if path.suffix == ".xml":
+        return list(counts_table.cobertura_classes(path.read_bytes()))
     if path.suffix == ".lcov":
         text = path.read_text(encoding="utf-8")
         return [sorted(counts_table.lcov_lines(text).items()),
@@ -358,12 +373,16 @@ def _fn_coverage(path: Path, kind: str) -> dict | str:
         return str(refused).replace(str(path), "<artifact>")
 
 
+TEXT_READERS = {".lcov": "lcov", ".xml": "cobertura"}
+
+
 def _parse(path: Path, kind: str) -> dict:
     import importlib
-    if path.suffix == ".lcov":
-        reader = importlib.import_module("crapkit.coverage_lcov")
+    parser = TEXT_READERS.get(path.suffix)
+    if parser:
+        reader = importlib.import_module(f"crapkit.coverage_{parser}")
         lane = importlib.import_module("crapkit.config").Lane(
-            name="lcov", command="x", artifact=path.name, parser="lcov", scopes=("probes",))
+            name=parser, command="x", artifact=path.name, parser=parser, scopes=("probes",))
         return reader.read(lane, path.parent, path)[1]
     if kind == "python":
         reader = importlib.import_module("crapkit.coverage_py")

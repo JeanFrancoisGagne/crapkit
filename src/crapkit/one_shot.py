@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from . import coverage_istanbul, coverage_lcov, coverage_py
+from . import coverage_cobertura, coverage_istanbul, coverage_lcov, coverage_py
 from .config import Scope, load_config_text
 from .coverage_format import _FORMATS, READER_VERSIONS, lane_format
 from .errors import ConfigError, ToolError
@@ -29,7 +29,8 @@ if TYPE_CHECKING:
 
 LANE = "score"
 # Enough of a file to hold an lcov record tag, or a coverage.py report's meta
-# and the "files" key after it, or istanbul's first statementMap.
+# and the "files" key after it, or istanbul's first statementMap, or a
+# Cobertura report's <sources> or <packages>.
 HEAD_BYTES = 65536
 _BOM = b"\xef\xbb\xbf"
 _ALL_LANGUAGES = tuple(LANGUAGE_EXTENSIONS)
@@ -42,6 +43,7 @@ _SNIFFS = (
     (coverage_lcov, re.compile(rb"^(?:TN|SF):", re.MULTILINE)),
     (coverage_py, re.compile(rb'\A\s*\{(?=.*"meta"\s*:)(?=.*"files"\s*:)', re.DOTALL)),
     (coverage_istanbul, re.compile(rb'\A\s*\{(?=.*"statementMap"\s*:)', re.DOTALL)),
+    (coverage_cobertura, re.compile(rb"<coverage[\s>](?=.*?<(?:sources|packages)[\s/>])", re.DOTALL)),
 )
 _NAME_OF = {adapter: name for name, adapter in _FORMATS.items()}
 
@@ -49,8 +51,9 @@ _NAME_OF = {adapter: name for name, adapter in _FORMATS.items()}
 def sniff_format(head: bytes) -> str | None:
     """The format a coverage file's first bytes name: `TN:` or `SF:` lines are
     an lcov tracefile, a JSON object with "meta" and "files" a coverage.py
-    report, one whose values hold "statementMap" an istanbul report. None for
-    anything else."""
+    report, one whose values hold "statementMap" an istanbul report, a
+    <coverage> element followed by <sources> or <packages> a Cobertura report.
+    None for anything else."""
     text = head.removeprefix(_BOM)
     return next((_NAME_OF[adapter] for adapter, rule in _SNIFFS if rule.search(text)), None)
 

@@ -201,7 +201,8 @@
             "enum": [
               "istanbul",
               "coveragepy",
-              "lcov"
+              "lcov",
+              "cobertura"
             ]
           },
           "scopes": {
@@ -215,7 +216,7 @@
           },
           "path_prefix": {
             "type": "string",
-            "description": "prefix joined onto the relative keys of coverage.py and lcov artifacts"
+            "description": "prefix joined onto the relative keys of coverage.py and lcov artifacts and the relative sources of Cobertura reports"
           },
           "env": {
             "type": "object",

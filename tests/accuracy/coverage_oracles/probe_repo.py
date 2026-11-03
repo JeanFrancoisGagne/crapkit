@@ -23,6 +23,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+import xml.etree.ElementTree as ET
 
 from filelock import FileLock
 
@@ -54,12 +55,16 @@ PRODUCERS = {
     "c8-12.0.0": ("istanbul", ("mjs/shapes.mjs",)),
     "cargo-llvm-cov-0.9.1": ("lcov", RUST),
     "llvm-cov-19.1.7": ("lcov", CPP),
+    "gcovr-7.2": ("cobertura", CPP),
 }
+# The text formats: their recordings are no JSON, so test_join and test_dark_lines skip them.
+TEXT = {"lcov": ".lcov", "cobertura": ".xml"}
 
 
 def artifact(name: str, scenario: str) -> Path:
-    """A committed recording: an lcov producer's `.lcov`, every other one's `.json`."""
-    suffix = ".lcov" if PRODUCERS[name][0] == "lcov" else ".json"
+    """A committed recording: an lcov producer's `.lcov`, a Cobertura one's
+    `.xml`, every other one's `.json`."""
+    suffix = TEXT.get(PRODUCERS[name][0], ".json")
     return RECORDED / name / f"{scenario}{suffix}"
 
 
@@ -95,19 +100,19 @@ class Slot:
     artifact: Path
 
 
-def _committed(lcov: bool) -> list[tuple]:
+def _committed(text: bool) -> list[tuple]:
     return [(name, scenario, parser, probes, artifact(name, scenario))
             for name, (parser, probes) in SCORED.items() for scenario in SCENARIOS
-            if (parser == "lcov") == lcov]
+            if (parser in TEXT) == text]
 
 
-def slots(live: dict[tuple[str, str], Path] | None = None, lcov: bool = False) -> list[Slot]:
+def slots(live: dict[tuple[str, str], Path] | None = None, text: bool = False) -> list[Slot]:
     """Every committed JSON recording crapkit reads, then the live ones, then
-    with `lcov` the lcov ones, each with its own pNN/. measure() scores all of
-    them; test_join and test_dark_lines walk the JSON ones and parse them."""
+    with `text` the lcov and Cobertura ones, each with its own pNN/. measure()
+    scores all of them; test_join and test_dark_lines walk the JSON ones."""
     found = _committed(False) + [(name, scenario, "coveragepy", PYTHON, path)
                                  for (name, scenario), path in sorted((live or {}).items())]
-    found += _committed(True) if lcov else []
+    found += _committed(True) if text else []
     return [Slot(name, scenario, f"p{number:02d}", parser, probes, path)
             for number, (name, scenario, parser, probes, path) in enumerate(found)]
 
@@ -141,6 +146,35 @@ def merged_lcov(all_slots: list[Slot]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# The merged Cobertura report lists a first source root that holds no probe, so
+# a reader that keys each filename under the first root, not the first one that
+# places it in the checkout, scores no probe function.
+DECOY_SOURCE = "recorded"
+
+
+def _classes(slot: Slot) -> list[ET.Element]:
+    """The recording's classes of the slot's probes, each filename under its pNN/."""
+    kept = []
+    for cls in ET.fromstring(slot.artifact.read_bytes()).iter("class"):
+        if cls.get("filename") in slot.probes:
+            cls.set("filename", f"{slot.prefix}/{cls.get('filename')}")
+            kept.append(cls)
+    return kept
+
+
+def merged_cobertura(all_slots: list[Slot]) -> bytes:
+    """One Cobertura report holding every Cobertura slot's classes, read from
+    two source roots: DECOY_SOURCE, then the repo root."""
+    report = ET.Element("coverage")
+    sources = ET.SubElement(report, "sources")
+    for root in (DECOY_SOURCE, "."):
+        ET.SubElement(sources, "source").text = root
+    package = ET.SubElement(ET.SubElement(report, "packages"), "package", name="probes")
+    ET.SubElement(package, "classes").extend(
+        cls for slot in all_slots if slot.parser == "cobertura" for cls in _classes(slot))
+    return ET.tostring(report, encoding="utf-8", xml_declaration=True)
+
+
 def merged(all_slots: list[Slot], parser: str) -> dict:
     """One artifact holding every slot's recording of one format, keys moved
     under each slot's pNN/. One lane per format reads the whole matrix, so the
@@ -170,7 +204,8 @@ def _scope(slot: Slot) -> str:
 
 
 # (lane name, parser, artifact file name)
-LANES = (("py", "coveragepy", "py.json"), ("js", "istanbul", "js.json"), ("lcov", "lcov", "lcov.info"))
+LANES = (("py", "coveragepy", "py.json"), ("js", "istanbul", "js.json"), ("lcov", "lcov", "lcov.info"),
+         ("cpp", "cobertura", "cpp.xml"))
 
 
 def _lanes(all_slots: list[Slot]) -> str:
@@ -183,6 +218,8 @@ def _lanes(all_slots: list[Slot]) -> str:
 
 
 def _merged_bytes(all_slots: list[Slot], parser: str) -> bytes:
+    if parser == "cobertura":
+        return merged_cobertura(all_slots)
     if parser == "lcov":
         return merged_lcov(all_slots).encode()
     return json.dumps(merged(all_slots, parser), sort_keys=True).encode()
@@ -300,7 +337,7 @@ def _coverage(work: Path, *args: str) -> None:
 
 def measure(base: Path, live: dict[tuple[str, str], Path] | None = None) -> ProbeRun:
     """The session's one scored probe repo, built under `base` once."""
-    all_slots = slots(live, lcov=True)
+    all_slots = slots(live, text=True)
     tree = files(all_slots)
     work = base / f"probe-repo-{_digest(tree)}"
     with FileLock(str(work) + ".lock"):

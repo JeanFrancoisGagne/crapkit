@@ -1,5 +1,5 @@
 """Each coverage reader's number in the scope stamps a run records, and
-the cc-only to measured flip a new lcov lane brings.
+the cc-only to measured flip a new lcov or Cobertura lane brings.
 
 Parametrized by format, so each reader that lands adds its row to READERS.
 """
@@ -11,7 +11,7 @@ from crapkit.ratchet import ScopeStamp, stamp_conflict
 from stamps import MARKS, lane, running, scope
 
 # format -> (a language that format measures, a scope language with no reader)
-READERS = {"lcov": ("rust", "go")}
+READERS = {"lcov": ("rust", "go"), "cobertura": ("cpp", "go")}
 
 
 @pytest.mark.parametrize("fmt", sorted(READERS))
@@ -67,4 +67,16 @@ def test_a_cc_only_rust_scope_that_gains_an_lcov_lane_gets_the_flip_conflict():
 
     assert [move.scope for move in conflict.moved] == ["core"]
     assert "core was cc-only and is now measured by its lcov lane(s)" in refusal
+    assert "ratchet seed --scope core" in refusal
+
+
+def test_a_cc_only_cpp_scope_that_gains_a_cobertura_lane_gets_the_flip_conflict():
+    before = running([scope("core", "cpp", optional=True)], [])
+    after = running([scope("core", "cpp")], [lane("core", "cobertura", "core")])
+
+    conflict = stamp_conflict(before, after, frozenset({"core"}))
+    refusal = conflict.refusal(MARKS)
+
+    assert [move.scope for move in conflict.moved] == ["core"]
+    assert "core was cc-only and is now measured by its cobertura lane(s)" in refusal
     assert "ratchet seed --scope core" in refusal

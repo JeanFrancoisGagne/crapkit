@@ -968,6 +968,32 @@ def test_init_on_a_rust_repo_writes_the_commented_lane_and_names_it(tmp_path, ca
     assert _CC_ONLY in out and "rust (cargo llvm-cov)" in out
 
 
+def test_init_on_a_cmake_repo_writes_the_commented_gcovr_lane_and_names_it(tmp_path, capsys):
+    root = _init_repo(tmp_path, {"CMakeLists.txt": "project(core CXX)\n",
+                                 "core/shapes.cpp": "int f() { return 1; }\n"})
+
+    code, out = _init(root, capsys)
+    text = (root / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert code == 0
+    assert ('# command = "cmake -S . -B build/crapkit-cov -DCMAKE_C_FLAGS=--coverage '
+            "-DCMAKE_CXX_FLAGS=--coverage && cmake --build build/crapkit-cov && ctest "
+            '--test-dir build/crapkit-cov && gcovr --root . --cobertura .crapkit/cov/cpp.xml"'
+            ) in text
+    assert '# artifact = ".crapkit/cov/cpp.xml"' in text and '# parser = "cobertura"' in text
+    assert "coverage_optional = true" in text
+    assert _CC_ONLY in out and "cpp (gcovr)" in out
+
+
+def test_the_next_step_of_a_cc_only_cmake_repo_names_the_commented_gcovr_lane():
+    from crapkit.cli.admin import _next_step
+
+    line = _next_step({"core": ("cpp",)}, (), frozenset({"CMakeLists.txt"}))
+
+    assert line.startswith(_CC_ONLY + "; ")
+    assert "cpp (gcovr)" in line and _UPGRADE in line
+
+
 def test_init_reads_markers_at_the_repo_root_only(tmp_path, capsys):
     """A nested crate's lane is the owner's to declare with `cwd`."""
     root = _init_repo(tmp_path, {"svc/Cargo.toml": "[package]\nname = \"svc\"\n",

@@ -174,7 +174,7 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                               'artifact the command '
                                                                               'writes'},
                                                   'parser': {'enum': ['istanbul', 'coveragepy',
-                                                                      'lcov']},
+                                                                      'lcov', 'cobertura']},
                                                   'scopes': {'type': 'array',
                                                              'items': {'type': 'string'}},
                                                   'cwd': {'type': 'string'},
@@ -182,7 +182,9 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                   'description': 'prefix joined onto '
                                                                                  'the relative keys of '
                                                                                  'coverage.py and lcov '
-                                                                                 'artifacts'},
+                                                                                 'artifacts and the '
+                                                                                 'relative sources of '
+                                                                                 'Cobertura reports'},
                                                   'env': {'type': 'object',
                                                           'additionalProperties': {'type': 'string'}},
                                                   'inputs': {'type': 'array',

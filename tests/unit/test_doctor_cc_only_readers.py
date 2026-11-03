@@ -32,6 +32,15 @@ def test_a_cc_only_rust_scope_gets_one_note_naming_its_reader():
     assert finding.text.isascii()
 
 
+def test_a_cc_only_cpp_scope_gets_one_note_naming_cobertura_and_gcovr():
+    (finding,) = _doctor_cc_only_readers(_config(("cpp",)))
+
+    assert finding.level == "note"
+    assert "'core'" in finding.text and "cpp" in finding.text
+    assert 'parser = "cobertura"' in finding.text and "gcovr" in finding.text
+    assert ANCHOR in finding.text
+
+
 @pytest.mark.parametrize("languages", [
     ("python",), ("zig",), ("shell",), ("powershell",), ("swift",), ("objectivec",),
     ("go",), ("typescript",),
