@@ -80,6 +80,7 @@ do next.
 | `params` | its parameters in order, each `{name, type}`, so a new test can call it without opening the file |
 | `notes` | the repo's and the scope's house rules, carried in from crapkit.toml |
 | `gate_rule` | `ceiling` is the number step 3 judges ccn against; `binds` is the gate's scope rule as one fixed sentence: print it, do not branch on it |
+| `ratchet_mark`, `carried_from` | the mark the gate judges this function by, also `gate_rule.ratchet_mark`. A `carried_from` key means a signature edit carried the mark from that key: it is your debt, not new debt, and a passing verify re-keys it |
 | `commands` | the literal strings for steps 3, 4 and 5, plus `refresh` and `refresh_writes_run` |
 | `scored_changes` | how many files the run scored hold other content now, your own edits included. Anything but `0`, `null` included: run `commands.refresh` before trusting `cov` or `source` |
 | `stale` | `true` means HEAD moved past the run's commit; it says nothing about the files |

@@ -158,7 +158,8 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # Both hooks naming a carried mark and its refusal (mission-4-03b) added 5.
 # verify's re-key of a carried mark (mission-4-04) added 4.
 # The refusal head line the hook and rescore --gate share (mission-4-10) added 1.
-SRC_DEFS = 4074
+# brief, explain and the worklist reading a carried mark (mission-4-08) added 7.
+SRC_DEFS = 4081
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

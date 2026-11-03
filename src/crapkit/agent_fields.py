@@ -104,6 +104,14 @@ _CARRIED_DESCRIPTIONS = {
     "mark": "carried: the recorded mark that pardons the function, its CRAP at or under it"}
 
 
+# The key brief and explain read a carried mark under, said once for both.
+_CARRIED_FROM = ("the key the mark was recorded under when a signature edit carried it to this "
+                 "function, the one marked key of its bare name that left the file; a passing "
+                 "verify re-keys the mark, so this reads null once that re-key is committed; "
+                 "null for a mark under the function's own key, for no mark, and for a carry "
+                 "keys refused")
+
+
 def _carried_fields(payload: str, prefix: str, names: tuple[str, ...]) -> tuple[AgentField, ...]:
     """The fields NAMES of a carried item: one function a carried mark pardons."""
     return tuple(AgentField(payload, prefix + name, ("number",) if name == "mark" else ("string",),
@@ -196,6 +204,8 @@ _ADDED = (
     *_carried_fields("rescore --gate --json", "gate.carried[].", CARRIED_FIELDS),
     AgentField("rescore --gate --json", "gate.breaches[].mark_ambiguity", ("string", "null"),
                _AMBIGUITY),
+    AgentField("brief --json", "carried_from", ("string", "null"), _CARRIED_FROM),
+    AgentField("explain --json", "functions[].carried_from", ("string", "null"), _CARRIED_FROM),
     AgentField("verify --json", "counts", ("object",),
                "the numbers beside findings, which its items do not carry"),
     AgentField("verify --json", "counts.diff_uncovered_count", ("integer",),
@@ -422,8 +432,10 @@ _WORKLIST_ITEM = {'type': 'object',
                         'description': _COV_DESCRIPTION + '; null on an inventory-only run'},
                 'ratchet_mark': {'type': ('number', 'null'),
                                  'description': 'the committed ratchet mark on this function, read '
-                                                'under its own ratchet key; null when it carries '
-                                                'none or the repo has no marks file'},
+                                                'under its own ratchet key or carried to it by a '
+                                                "signature edit, whose old key get_function_brief's "
+                                                'carried_from names; null when it carries none or '
+                                                'the repo has no marks file'},
                 'occurrence': _OCCURRENCE,
                 'handle': {'type': 'string',
                            'description': 'short name form: the bare identifier, or '
@@ -819,12 +831,14 @@ _BRIEF = {
                 "under it")},
             "ratchet_mark": {
                 "type": ("number", "null"),
-                "description": ("the mark this function carries; an edit at or under it "
-                "passes the gate, above it fails with exit 6")},
+                "description": ("the mark this function carries, its own or the one a signature "
+                "edit carried to it (carried_from); an edit at or under it passes the gate, "
+                "above it fails with exit 6")},
             "mark_age_days": {
                 "type": ("integer", "null"),
-                "description": ("age of that mark, counted from the newest commit that "
-                "touched the ratchet file")},
+                "description": ("age of that mark under the key it was recorded under, as "
+                "ratchet report gives it, counted from the newest commit that touched the "
+                "ratchet file")},
             "diff_uncovered_max": {
                 "type": ("integer", "null"),
                 "description": ("configured ceiling on changed lines with no coverage; null "
@@ -946,8 +960,10 @@ _BRIEF = {
                     "description": "[run_id, ccn]"}}}},
     "ratchet_mark": {
         "type": ("number", "null"),
-        "description": ("the committed ratchet mark, or null when the function carries none "
+        "description": ("the committed ratchet mark, its own or the one a signature edit "
+        "carried to it (carried_from names its key), or null when the function carries none "
         "or the repo has no ratchet file")},
+    "carried_from": schema_of("brief --json", "carried_from"),
     "churn": {
         "type": ("object", "null"),
         "description": "the file's churn, or null when it had no commits in the window",
@@ -1078,7 +1094,9 @@ _EXPLAIN = {
                                          "cc-only", None)}}}},
                 "ratchet_mark": {
                     "type": ("number", "null"),
-                    "description": "the committed ratchet mark, or null"},
+                    "description": ("the committed ratchet mark, its own or the one a signature "
+                    "edit carried to it (carried_from names its key), or null")},
+                "carried_from": schema_of("explain --json", "functions[].carried_from"),
                 "ratchet_mark_note": {
                     "type": "string",
                     "description": ("present only when the repo has no ratchet file, so null "

@@ -2,6 +2,7 @@
  "isError": false,
  "structuredContent": {
   "attempts": [],
+  "carried_from": null,
   "churn": {
    "authors": 1,
    "commits": 1,
@@ -175,6 +176,7 @@
  },
  "text": {
   "attempts": [],
+  "carried_from": null,
   "churn": {
    "authors": 1,
    "commits": 1,
