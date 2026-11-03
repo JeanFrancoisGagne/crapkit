@@ -17,6 +17,8 @@ from crapkit.toolchain import detected
     ({"deno.json"}, ["deno"]),
     ({"deno.jsonc"}, ["deno"]),
     ({"Cargo.toml", "bun.lock"}, ["bun", "cargo llvm-cov"]),
+    ({"CMakeLists.txt"}, ["gcovr"]),
+    ({"CMakeLists.txt", "Cargo.toml"}, ["cargo llvm-cov", "gcovr"]),
     ({"bun.lock", "bun.lockb", "bunfig.toml"}, ["bun"]),
     (set(), []),
     ({"go.mod"}, []),

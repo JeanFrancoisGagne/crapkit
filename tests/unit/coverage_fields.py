@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from array import array
 from typing import NamedTuple
 
@@ -79,6 +80,12 @@ WRONG = {
     "lcov path": [],
     "lcov text": [],
     "lcov record": [],
+    # A Cobertura attribute is text too. A filename and a source take any text.
+    "xml line": ["x", "-1", "1.5", "nan", ""],
+    "xml count": ["x", "-1", "1.5", "nan", "inf", ""],
+    "xml boolean": ["x", "1", "True", ""],
+    "xml conditions": ["x", "50%", "(1/2)", "50% (3/2)", ""],
+    "xml path": [],
 }
 
 # Per format, the keys whose members are ids (a file, a function, a counter), not
@@ -87,9 +94,11 @@ MAPS = {
     "istanbul": {"", "fnMap", "f", "statementMap", "s", "branchMap", "b"},
     "coveragepy": {"files", "functions", "classes", "contexts"},
     "lcov": set(),
+    "cobertura": set(),
 }
 
-FILE_KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs"}
+FILE_KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs",
+             "cobertura": "src/a.cpp"}
 
 _FN = "*.fnMap.*"
 _B0, _B1 = "*.branchMap.0", "*.branchMap.1"
@@ -115,6 +124,14 @@ _LCOV_READS = ({FILE_KEYS["lcov"]: []},
                {FILE_KEYS["lcov"]: FileEvidence(array("I", [1, 2, 3]), array("I", [5]),
                                                 ((2, 2, 1),))})
 _LCOV_ANY_RECORD = "function records give no evidence, so the file reads the same"
+# Cobertura hands no function records either: its one class reads as lines 1-3
+# hit, line 5 missed, and line 2's two conditions, one taken.
+_COBERTURA_READS = ({FILE_KEYS["cobertura"]: []},
+                    {FILE_KEYS["cobertura"]: FileEvidence(array("I", [1, 2, 3]), array("I", [5]),
+                                                          ((2, 2, 1),))})
+_COBERTURA_LINES_ONLY = ({FILE_KEYS["cobertura"]: []},
+                         {FILE_KEYS["cobertura"]: FileEvidence(array("I", [1, 2, 3]),
+                                                               array("I", [5]))})
 
 FIELDS = [
     Field("istanbul", "*", True, "object", None, "the file entry"),
@@ -239,6 +256,21 @@ FIELDS = [
           "FNDA"),
     Field("lcov", "FNDA.1", True, "lcov count", (), "FNDA"),
     Field("lcov", "FNDA.2", True, "lcov text", (), "FNDA"),
+
+    # Cobertura: TAG@ATTRIBUTE is an attribute of the first TAG element that
+    # holds it, a bare TAG the text of the first TAG element.
+    Field("cobertura", "source", False, "xml path",
+          ReadsAs(".", "with no source a filename keys as written, under path_prefix",
+                  _COBERTURA_READS), "source"),
+    Field("cobertura", "class@filename", True, "xml path", (), "filename"),
+    Field("cobertura", "line@number", True, "xml line", (), "number"),
+    Field("cobertura", "line@hits", True, "xml count", (), "hits"),
+    Field("cobertura", "line@branch", False, "xml boolean",
+          ReadsAs("false", "a line with no branch attribute holds no branch", _COBERTURA_READS),
+          "branch"),
+    Field("cobertura", "line@condition-coverage", False, "xml conditions",
+          ReadsAs("0% (0/0)", "a branch line with no condition-coverage gives line evidence "
+                  "only", _COBERTURA_LINES_ONLY), "condition-coverage"),
 ]
 
 
@@ -369,8 +401,56 @@ def _lcov_artifact(drop: str | None = None, retype: tuple[str, object] | None = 
     return ("\n".join(lines) + "\n").encode("utf-8")
 
 
+def _cobertura() -> str:
+    """One class: lines 1-3 hit and line 5 missed, line 1 marked no branch and
+    line 2 a branch line with one of its two conditions taken, under `.`."""
+    return ('<?xml version="1.0" ?>\n<coverage><sources><source>.</source></sources>'
+            '<packages><package name="src"><classes>'
+            f'<class name="a" filename="{FILE_KEYS["cobertura"]}"><methods/><lines>'
+            '<line number="1" hits="1" branch="false"/>'
+            '<line number="2" hits="1" branch="true" condition-coverage="50% (1/2)"/>'
+            '<line number="3" hits="1"/><line number="5" hits="0"/>'
+            "</lines></class></classes></package></packages></coverage>\n")
+
+
+def _cobertura_at(text: str, locator: str):
+    """The match of the field at `locator`: its group 1 is the whole field (an
+    attribute with its leading space, or an element), or None."""
+    tag, _, attribute = locator.partition("@")
+    if attribute:
+        return re.search(rf'<{tag}\b[^>]*?( {attribute}="[^"]*")', text)
+    return re.search(f"(<{tag}>[^<]*</{tag}>)", text)
+
+
+def cobertura_locators(text: str) -> list[str]:
+    """Each row's locator the report holds."""
+    return [row.locator for row in FIELDS
+            if row.format == "cobertura" and _cobertura_at(text, row.locator)]
+
+
+def cobertura_edit(text: str, locator: str, value: str | None) -> str:
+    """Drop (value None) or set the field at `locator`."""
+    found = _cobertura_at(text, locator)
+    tag, _, attribute = locator.partition("@")
+    if value is None:
+        new = ""
+    else:
+        new = f' {attribute}="{value}"' if attribute else f"<{tag}>{value}</{tag}>"
+    return text[:found.start(1)] + new + text[found.end(1):]
+
+
+def _cobertura_artifact(drop: str | None = None,
+                        retype: tuple[str, object] | None = None) -> bytes:
+    text = _cobertura()
+    if drop is not None:
+        text = cobertura_edit(text, drop, None)
+    if retype is not None:
+        text = cobertura_edit(text, retype[0], str(retype[1]))
+    return text.encode("utf-8")
+
+
 _BUILDERS = {"istanbul": _json_artifact(_istanbul), "coveragepy": _json_artifact(_coveragepy),
-             "lcov": _lcov_artifact}
+             "lcov": _lcov_artifact, "cobertura": _cobertura_artifact}
 
 
 def minimal_artifact(format: str, drop: str | None = None,

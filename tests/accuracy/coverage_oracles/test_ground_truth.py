@@ -13,6 +13,8 @@ model and the driver's calls, never from a producer's output. Three checks:
    over those counts, after the README floor for a Python def-line layout.
    Where crapkit and the ground truth part, a rulings row says why. A
    coverage.py recording with no start_line is refused instead (ruling CO-B2).
+   gcovr's Cobertura recordings of the C++ probe are scored here against the
+   C++ table through a `parser = "cobertura"` lane.
 
 Cross-format: one c8 run's istanbul JSON and lcov give each probe function the
 same cov, and each function where the two part is a named finding (C8_FINDINGS).
@@ -186,7 +188,9 @@ def _param(producer: str, row: ground_table.Truth):
 
 
 # The producers crapkit scores: a recording it refuses has no row to compare.
-SCORED = [name for name in [*RECORDED, LIVE] if name not in probe_repo.REFUSED]
+# gcovr's Cobertura joins here alone: gcov states other lines than llvm's model.
+SCORED = [name for name in [*RECORDED, LIVE, *ground_table.COBERTURA_FAMILIES]
+          if name not in probe_repo.REFUSED]
 
 
 def _cases():
@@ -559,3 +563,80 @@ def test_crapkit_reads_each_lcov_recording_as_its_own_counts(tmp_path, name, sce
         assert (len(hit) + len(missed), len(hit)) == (wrote.summary["LF"], wrote.summary["LH"])
         assert (sum(total for _, total, _ in branches), sum(taken for _, _, taken in branches)) == (
             wrote.summary["BRF"], wrote.summary["BRH"])
+
+
+
+# --- Cobertura: crapkit's evidence is the report's own counts --------------------------
+#
+# counts_table reads each report with ElementTree and no crapkit: each class's
+# line hits and condition-coverage, and the line-rate and branch-rate it wrote.
+# crapkit's per-file evidence must say the same about every filename, and a
+# report whose classes are each split in two must read the same, merged.
+
+COBERTURA_RECORDINGS = ["gcovr-7.2", "coveragepy-reports-7.16.1"]
+_COBERTURA_READ = _LCOV_READ.replace("coverage_lcov", "coverage_cobertura").replace(
+    'parser="lcov"', 'parser="cobertura"')
+
+
+def _cobertura_evidence(path: Path) -> dict:
+    child = hang_guard.run([sys.executable, "-c", _COBERTURA_READ, str(path)], text=True,
+                           encoding="utf-8")
+    assert child.returncode == 0, child.stderr
+    return json.loads(child.stdout)
+
+
+def _split_classes(data: bytes) -> bytes:
+    """Each class written as two classes of the same filename, its lines dealt
+    between them in turn: a reader that keeps the second class loses half."""
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(data)
+    for classes in root.iter("classes"):
+        for cls in list(classes):
+            twin = ET.SubElement(classes, "class", cls.attrib)
+            twin_lines = ET.SubElement(twin, "lines")
+            lines = cls.find("lines")
+            for index, line in enumerate(list(lines)):
+                if index % 2:
+                    lines.remove(line)
+                    twin_lines.append(line)
+    return ET.tostring(root, encoding="utf-8")
+
+
+@pytest.mark.parametrize("split", [False, True], ids=["as-recorded", "split-in-two-classes"])
+@pytest.mark.parametrize("scenario", ["call", "idle"])
+@pytest.mark.parametrize("name", COBERTURA_RECORDINGS)
+def test_crapkit_reads_each_cobertura_recording_as_its_own_counts(tmp_path, name, scenario, split):
+    path = probe_repo.RECORDED / name / f"{scenario}.xml"
+    data = path.read_bytes()
+    classes = counts_table.cobertura_classes(data)
+    if split:
+        path = tmp_path / path.name
+        path.write_bytes(_split_classes(data))
+
+    evidence = _cobertura_evidence(path)
+
+    assert sorted(evidence) == sorted(cls.filename for cls in classes)
+    for cls in classes:
+        hit, missed, branches = evidence[cls.filename]
+        assert hit == sorted(n for n, count in cls.hits.items() if count > 0)
+        assert missed == sorted(n for n, count in cls.hits.items() if count == 0)
+        assert {line: (total, taken) for line, total, taken in branches} == {
+            line: pair for line, pair in cls.conditions.items() if pair[0]}
+        # The rates are the producer's rounding: coverage.py keeps 4 significant digits.
+        assert len(hit) / len(cls.hits) == pytest.approx(cls.line_rate, rel=1e-3)
+        arms = sum(total for _, total, _ in branches)
+        assert (sum(taken for _, _, taken in branches) / arms if arms else 1) == pytest.approx(
+            cls.branch_rate, rel=1e-3)
+
+
+# Accuracy check 3, cross-format: one gcov run written by gcovr as lcov and as
+# Cobertura, and one coverage.py data file reported as lcov and as `coverage
+# xml`, give the same per-file evidence through the two readers.
+@pytest.mark.parametrize("scenario", ["call", "idle"])
+@pytest.mark.parametrize("name", COBERTURA_RECORDINGS)
+def test_one_run_reads_the_same_through_lcov_and_cobertura(name, scenario):
+    lcov = _lcov_evidence(probe_repo.RECORDED / name / f"{scenario}.lcov")
+    cobertura = _cobertura_evidence(probe_repo.RECORDED / name / f"{scenario}.xml")
+
+    assert cobertura == lcov

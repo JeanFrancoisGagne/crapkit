@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from conftest import cli_runner, git_commit_all, git_init_repo
+from crapkit import coverage_format
 
 run_cli = cli_runner(encoding="utf-8", errors="replace")
 
@@ -162,7 +163,9 @@ def test_format_overrides_the_sniff_and_an_unknown_file_exits_3(tmp_path):
     assert named.returncode == 0, named.stderr
     unknown = _score(repo, "src", "--coverage", "cov.xml")
     assert unknown.returncode == 3
-    assert "name it with --format. --format takes one of: coveragepy, istanbul, lcov" in unknown.stderr
+    # Read off the registry, so a reader that lands later joins the list without a test edit.
+    accepted = ", ".join(sorted(coverage_format._FORMATS))
+    assert f"name it with --format. --format takes one of: {accepted}" in unknown.stderr
 
 
 def test_a_tracefile_from_another_tree_exits_5(tmp_path):

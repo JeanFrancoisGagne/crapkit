@@ -152,7 +152,8 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # The commented toolchain lanes and the reader note (m1-readers-04) added 15.
 # score's JUnit report (m1-readers-12) added 4. Deleting the single-number
 # stamp builders (metric-stamp-11) took 1 away, and the sync met at 4,096.
-SRC_DEFS = 4096
+# The Cobertura reader and covstream's XML walk (m1-readers-05) added 30.
+SRC_DEFS = 4126
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

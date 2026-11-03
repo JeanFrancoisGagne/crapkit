@@ -69,23 +69,42 @@ def _lcov(root: Path) -> list[str]:
             "DA:5,0", "BRDA:2,0,0,1", "BRDA:2,0,1,0", "end_of_record"]
 
 
-CONTROLS = {"istanbul": _istanbul, "coveragepy": _coveragepy, "lcov": _lcov}
+def _cobertura(root: Path) -> list[str]:
+    """A Cobertura report is XML, written here one element to a line, so its
+    control is the list of those lines, as lcov's is."""
+    return ['<?xml version="1.0" ?>', '<coverage version="test">',
+            "<sources><source>.</source></sources>", '<packages><package name="src"><classes>',
+            '<class name="a" filename="src/a.cpp"><methods/><lines>',
+            '<line number="1" hits="1"/>',
+            '<line number="2" hits="1" branch="true" condition-coverage="50% (1/2)"/>',
+            '<line number="3" hits="1"/>', '<line number="5" hits="0"/>',
+            "</lines></class>", "</classes></package></packages>", "</coverage>"]
+
+
+CONTROLS = {"istanbul": _istanbul, "coveragepy": _coveragepy, "lcov": _lcov,
+            "cobertura": _cobertura}
 # The formats whose artifact is one JSON document.
 JSON_FORMATS = ["coveragepy", "istanbul"]
-KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs"}
+# The formats whose artifact is XML: its declaration and a byte-order mark
+# decide the decode (test_coverage_cobertura holds Latin-1 and UTF-16 reports),
+# so the not-UTF-8 refusal is not theirs.
+XML_FORMATS = ["cobertura"]
+KEYS = {"istanbul": "src/app.ts", "coveragepy": "src/a.py", "lcov": "src/a.rs",
+        "cobertura": "src/a.cpp"}
 # An istanbul entry with statements is an instrumenter's own output, whose fnMap
 # lists every function it measured, so its rows carry full_listing
 # (coverage_istanbul._instrumented; test_coverage_istanbul pins both readings).
-# lcov hands no function records: score's evidence join builds them.
+# lcov and Cobertura hand no function records: score's evidence join builds them.
 ROWS = {"istanbul": [FnCoverage("f", 1, 6, True, 2, 1, 3, 2, full_listing=True)],
         "coveragepy": [FnCoverage("f", 1, 5, True, 2, 1, 3, 2)],
-        "lcov": []}
+        "lcov": [], "cobertura": []}
 # read()'s second value: the control's one file, its dead line 5 as missed_lines.
 # istanbul and coverage.py keep their own function records, so hit_lines is
-# None; lcov's evidence holds its hit lines and its arms.
+# None; lcov's and Cobertura's evidence holds their hit lines and their arms.
 DEAD = FileEvidence(hit_lines=None, missed_lines=array("I", [5]))
 EVIDENCE = {"istanbul": DEAD, "coveragepy": DEAD,
-            "lcov": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),))}
+            "lcov": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),)),
+            "cobertura": FileEvidence(array("I", [1, 2, 3]), array("I", [5]), ((2, 2, 1),))}
 
 
 def _ist(doc: dict) -> dict:
@@ -208,7 +227,7 @@ NOT_UTF8 = {
 
 
 @pytest.mark.parametrize("shape", list(NOT_UTF8))
-@pytest.mark.parametrize("fmt", FORMATS)
+@pytest.mark.parametrize("fmt", [fmt for fmt in FORMATS if fmt not in XML_FORMATS])
 def test_text_that_is_not_utf8_is_refused_naming_the_bytes(tmp_path, fmt, shape):
     recode, cause = NOT_UTF8[shape]
 
@@ -251,8 +270,11 @@ def _counted_as(fmt: str, value):
 
 
 def _swap(old: str, new: str):
-    """An edit that rewrites one line of the lcov control."""
+    """An edit that rewrites one line of the lcov or Cobertura control."""
     return lambda lines: lines.__setitem__(lines.index(old), new)
+
+
+_LINE_3 = '<line number="3" hits="1"/>'
 
 
 def _da_first(lines: list[str]) -> None:
@@ -266,21 +288,26 @@ PROMISES = {
         "coveragepy": (lambda d: _pyfn(d)["summary"].pop("covered_lines"),
                        ["num_statements without covered_lines"]),
         "lcov": (_swap("DA:3,1", "DA:3"), ["SF:src/a.rs", "DA:3", "needs a line and a count"]),
+        "cobertura": (_swap(_LINE_3, '<line number="3"/>'), ["src/a.cpp", "line 3 has no hits"]),
     },
     "negative-count": {
         "istanbul": (_counted_as("istanbul", -1), ["s['0']", "nonnegative", "-1"]),
         "coveragepy": (_counted_as("coveragepy", -1), ["covered_lines", "nonnegative", "-1"]),
         "lcov": (_swap("DA:3,1", "DA:3,-1"), ["DA:3,-1", "nonnegative", "'-1'"]),
+        "cobertura": (_swap(_LINE_3, '<line number="3" hits="-1"/>'),
+                      ["src/a.cpp", "line 3: hits '-1'", "nonnegative"]),
     },
     "count-a-string": {
         "istanbul": (_counted_as("istanbul", "1"), ["s['0']", "'1'"]),
         "coveragepy": (_counted_as("coveragepy", "2"), ["covered_lines", "'2'"]),
         "lcov": (_swap("DA:3,1", "DA:3,one"), ["DA:3,one", "count 'one'"]),
+        "cobertura": (_swap(_LINE_3, '<line number="3" hits="one"/>'), ["line 3: hits 'one'"]),
     },
     "counter-group-null": {
         "istanbul": (lambda d: _ist(d).update(s=None), ["src/app.ts", "`s` holds null"]),
         "coveragepy": (lambda d: _pyfn(d).update(summary=None), ["f: no summary object"]),
         "lcov": (_swap("DA:3,1", "DA:"), ["SF:src/a.rs", "DA:", "needs a line and a count"]),
+        "cobertura": (_swap(_LINE_3, '<line number="3" hits=""/>'), ["src/a.cpp", "hits ''"]),
     },
     "file-entry-null": {
         "istanbul": (lambda d: d.update({next(iter(d)): None}),
@@ -288,12 +315,15 @@ PROMISES = {
         "coveragepy": (lambda d: d["files"].update({"src/a.py": None}),
                        ["src/a.py: the file entry holds null"]),
         "lcov": (_swap("SF:src/a.rs", "SF:"), ["an SF record names no file"]),
+        "cobertura": (_swap('<class name="a" filename="src/a.cpp"><methods/><lines>',
+                            '<class name="a"><methods/><lines>'), ["a class names no filename"]),
     },
     "missing-required-field": {
         "istanbul": (lambda d: _ist(d)["fnMap"]["0"]["loc"].pop("end"), ["loc.end.line"]),
         "coveragepy": (lambda d: _pyfn(d).pop("start_line"),
                        ["no start_line", "coverage>=7.13.1"]),
         "lcov": (_da_first, ["a DA record comes before any SF record"]),
+        "cobertura": (_swap(_LINE_3, '<line hits="1"/>'), ["src/a.cpp", "a line has no number"]),
     },
 }
 
@@ -529,8 +559,9 @@ def test_a_coveragepy_lane_reads_the_contexts_of_one_file_through_its_adapter(tm
 # field a recorded artifact holds is removed once, so a reader added to _FORMATS
 # is checked field by field the day it lands.
 
-from coverage_fields import (FIELDS, MAPS, WRONG, field_paths, generic, lcov_edit,  # noqa: E402
-                             lcov_locators, minimal_artifact)
+from coverage_fields import (FIELDS, MAPS, WRONG, cobertura_edit,  # noqa: E402
+                             cobertura_locators, field_paths, generic, lcov_edit, lcov_locators,
+                             minimal_artifact)
 from crapkit.repotext import json_kind  # noqa: E402
 
 RECORDED = Path(__file__).parents[1] / "accuracy" / "coverage_oracles" / "recorded"
@@ -600,6 +631,10 @@ FILE_UNNAMED = {("coveragepy", "files.*.functions"):
                 # With its SF line gone, the record's first line belongs to no file.
                 ("lcov", "SF"):
                 "lcov artifact cov.json: a FN record comes before any SF record; "
+                "regenerate the artifact with the coverage tool that wrote it",
+                # A class with no filename has no file to name.
+                ("cobertura", "class@filename"):
+                "cobertura artifact cov.json: a class names no filename; "
                 "regenerate the artifact with the coverage tool that wrote it"}
 
 
@@ -911,3 +946,45 @@ def test_every_recording_is_one_of_its_formats():
     listed = {name for names in RECORDINGS.values() for name in names}
 
     assert listed <= {path.name for path in RECORDED.iterdir()}
+
+
+# Every recorded Cobertura report: gcovr's own, coverage.py's `coverage xml`
+# written beside its JSON and lcov from the same data file, and istanbul's
+# cobertura reporter through nyc, whose one <source> is the project root it ran in.
+COBERTURA_FIXTURES = Path(__file__).parents[1] / "fixtures" / "coverage" / "cobertura"
+ISTANBUL_ROOT = "/home/user/repo"
+COBERTURA_RECORDED = [pytest.param(RECORDED / name / f"{scenario}.xml", id=f"{name}-{scenario}")
+                      for name in ("gcovr-7.2", "coveragepy-reports-7.16.1")
+                      for scenario in ("call", "idle")] + [
+    pytest.param(COBERTURA_FIXTURES / f"nyc-18.0.0-{scenario}.xml", id=f"nyc-18.0.0-{scenario}")
+    for scenario in ("call", "idle")]
+
+
+def _cobertura_unexplained(root: Path, text: str, locator: str, base) -> str | None:
+    """Why removing the first field at `locator` breaks the table's promise."""
+    rows = [row for row in FIELDS if row.format == "cobertura" and row.locator == locator]
+    removed = _outcome(root, "cobertura", cobertura_edit(text, locator, None).encode("utf-8"))
+    if removed == base:
+        return None
+    if isinstance(removed, str):
+        return None if any(row.named in removed for row in rows) else (
+            f"{locator}: refused with no row naming it: {removed}")
+    documented = [_outcome(root, "cobertura",
+                           cobertura_edit(text, locator, row.absent.value).encode("utf-8"))
+                  for row in rows if not row.required]
+    if removed in documented:
+        return None
+    return f"{locator}: removing it changed the reading, and no optional row documents it"
+
+
+@pytest.mark.parametrize("report", COBERTURA_RECORDED)
+def test_removing_each_field_a_recorded_cobertura_report_holds_refuses_or_reads_as_documented(
+        tmp_path, report):
+    text = report.read_text(encoding="utf-8").replace(ISTANBUL_ROOT, tmp_path.as_posix())
+    base = _outcome(tmp_path, "cobertura", text.encode("utf-8"))
+
+    broken = [why for locator in cobertura_locators(text)
+              if (why := _cobertura_unexplained(tmp_path, text, locator, base))]
+
+    assert not isinstance(base, str), base
+    assert not broken, "\n".join(broken)

@@ -35,10 +35,13 @@ FAMILIES = {
 # The lcov recordings, worked from llvm's line and branch rules. Kept apart from
 # FAMILIES, whose JSON recordings test_dark_lines parses.
 LCOV_FAMILIES = {"cargo-llvm-cov-0.9.1": "llvm", "llvm-cov-19.1.7": "llvm"}
+# The Cobertura recordings. gcov states its own lines (no closing brace), so
+# they are scored against crapkit_expected, never stated line for line.
+COBERTURA_FAMILIES = {"gcovr-7.2": "gcov"}
 
 
 def family(producer: str) -> str:
-    return {**FAMILIES, **LCOV_FAMILIES}[producer]
+    return {**FAMILIES, **LCOV_FAMILIES, **COBERTURA_FAMILIES}[producer]
 
 
 @dataclass(frozen=True)

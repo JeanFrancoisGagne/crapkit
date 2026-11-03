@@ -230,6 +230,10 @@ artifact and what is wrong with it.
 | lcov | `lcov.info is not UTF-8 (first bytes ff fe = UTF-16)` | `llvm-cov export ... > x.lcov` typed in Windows PowerShell 5.1 wrote UTF-16. `llvm-cov export` has no output-file option: run `cmd /c "llvm-cov export ... > x.lcov"` or pipe it through `Out-File -Encoding utf8 x.lcov` (cargo-llvm-cov writes its own file with `--output-path`), then rerun the lane |
 | lcov | `lcov artifact PATH: the record for SF:KEY has no end_of_record` | the run was killed while it wrote the tracefile, so its last record is cut off. Rerun the lane |
 | lcov | `measured N file(s), none of them under the paths its scopes declare` with absolute `SF:` paths | the `SF:` keys name another tree: see the next section. A relative key that misses every scope wants `path_prefix` |
+| cobertura | `cobertura artifact PATH is empty: the file holds no XML element` or a missing artifact | gcovr ran without `--cobertura FILE`, so it printed its text summary and wrote no XML. Add `--cobertura` with the lane's artifact path, then rerun the lane |
+| cobertura | `cobertura artifact PATH: the XML ends or breaks at line L, column C` | the run was killed while it wrote the report, so the XML is cut off. Rerun the lane |
+| cobertura | `measured N file(s), none of them under the paths its scopes declare` with absolute paths | the report's `<source>` root is another checkout: see the next section. A relative source that misses every scope wants `path_prefix` |
+| cobertura | `cobertura artifact PATH declares the entity NAME in its DTD` | the report's DTD declares an entity, which no Cobertura producer writes; crapkit expands none. Regenerate the report with its producer |
 
 [docs: lcov](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#lcov).
 

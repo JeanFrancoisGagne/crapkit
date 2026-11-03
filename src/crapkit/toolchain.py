@@ -72,7 +72,8 @@ class Toolchain(NamedTuple):
 
 _JS = ("javascript", "typescript", "tsx")
 # Each stanza command is the one that recorded its fixture under
-# tests/fixtures/coverage/lcov/, so init never prints a command no run wrote.
+# tests/fixtures/coverage/lcov/ or cobertura/, so init never prints a command no
+# run wrote.
 _BUN_STANZA = Stanza("bun", "bun test --coverage --coverage-reporter=lcov "
                             "--coverage-dir=.crapkit/cov/bun",
                      ".crapkit/cov/bun/lcov.info", "lcov")
@@ -81,6 +82,13 @@ _DENO_STANZA = Stanza("deno", "deno test --coverage=.crapkit/cov/deno-raw && den
                       ".crapkit/cov/deno.lcov", "lcov")
 _RUST_STANZA = Stanza("rust", "cargo llvm-cov --lcov --output-path .crapkit/cov/rust.lcov",
                       ".crapkit/cov/rust.lcov", "lcov")
+# A CMake build with gcc's --coverage beside the tree, its tests run by ctest,
+# then gcovr's Cobertura report keyed from the root.
+_CPP_STANZA = Stanza("cpp", "cmake -S . -B build/crapkit-cov -DCMAKE_C_FLAGS=--coverage "
+                            "-DCMAKE_CXX_FLAGS=--coverage && cmake --build build/crapkit-cov && "
+                            "ctest --test-dir build/crapkit-cov && gcovr --root . --cobertura "
+                            ".crapkit/cov/cpp.xml",
+                     ".crapkit/cov/cpp.xml", "cobertura")
 
 _ROWS = (
     # pytest raises Interrupted at the END of collection when any module fails
@@ -140,6 +148,8 @@ _ROWS = (
               markers=("deno.json", "deno.jsonc"), stanza=_DENO_STANZA),
     Toolchain("cargo llvm-cov", (("cargo", "llvm-cov"),), languages=("rust",), formats=("lcov",),
               markers=("Cargo.toml",), stanza=_RUST_STANZA),
+    Toolchain("gcovr", (("gcovr",),), languages=("cpp",), formats=("cobertura",),
+              markers=("CMakeLists.txt",), stanza=_CPP_STANZA),
     Toolchain("go test", (("go", "test"),)),
     Toolchain("c8", (("c8",),), languages=_JS, formats=("istanbul", "lcov")),
 )

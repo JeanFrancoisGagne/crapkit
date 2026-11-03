@@ -56,7 +56,7 @@
     "start": 807,
     "target": 15,
     "uncovered_lines": null,
-    "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/cjson/cJSON_Utils.c",
+    "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/cjson/cJSON_Utils.c; parser = \"cobertura\" reads cpp: declare its lane (docs/lanes.md#cobertura) and delete coverage_optional to measure it",
     "unmeasured": true
    },
    {
@@ -154,7 +154,7 @@
     "start": 807,
     "target": 15,
     "uncovered_lines": null,
-    "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/cjson/cJSON_Utils.c",
+    "uncovered_lines_note": "scope 'vendor' sets coverage_optional = true, so no artifact can name uncovered lines for vendor/cjson/cJSON_Utils.c; parser = \"cobertura\" reads cpp: declare its lane (docs/lanes.md#cobertura) and delete coverage_optional to measure it",
     "unmeasured": true
    },
    {

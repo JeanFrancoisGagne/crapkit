@@ -17,9 +17,10 @@ from crapkit.toolchain import TOOLCHAINS, Toolchain
 
 ROOT = Path(__file__).resolve().parents[2]
 LCOV = ROOT / "tests" / "fixtures" / "coverage" / "lcov"
+COBERTURA = ROOT / "tests" / "fixtures" / "coverage" / "cobertura"
 
 # The runners mission-1 names, by the row name every reader keys on.
-MISSION_1 = ("pytest", "vitest", "jest", "bun", "deno", "cargo llvm-cov", "go test", "c8")
+MISSION_1 = ("pytest", "vitest", "jest", "bun", "deno", "cargo llvm-cov", "gcovr", "go test", "c8")
 
 
 def test_every_row_is_keyed_by_its_own_unique_name():
@@ -104,7 +105,7 @@ def test_every_format_a_row_names_is_a_registered_parser():
 def test_every_stanza_row_has_markers_languages_and_the_stanzas_parser():
     stanzas = [row for row in TOOLCHAINS.values() if row.stanza]
 
-    assert [row.name for row in stanzas] == ["bun", "deno", "cargo llvm-cov"]
+    assert [row.name for row in stanzas] == ["bun", "deno", "cargo llvm-cov", "gcovr"]
     for row in stanzas:
         assert row.markers and row.languages and row.formats, row.name
         assert row.stanza.parser in row.formats, row.name
@@ -119,6 +120,7 @@ def test_every_stanza_row_has_markers_languages_and_the_stanzas_parser():
     ("bun", ("javascript", "typescript", "tsx"), ("lcov",), ("bun.lock", "bun.lockb", "bunfig.toml")),
     ("deno", ("javascript", "typescript", "tsx"), ("lcov",), ("deno.json", "deno.jsonc")),
     ("cargo llvm-cov", ("rust",), ("lcov",), ("Cargo.toml",)),
+    ("gcovr", ("cpp",), ("cobertura",), ("CMakeLists.txt",)),
     ("c8", ("javascript", "typescript", "tsx"), ("istanbul", "lcov"), ()),
 ])
 def test_each_row_carries_its_languages_formats_and_markers(name, languages, formats, markers):
@@ -129,8 +131,10 @@ def test_each_row_carries_its_languages_formats_and_markers(name, languages, for
 
 def test_the_stanza_commands_are_the_ones_the_fixture_readme_records():
     """init never prints a command no run wrote: each stanza command is the one
-    tests/fixtures/coverage/lcov/README.md records for its fixture."""
-    readme = (LCOV / "README.md").read_text(encoding="utf-8")
+    tests/fixtures/coverage/lcov/README.md or cobertura/README.md records for
+    its fixture."""
+    readme = "".join((folder / "README.md").read_text(encoding="utf-8")
+                     for folder in (LCOV, COBERTURA))
     recorded = dict(re.findall(r"^- Stanza `([^`]+)`: `([^`]+)`", readme, re.M))
     stanzas = {row.stanza.name: row.stanza.command for row in TOOLCHAINS.values() if row.stanza}
 
@@ -158,6 +162,34 @@ def test_each_stanza_recording_reads_through_the_lcov_reader(recording, files, t
     assert all(evidence[path].hit_lines for path in files)
 
 
+def test_the_gcovr_stanza_recording_reads_through_the_cobertura_reader(tmp_path):
+    from crapkit.config import Lane
+    from crapkit.coverage_format import lane_format
+
+    artifact = tmp_path / "cpp.xml"
+    artifact.write_bytes((COBERTURA / "gcovr-7.2-stanza.xml").read_bytes())
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "shapes.cpp").write_text("", encoding="utf-8")
+    lane = Lane(name="cpp", command="true", artifact="cpp.xml", parser="cobertura", scopes=())
+    unplaced: dict = {}
+
+    _, evidence, _ = lane_format(lane).read(lane, tmp_path, artifact, unplaced=unplaced)
+
+    assert "src/shapes.cpp" in evidence
+    assert unplaced == {}
+    assert evidence["src/shapes.cpp"].hit_lines and evidence["src/shapes.cpp"].missed_lines
+
+
+def test_the_gcovr_stanza_is_the_ticket_spelling():
+    stanza = TOOLCHAINS["gcovr"].stanza
+
+    assert TOOLCHAINS["gcovr"].words == (("gcovr",),)
+    assert stanza.command.endswith("gcovr --root . --cobertura .crapkit/cov/cpp.xml")
+    assert "ctest" in stanza.command and "--coverage" in stanza.command
+    assert (stanza.name, stanza.artifact, stanza.parser) == ("cpp", ".crapkit/cov/cpp.xml",
+                                                            "cobertura")
+
+
 def test_the_rust_stanza_is_the_ticket_spelling():
     stanza = TOOLCHAINS["cargo llvm-cov"].stanza
 
@@ -170,12 +202,13 @@ def test_the_measurable_languages_and_the_live_lane_languages():
     from crapkit.scaffold import LIVE_LANE_LANGUAGES
 
     assert toolchain.measurable_languages() == frozenset(
-        {"python", "javascript", "typescript", "tsx", "vue", "rust"})
+        {"python", "javascript", "typescript", "tsx", "vue", "rust", "cpp"})
     assert LIVE_LANE_LANGUAGES == frozenset({"python", "javascript", "typescript", "tsx", "vue"})
 
 
 def test_readers_name_each_parser_and_toolchain_for_a_language():
     assert toolchain.readers("rust") == (("lcov", "cargo llvm-cov"),)
+    assert toolchain.readers("cpp") == (("cobertura", "gcovr"),)
     assert toolchain.readers("zig") == ()
 
 

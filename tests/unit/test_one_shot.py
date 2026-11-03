@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from coverage_fields import minimal_artifact
-from crapkit import one_shot
+from crapkit import coverage_format, one_shot
 from crapkit.cli import main
 from crapkit.coverage_lcov import WRONG_TREE_FIX
 from crapkit.errors import ConfigError, GitError
@@ -48,6 +48,10 @@ WIDE = "def wide(x):\n" + "".join(f"    if x == {k}:\n        return {k}\n" for 
     + "    return -1\n"
 WIDE_HITS = {line: 1 for line in range(1, 63)}
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "coverage" / "lcov"
+COBERTURA = FIXTURE.parent / "cobertura"
+RECORDED = Path(__file__).resolve().parents[1] / "accuracy" / "coverage_oracles" / "recorded"
+# Read off the registry, so a reader that lands later joins the list without a test edit.
+ACCEPTED = f"--format takes one of: {', '.join(sorted(coverage_format._FORMATS))}"
 
 
 def _lcov(*records: tuple[str, dict[int, int]]) -> str:
@@ -92,16 +96,28 @@ def _score(capsys, repo: Path, *args: str) -> tuple[int, list[str], str]:
 # --- the sniff ---------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("fmt", ["lcov", "coveragepy", "istanbul"])
+@pytest.mark.parametrize("fmt", ["lcov", "coveragepy", "istanbul", "cobertura"])
 def test_sniff_names_each_format_from_its_minimal_artifact(fmt):
     head = minimal_artifact(fmt)
     assert one_shot.sniff_format(head) == fmt
     assert one_shot.sniff_format(b"\xef\xbb\xbf" + head) == fmt
 
 
+@pytest.mark.parametrize("report", [
+    COBERTURA / "gcovr-7.2-stanza.xml", COBERTURA / "nyc-18.0.0-call.xml",
+    RECORDED / "coveragepy-reports-7.16.1" / "call.xml"], ids=["gcovr", "istanbul", "coverage-xml"])
+def test_sniff_names_cobertura_from_each_producers_report(report):
+    assert one_shot.sniff_format(report.read_bytes()[:one_shot.HEAD_BYTES]) == "cobertura"
+
+
+def test_sniff_names_cobertura_from_a_coverage_root_with_packages_and_no_sources():
+    head = b'<?xml version="1.0" ?>\n<coverage version="7"><packages><package name="a"/></packages>'
+    assert one_shot.sniff_format(head) == "cobertura"
+
+
 @pytest.mark.parametrize("head", [
-    b'<?xml version="1.0" ?>\n<coverage version="7"><packages><package name="a"/></packages>',
     b'<?xml version="1.0"?><report name="jacoco"><sessioninfo id="x"/></report>',
+    b'<?xml version="1.0"?><coverage version="7"/>',
     b"mode: set\nexample.com/a/a.go:3.14,5.2 1 1\n",
     b"", b"[1, 2]", b'{"files": {}}', b"plain text\n",
 ])
@@ -120,10 +136,10 @@ def test_an_unknown_format_name_exits_3_naming_the_flag_and_the_names(tmp_path):
     artifact = tmp_path / "cov.out"
     artifact.write_bytes(minimal_artifact("lcov"))
     with pytest.raises(ConfigError) as caught:
-        one_shot.format_of(artifact, "cobertura")
+        one_shot.format_of(artifact, "no-such-format")
     assert caught.value.exit_code == 3
-    assert "--format 'cobertura'" in str(caught.value)
-    assert "--format takes one of: coveragepy, istanbul, lcov" in str(caught.value)
+    assert "--format 'no-such-format'" in str(caught.value)
+    assert ACCEPTED in str(caught.value)
 
 
 def test_a_file_of_no_format_exits_3_naming_the_flag(tmp_path):
@@ -313,9 +329,24 @@ def test_not_a_git_repository_exits_4(tmp_path, capsys):
 
 def test_an_unknown_format_exits_3_through_the_command(tmp_path, capsys):
     repo = _calc_repo(tmp_path / "r")
-    code, _, err = _score(capsys, repo, "--format", "jacoco")
+    code, _, err = _score(capsys, repo, "--format", "no-such-format")
     assert code == 3
-    assert "--format takes one of: coveragepy, istanbul, lcov" in err
+    assert ACCEPTED in err
+
+
+def test_a_gcovr_report_is_scored_with_no_format_flag(tmp_path, capsys):
+    # grade (ccn 7) runs none of its lines: CRAP 49 * 1^3 + 7 = 56. clamp's
+    # branch arms run 3 of 4: CRAP 9 * (1/4)^3 + 3 = 3.14, under the ceiling.
+    files = {rel: (COBERTURA / "cmake-repo" / rel).read_text(encoding="utf-8")
+             for rel in ("src/shapes.cpp", "src/shapes.h")}
+    files["cpp.xml"] = (COBERTURA / "gcovr-7.2-stanza.xml").read_text(encoding="utf-8")
+    repo = _repo(tmp_path / "r", files)
+    code = main(["score", "src", "--coverage", "cpp.xml", "--repo", str(repo)])
+    out, err = capsys.readouterr()
+    assert code == 0, err
+    worst, total = out.splitlines()
+    assert worst.startswith("crap    56.00  ccn   7  cov   0%  src/shapes.cpp:13  grade(")
+    assert total == "2 functions, 1 over 6"
 
 
 # --- the configured path gives the same scores -------------------------------------

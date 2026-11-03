@@ -114,9 +114,9 @@ _LANE_TOML = ('[[scope]]\nname = "py"\npaths = ["pkg"]\nlanguages = ["python"]\n
 
 
 def test_a_parser_with_no_reader_is_refused_at_load():
-    """cobertura joins the enum only with its reader (m1-readers-05)."""
+    """A parser value joins the enum only with its reader: one no reader has is refused."""
     assert load_config_text(_LANE_TOML.format(parser="coveragepy")).lanes[0].parser == "coveragepy"
     with pytest.raises(ConfigError) as raised:
-        load_config_text(_LANE_TOML.format(parser="cobertura"))
+        load_config_text(_LANE_TOML.format(parser="no-such-format"))
     assert raised.value.exit_code == 3
-    assert "unsupported value 'cobertura'" in str(raised.value)
+    assert "unsupported value 'no-such-format'" in str(raised.value)
