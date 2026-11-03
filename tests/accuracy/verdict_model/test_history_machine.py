@@ -249,8 +249,9 @@ class History(RuleBasedStateMachine):
         self.marks: dict | None = None
         self.stamp: str | None = None
         self.running: str | None = None
-        # The per-scope stamp a seed from this crapkit's run signs; `running` is
-        # the single number a write that creates the file stamps it with.
+        # The per-scope stamp this crapkit's runs record: seed signs it from the
+        # run, and every write of measured numbers and every file a write
+        # creates take it. `running` is the single number 0.8.x wrote.
         self.scoped: str | None = None
         self.overrides: set[int] = set()
         self.last_marks: dict = {}
@@ -327,9 +328,9 @@ class History(RuleBasedStateMachine):
                 and model.stamp_refused(self.stamp, self.scoped))
 
     def _measured_stamp(self) -> str:
-        """The stamp a write of measured numbers leaves: a per-scope file keeps
-        its stamp lines, any other takes the running single number."""
-        return self.scoped if self.stamp == self.scoped else self.running
+        """The stamp a write of measured numbers leaves: the running per-scope
+        stamp, which converts a single-number or unstamped file."""
+        return self.scoped
 
     def _lanes(self) -> tuple:
         return tuple(lane for lane in vw.LANES if lane not in self.sc.world.failing_lanes)
@@ -426,7 +427,8 @@ class History(RuleBasedStateMachine):
             return
         after = model.tighten(before, scores(measured.world), vw.TARGET,
                               self._previous_same_commit(measured))
-        if after != before:
+        # A pass that moves no mark still converts a file it would stamp otherwise.
+        if after != before or self.stamp != self._measured_stamp():
             self.marks, self.stamp = after, self._measured_stamp()
 
     def _expected_now(self) -> Verdict | None:
@@ -509,7 +511,7 @@ class History(RuleBasedStateMachine):
         marks = self._marks()
         worst = {key: model.mark_value(ccn[key] * ccn[key] + ccn[key]) for key in violations if key not in marks}
         self._read_upgraded_marks()
-        self.stamp = model.stamp_after("hook-override", self._recorded(), self.running)
+        self.stamp = model.stamp_after("hook-override", self._recorded(), self.scoped)
         self.marks = {**self._marks(), **worst}
         self.overrides.add(self._append("hook-override").id)
 
@@ -530,7 +532,7 @@ class History(RuleBasedStateMachine):
         assert result.code == (1 if base is None else 0), result.stdout + result.stderr
         if base is not None:
             self._read_upgraded_marks()
-            self.stamp = model.stamp_after("prune", self._recorded(), self.running)
+            self.stamp = model.stamp_after("prune", self._recorded(), self.scoped)
             self.marks = model.prune(self._marks(), set(scores(base.world)))
 
     def upgrade(self):
@@ -919,12 +921,6 @@ def _metric(scenario: vw.Scenario, run: int = -1) -> str:
     return model.run_stamp(json.loads(scenario.runs()[run]["tool_versions"]))
 
 
-def _single_metric(scenario: vw.Scenario, run: int = -1) -> str:
-    """The single-number stamp a run's analysis version and lizard spell."""
-    versions = json.loads(scenario.runs()[run]["tool_versions"])
-    return f"crapkit-analysis={versions['analysis_version']} lizard={versions['lizard']}"
-
-
 @pytest.mark.nightly
 @pytest.mark.process
 def test_seed_then_verify_same_run_passes(make_repo):
@@ -1083,11 +1079,11 @@ def test_a_write_that_adds_no_number_keeps_the_recorded_stamp(make_repo, write):
 @pytest.mark.nightly
 @pytest.mark.process
 def test_prune_creates_a_file_under_the_running_metric(make_repo):
-    """A marks file prune creates holds no mark and takes the running metric,
-    even when the run it read was measured under an older one; verify then
-    has nothing to refuse."""
+    """A marks file prune creates holds no mark and takes the running per-scope
+    stamp, even when the run it read was measured under an older one; verify
+    then has nothing to refuse."""
     scenario = _measured(make_repo)
-    running = _single_metric(scenario)
+    running = _metric(scenario)
     _age_runs(scenario, 7)
     assert scenario.marks_text() is None
     assert scenario.run("ratchet", "prune").code == 0

@@ -120,19 +120,28 @@ def test_win_up_pip_0_7_6(box, templates, candidate):
 # --- from N-1 ------------------------------------------------------------------------
 
 INFERRED_MODE = "records one analysis number and no coverage mode, so verify read scope(s)"
+RESTAMPED = "ratchet: restamped -> git add crapkit-ratchet.tsv"
+HEADER = b"path\tlong_name\tcrap"
+
 
 def same_analysis_upgrade(box, repo, candidate, source) -> None:
     """N-1 measured under the candidate's analysis version: one coverage, then
     verify, which warns as the guide quotes that it inferred each marked
-    scope's coverage mode from N-1's one number, and the marks file stays as
-    N-1 wrote it."""
+    scope's coverage mode from N-1's one number, converts the marks file to
+    one stamp per scope with no reseed and prints `restamped`. Every mark
+    keeps its bytes, and the next verify passes with no warning."""
     marks = (repo / "crapkit-ratchet.tsv").read_bytes()
     state.upgrade_to(box, repo, candidate, state.upgrade_line(PIP_EXTRA))
     box.run(["crapkit", "coverage"], cwd=repo, expect=0, note="not a guide step: one coverage, no reseed")
     step = state.verify(box, repo)
 
     assert state.guide_says(INFERRED_MODE) in step.stderr, box.transcript.text()
-    assert (repo / "crapkit-ratchet.tsv").read_bytes() == marks, "a same-analysis upgrade rewrote the marks"
+    assert state.guide_says(RESTAMPED) in output(step), box.transcript.text()
+    converted = (repo / "crapkit-ratchet.tsv").read_bytes()
+    assert converted.startswith(b"# crapkit-stamp=2 lizard="), converted
+    assert converted.split(HEADER)[1] == marks.split(HEADER)[1], "the conversion moved a mark"
+    again = state.verify(box, repo)
+    assert "warning" not in again.stderr and "ratchet:" not in output(again), box.transcript.text()
     state.after_upgrade(box, repo, source, candidate)
 
 
