@@ -174,7 +174,8 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                               'artifact the command '
                                                                               'writes'},
                                                   'parser': {'enum': ['istanbul', 'coveragepy',
-                                                                      'lcov', 'cobertura']},
+                                                                      'lcov', 'cobertura',
+                                                                      'jacoco']},
                                                   'scopes': {'type': 'array',
                                                              'items': {'type': 'string'}},
                                                   'cwd': {'type': 'string'},
@@ -184,7 +185,10 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                                  'coverage.py and lcov '
                                                                                  'artifacts and the '
                                                                                  'relative sources of '
-                                                                                 'Cobertura reports'},
+                                                                                 'Cobertura reports, '
+                                                                                 'and the source root '
+                                                                                 'JaCoCo package paths '
+                                                                                 'sit under'},
                                                   'env': {'type': 'object',
                                                           'additionalProperties': {'type': 'string'}},
                                                   'inputs': {'type': 'array',

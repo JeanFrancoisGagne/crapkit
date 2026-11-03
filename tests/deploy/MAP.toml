@@ -178,6 +178,9 @@ modules = ["tests/deploy/test_cc_only_reader_cells.py"]
 [packets.m1-readers-05]
 modules = ["tests/deploy/test_mission1_reader_cells.py"]
 
+[packets.m1-readers-06]
+modules = ["tests/deploy/test_mission1_reader_cells.py"]
+
 # --- every-harness rows -----------------------------------------------------------
 # What a nightly run takes of each row: "all" its cells on all 17 harnesses,
 # "core" on the 3 core-image ones. The header says how a row's tests name it.
@@ -687,6 +690,42 @@ lin-up-cobertura-opencode = { packet = "m1-readers-05", cadence = "nightly", os 
 lin-up-cobertura-vscode-test-electron = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
 "lin-up-0.8.1-cc-only-cpp" = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core" }
 win-cobertura-absolute-source = { packet = "m1-readers-05", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+# m1-readers-06: a jacoco lane's cov and add-tests over MCP, every harness, fresh and upgrade; the 0.8.1 cc-only Java upgrade
+lin-jacoco-aider = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-amp = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-claude-agent-sdk = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-claude-agent-sdk-py = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-claude-code = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-jacoco-cline = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-codex = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-jacoco-continue = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-copilot-cli = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-crush = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-cursor-agent = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-jacoco-gemini-cli = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-goose = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-junie = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-omp = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-opencode = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-vscode-test-electron = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-aider = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-amp = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-claude-agent-sdk = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-claude-agent-sdk-py = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-claude-code = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-up-jacoco-cline = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-codex = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-up-jacoco-continue = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-copilot-cli = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-crush = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-cursor-agent = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-up-jacoco-gemini-cli = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-goose = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-junie = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-omp = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-opencode = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-vscode-test-electron = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+"lin-up-0.8.1-cc-only-java" = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core" }
 # m1-readers-04: init writes a Rust repo's lane commented and doctor notes the lcov reader, every harness fresh; the 0.8.1 upgrade keeps crapkit.toml
 lin-cc-only-reader-aider = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
 lin-cc-only-reader-amp = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }

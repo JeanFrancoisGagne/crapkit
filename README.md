@@ -550,7 +550,7 @@ scores on complexity alone.
 | PowerShell | `.ps1` `.psm1` | none: cc-only |
 | C and C++ | `.c` `.cc` `.cpp` `.cxx` `.h` `.hpp` | lcov or Cobertura, once a lane is declared; cc-only until then |
 | Objective-C | `.m` `.mm` | lcov, once a lane is declared; cc-only until then |
-| Java | `.java` | none: cc-only |
+| Java | `.java` | jacoco, once a lane is declared; cc-only until then |
 | Zig | `.zig` | none: cc-only |
 
 A cc-only scope declares `coverage_optional = true`, scores `crap = ccn`, and needs no

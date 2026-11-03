@@ -27,7 +27,7 @@ which is optional and on every lane on this page.
 | `name` | The lane's id. It names the lane's log, `.crapkit/lane-<name>.log`, and what `coverage --lane` takes. A name Windows cannot use as a file name, or two names that differ only in case, is refused at load with exit 3. |
 | `command` | Runs through the shell at the repo root (or `cwd`). Its **exit code is recorded, not enforced**. A brownfield suite with 98 known failures still writes a valid artifact, and demanding green here would make such a repo unmeasurable. |
 | `artifact` | The coverage file the command writes, repo-relative. Its absence after the command and all its retries is the failure. Two lanes may not declare the same artifact path: reused paths cross-attribute coverage under `--reuse-artifacts`. It names one file. An empty value or one that names the root (`.`, `cov/..`) is refused at load with exit 3, and so is a `results_artifact` that names the root. `doctor` FAILs an `artifact` or `results_artifact` that names a directory, such as vitest's `coverage` report directory: point it at the report file inside. |
-| `parser` | `istanbul`, `coveragepy`, `lcov` ([lcov](#lcov)) or `cobertura` ([Cobertura](#cobertura)). |
+| `parser` | `istanbul`, `coveragepy`, `lcov` ([lcov](#lcov)), `cobertura` ([Cobertura](#cobertura)) or `jacoco` ([JaCoCo](#jacoco)). |
 | `scopes` | Which scopes this lane's numbers speak for. A scope no lane names can only score `no-lane`, and `doctor` fails on it. |
 | `results_artifact` | The JUnit report the same command writes. Two checks read it and neither runs without it: the [crashed-worker trust check](#a-junit-that-says-the-run-did-not-finish), which refuses a run the runner did not finish, and no-new-failures, which is `verify`'s exit 8. |
 
@@ -249,15 +249,15 @@ it is read from its command alone.
 
 ## Which languages a lane can measure
 
-Short answer: whichever ones your runner reports in one of four formats.
+Short answer: whichever ones your runner reports in one of five formats.
 
 A parser reads an artifact format, not a language. `coveragepy` reads coverage.py's JSON
 report. `istanbul` reads `coverage-final.json`, which vitest, jest and every other
 istanbul-shaped runner write. `lcov` reads an lcov tracefile, so Rust (cargo-llvm-cov), Swift,
-Objective-C, C and C++ (`llvm-cov export`, or gcov through geninfo) get a lane ([lcov](#lcov)), and `cobertura` reads Cobertura XML, so C and C++ through gcovr get one too ([Cobertura](#cobertura)).
+Objective-C, C and C++ (`llvm-cov export`, or gcov through geninfo) get a lane ([lcov](#lcov)), `cobertura` reads Cobertura XML, so C and C++ through gcovr get one too ([Cobertura](#cobertura)), and `jacoco` reads JaCoCo XML, so Java through Gradle or Maven gets one ([JaCoCo](#jacoco)).
 
-Anything else has no lane to declare today. Go's coverprofile and JaCoCo XML:
-crapkit reads neither of them, and no config key unlocks one.
+Anything else has no lane to declare today. Go's coverprofile:
+crapkit does not read it, and no config key unlocks it.
 Somebody writing the parser is the only thing that changes that.
 
 **Those scopes run cc-only, which is a real answer, not a failure.** Complexity, the
@@ -268,8 +268,8 @@ for you. See [configuration.md](configuration.md#coverage_optional--true).
 
 `crapkit init` writes live lanes for pytest, Vitest and Jest only. When a repo-root file
 shows another toolchain whose report a parser reads (`Cargo.toml` for cargo llvm-cov,
-`bun.lock`, `bun.lockb` or `bunfig.toml` for Bun, `deno.json` or `deno.jsonc` for Deno, `CMakeLists.txt` for gcovr), init
-writes that toolchain's lane commented, with its parser (`lcov`, or `cobertura` for gcovr) and the scopes it would measure,
+`bun.lock`, `bun.lockb` or `bunfig.toml` for Bun, `deno.json` or `deno.jsonc` for Deno, `CMakeLists.txt` for gcovr, `build.gradle` or `build.gradle.kts` for Gradle, `pom.xml` for Maven), init
+writes that toolchain's lane commented, with its parser (`lcov`, `cobertura` for gcovr, `jacoco` for Gradle and Maven) and the scopes it would measure,
 and the scope keeps `coverage_optional = true`. `crapkit doctor` then prints a note per such
 scope naming the language, the parser and the toolchain. Uncomment the lane, delete
 `coverage_optional`, and follow
@@ -2311,3 +2311,85 @@ killed run is refused naming the file, the line and the column, and a DTD that d
 entity is refused by name before anything expands. crapkit never fetches the DTD a
 `<!DOCTYPE>` names. A report with no `<class>` measured nothing and is refused too. Each is
 exit 5; rerun the lane.
+
+---
+
+## JaCoCo
+
+`parser = "jacoco"` reads a JaCoCo XML report: Java through Gradle's `jacocoTestReport` or
+Maven's JaCoCo plugin. Each `<package>` names its path (`com/acme`), and each `<sourcefile>`
+under it lists its `<line nr mi ci mb cb>` counters: missed and covered instructions, missed
+and covered branches. A line counts when it holds an instruction (`mi + ci > 0`) and is hit
+when one ran (`ci > 0`); a line with branches (`mb + cb > 0`) gives `mb + cb` branches with
+`cb` covered. crapkit gives each line and each branch to the innermost function that holds
+it, as it does for lcov and Cobertura: a method with branch lines scores branch coverage, one
+with line counters only scores statement coverage, and a lambda's lines score the lambda when
+the inventory holds a span for it. `<class>`, `<method>` and `<counter>` are not read: a method
+names only the first line that carries bytecode. An inner class (`Shapes$Box`) shares its
+outer class's `<sourcefile>`, so its lines count once. An aggregate report nests packages in
+`<group>` elements at any depth; crapkit reads through them. A report records no per-line
+test contexts, so `explain --tests` has none to show.
+
+| Producer | Command the lane runs | Notes |
+|---|---|---|
+| Gradle | `./gradlew test jacocoTestReport` (`gradlew test jacocoTestReport` under cmd.exe, `gradle test jacocoTestReport` with no wrapper) | needs `xml.required = true` on the report task; writes `build/reports/jacoco/test/jacocoTestReport.xml` |
+| Maven | `mvn org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test org.jacoco:jacoco-maven-plugin:0.8.12:report` | the goals by full coordinates, so the pom binds no plugin; writes `target/site/jacoco/jacoco.xml` |
+
+Pester writes JaCoCo XML for PowerShell too. crapkit reads its reports by the same rules, and
+has no recorded fixture for it.
+
+A Gradle repo, measured from its root: the lane `crapkit init` leaves commented when it finds
+a root `build.gradle` or `build.gradle.kts`. Gradle's JaCoCo plugin writes no XML report until
+the report task asks for one:
+
+```kotlin
+// build.gradle.kts
+plugins { java; jacoco }
+tasks.jacocoTestReport { reports { xml.required = true } }
+```
+
+```
+[[lane]]
+name = "java-gradle"
+command = "./gradlew test jacocoTestReport"
+artifact = "build/reports/jacoco/test/jacocoTestReport.xml"
+parser = "jacoco"
+path_prefix = "src/main/java"
+scopes = ["core"]
+```
+
+Gradle and Maven write one JUnit XML file per test class, and `results_artifact` names one
+file, so the lane declares none and `crapkit doctor` warns that the no-new-failures check
+cannot run for it.
+
+A Maven repo gets the same lane from a root `pom.xml`, named `java-maven`, with the command
+in the table above and `artifact = "target/site/jacoco/jacoco.xml"`. `prepare-agent` hands
+surefire the JaCoCo agent, and `report` runs after `test`, so a run that skips the tests
+writes no report.
+
+A scope that was cc-only drops `coverage_optional = true` the day it gets the lane, and the
+next `verify` names the flip once for the scope; `crapkit ratchet seed --scope NAME` reseeds
+it ([Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)).
+
+### Package paths and `path_prefix`
+
+JaCoCo keys a file by its package path and its sourcefile name (`com/acme/Shapes.java`), and
+a class in the default package by its name alone (`Greeter.java`). It records no source root,
+so `path_prefix` names it: `src/main/java` for a Gradle or Maven layout, or
+`svc/src/main/java` for a module in a subdirectory. A key under the prefix that names no file
+in this checkout scores nothing, and the lane says how many of the report's sourcefiles that
+leaves out (`N of the M sourcefile(s) in PATH name no file under path_prefix ...`). An
+aggregate report over several modules names each module's packages with no module path, so one
+lane over it can place only the module its prefix names: declare one lane per module, each
+with `path_prefix` at that module's source root. A Kotlin
+sourcefile in the same report scores once a scope claims Kotlin, and until then moves no
+score.
+
+### What a refusal names
+
+The report goes to the XML parser as bytes, so its declaration and a byte-order mark decide
+the decode. crapkit never opens the `report.dtd` every JaCoCo report's `<!DOCTYPE>` names,
+and a DTD that declares an entity is refused by name. A line with a missing or non-numeric
+counter (`ci` absent, `ci="-1"`, `mb="NaN"`), a line with no `nr`, a sourcefile or a package
+with no name, and a report with no `<sourcefile>` are each refused, naming the file and the
+line. Each is exit 5; rerun the lane.

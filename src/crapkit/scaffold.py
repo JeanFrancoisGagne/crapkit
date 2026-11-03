@@ -790,10 +790,14 @@ def commented_lanes(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, .
                     markers: frozenset[str]) -> tuple[CommentedLane, ...]:
     """One per toolchain whose markers sit at the repo root and whose languages
     some unmeasured scope holds, in table order. Markers are root files only:
-    a nested Cargo.toml is a crate whose lane the owner declares with `cwd`."""
+    a nested Cargo.toml is a crate whose lane the owner declares with `cwd`.
+    Each stanza's command is spelled for the shell lane commands run under."""
+    from . import config
+
     measured = {name for lane in live_lanes(lanes, scopes) for name in _scopes_for(lane, scopes)}
     found = ((row, _unmeasured(row, scopes, measured)) for row in detected(markers))
-    return tuple(CommentedLane(row.name, row.stanza, names) for row, names in found if names)
+    return tuple(CommentedLane(row.name, row.stanza.resolved(markers, config.SHELL_IS_CMD), names)
+                 for row, names in found if names)
 
 
 def _unmeasured(row: Toolchain, scopes: dict[str, tuple[str, ...]],
@@ -814,11 +818,17 @@ def _toolchain_lanes(commented: tuple[CommentedLane, ...]) -> list[str]:
     return [_TOOLCHAIN_HEADING, *lines] if lines else []
 
 
+_STANZA_KEYS = ("name", "command", "artifact", "parser", "path_prefix")
+
+
 def _toolchain_stanza(lane: CommentedLane) -> list[str]:
-    """The stanza's keys in its field order (name, command, artifact, parser),
-    then the scopes it would measure."""
-    keys = [f'# {key} = "{value}"' for key, value in lane.stanza._asdict().items()]
-    return ["# [[lane]]", *keys, f"# scopes = [{_quoted(lane.scopes)}]", ""]
+    """The stanza's notes, each a comment that stays one when the lane is
+    uncommented, then its keys in order (path_prefix only when set), then the
+    scopes it would measure."""
+    stanza = lane.stanza._asdict()
+    notes = [f"# # {note}" for note in lane.stanza.notes]
+    keys = [f'# {key} = "{stanza[key]}"' for key in _STANZA_KEYS if stanza[key] is not None]
+    return [*notes, "# [[lane]]", *keys, f"# scopes = [{_quoted(lane.scopes)}]", ""]
 
 
 def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]],

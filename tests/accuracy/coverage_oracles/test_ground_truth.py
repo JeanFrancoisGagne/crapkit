@@ -14,7 +14,9 @@ model and the driver's calls, never from a producer's output. Three checks:
    Where crapkit and the ground truth part, a rulings row says why. A
    coverage.py recording with no start_line is refused instead (ruling CO-B2).
    gcovr's Cobertura recordings of the C++ probe are scored here against the
-   C++ table through a `parser = "cobertura"` lane.
+   C++ table through a `parser = "cobertura"` lane, and JaCoCo's Gradle and
+   Maven recordings of the Java probe through a `parser = "jacoco"` lane that
+   reads them as one aggregate report, a <group> per recording.
 
 Cross-format: one c8 run's istanbul JSON and lcov give each probe function the
 same cov, and each function where the two part is a named finding (C8_FINDINGS).
@@ -39,8 +41,8 @@ from accuracy.coverage_oracles import counts_table, ground_table, mini_repo, pro
 from accuracy.kit import rulings, runlog, tiers
 
 LIVE = "coveragepy-live"
-RECORDED = sorted(name for name in {**ground_table.FAMILIES, **ground_table.LCOV_FAMILIES}
-                  if name != LIVE)
+RECORDED = sorted(name for name in {**ground_table.FAMILIES, **ground_table.LCOV_FAMILIES,
+                                    **ground_table.JACOCO_FAMILIES} if name != LIVE)
 PROBES = {**{name: probes for name, (_, probes) in probe_repo.PRODUCERS.items()},
           LIVE: probe_repo.PYTHON}
 # (producer family or name, function, scenario) -> the rulings row that explains
@@ -78,6 +80,9 @@ def _producer_rows(producer: str, artifact, spans: list) -> dict:
         return {(row.path, row.name): row for row in counts_table.coveragepy_rows(artifact)}
     if family == "llvm":
         return {(row.path, row.start): row for row in counts_table.lcov_rows(artifact, spans)}
+    if family == "jacoco":
+        return {(row.path, row.start): row
+                for row in counts_table.jacoco_rows(artifact, probe_repo.JAVA_ROOT, spans)}
     return {(row.path, row.start): row for row in counts_table.istanbul_rows(artifact, "position")}
 
 
@@ -133,9 +138,11 @@ def _mismatches(producer: str, scenario: str, artifact) -> list[str]:
 
 
 def _recorded(producer: str, scenario: str):
-    """A JSON recording as its value, an lcov one as its text."""
+    """A JSON recording as its value, an lcov one as its text, an XML one as its bytes."""
     path = probe_repo.artifact(producer, scenario)
     data = path.read_bytes()
+    if path.suffix == ".xml":
+        return data
     return data.decode("utf-8") if path.suffix == ".lcov" else json.loads(data)
 
 
@@ -640,3 +647,201 @@ def test_one_run_reads_the_same_through_lcov_and_cobertura(name, scenario):
     cobertura = _cobertura_evidence(probe_repo.RECORDED / name / f"{scenario}.xml")
 
     assert cobertura == lcov
+
+
+# --- JaCoCo: crapkit's evidence is the report's own counts --------------------------------
+#
+# counts_table reads each recorded report with ElementTree and no crapkit: every
+# sourcefile's line counters and its own LINE and BRANCH counters. crapkit's
+# per-file evidence must say the same about every sourcefile, and Gradle's and
+# Maven's runs of one test must read the same.
+
+JACOCO_FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "coverage" / "jacoco"
+JAVA_REPO = JACOCO_FIXTURES / "java-repo"
+# id -> (report, the tree it measured, path_prefix): the fixtures' Gradle and
+# Maven runs of java-repo's test, then each probe recording of probes/java.
+JACOCO_RECORDINGS = {
+    "fixture-gradle": (JACOCO_FIXTURES / "gradle-8.10.2.xml", JAVA_REPO, "src/main/java"),
+    "fixture-maven": (JACOCO_FIXTURES / "maven-3.9.9.xml", JAVA_REPO, "src/main/java"),
+    **{f"{name}-{scenario}": (probe_repo.artifact(name, scenario), probe_repo.PROBES,
+                              probe_repo.JAVA_ROOT)
+       for name in ground_table.JACOCO_FAMILIES for scenario in probe_repo.SCENARIOS},
+}
+# (Gradle, Maven) runs of one test, each pair from one tree.
+JACOCO_PAIRS = [("fixture-gradle", "fixture-maven"),
+                *((f"{gradle}-{scenario}", f"{maven}-{scenario}")
+                  for gradle, maven in [sorted(ground_table.JACOCO_FAMILIES)]
+                  for scenario in probe_repo.SCENARIOS)]
+_JACOCO_READ = _LCOV_READ.replace("coverage_lcov", "coverage_jacoco").replace(
+    'parser="lcov"', 'parser="jacoco"')
+
+
+def _jacoco_evidence(path: Path) -> dict:
+    child = hang_guard.run([sys.executable, "-c", _JACOCO_READ, str(path)], text=True,
+                           encoding="utf-8")
+    assert child.returncode == 0, child.stderr
+    return json.loads(child.stdout)
+
+
+@pytest.mark.parametrize("name", JACOCO_RECORDINGS)
+def test_crapkit_reads_each_jacoco_recording_as_its_own_counts(name):
+    report = JACOCO_RECORDINGS[name][0]
+    sourcefiles = counts_table.jacoco_sourcefiles(report.read_bytes())
+
+    evidence = _jacoco_evidence(report)
+
+    assert sorted(evidence) == sorted(source.key for source in sourcefiles)
+    for source in sourcefiles:
+        hit, missed, branches = evidence[source.key]
+        counted = {nr: ci for nr, (mi, ci, _, _) in source.lines.items() if mi + ci}
+        assert hit == sorted(nr for nr, ci in counted.items() if ci)
+        assert missed == sorted(nr for nr, ci in counted.items() if not ci)
+        assert {line: (total, taken) for line, total, taken in branches} == {
+            nr: (mb + cb, cb) for nr, (_, _, mb, cb) in source.lines.items() if mb + cb}
+        # JaCoCo's own sourcefile counters, which crapkit never reads.
+        assert (len(missed), len(hit)) == source.counters["LINE"]
+        assert (sum(total - taken for _, total, taken in branches),
+                sum(taken for _, _, taken in branches)) == source.counters["BRANCH"]
+
+
+@pytest.mark.parametrize("gradle, maven", JACOCO_PAIRS)
+def test_gradle_and_maven_runs_of_one_test_read_the_same(gradle, maven):
+    """Accuracy check 3's second half: one test run through Gradle and through
+    Maven gives crapkit the same evidence."""
+    assert (_jacoco_evidence(JACOCO_RECORDINGS[gradle][0])
+            == _jacoco_evidence(JACOCO_RECORDINGS[maven][0]))
+
+
+@pytest.mark.parametrize("producer", sorted(ground_table.JACOCO_FAMILIES))
+def test_a_jacoco_rerun_that_differs_only_in_its_session_matches_its_recording(
+        tmp_path, monkeypatch, producer):
+    """JaCoCo stamps each report with the host, a random id and two times.
+    regenerate's canonical form fixes them, and its check reads the report
+    through counts_table and crapkit's jacoco reader."""
+    from accuracy.coverage_oracles import regenerate
+    monkeypatch.syspath_prepend(str(regenerate.HERE))
+    recording = regenerate.RECORDED / producer / "call.xml"
+    run = tmp_path / "run.xml"
+    run.write_bytes(recording.read_bytes().replace(
+        b'<sessioninfo id="0" start="0" dump="0"/>',
+        b'<sessioninfo id="host-5c5e080c" start="1793715019522" dump="1793715020402"/>'))
+    fresh = tmp_path / "call.xml"
+    fresh.write_bytes(regenerate._recorded_bytes(".xml", run, tmp_path))
+
+    assert regenerate.differences(regenerate.PRODUCERS[producer], fresh, recording) == []
+
+
+# Accuracy checks 2 and 3 over the same recordings. crapkit's side runs in a
+# child: the reader, lizard's spans of the measured sources and score's join.
+# JaCoCo's side is its own METHOD and CSV counters, read here with no crapkit.
+
+_JACOCO_JOIN = """
+import json, sys
+from pathlib import Path
+import lizard
+from crapkit import coverage_jacoco
+from crapkit.config import Lane
+from crapkit.score import join_evidence
+from crapkit.snapshot import InventoryRow
+report, repo, prefix = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+lane = Lane(name="java", command="x", artifact=report.name, parser="jacoco", scopes=("java",),
+            path_prefix=prefix)
+evidence = coverage_jacoco.read(lane, repo, report)[1]
+joined = []
+for path, file in sorted(evidence.items()):
+    rows = [InventoryRow("java", path, fn.long_name, fn.start_line, fn.end_line, 1, 1, 1, 1, 0, 0)
+            for fn in lizard.analyze_file(str(repo / path)).function_list]
+    joined += [[path, fn.start, fn.end, fn.statements_total, fn.statements_covered,
+                fn.branches_total, fn.branches_covered] for fn in join_evidence(rows, file)]
+print(json.dumps(joined))
+"""
+
+
+def _jacoco_joined(name: str) -> list:
+    report, repo, prefix = JACOCO_RECORDINGS[name]
+    child = hang_guard.run([sys.executable, "-c", _JACOCO_JOIN, str(report), str(repo), prefix],
+                           text=True, encoding="utf-8")
+    assert child.returncode == 0, child.stderr
+    return json.loads(child.stdout)
+
+
+def _jacoco_methods(name: str) -> list[tuple[str, str, int, tuple, tuple]]:
+    """(class name, the sourcefile's key, first line, LINE, BRANCH) per <method>,
+    each counter (missed, covered), (0, 0) where JaCoCo writes none."""
+    import xml.etree.ElementTree as ET
+
+    report, _, prefix = JACOCO_RECORDINGS[name]
+    found = []
+    for package in ET.fromstring(report.read_bytes()).iter("package"):
+        for cls in package.findall("class"):
+            key = "/".join(part for part in (prefix, package.get("name"),
+                                             cls.get("sourcefilename")) if part)
+            for method in cls.findall("method"):
+                counters = {c.get("type"): (int(c.get("missed")), int(c.get("covered")))
+                            for c in method.findall("counter")}
+                found.append((cls.get("name"), key, int(method.get("line")),
+                              counters.get("LINE", (0, 0)), counters.get("BRANCH", (0, 0))))
+    return found
+
+
+def _owner(spans: list, key: str, line: int):
+    """The innermost crapkit span of `key` that holds `line`, or None."""
+    holding = [span for span in spans if span[0] == key and span[1] <= line <= span[2]]
+    return min(holding, key=lambda span: span[2] - span[1], default=None)
+
+
+def _counts(span) -> tuple[tuple[int, int], tuple[int, int]]:
+    _, _, _, s_total, s_cov, b_total, b_cov = span
+    return (s_total - s_cov, s_cov), (b_total - b_cov, b_cov)
+
+
+def _add(a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
+    return a[0] + b[0], a[1] + b[1]
+
+
+@pytest.mark.parametrize("name", JACOCO_RECORDINGS)
+def test_jacocos_method_counters_equal_crapkits_counts_for_each_span(name):
+    """Accuracy check 2: each lizard span's LINE and BRANCH counts as crapkit
+    attributes them equal the sum of the METHOD counters of the methods whose
+    first bytecode line falls in it (a lambda is a method of its own to JaCoCo
+    and lives inside its enclosing span here)."""
+    spans = _jacoco_joined(name)
+    summed: dict = {}
+    for _, key, line, lines, branches in _jacoco_methods(name):
+        span = _owner(spans, key, line)
+        if span is not None:
+            had = summed.get(tuple(span[:3]), ((0, 0), (0, 0)))
+            summed[tuple(span[:3])] = (_add(had[0], lines), _add(had[1], branches))
+
+    assert summed == {tuple(span[:3]): _counts(span) for span in spans}
+
+
+@pytest.mark.parametrize("name", JACOCO_RECORDINGS)
+def test_jacocos_csv_per_class_equals_crapkits_sums_per_class(name):
+    """Accuracy check 3: the CSV report of the same run, per class, equals the
+    per-class sum of crapkit's per-span counts, plus the METHOD counters of the
+    methods no lizard span holds (an implicit constructor on the class line)."""
+    import csv
+
+    report = JACOCO_RECORDINGS[name][0]
+    spans = _jacoco_joined(name)
+    per_class: dict = {}
+    seen: set = set()
+    for cls, key, line, lines, branches in _jacoco_methods(name):
+        span = _owner(spans, key, line)
+        if span is None:
+            add = (lines, branches)
+        elif tuple(span[:3]) in seen:
+            continue
+        else:
+            seen.add(tuple(span[:3]))
+            add = _counts(span)
+        had = per_class.get(cls, ((0, 0), (0, 0)))
+        per_class[cls] = (_add(had[0], add[0]), _add(had[1], add[1]))
+    rows = csv.DictReader(report.with_suffix(".csv").read_text(encoding="utf-8").splitlines())
+    wrote = {("" if row["PACKAGE"] == "default" else row["PACKAGE"].replace(".", "/") + "/")
+             + row["CLASS"].replace(".", "$"): (
+                 (int(row["LINE_MISSED"]), int(row["LINE_COVERED"])),
+                 (int(row["BRANCH_MISSED"]), int(row["BRANCH_COVERED"]))) for row in rows}
+
+    assert per_class == wrote

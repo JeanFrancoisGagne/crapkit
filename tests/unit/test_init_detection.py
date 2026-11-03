@@ -1020,3 +1020,96 @@ def test_init_on_an_initialized_rust_repo_leaves_crapkit_toml_byte_identical(tmp
         pass
 
     assert (root / "crapkit.toml").read_bytes() == before
+
+
+# --- Java: the gradle and maven rows ------------------------------------------------
+
+_JAVA = {"core": ("java",)}
+_GRADLE_NOTE = ("# # jacocoTestReport writes this XML only with reports { xml.required = true } "
+                "in the build script")
+_GRADLE_TAIL = ['# artifact = "build/reports/jacoco/test/jacocoTestReport.xml"',
+                '# parser = "jacoco"', '# path_prefix = "src/main/java"', '# scopes = ["core"]', ""]
+_MAVEN_STANZA = ["# [[lane]]", '# name = "java-maven"',
+                 '# command = "mvn org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test '
+                 'org.jacoco:jacoco-maven-plugin:0.8.12:report"',
+                 '# artifact = "target/site/jacoco/jacoco.xml"', '# parser = "jacoco"',
+                 '# path_prefix = "src/main/java"', '# scopes = ["core"]', ""]
+
+
+def _gradle_stanza(command: str) -> list[str]:
+    return [_GRADLE_NOTE, "# [[lane]]", '# name = "java-gradle"', f'# command = "{command}"',
+            *_GRADLE_TAIL]
+
+
+def _stanzas(text: str) -> list[str]:
+    """The lines under the toolchain heading, through the blank after the last stanza."""
+    lines = text.split("\n")
+    at = next(i for i, line in enumerate(lines) if line.startswith("# Lanes for the toolchains"))
+    return lines[at + 1:]
+
+
+@pytest.mark.parametrize("markers, cmd, command", [
+    ({"build.gradle.kts"}, False, "gradle test jacocoTestReport"),
+    ({"build.gradle", "gradlew"}, False, "./gradlew test jacocoTestReport"),
+    ({"build.gradle.kts", "gradlew"}, True, "gradlew test jacocoTestReport"),
+], ids=["no-wrapper", "wrapper-sh", "wrapper-cmd"])
+def test_a_gradle_repo_gets_the_commented_gradle_stanza_for_its_shell(monkeypatch, markers, cmd,
+                                                                     command):
+    from crapkit import config
+
+    monkeypatch.setattr(config, "SHELL_IS_CMD", cmd)
+
+    text = starter_toml(_JAVA, markers=frozenset(markers))
+
+    assert _stanzas(text)[:len(_GRADLE_TAIL) + 4] == _gradle_stanza(command)
+    assert "coverage_optional = true" in text
+
+
+def test_a_maven_repo_gets_the_commented_maven_stanza():
+    text = starter_toml(_JAVA, markers=frozenset({"pom.xml"}))
+
+    assert _stanzas(text)[:len(_MAVEN_STANZA)] == _MAVEN_STANZA
+    assert "coverage_optional = true" in text
+
+
+def test_both_java_markers_give_both_stanzas_in_table_order(monkeypatch):
+    from crapkit import config
+
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+
+    text = starter_toml(_JAVA, markers=frozenset({"pom.xml", "build.gradle"}))
+
+    gradle = _gradle_stanza("gradle test jacocoTestReport")
+    assert _stanzas(text)[:len(gradle) + len(_MAVEN_STANZA)] == gradle + _MAVEN_STANZA
+
+
+def test_the_uncommented_gradle_stanza_loads_with_its_path_prefix(monkeypatch):
+    from crapkit import config
+    from crapkit.config import load_config_text
+
+    monkeypatch.setattr(config, "SHELL_IS_CMD", False)
+    text = starter_toml(_JAVA, markers=frozenset({"build.gradle"}))
+    lines = text.split("\n")
+    at = lines.index("# [[lane]]")
+    end = lines.index("", at)
+    body = [line[2:] for line in lines[at:end]]
+    kept = [line for line in lines[:at] + body + lines[end:] if line != "coverage_optional = true"]
+
+    cfg = load_config_text("\n".join(kept))
+
+    assert [(lane.name, lane.parser, lane.path_prefix, lane.scopes) for lane in cfg.lanes] == [
+        ("java-gradle", "jacoco", "src/main/java", ("core",))]
+
+
+def test_init_on_a_gradle_repo_writes_the_commented_gradle_lane_and_names_it(tmp_path, capsys):
+    root = _init_repo(tmp_path, {"build.gradle.kts": "plugins { java }\n",
+                                 "src/main/java/core/Shapes.java": "class Shapes {}\n"})
+
+    code, out = _init(root, capsys)
+    text = (root / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert code == 0
+    assert '# command = "gradle test jacocoTestReport"' in text
+    assert '# parser = "jacoco"' in text and '# path_prefix = "src/main/java"' in text
+    assert _GRADLE_NOTE in text and "coverage_optional = true" in text
+    assert _CC_ONLY in out and "java-gradle (gradle)" in out

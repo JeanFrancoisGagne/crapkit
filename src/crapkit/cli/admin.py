@@ -958,16 +958,18 @@ def _lane_start_problem(root: Path, lane) -> str | None:
 _UPGRADE_ANCHOR = "docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one"
 
 
-def _doctor_cc_only_readers(cfg) -> list[Finding]:
+def _doctor_cc_only_readers(root: Path, cfg) -> list[Finding]:
     """A note per coverage_optional scope holding a language a registered reader
     measures and init writes no live lane for: that scope can become measured.
     A note, so doctor's exit code and `doctor --json` stay as they were."""
     from ..scaffold import LIVE_LANE_LANGUAGES
-    from ..toolchain import measurable_languages
+    from ..toolchain import detected, measurable_languages
 
     readable = measurable_languages() - LIVE_LANE_LANGUAGES
+    present = frozenset(row.name for row in detected(_present_markers(root)))
     found = [(scope.name, _readable_languages(scope, readable)) for scope in cfg.scopes]
-    return [Finding("note", _reader_note(name, languages)) for name, languages in found if languages]
+    return [Finding("note", _reader_note(name, languages, present))
+            for name, languages in found if languages]
 
 
 def _readable_languages(scope, readable: frozenset[str]) -> list[str]:
@@ -978,19 +980,22 @@ def _readable_languages(scope, readable: frozenset[str]) -> list[str]:
     return [language for language in scope.languages if language in readable]
 
 
-def _reader_note(scope: str, languages: list[str]) -> str:
-    readers = "; ".join(f"{language} through {_language_readers(language)}"
+def _reader_note(scope: str, languages: list[str], present: frozenset[str]) -> str:
+    readers = "; ".join(f"{language} through {_language_readers(language, present)}"
                         for language in languages)
     return (f"scope {scope!r} is cc-only, and a reader can measure {readers}; "
             f"adding that lane and deleting coverage_optional measures it ({_UPGRADE_ANCHOR})")
 
 
-def _language_readers(language: str) -> str:
+def _language_readers(language: str, present: frozenset[str]) -> str:
     """Each parser and toolchain that measures `language`, the toolchain spelled
-    as doctor's runner line spells it."""
+    as doctor's runner line spells it: the toolchains `present`, those whose
+    marker the repo root holds, or every one when the root holds none."""
     from ..toolchain import readers
 
-    return ", ".join(f'parser = "{parser}" from {name}' for parser, name in readers(language))
+    every = readers(language)
+    named = [(parser, name) for parser, name in every if name in present] or every
+    return ", ".join(f'parser = "{parser}" from {name}' for parser, name in named)
 
 
 def _doctor_lane_summary(cfg) -> Finding:
@@ -1733,7 +1738,7 @@ def _doctor_findings(root: Path, cfg, raw: dict, files: list[str],
             + _doctor_path_names(cfg, raw, files)
             + _doctor_lanes(root, cfg, packages)
             + _doctor_runners(cfg, packages)
-            + _doctor_cc_only_readers(cfg)
+            + _doctor_cc_only_readers(root, cfg)
             + _doctor_inputs(root, cfg.lanes)
             + _doctor_stamps(root, cfg.lanes)
             + _doctor_artifact_litter(cfg)
