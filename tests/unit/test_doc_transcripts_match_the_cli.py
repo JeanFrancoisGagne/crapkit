@@ -503,6 +503,49 @@ def test_the_flip_procedure_runs_its_steps_in_order_and_quotes_the_seed_s_rise()
     assert f"`scope py: added 0, tightened 0{raised}`" in " ".join(text.split()), raised
 
 
+MOVE_SECTION = "### Moving marks by hand"
+_GRADE_SCOPE = '[[scope]]\nname = "calc"\npaths = ["calc"]\nlanguages = ["python"]\n'
+_SIGNED_GRADE = "def classify(a, b, c=None):\n    return a\n"
+
+
+def _move_section() -> list[str]:
+    text = _page("docs/ratchet.md")
+    start = text.index(MOVE_SECTION)
+    return text[start:text.index("\n---\n", start)].splitlines()
+
+
+def _signature_edit_repo(root: Path, mark: str) -> Path:
+    """The section's story: calc/grade.py gained `c=None`, and MARK, the row the
+    page shows before the move, still keys the old signature."""
+    root.mkdir()
+    (root / "crapkit.toml").write_text(_GRADE_SCOPE, encoding="utf-8")
+    (root / "calc").mkdir()
+    (root / "calc" / "grade.py").write_text(_SIGNED_GRADE, encoding="utf-8")
+    (root / MARKS).write_text(f"path\tlong_name\tcrap\n{mark}\n", encoding="utf-8")
+    return root
+
+
+def test_each_function_move_transcript_prints_what_the_command_prints(tmp_path, capsys):
+    """Each `$ crapkit ratchet move --function` block in "Moving marks by hand"
+    runs as typed against that story, and prints its lines, its EXIT included;
+    the success leaves the row the page shows after it."""
+    import shlex
+
+    lines = _move_section()
+    before, after = (line for line in lines if line.startswith("calc/grade.py\tclassify( a , b"))
+    runs = [(at, line[2:]) for at, line in enumerate(lines)
+            if line.startswith("$ crapkit ratchet move --function ")]
+    assert len(runs) >= 2, runs
+    for n, (at, command) in enumerate(runs):
+        root = _signature_edit_repo(tmp_path / str(n), before)
+        code = main([*shlex.split(command)[1:], "--repo", str(root)])
+        out = capsys.readouterr()
+        printed = (out.out + out.err).splitlines() + ([f"EXIT={code}"] if code else [])
+        assert printed == _output_under(lines[at + 1:]), command
+        marks = (root / MARKS).read_text(encoding="utf-8").splitlines()[1:]
+        assert marks == [before if code else after], command
+
+
 def test_every_seed_transcript_under_the_running_metric_ends_with_commit_then_verify(capsys):
     from crapkit.cli.ratchet_cmds import _print_seed_next
 

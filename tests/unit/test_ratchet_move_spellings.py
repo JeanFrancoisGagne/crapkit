@@ -93,6 +93,36 @@ def test_a_miss_names_the_path_it_looked_under(repo, monkeypatch):
     assert marks(repo) == ["web/src/a.py\tf( )\t40.0000"]
 
 
+# --- --function PATH OLD NEW reads PATH the same way -------------------------------
+
+def move_function(path: str, repo: str | None = None) -> int:
+    return cmd_ratchet(argparse.Namespace(action="move", repo=repo, files=[], baseline=None,
+                                          function=[path, "f( )", "f"]))
+
+
+SPELLINGS = [
+    ("a dot-slash path", "", "./web/src/a.py", False),
+    ("a path typed inside web/", "web", "src/a.py", False),
+    ("a path typed from the directory that holds it", "web/src", "./a.py", False),
+    ("a path under --repo, wherever the shell stands", "web", "web/src/a.py", True),
+]
+if os.name == "nt":  # a backslash is a path separator only on Windows
+    SPELLINGS.append(("a backslash path", "", "web\\src\\a.py", False))
+
+
+@pytest.mark.parametrize("case, stand, typed, under_repo", SPELLINGS, ids=[r[0] for r in SPELLINGS])
+def test_the_function_form_reads_path_as_the_key_a_scored_row_carries(repo, monkeypatch, capsys,
+                                                                     case, stand, typed, under_repo):
+    (repo / "web" / "src" / "a.py").write_text("def f(x):\n    return x\n", encoding="utf-8")
+    monkeypatch.chdir(repo / stand)
+
+    assert move_function(typed, str(repo) if under_repo else None) == 0
+
+    assert marks(repo) == ["web/src/a.py\tf( x )\t40.0000"]
+    assert capsys.readouterr().out == ("crapkit-ratchet.tsv: re-keyed 1 mark in web/src/a.py "
+                                       "from f( ) to f( x )\n")
+
+
 def test_the_move_takes_the_directory_its_paths_were_typed_in(repo):
     """No default. A caller that left the directory out would read every path
     root-relative from any directory, the bug this file pins, and say nothing."""
