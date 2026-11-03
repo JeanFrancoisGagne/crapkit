@@ -15,8 +15,9 @@ that reads as a clean run. It has two forms: the single-number line 0.8.x wrote,
 `crapkit-analysis=N lizard=X.Y.Z`, and the per-scope form, a first line naming
 the file and the release that reads it, then one `#scope` line per scope.
 `MetricStamp` is the stamp's one parsed form: `read_stamp`, `run_stamp` and
-`metric_version` hand it out, and every caller compares and renders that value
-instead of reading the lines itself.
+`running_stamp` hand it out, and every caller compares and renders that value
+instead of reading the lines itself. crapkit writes only the per-scope form; a
+single-number stamp comes only from parsing a 0.8.x file or run.
 """
 from __future__ import annotations
 
@@ -51,11 +52,9 @@ class TightenRefusal(NamedTuple):
     fresh: float
 
 
-def stamp_text(analysis_version: int | str, lizard_version: str) -> str:
-    """The metric identity a set of marks was measured under, as one line."""
-    return f"crapkit-analysis={analysis_version} lizard={lizard_version}"
-
-
+# The single-number line 0.8.x wrote. Only the parsers read it, and a parsed
+# stamp renders it back as the line it read.
+_SINGLE_LINE = "crapkit-analysis={} lizard={}"
 _SINGLE_NUMBER = re.compile(r"crapkit-analysis=([0-9]+) lizard=(\S+)")
 _ANALYSIS = re.compile(r"crapkit-analysis=([0-9]+)(?= |$)")
 
@@ -104,10 +103,13 @@ class MetricStamp(str):
 
 
 class SingleNumberStamp(MetricStamp):
-    """`crapkit-analysis=N lizard=X.Y.Z`: one analysis number for every language."""
+    """`crapkit-analysis=N lizard=X.Y.Z`: one analysis number for every language.
+
+    The form 0.8.x wrote. Only `MetricStamp.parse` builds one in crapkit, for
+    `read_stamp` and `run_stamp`, and it renders back the line it read."""
 
     def __new__(cls, analysis: int, lizard: str) -> SingleNumberStamp:
-        stamp = super().__new__(cls, stamp_text(analysis, lizard))
+        stamp = super().__new__(cls, _SINGLE_LINE.format(analysis, lizard))
         stamp._versions = (analysis, lizard)
         return stamp
 
@@ -247,26 +249,27 @@ def run_stamp(tool_versions: dict) -> MetricStamp:
     NONE for a run that recorded neither."""
     scopes = tool_versions.get("scope_stamps")
     if scopes is None:
-        return run_metric_version(tool_versions)
+        return _run_single_number(tool_versions)
     return ScopeStamps(tool_versions["lizard"],
                        {name: ScopeStamp(**stamp) for name, stamp in scopes.items()})
 
 
-def run_metric_version(tool_versions: dict) -> MetricStamp:
-    """The single-number stamp a run's `analysis_version` and `lizard` spell,
-    the form `metric_version()` gives, for the callers that still compare a run
-    with it; NONE for a run that recorded either one not."""
+def _run_single_number(tool_versions: dict) -> MetricStamp:
+    """The single-number stamp a 0.8.x run's `analysis_version` and `lizard`
+    spell, parsed from the line 0.8.x signed its marks with; NONE for a run
+    that recorded either one not."""
     analysis, lizard = tool_versions.get("analysis_version"), tool_versions.get("lizard")
     if not (analysis and lizard):
         return MetricStamp.NONE
-    return MetricStamp.parse(stamp_text(analysis, lizard))
+    return MetricStamp.parse(_SINGLE_LINE.format(analysis, lizard))
 
 
 def running_stamp(cfg) -> ScopeStamps:
     """The stamp a run of this crapkit on `cfg` records: each scope's declared
     languages at their analysis number, and its coverage mode, which the
     config sets, not the lanes a run happened to execute."""
-    # Imported here, as in metric_version: the merge driver imports none of them.
+    # Imported here, not at module scope: the git merge driver runs this module
+    # in a temp dir with no analysis stack, and it passes its own stamp through.
     import lizard
 
     from .analyze import ANALYSIS_VERSIONS
@@ -284,15 +287,6 @@ def _coverage_mode(cfg, scope: str, readers: dict) -> str | dict:
         return "cc-only"
     parsers = sorted({lane.parser for lane in cfg.lanes if scope in lane.scopes})
     return {parser: readers[parser] for parser in parsers} if parsers else "no-lane"
-
-
-def metric_version() -> MetricStamp:
-    # Imported here, not at module scope: the git merge driver runs this module
-    # in a temp dir with no analysis stack, and it passes its own stamp through.
-    import lizard
-
-    from .analyze import ANALYSIS_VERSION
-    return SingleNumberStamp(ANALYSIS_VERSION, lizard.version)
 
 
 def read_stamp(text: str) -> MetricStamp:
@@ -579,16 +573,19 @@ class StampConflict(NamedTuple):
     recorded scopes the config no longer has, which refuse nothing. `inferred`
     names the marked scopes whose coverage mode a single-number file left to
     inference, for verify's warning. With neither side per scope, or a stamp
-    no scope can be read from, the whole file refuses as one value."""
+    no scope can be read from, the whole file refuses as one value. So does a
+    single-number file that holds no mark (`one_value`, `as_one_value`): its
+    `moved` names every running scope its number or lizard differs from."""
     recorded: MetricStamp
     running: MetricStamp
     moved: tuple = ()
     gone: tuple = ()
     inferred: tuple = ()
+    one_value: bool = False
 
     @property
     def whole(self) -> bool:
-        return not _weighed_per_scope(self.recorded, self.running)
+        return self.one_value or not _weighed_per_scope(self.recorded, self.running)
 
     @property
     def refuses(self) -> bool:
@@ -606,14 +603,14 @@ class StampConflict(NamedTuple):
     def newer(self) -> bool:
         """A newer crapkit wrote the marks: an upgrade clears them, and a seed
         would restamp them backwards."""
-        if self.whole:
+        if self.whole and not self.moved:
             return bool(newer_tools(self.recorded, self.running))
         return any(move.newer for move in self.moved)
 
     def refusal(self, file_name: str, remedy: str | None = None) -> str:
         """The text verify refuses with. `remedy` replaces the stock
         coverage, prune and seed steps, which read the run a plain seed picks."""
-        head = f"ratchet marks were recorded under [{self.recorded}] but this run measures [{self.running}]"
+        head = f"ratchet marks were recorded under [{self.recorded}] but this run measures [{_label(self.running)}]"
         if not self.whole:
             head = (f"ratchet marks were recorded under [{_label(self.recorded)}] in {file_name}, and "
                     f"the rules have moved since in {_scopes_moved(self.moved)}")
@@ -631,8 +628,9 @@ class StampConflict(NamedTuple):
     @property
     def _scoped_repairs(self) -> tuple:
         """The moved scopes, unless lizard moved: one lizard version signs every
-        scope and `seed --scope` keeps the file's, so only the plain seed clears it."""
-        if any(move.kind == "lizard" for move in self.moved):
+        scope and `seed --scope` keeps the file's, so only the plain seed clears
+        it. A file compared as one value holds no mark a scope's seed repairs."""
+        if self.one_value or any(move.kind == "lizard" for move in self.moved):
             return ()
         return tuple(dict.fromkeys(move.scope for move in self.moved))
 
@@ -651,7 +649,7 @@ def _flip_note(move: StampMove) -> str:
 
 def _label(stamp: MetricStamp) -> str:
     """A stamp as one refusal names it: a per-scope stamp by its form and lizard."""
-    return f"{_STAMP_2} lizard={stamp.lizard}" if isinstance(stamp, ScopeStamps) else stamp.render()
+    return f"{_STAMP_2} lizard={stamp.lizard}" if isinstance(stamp, ScopeStamps) else str(stamp)
 
 
 def _scopes_moved(moved: tuple) -> str:
@@ -684,6 +682,21 @@ def stamp_conflict(recorded: MetricStamp, running: MetricStamp,
     if not _weighed_per_scope(recorded, running):
         return StampConflict(recorded, running)
     return _scoped_conflict(recorded, running, marked_scopes)
+
+
+def as_one_value(recorded: MetricStamp, running: ScopeStamps) -> StampConflict | None:
+    """How a file no mark of which places in a scope differs from `running`.
+
+    A single-number file that holds no mark compares as one value: its number
+    and lizard against each language and the lizard of every running scope,
+    with no coverage mode to infer. Any other stamp compares as
+    `stamp_conflict` compares it with no marked scope."""
+    if not isinstance(recorded, SingleNumberStamp):
+        return stamp_conflict(recorded, running)
+    lizards = (recorded.lizard, running.lizard)
+    moved = tuple(move for name, now in running.scopes.items() for move in _scope_moves(
+        name, ScopeStamp(dict.fromkeys(now.analysis, recorded.analysis), now.coverage), now, lizards))
+    return StampConflict(recorded, running, moved, one_value=True) if moved else None
 
 
 def _scoped_conflict(recorded, running: ScopeStamps, marked_scopes) -> StampConflict | None:
@@ -793,7 +806,7 @@ def _is_newer(then: tuple | None, now: tuple | None) -> bool:
     return bool(then and now) and then > now
 
 
-def _stamp_versions(stamp: str) -> dict[str, tuple[int, ...]]:
+def _stamp_versions(stamp: MetricStamp) -> dict[str, tuple[int, ...]]:
     """`crapkit-analysis=11 lizard=1.24.0` as {field: (11,), ...}: numbers compare
     as numbers, so lizard 1.9.0 is older than 1.24.0. A word with no `=` is left out."""
     fields = (word.partition("=") for word in stamp.split())

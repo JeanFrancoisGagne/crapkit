@@ -18,7 +18,8 @@ import pytest
 from crapkit.analyze import analyze_source
 from crapkit.cli import main
 from crapkit.cli.claude_hook import _marks_for
-from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import RatchetEntry, dump_ratchet
+from stamps import FIXED, MARKS, stamp_lines
 
 _BRANCHES = "".join(f"    if n == {i}:\n        n += {i}\n" for i in range(1, 8))
 BREACH = f"def sprawl(n):\n{_BRANCHES}    return n\n"  # ccn 8, over the ceiling of 6
@@ -53,7 +54,7 @@ def _advise(edited: Path, root: Path, monkeypatch, capsys) -> tuple[int, str]:
 def test_a_mark_written_as_an_encoded_record_silences_the_advisory(scope_path, rel, tmp_path,
                                                                    monkeypatch, capsys):
     marks = dump_ratchet([RatchetEntry(rel, "sprawl( n )", 72.0)], key_version=1,
-                         stamp=metric_version())
+                         stamp=FIXED, file_name=MARKS)
     assert "@crapkit-record-v1" in marks
     edited = _repo(tmp_path, scope_path, rel, marks)
 
@@ -64,7 +65,7 @@ def test_a_mark_written_as_an_encoded_record_silences_the_advisory(scope_path, r
 
 def test_another_files_encoded_mark_never_covers_this_one(tmp_path, monkeypatch, capsys):
     marks = dump_ratchet([RatchetEntry("#calc/grade.py", "sprawl( n )", 72.0)], key_version=1,
-                         stamp=metric_version())
+                         stamp=FIXED, file_name=MARKS)
     edited = _repo(tmp_path, "calc", "calc/grade.py", marks)
 
     code, err = _advise(edited, tmp_path, monkeypatch, capsys)
@@ -109,7 +110,8 @@ def test_the_marks_fetch_answers_each_marks_value_at_four_places(tmp_path, rel, 
     same key on another file is not this file's."""
     neighbour = "sprawl( n )" if key.endswith("#2") else "first( n )"
     marks = dump_ratchet([RatchetEntry(rel, neighbour, 72.0), RatchetEntry(rel, key, 63.6123),
-                          RatchetEntry("calc/other.py", key, 1.0)], key_version=1, stamp=metric_version())
+                          RatchetEntry("calc/other.py", key, 1.0)], key_version=1, stamp=FIXED,
+                         file_name=MARKS)
     path = tmp_path / "crapkit-ratchet.tsv"
     path.write_bytes(ENCODED[encoding](marks))
 
@@ -132,7 +134,7 @@ def test_an_unproved_key_identity_pardons_nothing(tmp_path, stamp, mark):
     `(anonymous)#2` meant, so the fetch answers no mark at all, and the gate
     judges the function as one no mark covers."""
     path = tmp_path / "crapkit-ratchet.tsv"
-    path.write_text(f"# {metric_version()}\n{stamp}path\tlong_name\tcrap\napp.ts\t(anonymous)#2\t99.0000\n",
+    path.write_text(f"{stamp_lines(FIXED)}{stamp}path\tlong_name\tcrap\napp.ts\t(anonymous)#2\t99.0000\n",
                     encoding="utf-8")
 
     index = _marks_for(path, "app.ts", analyze_source("app.ts", SAME_LINE, note=False))

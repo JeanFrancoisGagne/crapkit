@@ -23,7 +23,7 @@ from crapkit.config import load_config_text
 from crapkit.errors import ConfigError
 from crapkit.invocation import _self
 from crapkit.ratchet import (RatchetEntry, ScopeStamp, ScopeStamps, dump_ratchet, read_stamp,
-                             running_stamp, stamp_text)
+                             running_stamp)
 from crapkit.ratchetfile import RatchetFile
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
@@ -454,7 +454,7 @@ def test_the_ratchet_page_quotes_the_lizard_refusal(repo, monkeypatch):
 
 def test_the_single_number_stamp_text_still_reads():
     """A plain seed's input may still be the single-number form 0.8.x wrote."""
-    assert read_stamp(f"# {stamp_text(13, '1.24.0')}\n") == "crapkit-analysis=13 lizard=1.24.0"
+    assert read_stamp("# crapkit-analysis=13 lizard=1.24.0\n") == "crapkit-analysis=13 lizard=1.24.0"
 
 
 # --- the stamp and marks a scoped seed writes, at ratchet's seam --------------------------

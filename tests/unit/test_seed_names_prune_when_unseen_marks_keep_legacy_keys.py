@@ -17,7 +17,6 @@ import pytest
 
 from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.cli import main
-from crapkit.ratchet import stamp_text
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
@@ -33,7 +32,7 @@ NEW_SHA = "7c2d1bb0e4c3f6879201b3c4d5e6f7081920a3b4"
 MARKS = "crapkit-ratchet.tsv"
 ROOT = Path(__file__).resolve().parents[2]
 # Legacy keys: a metric stamp and no key stamp. The one mark names a file the run lacks.
-LEGACY = (f"# {stamp_text(ANALYSIS_VERSION, lizard.version)}\npath\tlong_name\tcrap\n"
+LEGACY = (f"# crapkit-analysis=13 lizard={lizard.version}\npath\tlong_name\tcrap\n"
           "src/gone.ts\tgone( )\t50.0000\n")
 
 

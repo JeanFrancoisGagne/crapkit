@@ -25,8 +25,8 @@ from crapkit.cli import main
 from crapkit.cli.ratchet_cmds import cmd_ratchet
 from crapkit.errors import ConfigError
 from crapkit.ratchet import (RatchetEntry, coverage_then_seed, dump_ratchet, read_stamp,
-                             stamp_conflict, stamp_text)
-from stamps import running_in
+                             stamp_conflict)
+from stamps import running_in, shifted
 
 import lizard
 
@@ -98,9 +98,9 @@ def test_a_stamp_it_cannot_read_keeps_coverage_then_seed():
 
 
 def test_verify_over_newer_marks_refuses_before_the_lanes_and_leaves_them_alone(repo, capsys):
-    newer = stamp_text(ANALYSIS_VERSION + 1, lizard.version)
+    newer = shifted(running_in(repo), 1)
     text = dump_ratchet([RatchetEntry("src/app.ts", "dispatch( kind : string )", 90.0)],
-                        stamp=newer)
+                        stamp=newer, file_name=MARKS)
     (repo / "crapkit-ratchet.tsv").write_text(text, encoding="utf-8", newline="\n")
     seed_artifacts(repo)
     assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
@@ -110,7 +110,8 @@ def test_verify_over_newer_marks_refuses_before_the_lanes_and_leaves_them_alone(
     err = capsys.readouterr().err
 
     assert code == 3, err
-    assert (f"ratchet marks were recorded under [{newer}] in {MARKS}, and the rules have moved since "
+    assert (f"ratchet marks were recorded under [crapkit-stamp=2 lizard={lizard.version}] in {MARKS}, "
+            "and the rules have moved since "
             f"in 1 scope(s): src (typescript analysis {ANALYSIS_VERSION + 1} to {ANALYSIS_VERSION})") in err, err
     assert "newer crapkit" in err and "ratchet seed" not in err, err
     assert (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8") == text
@@ -133,7 +134,7 @@ def test_marks_a_newer_lizard_stamped_clear_with_the_reseed_verify_names(repo, c
     """A crapkit that lets lizard float seeded these marks: verify, doctor,
     prune and seed all sent the user to a lizard upgrade the pin forbids. One
     lizard version signs every scope, so the seed named is the plain one."""
-    stamped = stamp_text(ANALYSIS_VERSION, _one_patch_up(lizard.version))
+    stamped = f"crapkit-analysis=13 lizard={_one_patch_up(lizard.version)}"
     (repo / MARKS).write_text(
         dump_ratchet([RatchetEntry("src/app.ts", "dispatch( kind : string )", 90.0)],
                      stamp=stamped), encoding="utf-8", newline="\n")

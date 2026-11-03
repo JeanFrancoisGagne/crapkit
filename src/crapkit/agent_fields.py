@@ -187,8 +187,8 @@ _ADDED = (
                "wheel, held them when it was built): staged or unstaged edits, or a file git "
                "neither tracks nor ignores; null when commit is null"),
     AgentField(VERSION, "analysis_version", ("integer",),
-               "the analysis semantics version, the number doctor --json reports and the "
-               "ratchet's metric stamp carries"),
+               "the revision of the analysis tables, raised whenever a language or reader "
+               "number rises"),
     AgentField("doctor --json", "lanes[].refusal", ("string", "null"),
                "why --reuse-artifacts will not score the lane's artifact on disk: the lane's "
                "last attempt wrote no artifact and the file predates it, or "
@@ -859,8 +859,8 @@ _BRIEF = {
                 "description": "interpreter version"},
             "analysis_version": {
                 "type": "integer",
-                "description": ("the metric's own version; marks and scores from two versions "
-                "are not one series")}}},
+                "description": ("the revision of the analysis tables, raised whenever a "
+                "language or reader number rises")}}},
     "notes": {
         "type": "object",
         "description": "prose the config carries for whoever edits here",
@@ -1125,9 +1125,8 @@ _DOCTOR = {
                 "description": "interpreter version"}}},
     "analysis_version": {
         "type": "integer",
-        "description": ("the analysis semantics version; with the lizard version it stamps "
-        "every ratchet mark, so a bump refuses old marks until the repo "
-        "re-seeds")},
+        "description": ("the revision of the analysis tables, raised whenever a language or "
+        "reader number rises")},
     "resources": {
         "type": "object",
         "description": "effective resource policy; limits and estimates, not sampled utilization",
@@ -1671,7 +1670,8 @@ _VERIFY = {
             "crapkit": {"type": "string", "description": "crapkit version"},
             "lizard": {"type": "string", "description": "lizard version"},
             "analysis_version": {"type": "string",
-                                 "description": "the analysis semantics version, as a string"}}},
+                                 "description": ("the revision of the analysis tables, as a "
+                                                 "string")}}},
     "ratchet_sha256": {"type": ("string", "null"),
                        "description": ("digest of the marks file on the tree as read; null when "
                                        "the tree has none")},
