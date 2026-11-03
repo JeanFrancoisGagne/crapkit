@@ -44,6 +44,7 @@
 
 <!-- 0.9.0:m1-readers -->
 - crapkit reads lcov: a lane with parser = "lcov" gives Rust, C, C++, Swift and Objective-C scopes coverage-based CRAP. Each SF record's DA lines and BRDA arms go to the innermost function that holds them; FN and FNDA records give nothing. A relative SF key takes the lane's `path_prefix`, an absolute one under the checkout becomes root-relative, and one from another tree refuses the lane with exit 5. `coverage_format.READER_VERSIONS` gains `lcov: 1` and no existing score moves. (accuracy change C89)
+- `crapkit score PATH --coverage FILE --fail-above N` scores an existing coverage file with no config and exits 6 when a function is over N.
 <!-- /0.9.0:m1-readers -->
 
 <!-- 0.9.0:m5-comment-fixture -->
