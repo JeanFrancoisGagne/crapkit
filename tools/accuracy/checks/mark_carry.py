@@ -10,4 +10,6 @@ _HERE = "tests/accuracy/mark_carry/"
 CHECKS = [
     {"name": "mark value kept across a re-key", "seconds": 2,
      "pytest": [_HERE + "test_rekey_values.py"]},
+    {"name": "merged mark value", "seconds": 3,
+     "pytest": [_HERE + "test_merge_values.py"]},
 ]

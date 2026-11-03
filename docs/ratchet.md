@@ -962,6 +962,51 @@ different key-format versions; stamps that merge are not enough.
 `ratchet merge` runs with no `crapkit.toml` in sight, because git invokes it from a temp
 directory. It is the one ratchet subcommand that needs no config.
 
+### A signature change on one branch, a tighten on the other
+
+On main, a verify tightened `classify( a , b )` in `calc/grade.py` from 7.0000 to 6.0000. On
+the feature branch, `classify` gained a parameter, and a passing verify re-keyed its mark to
+`classify( a , b , c = None )` at 7.0000. Merging the feature branch keeps one line, under the
+new key, at main's tightened value:
+
+```
+$ git merge feature -m "merge feature"
+ratchet merge: 1 mark(s)
+Auto-merging crapkit-ratchet.tsv
+Merge made by the 'ort' strategy.
+```
+
+```
+# crapkit-analysis=13 lizard=1.24.0
+# crapkit-keys=1
+path	long_name	crap
+calc/grade.py	classify( a , b , c = None )	6.0000
+```
+
+The driver compares each branch with the base before it merges. The feature branch dropped
+one key from `calc/grade.py` and added one under the same bare name, `classify`, and no other
+key of that name left or arrived in the file, so the two keys are one mark. Twins never pair,
+and two drops or two adds under one bare name do not pair: those merge key by key. A merge by
+exact key would keep the old key at 6.0000 beside the new one at 7.0000, and the function's
+mark would loosen back to 7.0000.
+
+A path move on one branch, by [`ratchet move`](#moving-marks-by-hand) or by `prune` after a
+`git mv`, and a tighten on the other merge the same way: a key that left one path and a key
+that arrived at another, under the same key name at the same value, are one mark when exactly
+one of each did.
+
+When both branches re-keyed one mark to different keys, the merged file keeps it under both
+keys at the merged value, and the driver exits 0 with one more line on stderr. Here main
+re-keyed it to `classify( a , b , d = 1 )` and tightened it to 6.0000:
+
+```
+$ git merge feature -m "merge feature"
+ratchet merge: 2 mark(s)
+ratchet merge: OURS and THEIRS moved one mark to different keys, so it stays under both: calc/grade.py "classify( a , b , c = None )" and calc/grade.py "classify( a , b , d = 1 )"; the next crapkit ratchet prune drops the one no function holds
+Auto-merging crapkit-ratchet.tsv
+Merge made by the 'ort' strategy.
+```
+
 ---
 
 ## Reporting the burn-down

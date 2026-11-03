@@ -1,11 +1,11 @@
-"""The two mission-4 probes, red today and pinned as strict xfail.
+"""The two mission-4 probes.
 
 A mark re-keyed on one side of a merge, or re-keyed in a commit long after it
-was seeded, reads today as one mark dropped and another added. Each probe below
-fails for that reason. mission-4 makes it pass by pairing the drop with the add
-through `keys.pair_moves`, and a strict xfail then fails the suite, which is
-the signal to drop the marker. The same shapes pass today as pairing rows in
-tests/unit/test_keys_resolve.py.
+was seeded, reads by exact key as one mark dropped and another added. The merge
+probe passes: `merge_ratchets` pairs the drop with the add through
+`keys.pair_moves`. The report probe still reads them apart and is pinned as a
+strict xfail, which fails the suite once it passes: the signal to drop the
+marker. The same shapes are pairing rows in tests/unit/test_keys_resolve.py.
 """
 from __future__ import annotations
 
@@ -43,11 +43,11 @@ def test_the_rekey_history_holds_three_commits_with_their_marks_and_ages(tmp_pat
     assert [abs(age - days * DAY) <= 5 for age, days in zip(ages, (400, 30, 0))] == [True] * 3, ages
 
 
-@pytest.mark.xfail(strict=True, reason="mission-4-05: the merge driver keeps a tighten against a rename")
 def test_a_merge_keeps_the_tighten_against_a_rename():
-    """Ours re-keyed the mark at 7, theirs tightened the old key to 6. Today
-    the merge keeps the old key at 6 beside the new key at 7: the function's
-    mark loosens back to 7."""
+    """Ours re-keyed the mark at 7, theirs tightened the old key to 6. The
+    merge pairs ours's drop and add as one mark and keeps the tighten under
+    the new key; a merge by exact key kept the old key at 6 beside the new key
+    at 7, and the function's mark loosened back to 7."""
     base = [RatchetEntry(PATH, OLD, 7.0)]
     ours = [RatchetEntry(PATH, NEW, 7.0)]
     theirs = [RatchetEntry(PATH, OLD, 6.0)]
