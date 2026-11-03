@@ -1352,6 +1352,11 @@ headings = ["Naming the run to seed from", "Moving marks by hand", "Reporting th
 exclude = "reference: ratchet subcommands no install or upgrade path runs"
 
 [[doc]]
+page = "docs/ratchet.md"
+headings = ["A signature change keeps its mark"]
+exclude = "reference: the signature-carry probe; tests/e2e/test_signature_carry_e2e.py drives rescore --gate, check_gate and verify over it"
+
+[[doc]]
 page = "docs/resources.md"
 headings = ["Logs and retained evidence"]
 cells = ["lin-pipx-agent-loop"]

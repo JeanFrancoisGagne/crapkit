@@ -109,8 +109,8 @@ def test_verify_gates_an_edit_below_a_lone_cr(tmp_path, capsys):
     assert main(["ratchet", "seed", "--repo", str(repo)]) == 0
     git(repo, "add", "crapkit-ratchet.tsv")
     git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "seed")
-    # A new signature is a new ratchet key, so no mark covers the edited function.
-    (repo / "m.py").write_bytes(EDITED)
+    # A new name is a new ratchet key no mark carries to, so no mark covers the edited function.
+    (repo / "m.py").write_bytes(LONE_CR.replace(b"def target(b):", b"def aim(b, c=0):"))
     capsys.readouterr()
 
     code = main(["verify", "--repo", str(repo)])

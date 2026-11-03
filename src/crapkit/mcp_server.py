@@ -305,16 +305,17 @@ TOOLS: tuple[dict, ...] = (
         "unread_verdict": True,
         "description": ("Checks an edited file by rescore --gate's rule: each changed function's "
         "ccn against its scope's ceiling, pardoned only while its crap is at or under its "
-        "ratchet mark. The commit hook sees no coverage and refuses a marked function only "
-        "once its ccn passes the mark, so this is stricter and a breach predicts a verify "
-        "refusal. Call it after an edit once get_function_brief states the rule. It runs no "
-        "tests, and a breach reads gate.ok false, not an error. A clean gate reads no marks. "
-        "A tracked file is judged on its diff from HEAD, an untracked one in full."),
+        "ratchet mark, or one its old signature carried. The commit hook sees no coverage and "
+        "refuses a marked function only once its ccn passes the mark, so this is stricter and a "
+        "breach predicts a verify refusal. Call it after an edit once get_function_brief states "
+        "the rule. It runs no tests. A breach reads gate.ok false, not an error. A clean gate "
+        "reads no marks. A tracked file is judged on its diff from HEAD."),
         "properties": {
             "path": {
                 "type": "string",
                 "description": ("repo-relative, or absolute inside repo, source file to judge "
-                "as edited. Outside the repo, missing or a directory answers a config error, "
+                "as edited, an untracked one in full. Outside the repo, missing or a directory "
+                "answers a config error, "
                 "and an unchanged or unscoped file judges 0. A file a scope takes whose name "
                 "is not UTF-8 answers gate.ok false with the name in gate.unread_files. repo may "
                 "be any directory under the checkout, and path stays relative to the root it "

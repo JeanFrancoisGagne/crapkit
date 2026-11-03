@@ -21,7 +21,7 @@ import pytest
 
 from crapkit import universe, verify
 from crapkit.cli import verifying
-from crapkit.verify import FINDING_KINDS, GateViolation, UnreadableName, Verdict
+from crapkit.verify import FINDING_KINDS, Carried, GateViolation, UnreadableName, Verdict
 
 BUILDER = Path(__file__).resolve().parents[2] / "tools" / "action" / "comment.py"
 BASELINE = {"id": 1, "commit": "a" * 40}
@@ -31,7 +31,8 @@ BASELINE = {"id": 1, "commit": "a" * 40}
 SAMPLE = {"path": "src/m.py", "long_name": "late( v )", "start": 12, "ccn": 9, "cov": 0.25,
           "crap": 52.3, "remedy": "decompose", "key_name": "late( v )",
           "reason": "src/m.py:12: arrow refused", "recorded": 8.0, "fresh_crap": 9.5,
-          "scope": "src", "line": 14, "dirty": False}
+          "scope": "src", "line": 14, "dirty": False, "mark_ambiguity": None,
+          "carried_from": "late( u )", "mark": 60.0}
 TEST_ID = "tests/test_m.py::test_late"
 # What names an item in the comment: its file, its test id, its line.
 NAMING = ("path", "test", "line")
@@ -121,6 +122,19 @@ def test_an_overridden_function_is_listed_on_a_failing_verdict_too():
     assert [line for line in lines if line.startswith("- ")] == [f"- new test failure: `{TEST_ID}`", OVERRIDDEN]
     assert lines[-1].endswith(": 0 gate violations, 0 ratchet regressions, 1 new test failure, "
                               "0 uncovered changed lines."), lines[-1]
+
+
+# --- the carried row ----------------------------------------------------------------
+
+CARRIED = Carried("calc/grade.py", "classify( a , b , c = None )", "classify( a , b , c = None )",
+                  "classify( a , b )", 7.0)
+
+
+def test_a_carried_function_follows_the_pass_line_naming_both_keys_and_the_mark():
+    assert rendered(holding("carried", [CARRIED])) == [
+        "**verify passed.** Run 3 against baseline 1, 1 changed file (`src/m.py`).", "",
+        "- carried: `calc/grade.py` `classify( a , b , c = None )` carries the mark 7.0 recorded "
+        "for `classify( a , b )`"]
 
 
 # --- the unreadable_name row -------------------------------------------------------

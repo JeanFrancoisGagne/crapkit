@@ -122,7 +122,7 @@ _Avoid_: forced baseline, override baseline
 The outcome of `verify`: the gate result, ratchet regressions and new test failures against the baseline. A lane whose declared junit `verify --reuse-artifacts` reused and could not read leaves no verdict: verify exits 5 and stores nothing.
 
 **Finding kind**:
-One row of verify's table of findings (`verify.FINDING_KINDS`): unreadable name, gate violation, unread file, ratchet regression, new failure, diff uncovered and overridden, in that order. A row gives the kind's exit code, whether it fails the verdict, whether an override may grant it, and its text line, its item in the `findings` list `verify --json` prints and its SARIF result; no kind has a `--json` key of its own. The first failing kind present sets verify's exit: 3, then 6, 7, 8 and 9; overridden is a report and fails nothing. Every printer, the dirty split and both override paths read the rows, so a new kind is one row and its detector.
+One row of verify's table of findings (`verify.FINDING_KINDS`): unreadable name, gate violation, unread file, ratchet regression, new failure, diff uncovered, overridden and carried, in that order. A row gives the kind's exit code, whether it fails the verdict, whether an override may grant it, and its text line, its item in the `findings` list `verify --json` prints and its SARIF result; no kind has a `--json` key of its own. The first failing kind present sets verify's exit: 3, then 6, 7, 8 and 9; overridden and carried are reports and fail nothing. Every printer, the dirty split and both override paths read the rows, so a new kind is one row and its detector.
 
 **Unread file**:
 The finding a gate makes for a changed Unanalyzable file: exit 6, after any gate violation, and never granted by an override, since no function in it was judged. The `UNREAD` line names it; `verify --json` lists it as an `unread_file` item in `findings`, and `rescore --gate --json` and `check_gate` list it in `gate.unread_files`.
@@ -153,8 +153,12 @@ _Avoid_: gate, block (the edit is already on disk)
 ### Debt
 
 **Ratchet mark**:
-A committed record that one function is allowed to sit at a known CRAP; it may only tighten. A carried mark is the mark `keys.resolve` gives an unmarked function when its old key left the file, exactly one mark that left shares its bare name, and no other unmarked function holds that name; twins and anonymous functions never carry, and no command acts on a carried mark yet.
+A committed record that one function is allowed to sit at a known CRAP; it may only tighten. A mark follows its function through a signature edit inside its file when the old key has left the file and exactly one mark that left matches the function's bare name: that is a carried mark.
 _Avoid_: exemption, baseline entry, whitelist
+
+**Carried mark**:
+The mark `keys.resolve` gives an unmarked function when its old key left the file, exactly one mark that left shares its bare name, and no other unmarked function holds that name. `rescore --gate`, `check_gate`, `verify` and both hooks pardon the function against it by the usual rule and print one line naming both keys, and `rescore --gate` reads its CRAP from the coverage the baseline run holds under the old key; twins, several such marks or several such functions refuse, naming each key and the `ratchet move --function` command.
+_Avoid_: inherited mark, renamed mark
 
 **Metric stamp**:
 The rules each scope's marks were recorded under: one line per scope naming the analysis number of each of its languages and its coverage mode, beside the lizard version. The single `crapkit-analysis=N lizard=X.Y.Z` line is the single-number form 0.8.x wrote, which crapkit still reads. `ratchet seed` sets the stamp to the metric of the run it read, and verify refuses marks whose stamp differs from the running metric.

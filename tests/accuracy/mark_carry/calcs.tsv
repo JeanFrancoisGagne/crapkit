@@ -1,2 +1,3 @@
 calc	independent_test	modules	functions
 Mark value kept across a re-key	tests/accuracy/mark_carry/test_rekey_values.py::test_every_hand_move_writes_the_hand_bytes	src/crapkit/ratchet.py	src/crapkit/ratchet.py:rekey_marks
+Gate pardon over a carried mark	tests/accuracy/mark_carry/test_carry_pardon.py::test_every_hand_row_gets_its_answer_from_the_gate	src/crapkit/gate.py,src/crapkit/keys.py	src/crapkit/gate.py:judge,src/crapkit/gate.py:_marked,src/crapkit/gate.py:_value,src/crapkit/gate.py:_kind,src/crapkit/keys.py:resolve

@@ -229,8 +229,8 @@ def test_gate_on_a_scoped_name_that_is_not_utf8_answers_the_081_verdict(scored_r
         "functions": [], "schema": 1,
         "note": ("coverage is the baseline run's; complexity is the working tree's. "
                  "Run verify for the real verdict."),
-        "gate": {"ok": False, "judged": 0, "ceilings": {}, "breaches": [], "untracked": [],
-                 "unread_files": [{"path": "pylib/caf\\xe9.py", "dirty": True,
+        "gate": {"ok": False, "judged": 0, "ceilings": {}, "breaches": [], "carried": [],
+                 "untracked": [], "unread_files": [{"path": "pylib/caf\\xe9.py", "dirty": True,
                                    "reason": ("its name is not UTF-8, and crapkit reads every path as "
                                               "UTF-8: rename it (git mv) to a UTF-8 name")}]}}
 
@@ -245,4 +245,4 @@ def test_gate_on_a_name_no_scope_takes_judges_nothing_and_passes(scored_repo: Pa
 
     assert reply["isError"] is False, reply
     assert reply["structuredContent"]["gate"] == {"ok": True, "judged": 0, "ceilings": {}, "breaches": [],
-                                                  "untracked": [], "unread_files": []}
+                                                  "carried": [], "untracked": [], "unread_files": []}

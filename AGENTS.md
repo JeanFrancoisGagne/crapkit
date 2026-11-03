@@ -193,6 +193,10 @@ Three rules decide what it judges:
   coverage and refuses it only once its staged ccn alone passes the mark, so
   `rescore --gate` still fails first. Verify keeps exit 7 for a mark that rose in a
   function the diff never touched.
+  A function whose signature changed passes while exactly one mark in its file shares
+  its bare name and its CRAP stays at or under that mark: stderr prints one
+  `crapkit gate: ... carries the mark ...` line. Twins, or several candidates for the
+  name, exit 6 and print the `crapkit ratchet move --function` command that ends it.
   The marks file is read only when a changed function is over its ceiling, so a clean
   gate never reports a marks file it cannot parse; the next gate that breaches does.
 
