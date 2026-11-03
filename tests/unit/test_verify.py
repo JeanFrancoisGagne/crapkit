@@ -73,6 +73,46 @@ def test_ratchet_regression_fires_even_untouched():
     assert v.ratchet_regressions[0].recorded == 20.0
 
 
+OLD, NEW = "classify( a , b )", "classify( a , b , c = None )"
+GRADE = "calc/grade.py"
+
+
+def _probe_verdict(crap: float, ratchet=None):
+    """The probe after its signature edit, judged with nothing changed."""
+    return evaluate(fresh=[scored(GRADE, NEW, crap=crap, ccn=7)], changed_ranges={},
+                    ratchet=ratchet or [RatchetEntry(GRADE, OLD, 7.0)], baseline_failures=set(),
+                    fresh_failures=set(), target=6)
+
+
+def test_a_carried_function_that_rose_past_its_mark_is_a_regression_naming_both_keys():
+    v = _probe_verdict(8.0)
+
+    (r,) = v.ratchet_regressions
+    assert (v.ok, r.long_name, r.recorded, r.fresh_crap, r.carried_from) == (False, NEW, 7.0, 8.0, OLD)
+    assert verify.lines_of("ratchet_regression", [r]) == [
+        f"  RATCHET  {GRADE}  {NEW}: 7.0 -> 8.0 (mark recorded for {OLD})"]
+
+
+def test_a_carried_function_at_its_mark_is_no_regression():
+    assert _probe_verdict(7.0).ratchet_regressions == []
+
+
+@pytest.mark.parametrize("crap", [6.5, 7.0, 7.5, 9.0])
+def test_a_carried_mark_s_verdict_equals_its_verdict_under_the_function_s_own_key(crap):
+    carried = _probe_verdict(crap).ratchet_regressions
+    own = _probe_verdict(crap, [RatchetEntry(GRADE, NEW, 7.0)]).ratchet_regressions
+
+    assert [r._replace(carried_from=None) for r in carried] == own
+
+
+def test_a_function_that_carries_a_mark_is_no_unmarked_debt():
+    fresh = [scored(GRADE, NEW, crap=8.0, ccn=7), scored(GRADE, "grade( x )", crap=9.0, ccn=7)]
+
+    rows = unmarked_over_ceiling(fresh, [RatchetEntry(GRADE, OLD, 7.0)], target=6)
+
+    assert [row.long_name for row in rows] == ["grade( x )"]
+
+
 def test_ratchet_improvement_is_not_a_regression():
     entry = RatchetEntry(path="src/a.ts", long_name="f( )", crap=40.0)
     v = evaluate(fresh=[scored(ccn=5, cov=0.5)], changed_ranges={},

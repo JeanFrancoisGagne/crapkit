@@ -28,7 +28,7 @@ from typing import ClassVar, NamedTuple
 
 from .invariants import check_dump, check_marks_kept
 from .invocation import _self
-from .keys import MarkIndex, mark_key, rows_by_key, split_ordinal
+from .keys import MarkIndex, carried_keys, mark_key, rows_by_key, split_ordinal
 from .score import ScoredRow, over_ceiling
 from .records import decode_record, encode_record, record_lines
 
@@ -1400,11 +1400,15 @@ def unstable_marks(prior: list[RatchetEntry], fresh: list[ScoredRow],
     the unlucky half then fails it, and the gate becomes a coin flip on an
     unchanged tree. Only marked functions can be tightened, so only they are
     walked; a key the earlier run never scored has nothing to disagree with.
+    A carried mark reads its carrier's row and measurement, and the refusal
+    names the mark's own key, the one `update_ratchet` holds.
     """
     worst = rows_by_key(fresh)
+    marks = MarkIndex(prior)
+    carried = carried_keys(worst, marks.keys())
     refusals = []
-    for entry in MarkIndex(prior).entries():
-        key = mark_key(entry)
+    for entry in marks.entries():
+        key = carried.get(mark_key(entry), mark_key(entry))
         row, was = worst.get(key), previous.get(key)
         if row is None or was is None or not _jumped(was, round(row.crap, 4), max_jump):
             continue
@@ -1420,22 +1424,26 @@ def update_ratchet(prior: list[RatchetEntry], fresh: list[ScoredRow], *, target:
     file is the deepest tighten there is. No mark rises and none is added
     (`invariants.check_marks_kept`).
 
+    A mark `keys.carriers` carries to a function is judged by that function's
+    row and moves to its key (`rekey_marks`); a held one stays under its own.
+
     The update rewrites lines, not keys: a key the file lists twice keeps both
     lines in the order they came, each tightened or dropped against the same
     fresh row. The first line stays the one `keys.MarkIndex` answers, and
     `ratchet_delta` counts the key once."""
     fresh_by_key = rows_by_key(fresh)
+    carried = {old: new for old, new in carried_keys(fresh_by_key, MarkIndex(prior).keys()).items()
+               if old not in hold}
     ceilings = scope_targets or {}
     updated = []
     for entry in prior:
         key = mark_key(entry)
-        kept = _updated_mark(entry, fresh_by_key.get(key), key in hold,
+        kept = _updated_mark(entry, fresh_by_key.get(carried.get(key, key)), key in hold,
                              lambda scope: ceilings.get(scope, target))
         if kept is not None:
             updated.append(kept)
-    updated.sort(key=lambda e: (e.path, e.long_name))
     check_marks_kept(prior, updated, adds=False)
-    return updated
+    return rekey_marks(updated, carried)[0]
 
 
 def _updated_mark(entry: RatchetEntry, row: ScoredRow | None, held: bool,
@@ -1456,9 +1464,11 @@ def _updated_mark(entry: RatchetEntry, row: ScoredRow | None, held: bool,
 
 
 class RatchetDelta(NamedTuple):
-    """What one update did to the marks: how many left the file, how many fell."""
+    """What one update did to the marks: how many left the file, how many fell,
+    how many moved to the key of the function that carries them."""
     dropped: int
     tightened: int
+    rekeyed: int
 
 
 def _mark_move(entry: RatchetEntry, fresh: float | None) -> str:
@@ -1468,11 +1478,28 @@ def _mark_move(entry: RatchetEntry, fresh: float | None) -> str:
     return "tightened" if fresh < entry.crap else "kept"
 
 
-def ratchet_delta(prior: list[RatchetEntry], updated: list[RatchetEntry]) -> RatchetDelta:
-    """The two counts a green verify reports. A mark never rises and an update
-    adds none, so dropped plus tightened is the whole difference between the
-    two lists; a mark that kept its value counts as neither. Each key counts
-    once, under the mark `keys.MarkIndex` answers for it."""
-    after = MarkIndex(updated)
-    moves = [_mark_move(e, after.mark(mark_key(e))) for e in MarkIndex(prior).entries()]
-    return RatchetDelta(moves.count("dropped"), moves.count("tightened"))
+def _landed(key: tuple[str, str], after: MarkIndex, carried: dict) -> tuple[float | None, bool]:
+    """The value the update holds for the prior mark under KEY, and whether it
+    sits under its carrier's key instead of its own."""
+    value = after.mark(key)
+    if value is not None or key not in carried:
+        return value, False
+    moved = after.mark(carried[key])
+    return moved, moved is not None
+
+
+def ratchet_delta(prior: list[RatchetEntry], updated: list[RatchetEntry],
+                  fresh: list[ScoredRow] = ()) -> RatchetDelta:
+    """The counts a green verify reports. A mark never rises and an update adds
+    none, so a mark that kept its value and its key counts as nothing. FRESH
+    are the rows the update read: `keys.carriers` names the function that
+    carries each mark missing from UPDATED, and a mark whose carrier's key
+    holds a line there counts as rekeyed, and as tightened too when it fell.
+    Without them a missing mark counts as dropped. Each key counts once, under
+    the mark `keys.MarkIndex` answers for it."""
+    before, after = MarkIndex(prior), MarkIndex(updated)
+    carried = carried_keys(rows_by_key(fresh), before.keys()) if fresh else {}
+    landed = [(e, *_landed(mark_key(e), after, carried)) for e in before.entries()]
+    moves = [_mark_move(e, value) for e, value, _ in landed]
+    return RatchetDelta(moves.count("dropped"), moves.count("tightened"),
+                        sum(rekeyed for _, _, rekeyed in landed))

@@ -116,6 +116,7 @@ or no longer (fixed). `python tools/docs/generate.py` writes this table, the
 | Burn-down, mark age and debt policy | `history_oracles` | `test_burn_down.py::test_report_matches_the_history_walk` | 0 | 1 | 0 |
 | Mark value kept across a re-key | `mark_carry` | `test_rekey_values.py::test_every_hand_move_writes_the_hand_bytes` | 0 | 0 | 0 |
 | Gate pardon over a carried mark | `mark_carry` | `test_carry_pardon.py::test_every_hand_row_gets_its_answer_from_the_gate` | 0 | 0 | 0 |
+| ratchet_changes counts | `mark_carry` | `test_ratchet_changes.py::test_every_hand_row_gets_its_counts_from_the_update` | 0 | 0 | 0 |
 | Runtime invariant verdict | `runtime_guards` | `test_invariant_verdict.py::test_crapkit_stops_exactly_where_the_documented_bounds_do` | 2 | 3 | 0 |
 | CRAP score | `score_model` | `test_crap.py::test_reduced_grid_matches_the_exact_value` | 6 | 0 | 1 |
 | Function coverage ratio | `score_model` | `test_counts_join.py::test_every_scored_row_matches_its_artifact_counts` | 1 | 2 | 0 |

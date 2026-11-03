@@ -157,7 +157,7 @@ rescore vs run 1 @ b3f1678eeff (coverage STALE, complexity fresh)
 gate: 1 changed function(s) judged, 0 over ceiling 6
 $ crapkit verify
 crapkit gate: calc/grade.py classify( a , b , c = None ) carries the mark 7.0000 recorded for classify( a , b ); a passing verify re-keys it, or run crapkit ratchet move --function calc/grade.py "classify( a , b )" "classify( a , b , c = None )"
-verify OK @ 627b1606b2b vs baseline b3f1678eeff (2 changed files)
+verify OK @ 627b1606b2b vs baseline b3f1678eeff (2 changed files) ratchet: 0 dropped, 0 tightened, 1 re-keyed -> git add crapkit-ratchet.tsv
   changed files: calc/grade.py, crapkit-ratchet.tsv
 ```
 
@@ -1125,6 +1125,11 @@ A clean pass tightens it automatically. After a green `verify`:
   score.
 - A marked function absent from the run keeps its mark untouched. Absence is not proof the
   code is gone; that is what `prune` is for.
+- A mark a signature edit carried ([A signature change keeps its mark](#a-signature-change-keeps-its-mark))
+  moves to the function's key at the lower of its mark and its fresh score, or leaves the
+  file when the function is at or under its ceiling. A twin or an ambiguous name carries
+  nothing, so its line keeps its bytes, and a marks file whose key identity is unproved
+  re-keys nothing.
 
 The marks file is written only when its text would change, and never created to hold zero
 marks: a clean checkout with no marks file stays clean, and a stamped file whose marks all
@@ -1138,7 +1143,11 @@ verify OK @ 8c780bb18da vs baseline 8c780bb18da (3 changed files) ratchet: 6 dro
 ```
 
 `dropped` counts marks whose function is now at or under its ceiling; `tightened` counts
-marks that fell. The JSON receipt carries the same two numbers as `ratchet_changes`, `null`
+marks that fell. A carried mark that moved to its function's key counts as re-keyed, and as
+tightened too when it fell; the OK line adds `, 1 re-keyed` only when a mark moved, so
+`ratchet: 0 dropped, 0 tightened, 1 re-keyed -> git add crapkit-ratchet.tsv` follows the
+signature edit above, and a second verify writes nothing. The JSON receipt carries the
+same numbers as `ratchet_changes`, `null`
 when the tighten wrote nothing ([agent-json.md](agent-json.md#verify)). One rewrite moves no
 mark: a file written before stamping (the one `verify` warns about on stderr) is rewritten
 once to gain its stamp line, and the OK line says `ratchet: restamped -> git add
@@ -1162,6 +1171,17 @@ EXIT=7
 
 That run changed only a test file. The source function was untouched; deleting its coverage
 was enough.
+
+While a mark is still carried, the check reads the function that carries it. A carried
+`classify` that rose from 7 to 8 in a commit whose diff never touched it fails at exit 7,
+and the RATCHET line names both keys:
+
+```
+  RATCHET  calc/grade.py  classify( a , b , c = None ): 7.0 -> 8.0 (mark recorded for classify( a , b ))
+```
+
+The `ratchet_regression` item in `verify --json` carries `carried_from`, the mark's key,
+or `null` for a mark under the function's own key.
 
 A marks file that is missing, or holds nothing but blank lines, is not a repo that never
 marked any debt. `verify` then reads the newest marks the history from the baseline's commit

@@ -253,6 +253,11 @@ function, which is the whole point: deleting the coverage behind an untouched fu
 enough to raise its CRAP. Start at `crapkit explain PATH NAME`, look for the test that
 stopped exercising it, and restore the coverage rather than the code.
 
+A RATCHET line that names two keys, `classify( a , b , c = None ): 7.0 -> 8.0 (mark
+recorded for classify( a , b ))`, means a signature edit carried the mark to the function
+and no passing verify has re-keyed it yet. The fix is the same as for an exact mark:
+restore what lowered the score.
+
 ## Committing past a marked refusal
 
 The commit hook's "rose past their ratchet mark" block refuses a marked function whose ccn

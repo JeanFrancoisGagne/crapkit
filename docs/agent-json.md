@@ -948,7 +948,7 @@ maps each one to its place in `findings` or `counts`.
 | `unreadable_name` | `path`, each byte that is not UTF-8 as `\xNN`; `scope`, the scope that takes it; `reason`, the stderr sentence for that one file | 3 | `unreadable name` |
 | `gate_violation` | `path`, `long_name`, `start`, `ccn`, `cov`, `crap`, `remedy`, `key_name`, `mark_ambiguity` | 6 | `complexity gate` |
 | `unread_file` | `path`, `reason`: the reader's refusal, naming the line and what to change | 6 | `complexity gate` |
-| `ratchet_regression` | `path`, `long_name` (the ratchet key), `recorded`, `fresh_crap` | 7 | `ratchet regressions` |
+| `ratchet_regression` | `path`, `long_name` (the ratchet key), `recorded`, `fresh_crap`, `carried_from` (the key the mark was recorded under when a signature edit carried it to this function, null for a mark under its own key) | 7 | `ratchet regressions` |
 | `new_failure` | `test`: the `classname::name` test id | 8 | `new test failures` |
 | `diff_uncovered` | `path`, `line`: a changed line no test ran | 9, only past `diff_uncovered_max` | `diff-coverage ceiling` |
 | `overridden` | the `gate_violation` fields | none: `fails` is `false` and `exit_code` is `null` | `override` |
@@ -1082,7 +1082,7 @@ reasonably look at `committed_findings` alone.
 | `ratchet_source` | Which marks verify judged against: `"tree"`, the ratchet file as read, or `"committed"`, when that file is missing or blank and verify judged against the newest marks committed since the baseline. |
 | `ratchet_source_commit` | The commit whose marks verify judged against when `ratchet_source` is `"committed"`; `null` for `"tree"`. |
 | `ratchet_source_sha256` | Digest of the marks verify judged against: equal to `ratchet_sha256` for `"tree"`, the committed file's digest for `"committed"`, `null` when there were no marks at all. Pin it to prove which marks a verdict was measured against. |
-| `ratchet_changes` | `{"dropped": N, "tightened": M}` when this run's tighten rewrote the marks file: `dropped` counts marks whose function is now at or under its ceiling, `tightened` marks that fell. **`null` when the tighten wrote nothing**: a failed run, `--no-tighten`, no marks file, or nothing to move. An override's grant is its own write to the marks file and is an `overridden` item in `findings`, not counted here. The text form prints the same two counts on the OK line with the `git add` to run (`restamped` in place of the counts when the only change was the stamp line, `N marks granted` after an override). |
+| `ratchet_changes` | `{"dropped": N, "tightened": M, "rekeyed": K}` when this run's tighten rewrote the marks file: `dropped` counts marks whose function is now at or under its ceiling, `tightened` marks that fell, `rekeyed` marks that moved to the key of the function a signature edit carried them to (a re-keyed mark that fell counts in `tightened` too). **`null` when the tighten wrote nothing**: a failed run, `--no-tighten`, no marks file, or nothing to move. An override's grant is its own write to the marks file and is an `overridden` item in `findings`, not counted here. The text form prints the same counts on the OK line with the `git add` to run, `, K re-keyed` only when K is above 0 (`restamped` in place of the counts when the only change was the stamp line, `N marks granted` after an override). |
 
 ---
 

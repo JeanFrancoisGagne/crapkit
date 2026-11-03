@@ -44,9 +44,11 @@ Two answers sit beside the index. `resolve` says which mark belongs to a
 function: its exact key, a Twin's `name#N` key, the carry, or a refusal
 naming the ambiguity. The carry is the mark that left the function's file under
 its bare name when exactly one did and the function is the one unmarked key
-that took the name. `pair_moves` says, by the same rule, which key that left a
-file pairs with a key that arrived in it. `MarkIndex.mark` still answers the
-exact key only: no gate, merge or report acts on a carry until mission-4.
+that took the name. `carriers` asks the same rule from the mark's side: which
+function carries each mark no function holds, the answer the tighten, its
+counts, the damping and verify's ratchet check read. `pair_moves` says, by the
+same rule, which key that left a file pairs with a key that arrived in it.
+`MarkIndex.mark` still answers the exact key only.
 """
 from __future__ import annotations
 
@@ -650,7 +652,7 @@ def resolve(function: Key, file_functions, file_marks) -> Exact | Twin | Carry |
     carries the mark that left the file under its bare name when that mark and
     the function are the only two keys of the name that `pair_moves` would
     pair; it is refused when they cannot pair, and answers itself when no mark
-    of its name left. No caller acts on a carry yet: mission-4 turns it on.
+    of its name left.
     """
     path = function[0]
     marks = _in_file(path, file_marks)
@@ -659,6 +661,31 @@ def resolve(function: Key, file_functions, file_marks) -> Exact | Twin | Carry |
     held = _in_file(path, file_functions) | {function}
     answer = _answers(path, marks - held, held - marks).get(_carry_name(function[1]))
     return _own(function) if answer is None else answer
+
+
+def carriers(functions, marks) -> dict[Key, Carry | Refused]:
+    """The function that carries each mark whose key no function holds, by
+    `resolve`'s rule asked from the mark's side.
+
+    FUNCTIONS are a run's (path, key name) keys and MARKS the marked keys. A
+    Carry names the one function that carries the mark, a Refused holds the
+    sentence `resolve` gives each candidate, and a mark no function of its
+    file could claim is absent."""
+    held, marked = set(functions), set(marks)
+    found: dict[Key, Carry | Refused] = {}
+    for path in sorted({key[0] for key in marked - held}):
+        here, file_marks = _in_file(path, held), _in_file(path, marked)
+        gone = file_marks - here
+        answers = _answers(path, gone, here - file_marks)
+        found.update((mark, answers[_carry_name(mark[1])]) for mark in gone
+                     if _carry_name(mark[1]) in answers)
+    return found
+
+
+def carried_keys(functions, marks) -> dict[Key, Key]:
+    """`carriers`' Carry answers alone, as {mark key: carrier key}."""
+    return {mark: answer.new_key for mark, answer in carriers(functions, marks).items()
+            if isinstance(answer, Carry)}
 
 
 def pair_moves(path: str, dropped_keys, added_keys) -> Moves:

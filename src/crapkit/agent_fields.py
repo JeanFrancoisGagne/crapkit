@@ -182,7 +182,14 @@ _ADDED = (
                "ratchet regressions, new test failures, diff-coverage ceiling, unreadable name, "
                "override or carried mark"),
     AgentField("verify --json", "findings[].mark_ambiguity", ("string", "null"), _AMBIGUITY),
-    *_carried_fields("verify --json", "findings[].", ("carried_from", "mark")),
+    AgentField("verify --json", "findings[].carried_from", ("string", "null"),
+               f"{_CARRIED_DESCRIPTIONS['carried_from']}; ratchet_regression: the key the mark "
+               "was recorded under when a signature edit carried it to the function that rose, "
+               "null for a mark under the function's own key"),
+    *_carried_fields("verify --json", "findings[].", ("mark",)),
+    AgentField("verify --json", "ratchet_changes.rekeyed", ("integer",),
+               "marks that moved, at their value or lower, to the key of the function a "
+               "signature edit carried them to; the OK line adds `, N re-keyed` when N is above 0"),
     AgentField("rescore --gate --json", "gate.carried", ("array",),
                "the changed functions over their ceiling that a carried mark pardons, each also "
                "named by one stderr line; [] when none"),
@@ -1674,7 +1681,7 @@ _FINDING = {
     "description": ("one finding: kind, fails, exit_code, overridable, dirty and rule, then its "
                     "kind's own fields (gate_violation and overridden: path, long_name, start, "
                     "ccn, cov, crap, remedy, key_name, mark_ambiguity; unread_file: path, reason; "
-                    "ratchet_regression: path, long_name, recorded, fresh_crap; new_failure: "
+                    "ratchet_regression: path, long_name, recorded, fresh_crap, carried_from; new_failure: "
                     "test; diff_uncovered: path, line; unreadable_name: path, scope, reason; "
                     "carried: path, long_name, key_name, carried_from, mark)"),
     "properties": {
@@ -1723,7 +1730,8 @@ _VERIFY = {
         "type": ("object", "null"),
         "description": "what this run's tighten did to the marks file; null when it wrote nothing",
         "properties": {"dropped": _count("marks whose function is now at or under its ceiling"),
-                       "tightened": _count("marks that fell")}},
+                       "tightened": _count("marks that fell"),
+                       "rekeyed": schema_of("verify --json", "ratchet_changes.rekeyed")}},
     "lanes_without_results": _added_strings("verify --json", "lanes_without_results"),
     "lanes_without_baseline_results": _added_strings("verify --json",
                                                      "lanes_without_baseline_results"),

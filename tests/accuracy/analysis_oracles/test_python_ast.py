@@ -151,7 +151,7 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # The one whole-key rewrite for marks (mission-4-01) added 2.
 # `ratchet move --function` (mission-4-02) added 16.
 # The gate's pardon through a carried mark (mission-4-03a) added 14.
-SRC_DEFS = 4050
+SRC_DEFS = 4054
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

@@ -273,7 +273,7 @@ def test_the_lanes_page_quotes_the_container_warn_doctor_prints_before_that_refu
 def test_the_quickstarts_verify_ok_lines_carry_the_ratchet_tail_their_steps_write():
     """Step 6 (Python) and step 7 (TypeScript) repay the one seeded mark, so
     the tighten drops it and the OK line asks for the `git add`."""
-    tail = _ratchet_suffix({"dropped": 1, "tightened": 0}, [], MARKS)
+    tail = _ratchet_suffix({"dropped": 1, "tightened": 0, "rekeyed": 0}, [], MARKS)
     ok_lines = [line for block in _blocks(_page("README.md"), "crapkit verify")
                 for line in block if line.startswith("verify OK")]
 
@@ -282,7 +282,7 @@ def test_the_quickstarts_verify_ok_lines_carry_the_ratchet_tail_their_steps_writ
 
 
 def test_the_restamp_transcript_carries_the_tail_the_restamp_prints():
-    tail = _ratchet_suffix({"dropped": 0, "tightened": 0}, [], MARKS)
+    tail = _ratchet_suffix({"dropped": 0, "tightened": 0, "rekeyed": 0}, [], MARKS)
     text = _page("docs/ratchet.md")
     block = text[text.index("warning: crapkit-ratchet.tsv carries no metric stamp"):]
     ok = next(line for line in block.splitlines() if line.startswith("verify OK"))
