@@ -374,10 +374,11 @@ def test_valid_emoji_and_cjk_in_a_configuration_note_reach_brief(scored_repo: Pa
 def _hook_marks(shape: str) -> bytes:
     """A mark on `sprawl( n )` in pkg/café.py, beside a cp1252 mark on another
     function when the shape asks for one."""
-    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+    from crapkit.ratchet import RatchetEntry, ScopeStamp, ScopeStamps, dump_ratchet
 
+    stamp = ScopeStamps("1.24.0", {"pkg": ScopeStamp({"python": 13}, "cc-only")})
     rows = dump_ratchet([RatchetEntry("pkg/café.py", "sprawl( n )", 72.0)], key_version=1,
-                        stamp=metric_version()).encode("utf-8")
+                        stamp=stamp, file_name="crapkit-ratchet.tsv").encode("utf-8")
     return {"none": b"", "utf8": rows, "cp1252-neighbour": rows + b"pkg/caf\xe9.py\tcaf\xe9( )\t9.0\n",
             "utf16-le-crlf": _utf16_crlf(rows),
             "utf16-be": b"\xfe\xff" + rows.decode("utf-8").encode("utf-16-be")}[shape]

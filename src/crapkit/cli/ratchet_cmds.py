@@ -181,8 +181,11 @@ def _ratchet_merge(files: list) -> int:
     # BOM, which read strictly hid its stamp (`ours is [unstamped]`, exit 3),
     # or as UTF-16, which OURS stays when it is written back.
     saved = [RatchetFile.read(Path(f), required=True) for f in files]
-    texts, stamps = _mergeable_texts(saved)
-    sides = [_ratchet_or_die(t, f) for t, f in zip(texts, files)]
+    # Marks before stamps: a side holding a line no reader parses, a cut scope
+    # stamp line among them, refuses naming that line, as seed and prune do.
+    # Stamps first would refuse it as a stamp mismatch whose reseed refuses that line.
+    sides = [_ratchet_or_die(side.text or "", f) for side, f in zip(saved, files)]
+    stamps = _merged_stamp(saved)
     merged = merge_ratchets(*sides)
     saved[1].publish(_merged_text(saved, merged, stamps.stamp))
     print(f"ratchet merge: {len(merged)} mark(s)")
@@ -202,7 +205,7 @@ def _merged_text(saved: list, merged: list, stamp: MetricStamp) -> str:
     if stamp == ours.metric_stamp:
         return ours.kept(merged, read_with=(theirs,))
     return replace(ours, text=None).kept(merged, keys=read_key_version(ours.text or ""),
-                                         new_file_metric=stamp, read_with=(theirs,))
+                                         new_file_stamp=stamp, read_with=(theirs,))
 
 
 def _print_stamp_notes(came_from: tuple, sides: list) -> None:
@@ -220,8 +223,8 @@ def _print_stamp_notes(came_from: tuple, sides: list) -> None:
                   f"--scope {scope}", file=sys.stderr)
 
 
-def _mergeable_texts(saved: list) -> tuple[list[str], StampMerge]:
-    """The three sides' texts once they share one key format, and the stamp their merge records.
+def _merged_stamp(saved: list) -> StampMerge:
+    """The stamp the merge of the three sides records, once they share one key format.
 
     A blank BASE is no common ancestor. Two branches that each created the file
     (two first seeds) meet in an add/add merge, and git hands the driver an empty
@@ -236,7 +239,7 @@ def _mergeable_texts(saved: list) -> tuple[list[str], StampMerge]:
     except ValueError as exc:
         raise ConfigError(str(exc)) from exc
     _merge_key_version(texts[1:] if saved[0].blank else texts)
-    return texts, stamps
+    return stamps
 
 
 def _merge_key_version(texts: list[str]) -> None:
@@ -629,11 +632,11 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None,
     seed signs that run's numbers, so each scope takes the stamp the run
     recorded for it; `scope` keeps the seed to one scope's marks and line.
     prune adds no number, so the recorded stamp stays; a file prune creates
-    holds no mark and takes the running metric, which relabels nothing.
+    holds no mark and takes the running per-scope stamp, which relabels nothing.
     """
     from ..gitio import GitFacts
     from ..keys import require_unambiguous
-    from ..ratchet import metric_version
+    from ..ratchet import running_stamp
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
@@ -643,7 +646,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None,
     fresh = store.read_scored(latest["id"])
     require_unambiguous(fresh, run_id=latest["id"], advice=_identity_advice(work, action))
     saved = RatchetFile.read(root / cfg.ratchet_file)
-    _refuse_newer_marks(saved, work, action)
+    _refuse_newer_marks(saved, work, action, running_stamp(cfg))
     marks = saved.entries
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store,
                                           entries=marks, moves_marks=True)
@@ -651,7 +654,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None,
         entries, note, text = _seed(saved, _SeedRead(work, fresh, key_version), cfg, scope)
     else:
         entries, note = _pruned(root, store, marks, fresh)
-        text = saved.kept(entries, keys=key_version, new_file_metric=metric_version())
+        text = saved.kept(entries, keys=key_version, new_file_stamp=running_stamp(cfg))
     _publish_checked(saved, text, entries, fresh, latest["tool_versions"])
     # A scoped seed refused a run that measured its scope under other rules.
     metric_note = "" if scope else _metric_note(work, action, cfg, created=saved.text is None)
@@ -668,30 +671,28 @@ _BACKWARDS = {"seed": "this seed would restamp them under the older metric, and 
                        "differently, as if its code were gone"}
 
 
-def _refuse_newer_marks(saved, work: _WorkRun, action: str) -> None:
-    """Refuse to rewrite marks a newer crapkit or lizard recorded than the one
-    that measured the run. seed restamped the file under the run's older metric,
+def _refuse_newer_marks(saved, work: _WorkRun, action: str, running: MetricStamp) -> None:
+    """Refuse to rewrite marks a newer crapkit recorded than the one that
+    measured the run. seed restamped the file under the run's older metric,
     and prune judged which marks were gone by the older reader's names. Two
-    ways to get there: this install is older than the marks (upgrade it), or a
-    failed verify pins seed and prune to a run an older release measured (read
-    a newer run)."""
-    from ..ratchet import metric_version, newer_tools, run_stamp
+    ways to get there: this install is older than the marks (`running`, its
+    per-scope stamp, records a lower number: upgrade it), or a failed verify
+    pins seed and prune to a run an older release measured (read a newer run)."""
+    from ..ratchet import run_stamp
 
-    recorded = saved.metric_stamp
-    newer = newer_tools(recorded, metric_version())
-    if newer:
-        raise ConfigError(_newer_than_install(saved, action, newer))
+    if _newer_than(saved, running):
+        raise ConfigError(_newer_than_install(saved, action, running))
     measured = run_stamp(work.run["tool_versions"])
     if _newer_than(saved, measured):
         raise ConfigError(f"ratchet {action} refused: {saved.path.name} was recorded under "
-                          f"[{recorded.render()}] and run {work.run['id']} under the older "
+                          f"[{saved.metric_stamp.render()}] and run {work.run['id']} under the older "
                           f"[{measured.render()}]; "
                           f"{_BACKWARDS[action]}; {_way_off(work.newer)}")
 
 
-def _newer_than(saved, measured) -> bool:
-    """The file records a higher number than `measured` in a scope the run
-    measured, as verify weighs two stamps: a seed would sign that scope backwards."""
+def _newer_than(saved, measured: MetricStamp) -> bool:
+    """The file records a higher number than `measured` in a scope `measured`
+    holds, as verify weighs two stamps: a seed would sign that scope backwards."""
     from ..ratchet import ScopeStamps, stamp_conflict
 
     scopes = frozenset(measured.scopes) if isinstance(measured, ScopeStamps) else frozenset()
@@ -699,13 +700,13 @@ def _newer_than(saved, measured) -> bool:
     return bool(conflict and conflict.newer)
 
 
-def _newer_than_install(saved, action: str, newer: list[str]) -> str:
-    from ..ratchet import metric_version, upgrade_remedy
+def _newer_than_install(saved, action: str, running: MetricStamp) -> str:
+    from ..ratchet import upgrade_remedy
 
     return (f"ratchet {action} refused: {saved.path.name} was recorded under "
             f"[{saved.metric_stamp.render()}] and this crapkit measures "
-            f"[{metric_version().render()}] - "
-            f"{upgrade_remedy(newer)}; {_BACKWARDS[action]}. A team going back to this release "
+            f"[{running.render()}] - "
+            f"{upgrade_remedy(['crapkit'])}; {_BACKWARDS[action]}. A team going back to this release "
             f"on purpose restores the {saved.path.name} it last wrote from git history")
 
 

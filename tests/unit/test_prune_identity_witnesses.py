@@ -7,7 +7,7 @@ import sys
 import pytest
 
 from crapkit.analyze import ANALYSIS_VERSION
-from crapkit.ratchet import metric_version
+from stamps import running_in, stamp_lines
 from crapkit.score import score_rows
 from crapkit.snapshot import InventoryRow
 from crapkit.store import SnapshotStore
@@ -40,7 +40,7 @@ def _write(store, rows):
 def test_seed_refusal_survives_prune_without_rewriting_the_legacy_mark(tmp_path):
     store = SnapshotStore(_repo(tmp_path))
     marks = tmp_path / "crapkit-ratchet.tsv"
-    marks.write_text(f"# {metric_version()}\n"
+    marks.write_text(f"{stamp_lines(running_in(tmp_path))}"
                      "path\tlong_name\tcrap\napp.ts\t(anonymous)#2\t99.0000\n", encoding="utf-8")
     before = marks.read_bytes()
     with closing(store._conn):

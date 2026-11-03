@@ -150,8 +150,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # The flip refusal's note (metric-stamp-07) added 1. The lcov reader
 # (m1-readers-03) added 34. `crapkit score` (m1-readers-11) added 26.
 # The commented toolchain lanes and the reader note (m1-readers-04) added 15.
-# score's JUnit report (m1-readers-12) added 4.
-SRC_DEFS = 4097
+# score's JUnit report (m1-readers-12) added 4. Deleting the single-number
+# stamp builders (metric-stamp-11) took 1 away, and the sync met at 4,096.
+SRC_DEFS = 4096
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

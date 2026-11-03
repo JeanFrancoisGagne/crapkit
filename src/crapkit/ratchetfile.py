@@ -5,8 +5,9 @@ picks a stamp of its own:
 
 - `kept`: the write adds no measured number (move, merge, prune, the hook's
   grant), so both recorded stamps stay.
-- `measured`: the write adds numbers one metric produced (verify's tighten and
-  its grant), and marks another metric recorded refuse it.
+- `measured`: the write adds numbers this crapkit measured (verify's tighten
+  and its grant), so it signs the running per-scope stamp, and a marked scope
+  whose rules moved refuses it.
 - `reseeded`: seed, the only write that replaces a recorded metric stamp, with
   the metric of the stored run it read.
 
@@ -140,35 +141,37 @@ class RatchetFile:
         return stamp_conflict(self.metric_stamp, metric, marked_scopes)
 
     def kept(self, entries: list, *, keys: int | None = None,
-             new_file_metric: MetricStamp = MetricStamp.NONE,
+             new_file_stamp: MetricStamp = MetricStamp.NONE,
              read_with: tuple[RatchetFile, ...] = ()) -> str:
         """The text for a write that adds no measured number: both recorded stamps stay.
 
-        A per-scope file keeps its first line and every scope line as they read.
-        A file that does not exist yet records nothing, so it takes the metric its
-        first numbers came from. `keys` is a key format identity proof just
-        established; without one the recorded format stays. `read_with` are the
-        other files whose marks reach the text: the merge driver's THEIRS.
+        A single-number file writes back the line it read, and a per-scope file
+        its first line and every scope line. A file that does not exist yet
+        records nothing, so it takes `new_file_stamp`: the running per-scope
+        stamp, or the merge driver's merged stamp. `keys` is a key format
+        identity proof just established; without one the recorded format stays.
+        `read_with` are the other files whose marks reach the text: the merge
+        driver's THEIRS.
         """
-        metric = new_file_metric if self.text is None else self.metric_stamp
-        return self._dump(entries, metric, keys, read_with)
+        stamp = new_file_stamp if self.text is None else self.metric_stamp
+        return self._dump(entries, stamp, keys, read_with)
 
-    def measured(self, entries: list, metric: MetricStamp, *, keys: int | None = None) -> str:
-        """The text for a write that adds numbers `metric` produced.
+    def measured(self, entries: list, running: ScopeStamps, marked_scopes: frozenset, *,
+                 keys: int | None = None) -> str:
+        """The text for a write that adds numbers this crapkit measured: it signs `running`.
 
-        Marks another metric recorded refuse it with the refusal verify gives
-        before its lanes run. A file written before stamping gains the stamp,
-        which is the tighten's `restamped`. A per-scope file keeps its stamp:
-        verify weighed each marked scope against the running per-scope stamp
-        before its lanes ran, and a single number cannot restamp one scope.
+        A marked scope whose rules moved refuses it with the refusal verify
+        gives before its lanes run; `marked_scopes` are the scopes the config
+        places the recorded marks in. Any other file takes `running` whole: an
+        unstamped file and a single-number file convert, which is the
+        tighten's `restamped`, and a per-scope file's unmarked scopes take the
+        running lines, since none of their marks vouches for an older rule.
         """
-        metric = self._vouched(metric)
-        if isinstance(self.metric_stamp, ScopeStamps):
-            return self._dump(entries, self.metric_stamp, keys)
-        conflict = self.stamp_conflict(metric)
+        running = self._vouched(running)
+        conflict = self.stamp_conflict(running, marked_scopes)
         if conflict and conflict.refuses:
             raise ConfigError(conflict.refusal(self.path.name))
-        return self._dump(entries, metric, keys)
+        return self._dump(entries, running, keys)
 
     def reseeded(self, entries: list, run_stamps: MetricStamp, *, scope: str | None = None,
                  keys: int | None = None) -> str:

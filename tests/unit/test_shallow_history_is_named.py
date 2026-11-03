@@ -30,10 +30,11 @@ from hand_scored_repo import run
 
 from crapkit import mcp_server
 from crapkit.gitio import is_shallow
-from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 from repo_copy import copy_repo
+from stamps import FIXED, MARKS
 
 ROOT = Path(__file__).resolve().parents[2]
 OLD, MID, NEW = ("2025-06-01T12:00:00+00:00", "2026-09-01T12:00:00+00:00",
@@ -87,7 +88,7 @@ def write(root: Path, rel: str, text: str) -> None:
 def marks(*names: str) -> str:
     paths = {OLD_DEBT: "src/a.py", REPAID: "src/b.py"}
     entries = [RatchetEntry(paths[n], n, 12.0) for n in names]
-    return dump_ratchet(entries, stamp=metric_version(), key_version=KEY_VERSION)
+    return dump_ratchet(entries, stamp=FIXED, key_version=KEY_VERSION, file_name=MARKS)
 
 
 def set_policy(root: Path, policy: str, ratchet_file: str | None = None) -> None:

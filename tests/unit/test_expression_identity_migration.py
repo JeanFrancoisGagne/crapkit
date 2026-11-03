@@ -15,7 +15,8 @@ from crapkit.errors import ConfigError
 from crapkit.lizardtypescript import LizardExtension
 from crapkit.override import record_override
 from crapkit.ratchet import (RatchetEntry, ScopeStamp, ScopeStamps, SingleNumberStamp, check_reader_keys,
-                             dump_ratchet, load_ratchet, metric_version)
+                             dump_ratchet, load_ratchet)
+from stamps import FIXED
 from crapkit.ratchetfile import RatchetFile
 from crapkit.score import score_rows
 from crapkit.snapshot import build_inventory_rows
@@ -179,7 +180,7 @@ def test_direct_override_refuses_old_reader_marks_before_any_side_effect(tmp_pat
                 violations=[GateViolation('app.ts', 'kept( x )', 7, 8, 0, 72,
                                           'decompose', key_name='kept( x )')],
                 reason='reader migration test', key_version=key_version,
-                identity_rows=store.read_scored(run), metric=metric_version())
+                identity_rows=store.read_scored(run), metric=FIXED)
         assert store.read_overrides(run) == []
     assert not (tmp_path / 'alert-fired').exists()
     assert path.read_bytes() == before

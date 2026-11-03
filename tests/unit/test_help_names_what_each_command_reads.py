@@ -171,12 +171,13 @@ REPORT_READS = ("report: the burn-down: open marks are the file's rows, committe
 
 
 def test_a_mark_nobody_staged_pardons_a_staged_function(repo, capsys):  # noqa: F811
-    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+    from crapkit.ratchet import RatchetEntry
+    from stamps import marks_in
 
     add_knotty(repo)
     git(repo, "add", "src/app.ts")
-    (repo / MARKS).write_text(dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 72.0)],
-                                           stamp=metric_version()), encoding="utf-8", newline="\n")
+    (repo / MARKS).write_text(marks_in(repo, [RatchetEntry("src/app.ts", "knotty ( n )", 72.0)]),
+                              encoding="utf-8", newline="\n")
 
     assert main(["hook-precommit", "--repo", str(repo)]) == 0
     assert "1 staged function(s) carry a ratchet mark" in capsys.readouterr().err

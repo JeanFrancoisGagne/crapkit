@@ -480,7 +480,7 @@ After the prune every mark names a function run 3 holds, and the seed writes
 Scores measured under different rules are not comparable. The file's first lines record the
 rules behind the numbers: the lizard version, and for each scope the analysis number of each
 of its languages and its coverage mode (cc-only, no lane, or the reader number of each parser
-its lanes use). A file 0.8.x wrote records one analysis number for every language instead.
+its lanes use). crapkit writes only this form; a file 0.8.x wrote holds one analysis number.
 Before any lane runs, verify places each mark in the scope the config gives its path and
 compares each scope that holds marks with what this crapkit runs. It refuses naming only the
 scopes whose rules moved, so a raise in one language's analysis or in one coverage reader
@@ -503,9 +503,9 @@ that number for each of its languages, and its mode is inferred from its lanes n
 coveragepy or istanbul lane counts as measured by that reader, the only two 0.8.x read; a
 scope whose lanes all use another parser counts as cc-only, so it reads as the move to
 measured; a scope with no lane counts as cc-only. verify then warns once, on stderr, naming
-the scopes whose mode it inferred. There is nothing to do: the next seed records each scope's
-mode. A file with one number and no marks at all compares as one value, as the tighten that
-restamps it does. A file with no stamp at all (written before stamping) warns, then applies
+the scopes whose mode it inferred. There is nothing to do: the next seed or passing verify
+records each scope's mode. A file with one number and no marks at all compares as one value,
+and the first passing verify converts it too. A file with no stamp at all warns, then applies
 the function-identity checks below; anonymous JavaScript/TypeScript marks need reader proof. A cc-only scope that gains a lane takes the steps in [Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one).
 
 A repo with an `api` scope in Python and a `web` scope in TypeScript, after a release raises
@@ -531,8 +531,8 @@ crapkit prints that line from 0.8.1 on; the example is a 0.8.1 reader meeting ma
 later release stamped 14. A 0.8.0 reader meeting 0.8.1's marks prints the older line, which
 asks for a seed; upgrade that reader instead.
 
-The versions compare as numbers, so lizard 1.9.0 is older than 1.24.0. Only `crapkit-analysis`
-marks a newer release. crapkit pins lizard exactly, so marks a newer lizard stamped, which a
+The versions compare as numbers, so lizard 1.9.0 is older than 1.24.0. Only an analysis or a
+reader number marks a newer release. crapkit pins lizard exactly, so marks a newer lizard stamped, which a
 release that let lizard float (0.8.1 and earlier) writes, ask for `coverage`, `ratchet prune`
 and `ratchet seed` like older marks. Seed and prune refuse marks a newer crapkit stamped: a seed
 would restamp them backwards, and a prune would drop every mark whose function the older reader
@@ -546,14 +546,14 @@ verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files) ratchet: resta
 EXIT=0
 ```
 
-Every write to the marks file sets the stamp by where its numbers came from:
+Every write to the marks file sets the stamp by where its numbers came from, and none builds a new single-number line. A write of numbers this crapkit measured signs one stamp per scope, so the first passing verify under 0.9.0 converts a 0.8.1 marks file with no reseed:
 
-| Write | Metric stamp it leaves |
+| Write | Stamp it leaves |
 |---|---|
-| `ratchet seed` | The metric the run it read was measured under. The only write that replaces a recorded metric stamp. |
-| `ratchet prune`, `ratchet move`, the merge driver | The recorded stamp. None of them adds a number. A marks file prune creates holds no mark and takes the running metric. |
-| `verify`'s tighten, `verify --override` | The running metric. Marks another metric recorded are refused before the lanes run; a file written before stamping gains its stamp. A file stamped per scope keeps its stamp lines. |
-| The pre-commit hook's override | The recorded stamp. A marks file it creates takes the running metric. |
+| `ratchet seed` | The stamps the run it read recorded, or with `--scope NAME` that scope's alone. The only write that signs a run's stamps. |
+| `verify`'s tighten, `verify --override` | The running per-scope stamp. A file with no stamp, and a single-number file whose number this crapkit runs, convert: verify prints `restamped` when no mark moved. A marked scope whose rules moved, or a single-number file with an older number, refuses before the lanes run, and an override refuses before its alert and audit row. The tighten creates no file; an override's grant creates one under the running per-scope stamp. |
+| The pre-commit hook's override, `ratchet prune` | Every recorded stamp line, verbatim: neither adds a measured number, so a single-number file keeps its one line and a file with no stamp stays without one. A marks file either one creates takes the running per-scope stamp; prune's holds no mark. |
+| `ratchet move`, the merge driver | `move` keeps every recorded line, and refuses a marks file that is not there. The merge driver merges the three sides' stamps scope by scope, as [the git merge driver](#the-git-merge-driver) says. |
 
 Seed and prune run their identity checks first. An upgrade that changes which functions a
 reader finds needs a reviewed mapping first; fresh coverage alone cannot supply it. See
@@ -570,11 +570,11 @@ $ crapkit ratchet seed
 crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a); run 9 was measured under [crapkit-analysis=9 lizard=1.24.0], not this crapkit's [crapkit-analysis=10 lizard=1.24.0], so verify refuses these marks until a fresh `crapkit coverage` and another seed
 ```
 
-A run stored before crapkit recorded its metric vouches for none, and seed refuses it:
+A run that recorded no metric per scope, as every run 0.8.x stored, vouches for none, and seed refuses it:
 
 ```
 $ crapkit ratchet seed
-crapkit: ratchet seed: run 3 recorded no metric (analysis version and lizard), so the marks it measured cannot be stamped; run `crapkit coverage` and seed again
+crapkit: ratchet seed: run 3 recorded no metric per scope (its analysis, lizard and coverage rules), so the marks it measured cannot be stamped; run `crapkit coverage` and seed again
 EXIT=3
 ```
 
@@ -619,9 +619,9 @@ the identity review below first.
 ### Analysis version 8: a re-seed that only restamps
 
 This historical transition changed analysis version 7 to 8. The verify refusal quoted
-above belongs to that upgrade; the current reader uses version 13. Follow
-[Upgrading](upgrading.md) for current saved-state checks. In the older transition,
-reseeding from a fresh coverage run updated the stamp as follows:
+above belongs to that upgrade; the current reader uses version 13, and a 0.9.0 crapkit
+reads the file below as a single-number file. Follow [Upgrading](upgrading.md) for current
+saved-state checks. In the older transition, reseeding from a fresh coverage run updated the stamp as follows:
 
 ```
 $ crapkit ratchet seed

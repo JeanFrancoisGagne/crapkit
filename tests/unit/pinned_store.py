@@ -21,14 +21,14 @@ from cli_inproc_repo import git, seed_artifacts
 from crapkit.analyze import ANALYSIS_VERSION
 from crapkit.cli import main
 from crapkit.config import load_config_text
-from crapkit.ratchet import running_stamp, stamp_text
+from crapkit.ratchet import running_stamp
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
 MARKS = "crapkit-ratchet.tsv"
 MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version}
 # The stamp an older crapkit signed its marks with; this one refuses to compare them.
-STALE = stamp_text(7, lizard.version)
+STALE = f"crapkit-analysis=7 lizard={lizard.version}"
 # The tool versions of a run that older crapkit measured: seed signs it with STALE.
 OLDER = {"analysis_version": "7", "lizard": lizard.version}
 

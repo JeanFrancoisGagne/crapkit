@@ -172,6 +172,24 @@ same lines as before, and a comment edit inside a marked function stays silent.
 <!-- /0.9.0:mission-3 -->
 
 <!-- 0.9.0:metric-stamp -->
+### What each upgrade source does to the marks file
+
+0.9.0 writes one stamp per scope and reads the single-number line older releases wrote.
+
+- **From 0.8.1** (analysis 13): nothing to reseed. The first `crapkit verify` warns once,
+  naming the scopes whose coverage mode it inferred, and the first passing verify or seed
+  converts the file. A scope whose lanes use only a parser 0.8.x never read (lcov,
+  Cobertura, JaCoCo or a Go coverprofile, once crapkit reads them) reads as the move from
+  cc-only to measured: follow
+  [Turning a cc-only scope into a measured one](#turning-a-cc-only-scope-into-a-measured-one).
+- **From 0.8.0 or older** (analysis 11 or below): the first `crapkit verify` names every
+  scope that holds marks, once. Run `crapkit coverage`, `crapkit ratchet prune`, then
+  `crapkit ratchet seed --scope NAME` for each scope it names, or one plain
+  `crapkit ratchet seed`. A mark whose CRAP rose keeps its value: an analysis move keeps
+  marks only falling, and each rise goes through `crapkit verify --override`, as
+  [Analysis version 13](#analysis-version-13) says. Only a scope that also moves from
+  cc-only to measured takes the run's values on its scoped seed.
+
 ### Marks a newer lizard stamped take one reseed
 
 crapkit 0.8.1 and earlier accept any lizard below 1.25, and 0.9.0 pins `lizard==1.24.0`.
@@ -279,6 +297,19 @@ For example, a function at ccn 8 carries the cc-only mark 8.0000. At 0% coverage
 rise: `scope py: added 0, tightened 0, raised 1 (first py/calc.py check( a ) 8.0000 -> 72.0000)`.
 Had the same commit also renamed the scope, the scope would read as `unstamped`: the seed
 keeps the mark at 8, and `crapkit verify` names the function at exit 7.
+
+### The first passing verify converts the marks file
+
+From 0.8.1, you need no reseed. The first `crapkit verify` under 0.9.0 that passes
+rewrites the marks file with one stamp line per scope, even when no mark moves; then its OK
+line ends `ratchet: restamped -> git add crapkit-ratchet.tsv`. The conversion needs
+the file's one analysis number to be the one 0.9.0 runs; an older number refuses before any
+lane runs, as above. `verify --override` converts the file the same way when it grants.
+
+After that verify, crapkit 0.8.x refuses the file, as it refuses a reseeded one. Upgrade
+every checkout and CI job that runs crapkit first, or pass `--no-tighten` to every 0.9.0
+verify until they are: `verify --no-tighten` leaves the marks file byte-identical, so 0.8.x
+still reads it.
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->
@@ -1898,7 +1929,7 @@ today:
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 1 scope(s): src (python analysis 7 to 8) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope src`
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 1 scope(s): calc (python analysis 7 to 8) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope calc`
 ```
 
 That transition changed cognitive complexity, not `ccn` or the CRAP formula. Later

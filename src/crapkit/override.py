@@ -15,7 +15,7 @@ from pathlib import Path
 from .errors import ConfigError, ToolError
 from .keys import MarkIndex, stated_key
 from .plaintext import printed_text
-from .ratchet import MetricStamp, RatchetEntry
+from .ratchet import RatchetEntry, ScopeStamps
 from .ratchetfile import RatchetFile
 from .repotext import child_input, os_text
 from .store import SnapshotStore
@@ -47,15 +47,17 @@ def record_override(
     key_version: int | None = None,
     identity_rows=None,
     ratchet_input: RatchetFile | None = None,
-    metric: MetricStamp,
+    metric: ScopeStamps,
+    marked_scopes: frozenset = frozenset(),
 ) -> None:
-    """`metric` is the metric that scored the violations, and every caller
-    names it. A measured grant (verify's, which may raise a mark) is refused
-    by marks another metric recorded, the refusal verify itself gives, and by
-    `MetricStamp.NONE`. The hook's grant (`raise_marks=False`) synthesizes its
-    numbers from ccn alone and compares no mark, so it keeps the recorded
-    stamps: a stale file stays stale and verify keeps refusing it. `metric`
-    then stamps only a file the grant creates.
+    """`metric` is the running per-scope stamp, and every caller names it.
+    A measured grant (verify's, which may raise a mark) signs it, and is
+    refused by a scope in `marked_scopes` whose rules moved, the refusal verify
+    itself gives, and by `MetricStamp.NONE`. The hook's grant
+    (`raise_marks=False`) synthesizes its numbers from ccn alone and compares
+    no mark, so it keeps the recorded stamps and needs no `marked_scopes`: a
+    stale file stays stale and verify keeps refusing it. `metric` then stamps
+    only a file the grant creates.
 
     `reason` comes from argv or CRAPKIT_OVERRIDE_REASON, which can hold a byte
     that is not UTF-8; the alert and the audit both carry it as U+FFFD, where
@@ -63,7 +65,7 @@ def record_override(
     reason = os_text(reason)
     saved = ratchet_input or RatchetFile.read(root / ratchet_file)
     text = _checked_grant_text(saved, violations, raise_marks=raise_marks, keys=key_version,
-                               metric=metric)
+                               metric=metric, marked_scopes=marked_scopes)
     _validate_override_keys(text, identity_rows, key_version)
     _require_auditable_override(reason, alert_command)
     _alert_or_refuse(alert_command, root, violations, reason)
@@ -99,7 +101,8 @@ def _validate_override_keys(text: str, rows, key_version: int | None) -> None:
 
 
 def _checked_grant_text(saved: RatchetFile, violations: list[GateViolation], *,
-                        raise_marks: bool, keys: int | None, metric: MetricStamp) -> str:
+                        raise_marks: bool, keys: int | None, metric: ScopeStamps,
+                        marked_scopes: frozenset) -> str:
     """The marks file after the grant, refused before any side effect when a
     reader cannot prove its keys.
 
@@ -110,7 +113,8 @@ def _checked_grant_text(saved: RatchetFile, violations: list[GateViolation], *,
     """
     _check_reader(saved.text or "")
     granted = _granted_marks(saved.entries, violations, raise_marks=raise_marks)
-    text = _grant_text(saved, granted, raise_marks=raise_marks, keys=keys, metric=metric)
+    text = _grant_text(saved, granted, raise_marks=raise_marks, keys=keys, metric=metric,
+                       marked_scopes=marked_scopes)
     _check_reader(text)
     return text
 
@@ -191,15 +195,16 @@ def _granted_marks(prior: list[RatchetEntry], violations: list[GateViolation], *
 
 
 def _grant_text(saved: RatchetFile, granted: list[RatchetEntry], *, raise_marks: bool,
-                keys: int | None, metric: MetricStamp) -> str:
+                keys: int | None, metric: ScopeStamps, marked_scopes: frozenset) -> str:
     """The marks file after the grant, stamped by the rule its numbers fall under.
 
-    Every grant that may raise a mark goes through `measured`, which refuses
-    `MetricStamp.NONE` rather than keeping whatever stamp was there.
+    Every grant that may raise a mark goes through `measured`, which signs the
+    running per-scope stamp and refuses `MetricStamp.NONE` rather than keeping
+    whatever stamp was there.
     """
     if raise_marks:
-        return saved.measured(granted, metric, keys=keys)
-    return saved.kept(granted, keys=keys, new_file_metric=metric)
+        return saved.measured(granted, metric, marked_scopes, keys=keys)
+    return saved.kept(granted, keys=keys, new_file_stamp=metric)
 
 
 def _override_mark(prior: RatchetEntry | None, crap: float, *, raise_marks: bool) -> float:

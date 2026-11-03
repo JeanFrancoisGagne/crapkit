@@ -5,7 +5,8 @@ import pytest
 
 from crapkit.errors import ConfigError, ToolError
 from crapkit.override import record_override
-from crapkit.ratchet import load_ratchet, metric_version
+from crapkit.ratchet import load_ratchet
+from stamps import FIXED, single_number, stamp_lines
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation
 
@@ -23,7 +24,7 @@ def test_override_writes_all_three_records(tmp_path):
     alert_cmd, log = ok_alert(tmp_path)
     record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                     alert_command=alert_cmd, violations=[VIOLATION], reason="2am hotfix",
-                    metric=metric_version())
+                    metric=FIXED)
     assert "OVERRIDE (2am hotfix)" in log.read_text(encoding="utf-8")
     entries = load_ratchet((tmp_path / "ratchet.tsv").read_text(encoding="utf-8"))
     assert entries[0].crap == 90.0
@@ -37,7 +38,7 @@ def test_failed_alert_grants_nothing(tmp_path):
     with pytest.raises(ToolError, match="no alert, no override"):
         record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                         alert_command=bad_alert, violations=[VIOLATION], reason="x",
-                        metric=metric_version())
+                        metric=FIXED)
     assert not (tmp_path / "ratchet.tsv").is_file()
     assert store.read_overrides(run_id) == []
 
@@ -47,7 +48,7 @@ def test_missing_alert_command_refuses(tmp_path):
     with pytest.raises(ConfigError, match="alert_command"):
         record_override(store=store, run_id=1, root=tmp_path, ratchet_file="r.tsv",
                         alert_command="", violations=[VIOLATION], reason="x",
-                        metric=metric_version())
+                        metric=FIXED)
 
 
 def test_empty_reason_refuses(tmp_path):
@@ -55,7 +56,7 @@ def test_empty_reason_refuses(tmp_path):
     with pytest.raises(ConfigError, match="reason"):
         record_override(store=store, run_id=1, root=tmp_path, ratchet_file="r.tsv",
                         alert_command="echo", violations=[VIOLATION], reason="  ",
-                        metric=metric_version())
+                        metric=FIXED)
 
 
 def test_audit_store_failure_leaves_no_ratchet_grant(tmp_path, monkeypatch):
@@ -66,7 +67,7 @@ def test_audit_store_failure_leaves_no_ratchet_grant(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                         alert_command=alert_cmd, violations=[VIOLATION], reason="x",
-                        metric=metric_version())
+                        metric=FIXED)
     assert not (tmp_path / "ratchet.tsv").is_file(), "the debt grant is the LAST step; a failed audit grants nothing"
 
 
@@ -81,15 +82,15 @@ def test_hook_override_never_raises_an_existing_mark(tmp_path):
     record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                     alert_command=alert_cmd, violations=[VIOLATION], reason="prod down",
                     raise_marks=False,
-                    metric=metric_version())
+                    metric=FIXED)
     entries = {(e.path, e.long_name): e for e in
                load_ratchet((tmp_path / "ratchet.tsv").read_text(encoding="utf-8"))}
     assert entries[("src/a.ts", "f( )")].crap == 12.0, "the prior tighter mark must survive"
 
 
-KEPT_MARKS = f"# {metric_version()}\n# crapkit-keys=1\npath\tlong_name\tcrap\nsrc/a.ts\tf( )\t12.0000\n"
+KEPT_MARKS = f"{stamp_lines(FIXED, 1, 'ratchet.tsv')}path\tlong_name\tcrap\nsrc/a.ts\tf( )\t12.0000\n"
 # A file a release before 0.8.1 wrote, then edited by hand: no key-format line, the mark typed as 12.
-HAND_KEPT_MARKS = f"# {metric_version()}\npath\tlong_name\tcrap\nsrc/a.ts\tf( )\t12\n"
+HAND_KEPT_MARKS = f"# {single_number(11)}\npath\tlong_name\tcrap\nsrc/a.ts\tf( )\t12\n"
 
 
 @pytest.mark.parametrize("marks", [pytest.param(KEPT_MARKS, id="current"),
@@ -112,7 +113,7 @@ def test_a_hook_grant_that_only_keeps_marks_leaves_the_file_byte_identical(tmp_p
 
     record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                     alert_command=alert_cmd, violations=[VIOLATION], reason="prod down",
-                    raise_marks=False, key_version=1, metric=metric_version())
+                    raise_marks=False, key_version=1, metric=FIXED)
 
     assert (tmp_path / "ratchet.tsv").read_bytes() == before
     assert store.read_overrides(run_id) == [("src/a.ts", "f( )", 90.0, "prod down")]
@@ -133,7 +134,7 @@ def test_an_override_reads_a_marks_file_that_starts_with_a_bom(tmp_path):
     record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                     alert_command=alert_cmd, violations=[VIOLATION], reason="prod down",
                     raise_marks=False,
-                    metric=metric_version())
+                    metric=FIXED)
 
     entries = {(e.path, e.long_name): e for e in
                load_ratchet((tmp_path / "ratchet.tsv").read_bytes().decode("utf-8-sig"))}
@@ -151,7 +152,7 @@ def test_an_override_on_a_utf16_marks_file_writes_it_back_as_utf16(tmp_path):
 
     record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                     alert_command=alert_cmd, violations=[VIOLATION], reason="prod down",
-                    metric=metric_version())
+                    metric=FIXED)
 
     written = (tmp_path / "ratchet.tsv").read_bytes()
     assert written.startswith(b"\xff\xfe")
@@ -172,7 +173,7 @@ def test_an_override_on_a_cp1252_marks_file_refuses_before_its_alert(tmp_path):
     with pytest.raises(ConfigError) as refused:
         record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                         alert_command=alert_cmd, violations=[VIOLATION], reason="prod down",
-                        metric=metric_version())
+                        metric=FIXED)
 
     assert str(refused.value).startswith("ratchet.tsv holds byte e9 at offset 12, which reads as "
                                          "U+FFFD")
@@ -189,7 +190,7 @@ def test_hook_override_still_records_a_mark_for_a_new_function(tmp_path):
     record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                     alert_command=alert_cmd, violations=[VIOLATION], reason="prod down",
                     raise_marks=False,
-                    metric=metric_version())
+                    metric=FIXED)
     entries = load_ratchet((tmp_path / "ratchet.tsv").read_text(encoding="utf-8"))
     assert entries[0].crap == 90.0, "a function with no prior mark gets the synthesized one"
 
@@ -217,7 +218,7 @@ def test_a_non_ascii_reason_and_name_reach_the_alert_as_utf8_and_the_audit_as_wr
 
     record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                     alert_command=command, violations=[violation], reason="déploiement 世",
-                    metric=metric_version())
+                    metric=FIXED)
 
     sent = log.read_bytes().decode("utf-8")
     assert "OVERRIDE (déploiement 世)" in sent and "src/café.ts:3 gräde_世( )" in sent
@@ -232,7 +233,7 @@ def test_an_alert_that_fails_writing_bytes_that_are_not_utf8_grants_nothing(tmp_
     with pytest.raises(ToolError, match="override alert command failed \\(exit 3\\)"):
         record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                         alert_command=command, violations=[VIOLATION], reason="hotfix",
-                        metric=metric_version())
+                        metric=FIXED)
 
     assert store.read_overrides(run_id) == []
     assert not (tmp_path / "ratchet.tsv").exists()
@@ -258,7 +259,7 @@ def test_the_refusal_names_an_alert_command_line_to_paste(tmp_path):
     with pytest.raises(ConfigError) as refused:
         record_override(store=SnapshotStore(tmp_path / "db.sqlite"), run_id=1, root=tmp_path,
                         ratchet_file="r.tsv", alert_command="", violations=[VIOLATION], reason="x",
-                        metric=metric_version())
+                        metric=FIXED)
 
     assert str(refused.value).endswith(f"set [crapkit] alert_command in crapkit.toml, for example {alert_example()}")
 
@@ -270,7 +271,7 @@ def test_the_example_alert_command_appends_the_override_line_on_this_platform(tm
 
     record_override(store=store, run_id=run_id, root=tmp_path, ratchet_file="ratchet.tsv",
                     alert_command=_example_value(), violations=[VIOLATION], reason="hotfix 412",
-                    metric=metric_version())
+                    metric=FIXED)
 
     logged = (tmp_path / ".crapkit" / "alerts.log").read_text(encoding="utf-8")
     assert logged.splitlines() == ["crapkit OVERRIDE (hotfix 412): src/a.ts:3 f( ) crap=90.0"]
