@@ -13,6 +13,11 @@ A passing verify's tighten reads the same pairing from the mark's side
 ("How `verify` uses the ratchet"): a carried mark moves to its function's key,
 and the ratchet check reads the function that carries it.
 
+prune and seed read it too ("Pruning, and renames", "Seeding"): prune moves a
+carried mark to its function's key at its value, keeps a mark the carry cannot
+place, and drops one no unmarked function of its name could claim; seed counts
+a carried function as marked and marks no function whose carry is ambiguous.
+
 This module imports no crapkit module: the packet's tests hold the gate, the
 tighten's counts and the ratchet check to it.
 """
@@ -130,6 +135,62 @@ def rises(keys: list[str], craps: dict[str, float], marks: dict[str, float]) -> 
         if key is not None and round(craps[key], 4) > value:
             found.append((key, None if key == mark else mark))
     return found
+
+
+def claimants(keys: list[str], marks: dict[str, float], mark: str) -> list[str]:
+    """The unmarked functions of MARK's bare name, when MARK left the file and has one."""
+    if mark in keys or not bare(mark):
+        return []
+    return [key for key in keys if key not in marks and bare(key) == bare(mark)]
+
+
+def pruned(keys: list[str], marks: dict[str, float]) -> tuple[dict[str, float], int, int, list[str]]:
+    """prune over one file: (marks after, dropped, re-keyed, the marks kept
+    because no single function carries them)."""
+    after: dict[str, float] = {}
+    dropped = rekeyed = 0
+    kept = []
+    for mark, value in marks.items():
+        moved = carrier(keys, marks, mark)
+        if mark in keys or moved is None and claimants(keys, marks, mark):
+            after[mark] = value
+            kept += [] if mark in keys else [mark]
+        elif moved is not None:
+            after[moved] = value
+            rekeyed += 1
+        else:
+            dropped += 1
+    return after, dropped, rekeyed, sorted(kept)
+
+
+def judging_key(keys: list[str], marks: dict[str, float], asked: str) -> str | None:
+    """The key of the mark that judges ASKED, "ambiguous" when the carry
+    cannot say, None for none: `judging_mark`'s rule, naming the key."""
+    if asked in marks:
+        return asked
+    gone = [key for key in marks if key not in keys and bare(key) == bare(asked)]
+    return next((mark for mark in gone if carrier(keys, marks, mark) == asked),
+                "ambiguous" if gone and bare(asked) else None)
+
+
+def seeded(keys: list[str], craps: dict[str, float], marks: dict[str, float],
+           ceiling: int) -> tuple[dict[str, float], int, int, int]:
+    """seed over one file: (marks after, added, tightened, re-keyed). A
+    function over its ceiling is judged by its own mark or the one it
+    carries; under that mark the mark falls to its CRAP under the function's
+    key; with none it gains a mark; an ambiguous one gets nothing."""
+    after = dict(marks)
+    added = tightened = rekeyed = 0
+    for key in keys:
+        crap, judge = round(craps[key], 4), judging_key(keys, marks, key)
+        if crap <= ceiling or judge == "ambiguous" or judge is not None and crap >= marks[judge]:
+            continue
+        added += judge is None
+        tightened += judge is not None
+        rekeyed += judge not in (None, key)
+        after.pop(judge, None)
+        after[key] = crap
+    return after, added, tightened, rekeyed
 
 
 def exact_key_answer(marks: dict[str, float], asked: str, crap: float) -> str:

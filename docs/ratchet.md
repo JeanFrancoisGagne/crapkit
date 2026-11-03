@@ -378,6 +378,22 @@ another crapkit version measured prints no such line, because verify refuses the
 signed; its own line names the run that restamps the marks
 ([the metric stamp](#the-metric-stamp)).
 
+**A carried function counts as marked.** After a signature edit
+([A signature change keeps its mark](#a-signature-change-keeps-its-mark)), seed reads the mark
+the function carries as its own and adds no second one: the probe prints `added 0, tightened 0`.
+At or over the mark nothing moves. Under it, seed moves the mark to the function's key at the
+lower value, and the line adds `, re-keyed 1` only then:
+
+```
+$ crapkit ratchet seed
+crapkit-ratchet.tsv: added 0, tightened 1, re-keyed 1 - 1 mark(s) vs run 2 (e34265226a3)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
+```
+
+A function whose carry keys refused gets no mark, outside a coverage flip: a new one at today's
+CRAP would let seed and prune swap signed debt for a mark that rose. seed prints the kept-marks
+line [prune prints](#pruning-and-renames); `ratchet move --function`, then seed, ends it.
+
 **Seed once, early.** Skipping it means a legacy repo's existing debt carries no marks, so
 the ratchet check has nothing to compare and coverage rot on untouched code goes unnoticed.
 `verify` still gates the diff, but the standing debt is unprotected. Since 0.5.1 every
@@ -416,7 +432,7 @@ crapkit-ratchet.tsv: scope web: added 0, tightened 1 - 6 mark(s) vs run 9 (4f1c2
 ```
 
 A mark rises only on one move: the scope's coverage flips from `cc-only` or `no-lane` to a
-coverage reader. Its marks then take the run's values, and the line counts the rises:
+coverage reader. Its marks, refused twins' too, then take the run's values, and the line counts the rises:
 
 ```
 $ crapkit ratchet seed --scope web
@@ -720,7 +736,7 @@ were measured under, not which of them a given file exercised.
 
 ## Pruning, and renames
 
-`prune` drops marks whose function is absent from the latest run, and nothing else drops
+`prune` drops marks whose function left the latest run, and nothing else drops
 them. Absence alone is not proof the code left: an exclude glob or a lane outage removes rows
 too, and the per-verify update keeps stale entries rather than erasing an audited override's
 only diff-visible record. Running `prune` is you confirming.
@@ -730,12 +746,39 @@ $ crapkit ratchet prune
 crapkit-ratchet.tsv: pruned 0, followed 2 rename(s) (calc/grade.py -> calc/grading.py) - 2 mark(s) vs run 11 (7d09097ea8a)
 ```
 
+**A signature edit re-keys instead of dropping.** A mark whose key no function holds is not
+code that left when a signature edit carried it
+([A signature change keeps its mark](#a-signature-change-keeps-its-mark)): prune moves it to the
+function's key at its recorded value. After the probe's edit and `crapkit coverage`:
+
+```
+$ crapkit ratchet prune
+crapkit-ratchet.tsv: pruned 0, followed 0 rename(s), re-keyed 1 - 1 mark(s) vs run 2 (e34265226a3)
+```
+
+The file then holds `calc/grade.py classify( a , b , c = None ) 7.0000`; 0.8.1 printed
+`pruned 1` here and dropped the signed debt. `, re-keyed N` prints only when N is above 0.
+
+**A mark no single function carries stays.** Twins, or a name that several marks left or
+several unmarked functions took, leave the carry unable to say which function a mark belongs
+to. prune keeps those marks and prints one line per file, and seed prints the same line:
+
+```
+crapkit-ratchet.tsv: kept 2 mark(s) in calc/grade.py that no single function carries: classify( a , b ), classify( a , c ); run crapkit ratchet move --function calc/grade.py OLD NEW
+```
+
+Run that command with a kept mark as OLD and the function it belongs to as NEW
+([Moving marks by hand](#moving-marks-by-hand)); the next prune prints no such line. A mark
+with no unmarked function of its bare name left in its file is code that left, and prune
+drops it.
+
 **A rename follows instead of dropping.** Before pruning, crapkit asks git for renames since
 the store's first run and re-paths any mark that meets all three conditions:
 
 1. The function is gone from its recorded path.
 2. git calls that path renamed.
-3. The same key name exists at the destination.
+3. At the destination its key name names a function, or a function of its bare name could
+   carry it: a carry prune then re-keys, or an ambiguous one prune keeps.
 
 A *copy* fails condition 1 (the source survives), so a copy never moves a mark. Before and
 after `git mv calc/grade.py calc/grading.py`:
@@ -746,7 +789,11 @@ calc/grading.py	audit( rows , strict , cap , floor , verbose )	132.0000
 ```
 
 The count is marks, and the parenthesis names the renames they followed, `old -> new`, up
-to three and then `and N more`.
+to three and then `and N more`. A rename plus a signature edit follows, then re-keys, in one
+run: `pruned 0, followed 1 rename(s), re-keyed 1 (calc/grade.py -> calc/grading.py)`. A heavy
+edit that git no longer calls a rename leaves the mark at its old path, and prune drops it.
+A marks file with no `# crapkit-keys=1` line proves no carry, so prune follows and keeps only
+the marks whose own key a function holds, as 0.8.1 did.
 
 ### When the first run's commit is gone
 

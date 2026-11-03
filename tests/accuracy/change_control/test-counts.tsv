@@ -6,7 +6,7 @@ coverage_oracles	100
 definitions	43
 history_oracles	81
 kit	344
-mark_carry	22
+mark_carry	29
 runtime_guards	19
 score_model	141
 suite_strength	512
