@@ -643,7 +643,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None,
     fresh = store.read_scored(latest["id"])
     require_unambiguous(fresh, run_id=latest["id"], advice=_identity_advice(work, action))
     saved = RatchetFile.read(root / cfg.ratchet_file)
-    _refuse_newer_marks(saved, work, action)
+    _refuse_newer_marks(saved, work, action, running_stamp(cfg))
     marks = saved.entries
     key_version = _check_ratchet_identity(saved.text or "", root, cfg.ratchet_file, fresh, store,
                                           entries=marks, moves_marks=True)
@@ -668,30 +668,28 @@ _BACKWARDS = {"seed": "this seed would restamp them under the older metric, and 
                        "differently, as if its code were gone"}
 
 
-def _refuse_newer_marks(saved, work: _WorkRun, action: str) -> None:
-    """Refuse to rewrite marks a newer crapkit or lizard recorded than the one
-    that measured the run. seed restamped the file under the run's older metric,
+def _refuse_newer_marks(saved, work: _WorkRun, action: str, running: MetricStamp) -> None:
+    """Refuse to rewrite marks a newer crapkit recorded than the one that
+    measured the run. seed restamped the file under the run's older metric,
     and prune judged which marks were gone by the older reader's names. Two
-    ways to get there: this install is older than the marks (upgrade it), or a
-    failed verify pins seed and prune to a run an older release measured (read
-    a newer run)."""
-    from ..ratchet import metric_version, newer_tools, run_stamp
+    ways to get there: this install is older than the marks (`running`, its
+    per-scope stamp, records a lower number: upgrade it), or a failed verify
+    pins seed and prune to a run an older release measured (read a newer run)."""
+    from ..ratchet import run_stamp
 
-    recorded = saved.metric_stamp
-    newer = newer_tools(recorded, metric_version())
-    if newer:
-        raise ConfigError(_newer_than_install(saved, action, newer))
+    if _newer_than(saved, running):
+        raise ConfigError(_newer_than_install(saved, action, running))
     measured = run_stamp(work.run["tool_versions"])
     if _newer_than(saved, measured):
         raise ConfigError(f"ratchet {action} refused: {saved.path.name} was recorded under "
-                          f"[{recorded.render()}] and run {work.run['id']} under the older "
+                          f"[{saved.metric_stamp.render()}] and run {work.run['id']} under the older "
                           f"[{measured.render()}]; "
                           f"{_BACKWARDS[action]}; {_way_off(work.newer)}")
 
 
-def _newer_than(saved, measured) -> bool:
-    """The file records a higher number than `measured` in a scope the run
-    measured, as verify weighs two stamps: a seed would sign that scope backwards."""
+def _newer_than(saved, measured: MetricStamp) -> bool:
+    """The file records a higher number than `measured` in a scope `measured`
+    holds, as verify weighs two stamps: a seed would sign that scope backwards."""
     from ..ratchet import ScopeStamps, stamp_conflict
 
     scopes = frozenset(measured.scopes) if isinstance(measured, ScopeStamps) else frozenset()
@@ -699,13 +697,13 @@ def _newer_than(saved, measured) -> bool:
     return bool(conflict and conflict.newer)
 
 
-def _newer_than_install(saved, action: str, newer: list[str]) -> str:
-    from ..ratchet import metric_version, upgrade_remedy
+def _newer_than_install(saved, action: str, running: MetricStamp) -> str:
+    from ..ratchet import upgrade_remedy
 
     return (f"ratchet {action} refused: {saved.path.name} was recorded under "
             f"[{saved.metric_stamp.render()}] and this crapkit measures "
-            f"[{metric_version().render()}] - "
-            f"{upgrade_remedy(newer)}; {_BACKWARDS[action]}. A team going back to this release "
+            f"[{running.render()}] - "
+            f"{upgrade_remedy(['crapkit'])}; {_BACKWARDS[action]}. A team going back to this release "
             f"on purpose restores the {saved.path.name} it last wrote from git history")
 
 

@@ -12,16 +12,18 @@ file and verify's stamp refusal went quiet. The rules now live in RatchetFile:
   file it creates takes the running per-scope stamp;
 - seed is the one write that takes the stamps of the run it read.
 """
+import argparse
+import re
 import sys
 
-from stamps import LIZARD, scoped
+from stamps import LIZARD, scoped, single_number
 
 import pytest
 
+from crapkit.cli.ratchet_cmds import cmd_ratchet
 from crapkit.errors import ConfigError
 from crapkit.override import record_override
-from crapkit.ratchet import (MetricStamp, RatchetEntry, SingleNumberStamp, dump_ratchet, load_ratchet,
-                             read_key_version, read_stamp)
+from crapkit.ratchet import MetricStamp, RatchetEntry, dump_ratchet, load_ratchet, read_key_version, read_stamp
 from crapkit.ratchetfile import RatchetFile
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation
@@ -31,8 +33,9 @@ NAME = "marks.tsv"
 RUNNING = scoped(api=({"python": 13}, "cc-only"), web=({"typescript": 13}, {"istanbul": 1}))
 # The run a seed reads, which a newer crapkit measured.
 RUN = scoped(api=({"python": 14}, "cc-only"), web=({"typescript": 14}, {"istanbul": 1}))
-EQUAL = SingleNumberStamp(13, LIZARD)
-OLDER = SingleNumberStamp(12, LIZARD)
+# The lines 0.8.1 and an unreleased step before it wrote.
+EQUAL = single_number(13, LIZARD)
+OLDER = single_number(12, LIZARD)
 # A per-scope file whose web scope a typescript 12 run signed.
 SCOPED = scoped(api=({"python": 13}, "cc-only"), web=({"typescript": 12}, {"istanbul": 1}))
 MARK = RatchetEntry("api/a.py", "f( )", 50.0)
@@ -110,6 +113,67 @@ def test_each_writer_signs_the_stamp_the_table_names(tmp_path, writer, state):
     assert read_stamp(text) == (RUNNING if expected == SIGNED else expected), text
     assert text.splitlines()[0] == f"# crapkit-stamp=2 lizard={LIZARD}: {NAME} holds one stamp per " \
                                    "scope, which crapkit 0.9.0 or later reads"
+
+
+# --- no writer writes a new single-number line -------------------------------------
+# verify's tighten and `verify --override` write `measured`, hook-precommit's grant
+# and prune `kept`, move a `kept` write with no new file stamp, seed `reseeded`, and
+# the merge driver its own merged stamp. On a single-number file each leaves the
+# per-scope stamp, a refusal, or the line it read written back as it was.
+
+_SINGLE_NUMBER_LINE = re.compile(r"^# crapkit-analysis=[^\r\n]*", re.M)
+
+
+def _single_number_lines(*texts: str) -> set[str]:
+    return {line for text in texts for line in _SINGLE_NUMBER_LINE.findall(text)}
+
+
+@pytest.mark.parametrize("state", ["single-number equal", "single-number older"])
+@pytest.mark.parametrize("writer", list(WRITERS))
+def test_no_writer_writes_a_new_single_number_line(tmp_path, writer, state):
+    saved = read(tmp_path, state)
+
+    try:
+        text = WRITERS[writer](saved)
+    except ConfigError as refused:
+        assert "recorded under" in str(refused)
+        return
+
+    assert _single_number_lines(text) <= _single_number_lines(saved.text), text
+    assert _single_number_lines(text) or read_stamp(text) in (RUNNING, RUN), text
+
+
+def _merged(tmp_path, base: MetricStamp, ours: MetricStamp, theirs: MetricStamp) -> tuple[int | str, str]:
+    """The merge driver's exit and OURS after it, or the refusal it raised."""
+    sides = {"base": (base, 50.0), "ours": (ours, 40.0), "theirs": (theirs, 30.0)}
+    files = []
+    for side, (stamp, crap) in sides.items():
+        path = tmp_path / f"{side}.tsv"
+        path.write_text(dump_ratchet([RatchetEntry("api/a.py", "f( )", crap)], stamp=stamp, key_version=1,
+                                     file_name=NAME), encoding="utf-8", newline="\n")
+        files.append(str(path))
+    try:
+        code = cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
+    except ConfigError as refused:
+        return str(refused), ""
+    return code, (tmp_path / "ours.tsv").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(("base", "ours", "theirs"), [
+    pytest.param(OLDER, OLDER, EQUAL, id="theirs-moved-the-single-number"),
+    pytest.param(OLDER, EQUAL, OLDER, id="ours-moved-the-single-number"),
+    pytest.param(EQUAL, EQUAL, RUNNING, id="theirs-converted-to-per-scope"),
+    pytest.param(EQUAL, OLDER, RUNNING, id="both-moved"),
+])
+def test_the_merge_driver_writes_no_new_single_number_line(tmp_path, base, ours, theirs):
+    code, text = _merged(tmp_path, base, ours, theirs)
+
+    if text == "":
+        assert str(code).startswith("ratchet merge refused"), code
+        return
+    assert code == 0
+    assert _single_number_lines(text) <= _single_number_lines(f"# {ours}\n", f"# {theirs}\n"), text
+    assert read_stamp(text) in (ours, theirs) or read_stamp(text).scopes, text
 
 
 def test_a_measured_write_over_a_marked_scope_whose_rules_moved_is_refused(tmp_path):

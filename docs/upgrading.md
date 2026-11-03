@@ -172,6 +172,24 @@ same lines as before, and a comment edit inside a marked function stays silent.
 <!-- /0.9.0:mission-3 -->
 
 <!-- 0.9.0:metric-stamp -->
+### What each upgrade source does to the marks file
+
+0.9.0 writes one stamp per scope and reads the single-number line older releases wrote.
+
+- **From 0.8.1** (analysis 13): nothing to reseed. The first `crapkit verify` warns once,
+  naming the scopes whose coverage mode it inferred, and the first passing verify or seed
+  converts the file. A scope whose lanes use only a parser 0.8.x never read (lcov,
+  Cobertura, JaCoCo or a Go coverprofile, once crapkit reads them) reads as the move from
+  cc-only to measured: follow
+  [Turning a cc-only scope into a measured one](#turning-a-cc-only-scope-into-a-measured-one).
+- **From 0.8.0 or older** (analysis 11 or below): the first `crapkit verify` names every
+  scope that holds marks, once. Run `crapkit coverage`, `crapkit ratchet prune`, then
+  `crapkit ratchet seed --scope NAME` for each scope it names, or one plain
+  `crapkit ratchet seed`. A mark whose CRAP rose keeps its value: an analysis move keeps
+  marks only falling, and each rise goes through `crapkit verify --override`, as
+  [Analysis version 13](#analysis-version-13) says. Only a scope that also moves from
+  cc-only to measured takes the run's values on its scoped seed.
+
 ### Marks a newer lizard stamped take one reseed
 
 crapkit 0.8.1 and earlier accept any lizard below 1.25, and 0.9.0 pins `lizard==1.24.0`.

@@ -300,12 +300,12 @@ def verify_stamp_conflict(saved, cfg):
     the running per-scope stamp. A single-number file that holds no mark, and a
     stamp crapkit cannot read, compare as one value with the single number;
     the tighten then signs the running per-scope stamp over a passing file."""
-    from ..ratchet import ScopeStamps, SingleNumberStamp, metric_version, running_stamp
+    from ..ratchet import ScopeStamps, SingleNumberStamp, as_one_value, running_stamp
 
     stamp = saved.metric_stamp
     if isinstance(stamp, ScopeStamps) or (isinstance(stamp, SingleNumberStamp) and saved.entries):
         return saved.stamp_conflict(running_stamp(cfg), marked_scopes(saved.entries, cfg))
-    return saved.stamp_conflict(metric_version())
+    return as_one_value(stamp, running_stamp(cfg))
 
 
 def marked_scopes(entries, cfg) -> frozenset[str]:
@@ -389,10 +389,10 @@ def _named_seed(named: dict, conflict) -> str:
     differs from the running one in a moved scope needs a coverage run first,
     and that run is the one to name.
     """
-    from ..ratchet import ScopeStamps, run_metric_version, run_stamp, stamp_conflict
+    from ..ratchet import run_stamp, stamp_conflict
 
     run_id = named["id"]
-    read = run_stamp if isinstance(conflict.running, ScopeStamps) else run_metric_version
+    read = run_stamp
     behind = stamp_conflict(read(named["tool_versions"]), conflict.running, conflict.scopes)
     if not (behind and behind.refuses):
         return f"re-baseline from run {run_id} with {conflict.seeds(f' --baseline {run_id}')}"

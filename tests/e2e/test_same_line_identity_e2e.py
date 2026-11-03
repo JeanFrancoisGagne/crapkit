@@ -3,7 +3,8 @@ import csv
 import json
 
 from conftest import cli_runner, git, git_commit_all, git_init_repo
-from crapkit.ratchet import metric_version
+from crapkit.config import load_config_text
+from crapkit.ratchet import dump_ratchet, running_stamp
 
 
 run_cli = cli_runner(encoding="utf-8", env_extra={"PYTHONIOENCODING": "utf-8",
@@ -60,7 +61,10 @@ def test_same_line_callbacks_have_distinct_packets_and_claims(tmp_path):
 def test_legacy_mark_is_preserved_and_refused_by_seed_rescore_and_hook(tmp_path):
     rows = _repo(tmp_path)
     marks = tmp_path / "crapkit-ratchet.tsv"
-    text = f'# {metric_version()}\nsrc/app.ts\t{rows[0]["long_name"]}\t99\nsafe.py\tg( )\t17\n'
+    running = running_stamp(load_config_text((tmp_path / "crapkit.toml").read_text(encoding="utf-8"),
+                                             root=tmp_path))
+    head = dump_ratchet([], stamp=running, file_name=marks.name).removesuffix("path\tlong_name\tcrap\n")
+    text = f'{head}src/app.ts\t{rows[0]["long_name"]}\t99\nsafe.py\tg( )\t17\n'
     marks.write_text(text, encoding="utf-8")
     before = marks.read_bytes()
     _refused(tmp_path, "ratchet", "seed")
