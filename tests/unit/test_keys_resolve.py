@@ -28,7 +28,8 @@ import pytest
 
 from crapkit import keys
 from crapkit.keys import Carry, Exact, Refused, Twin
-from crapkit.ratchet import RatchetEntry
+from crapkit.ratchet import RatchetEntry, checked_key_version
+from crapkit.score import ScoredRow
 from marks_history_repo import NEW, OLD, PATH, REKEYED, SECOND, SEEDED, TWIN, keys_of
 
 OTHER = "calc/other.py"
@@ -143,6 +144,27 @@ def test_resolve_counts_the_function_among_the_file_functions():
     assert keys.resolve(key(NEW), set(), at(OLD)) == Carry(key(OLD), key(NEW))
 
 
+def scored(name: str, start: int) -> ScoredRow:
+    """A row with no recorded within-line position, as a legacy reader wrote it."""
+    return ScoredRow("src", PATH, name, start, start + 2, 9, 9, 9, 3, 1, 1, 0.0, "measured", 90.0,
+                     "decompose")
+
+
+UNPROVED = f"path\tlong_name\tcrap\n{PATH}\t{OLD}\t7.0000\n{PATH}\tgrade( a )\t4.0000\n"
+# NEW took OLD's bare name, and two `grade( a )` open on one line: a legacy collision.
+COLLIDED = [scored(NEW, 3), scored("grade( a )", 9), scored("grade( a )", 9)]
+
+
+def test_an_unproved_marks_file_with_a_legacy_collision_carries_no_mark():
+    """`resolve` takes keys and no identity proof, so the refusal
+    sits at the key-identity check every reader of a marks file runs first:
+    the file is refused before any carry is read. The key stamp proves it."""
+    with pytest.raises(ValueError, match=rf"ambiguous for {PATH}: grade\( a \)"):
+        checked_key_version(UNPROVED, COLLIDED)
+
+    assert checked_key_version("# crapkit-keys=1\n" + UNPROVED, COLLIDED) == 1
+
+
 # --- pair_moves -----------------------------------------------------------------
 
 def test_one_drop_and_one_add_with_one_bare_name_pair():
@@ -155,6 +177,14 @@ def test_two_adds_with_one_bare_name_give_no_pair_and_a_refusal_naming_both():
     assert (moves.pairs, moves.unpaired) == ([], sorted(at(OLD, NEW, "classify( y )")))
     assert len(moves.refused) == 1
     assert_names_the_ambiguity(moves.refused[0].text, [OLD, NEW, "classify( y )"])
+
+
+def test_two_drops_and_two_adds_with_one_bare_name_give_no_pair():
+    moves = keys.pair_moves(PATH, at(OLD, "classify( x )"), at(NEW, "classify( y )"))
+
+    assert (moves.pairs, moves.unpaired) == ([], sorted(at(OLD, "classify( x )", NEW, "classify( y )")))
+    assert len(moves.refused) == 1
+    assert_names_the_ambiguity(moves.refused[0].text, [OLD, "classify( x )", NEW, "classify( y )"])
 
 
 def test_a_twin_drop_gives_no_pair():
