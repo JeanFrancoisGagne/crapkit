@@ -202,7 +202,7 @@ def _merged_text(saved: list, merged: list, stamp: MetricStamp) -> str:
     if stamp == ours.metric_stamp:
         return ours.kept(merged, read_with=(theirs,))
     return replace(ours, text=None).kept(merged, keys=read_key_version(ours.text or ""),
-                                         new_file_metric=stamp, read_with=(theirs,))
+                                         new_file_stamp=stamp, read_with=(theirs,))
 
 
 def _print_stamp_notes(came_from: tuple, sides: list) -> None:
@@ -629,11 +629,11 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None,
     seed signs that run's numbers, so each scope takes the stamp the run
     recorded for it; `scope` keeps the seed to one scope's marks and line.
     prune adds no number, so the recorded stamp stays; a file prune creates
-    holds no mark and takes the running metric, which relabels nothing.
+    holds no mark and takes the running per-scope stamp, which relabels nothing.
     """
     from ..gitio import GitFacts
     from ..keys import require_unambiguous
-    from ..ratchet import metric_version
+    from ..ratchet import running_stamp
     from ..ratchetfile import RatchetFile
     from ._shared import _check_ratchet_identity
 
@@ -651,7 +651,7 @@ def _ratchet_from_run(root: Path, cfg, action: str, requested: int | None,
         entries, note, text = _seed(saved, _SeedRead(work, fresh, key_version), cfg, scope)
     else:
         entries, note = _pruned(root, store, marks, fresh)
-        text = saved.kept(entries, keys=key_version, new_file_metric=metric_version())
+        text = saved.kept(entries, keys=key_version, new_file_stamp=running_stamp(cfg))
     _publish_checked(saved, text, entries, fresh, latest["tool_versions"])
     # A scoped seed refused a run that measured its scope under other rules.
     metric_note = "" if scope else _metric_note(work, action, cfg, created=saved.text is None)

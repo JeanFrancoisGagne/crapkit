@@ -503,9 +503,9 @@ that number for each of its languages, and its mode is inferred from its lanes n
 coveragepy or istanbul lane counts as measured by that reader, the only two 0.8.x read; a
 scope whose lanes all use another parser counts as cc-only, so it reads as the move to
 measured; a scope with no lane counts as cc-only. verify then warns once, on stderr, naming
-the scopes whose mode it inferred. There is nothing to do: the next seed records each scope's
-mode. A file with one number and no marks at all compares as one value, as the tighten that
-restamps it does. A file with no stamp at all (written before stamping) warns, then applies
+the scopes whose mode it inferred. There is nothing to do: the next seed or passing verify
+records each scope's mode. A file with one number and no marks at all compares as one value,
+and the first passing verify converts it too. A file with no stamp at all warns, then applies
 the function-identity checks below; anonymous JavaScript/TypeScript marks need reader proof. A cc-only scope that gains a lane takes the steps in [Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one).
 
 A repo with an `api` scope in Python and a `web` scope in TypeScript, after a release raises
@@ -546,14 +546,14 @@ verify OK @ 525a3276065 vs baseline 525a3276065 (1 changed files) ratchet: resta
 EXIT=0
 ```
 
-Every write to the marks file sets the stamp by where its numbers came from:
+Every write to the marks file sets the stamp by where its numbers came from. A write of numbers this crapkit measured signs one stamp per scope, so the first passing verify under 0.9.0 converts a 0.8.1 marks file with no reseed:
 
-| Write | Metric stamp it leaves |
+| Write | Stamp it leaves |
 |---|---|
-| `ratchet seed` | The metric the run it read was measured under. The only write that replaces a recorded metric stamp. |
-| `ratchet prune`, `ratchet move`, the merge driver | The recorded stamp. None of them adds a number. A marks file prune creates holds no mark and takes the running metric. |
-| `verify`'s tighten, `verify --override` | The running metric. Marks another metric recorded are refused before the lanes run; a file written before stamping gains its stamp. A file stamped per scope keeps its stamp lines. |
-| The pre-commit hook's override | The recorded stamp. A marks file it creates takes the running metric. |
+| `ratchet seed` | The stamps the run it read recorded, or with `--scope NAME` that scope's alone. The only write that signs a run's stamps. |
+| `verify`'s tighten, `verify --override` | The running per-scope stamp. A file with no stamp, and a single-number file whose number this crapkit runs, convert: verify prints `restamped` when no mark moved. A marked scope whose rules moved, or a single-number file with an older number, refuses before the lanes run, and an override refuses before its alert and audit row. The tighten creates no file; an override's grant creates one under the running per-scope stamp. |
+| The pre-commit hook's override, `ratchet prune` | Every recorded stamp line, verbatim: neither adds a measured number, so a single-number file keeps its one line and a file with no stamp stays without one. A marks file either one creates takes the running per-scope stamp; prune's holds no mark. |
+| `ratchet move`, the merge driver | `move` keeps every recorded line, and refuses a marks file that is not there. The merge driver merges the three sides' stamps scope by scope, as [the git merge driver](#the-git-merge-driver) says. |
 
 Seed and prune run their identity checks first. An upgrade that changes which functions a
 reader finds needs a reviewed mapping first; fresh coverage alone cannot supply it. See

@@ -83,6 +83,17 @@ def test_seed_stamps_the_marks_file_with_the_running_metric(repo: Path):
     assert "tangled" in text
 
 
+def test_a_marks_file_prune_creates_takes_the_running_per_scope_stamp_and_no_mark(repo: Path):
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    pruned = run_cli(repo, "ratchet", "prune")
+    assert pruned.returncode == 0, pruned.stdout + pruned.stderr
+
+    text = (repo / RATCHET).read_text(encoding="utf-8")
+    assert first_line(repo).startswith("# crapkit-stamp=2 lizard=") and RATCHET in first_line(repo), text
+    assert "\n#scope\tsrc\tanalysis typescript=" in text and "; coverage istanbul=" in text, text
+    assert text.rstrip("\n").endswith("path\tlong_name\tcrap"), "prune adds no mark"
+
+
 def test_a_stamped_ratchet_still_verifies_clean(repo: Path):
     assert run_cli(repo, "coverage", "--json").returncode == 0
     assert run_cli(repo, "ratchet", "seed").returncode == 0
@@ -329,8 +340,8 @@ def test_merge_of_two_unstamped_sides_stays_unstamped(tmp_path: Path):
 # --- a real `git merge` through the driver, installed as docs/ratchet.md says --------
 # Branch A (main, OURS) holds the file `ratchet seed --scope web` writes after a
 # typescript raise; branch B (feature, THEIRS) lowers marks as a verify tighten
-# does. Both files are written by hand: seed --scope and the per-scope writers
-# land later in this release.
+# does. Both files are written by hand, so each case names exact bytes; the
+# walkthrough after them writes every file with a real command.
 
 DOC = Path(__file__).resolve().parents[2] / "docs" / "ratchet.md"
 API = "analysis python=13; coverage coveragepy=1"
@@ -416,3 +427,107 @@ def test_two_branches_that_reseeded_web_differently_leave_a_conflict_naming_web(
     assert "CONFLICT (content): Merge conflict in crapkit-ratchet.tsv" in said, said
     assert (f"ratchet merge refused: OURS and THEIRS moved a stamp differently - scope web: OURS records "
             f"[lizard=1.24.0 {WEB14}] and THEIRS records [lizard=1.24.0 {WEB15}]") in said, said
+
+
+# --- the same merge, every marks file written by a real command -------------------
+# api is cc-only python, web is typescript under an istanbul lane. Branch A (main,
+# OURS) runs a crapkit whose typescript analysis number is one higher, then
+# `coverage` and `ratchet seed --scope web`; branch B (feature, THEIRS) runs a
+# verify that tightens marks the base file holds above their scores.
+
+WALK_TOML = (
+    '[crapkit]\ntarget = 6\n\n'
+    '[[scope]]\nname = "api"\npaths = ["api"]\nlanguages = ["python"]\ncoverage_optional = true\n\n'
+    '[[scope]]\nname = "web"\npaths = ["web"]\nlanguages = ["typescript"]\n\n'
+    '[[lane]]\nname = "ui"\ncommand = "python make_cov.py"\n'
+    'artifact = "cov.json"\nparser = "istanbul"\nscopes = ["web"]\n'
+)
+WALK_COV = (
+    "import json, os\n"
+    "c = os.path.join(os.getcwd(), 'web', 'c.ts')\n"
+    "json.dump({c: {'path': c, 'fnMap': {}, 'f': {}, 'branchMap': {}, 'b': {}}}, open('cov.json', 'w'))\n"
+)
+# Seven decision points each: ccn 7, over the target of 6, so seed marks both.
+KNOT_PY = "".join(f"def {name}(n):\n" + "".join(f"    if n > {i}:\n        return {i}\n" for i in range(6))
+                  + "    return 0\n\n\n" for name in ("f", "g"))
+# The shim a newer crapkit stands for: typescript's analysis number one higher.
+RAISE_TS = 'import crapkit.analyze as a\na.ANALYSIS_VERSIONS["typescript"] += 1\n'
+
+
+def _hand_raised(repo: Path, prefixes: tuple[str, ...]) -> None:
+    """Lift each mark under `prefixes` 10 above its score, as a mark a later
+    tighten pulls back down."""
+    lines = (repo / RATCHET).read_text(encoding="utf-8").splitlines(keepends=True)
+    raised = [re.sub(r"\t([0-9.]+)\n$", lambda m: f"\t{float(m[1]) + 10:.4f}\n", line)
+              if line.startswith(prefixes) else line for line in lines]
+    (repo / RATCHET).write_text("".join(raised), encoding="utf-8", newline="\n")
+
+
+def _walkthrough(tmp_path: Path, raised: tuple[str, ...]) -> tuple[Path, dict, subprocess.CompletedProcess]:
+    """Base seeded by this crapkit with the marks under `raised` lifted; B
+    tightens them; A reseeds web under the raised typescript; then git merges
+    B into A. Returns the repo, the newer crapkit's env and the merge."""
+    repo = tmp_path / "repo"
+    for folder in ("api", "web", "shim"):
+        (tmp_path / ("shim" if folder == "shim" else f"repo/{folder}")).mkdir(parents=True)
+    (repo / "api" / "a.py").write_text(KNOT_PY, encoding="utf-8")
+    (repo / "web" / "c.ts").write_text(TANGLED, encoding="utf-8")
+    (repo / "crapkit.toml").write_text(WALK_TOML, encoding="utf-8")
+    (repo / "make_cov.py").write_text(WALK_COV, encoding="utf-8")
+    (repo / ".gitignore").write_text(".crapkit/\ncov.json\n", encoding="utf-8")
+    (tmp_path / "shim" / "sitecustomize.py").write_text(RAISE_TS, encoding="utf-8")
+    newer = {"PYTHONPATH": os.pathsep.join(filter(None, (str(tmp_path / "shim"), os.environ.get("PYTHONPATH"))))}
+    git_init_repo(repo)
+    attributes, commands = _driver_lines()
+    (repo / ".gitattributes").write_text(attributes, encoding="utf-8")
+    for command in commands:
+        assert subprocess.run(command, cwd=repo, capture_output=True).returncode == 0, command
+    git_commit_all(repo, "init")
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    assert run_cli(repo, "ratchet", "seed").returncode == 0
+    _hand_raised(repo, raised)
+    git_commit_all(repo, "base marks")
+
+    _git(repo, "checkout", "-q", "-b", "feature")
+    tightened = run_cli(repo, "verify")
+    assert tightened.returncode == 0, tightened.stdout + tightened.stderr
+    assert f"ratchet: 0 dropped, {len(raised)} tightened" in tightened.stdout, tightened.stdout
+    git_commit_all(repo, "B: verify tightened the marks")
+
+    _git(repo, "checkout", "-q", "main")
+    assert run_cli(repo, "coverage", "--json", env_extra=newer).returncode == 0
+    seeded = run_cli(repo, "ratchet", "seed", "--scope", "web", env_extra=newer)
+    assert seeded.returncode == 0, seeded.stdout + seeded.stderr
+    assert _web_number(repo) == _web_number(repo, "feature") + 1
+    git_commit_all(repo, "A: seed --scope web after the typescript raise")
+    return repo, newer, _git(repo, "merge", "feature", "-m", "merge feature")
+
+
+def _web_number(repo: Path, rev: str | None = None) -> int:
+    """The typescript number web's scope line records, in the tree or at `rev`."""
+    text = (repo / RATCHET).read_text(encoding="utf-8") if rev is None else _git(repo, "show", f"{rev}:{RATCHET}").stdout
+    return int(re.search(r"^#scope\tweb\tanalysis typescript=([0-9]+);", text, re.M)[1])
+
+
+def test_a_real_scoped_seed_and_a_real_tighten_merge_and_verify_passes(tmp_path: Path):
+    repo, newer, merged = _walkthrough(tmp_path, ("api/a.py\tf", "api/a.py\tg"))
+
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert "scope web's stamp came from OURS and THEIRS changed 2 mark(s)" in merged.stderr, merged.stderr
+    text = _merged(repo)
+    assert _web_number(repo) == _web_number(repo, "feature") + 1, text
+    assert "api/a.py\tf( n )\t7.0000\napi/a.py\tg( n )\t7.0000\n" in text, "THEIRS's two tightened marks"
+    res = run_cli(repo, "verify", env_extra=newer)
+    assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
+
+
+def test_a_real_merge_where_b_also_tightened_a_web_mark_names_web(tmp_path: Path):
+    repo, newer, merged = _walkthrough(tmp_path, ("api/a.py\tf", "api/a.py\tg", "web/c.ts\t"))
+
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert "scope web's stamp came from OURS and THEIRS changed 3 mark(s)" in merged.stderr, merged.stderr
+    res = run_cli(repo, "verify", env_extra=newer)
+    assert res.returncode == 0 or (res.returncode == 7 and "web/" in res.stdout), \
+        (res.returncode, res.stdout, res.stderr)
+    seeded = run_cli(repo, "ratchet", "seed", "--scope", "web", env_extra=newer)
+    assert seeded.returncode == 0, seeded.stdout + seeded.stderr

@@ -279,6 +279,19 @@ For example, a function at ccn 8 carries the cc-only mark 8.0000. At 0% coverage
 rise: `scope py: added 0, tightened 0, raised 1 (first py/calc.py check( a ) 8.0000 -> 72.0000)`.
 Had the same commit also renamed the scope, the scope would read as `unstamped`: the seed
 keeps the mark at 8, and `crapkit verify` names the function at exit 7.
+
+### The first passing verify converts the marks file
+
+From 0.8.1, you need no reseed. The first `crapkit verify` under 0.9.0 that passes
+rewrites the marks file with one stamp line per scope, even when no mark moves; then its OK
+line ends `ratchet: restamped -> git add crapkit-ratchet.tsv`. The conversion needs
+the file's one analysis number to be the one 0.9.0 runs; an older number refuses before any
+lane runs, as above. `verify --override` converts the file the same way when it grants.
+
+After that verify, crapkit 0.8.x refuses the file, as it refuses a reseeded one. Upgrade
+every checkout and CI job that runs crapkit first, or pass `--no-tighten` to every 0.9.0
+verify until they are: `verify --no-tighten` leaves the marks file byte-identical, so 0.8.x
+still reads it.
 <!-- /0.9.0:metric-stamp -->
 
 <!-- 0.9.0:mission-4 -->
