@@ -29,11 +29,12 @@ from crapkit.ratchet_report import crap_by_key, mark_events, report_from_events
 from crapkit.ratchetfile import RatchetFile
 from crapkit.repotext import marks_bytes
 from raw_git import checkout, commit, repository
+from stamps import single_number
 from test_marks_history import _same_events_both_ways
 
 MARKS = "crapkit-ratchet.tsv"
 CONFIG = '[crapkit]\ntarget = 6\n\n[[scope]]\nname = "calc"\npaths = ["src"]\nlanguages = ["python"]\n'
-SINGLE = SingleNumberStamp(13, "1.24.0")
+SINGLE = single_number(13)
 SCOPED = ScopeStamps("1.24.0", {"calc": ScopeStamp({"python": 13}, {"coveragepy": 1}),
                                 "web": ScopeStamp({"tsx": 13, "typescript": 13}, {"istanbul": 1})})
 CAFE = "café( n )"

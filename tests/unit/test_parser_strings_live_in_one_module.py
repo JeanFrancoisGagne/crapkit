@@ -8,15 +8,17 @@ which parser a lane declared. These scans hold that line: a compare of
 `parser` against a string, or of a format name against anything, fails outside
 coverage_format.py, and every other read of `.parser` or spelling of a format
 name is a place that writes the name out, listed below with its reason.
+
+The scans read crapkit's source tree as written, the one kit.source_tree names:
+in the calc mutation stage the imported package is mutmut's copy, which holds
+every mutant's body beside the original.
 """
 import ast
-from pathlib import Path
 
 import pytest
 
-import crapkit
+from accuracy.kit import source_tree
 
-SRC = Path(crapkit.__file__).resolve().parent
 OWNER = "coverage_format.py"
 FORMAT_NAMES = frozenset({"coveragepy", "istanbul"})
 
@@ -104,8 +106,9 @@ def _sites(text: str) -> _Sites:
 
 
 def _modules():
-    for path in sorted(SRC.rglob("*.py")):
-        rel = path.relative_to(SRC).as_posix()
+    src = source_tree.root()
+    for path in sorted(src.rglob("*.py")):
+        rel = path.relative_to(src).as_posix()
         if rel != OWNER:
             yield rel, _sites(path.read_text(encoding="utf-8"))
 
@@ -126,6 +129,13 @@ def test_every_other_spelling_of_a_format_name_writes_it_out():
     found = {(rel, where) for rel, sites in _modules() for where in sites.names}
 
     assert found == set(ALLOWED_NAMES)
+
+
+def test_the_scans_read_the_tree_the_mutation_stage_names(tmp_path, monkeypatch):
+    (tmp_path / "lanes.py").write_text("def pick(lane):\n    return lane.parser\n", encoding="utf-8")
+    monkeypatch.setenv(source_tree.ENV, str(tmp_path))
+
+    assert [(rel, sites.reads) for rel, sites in _modules()] == [("lanes.py", {"pick"})]
 
 
 @pytest.mark.parametrize("compare", [

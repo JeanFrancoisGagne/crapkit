@@ -165,8 +165,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # the refusal head line the hook and rescore --gate share (mission-4-10)
 # added 1, prune and seed keeping a carried mark (mission-4-07) added 8,
 # and brief, explain and the worklist reading a carried mark (mission-4-08)
-# added 7, and the sync met at 4,239.
-SRC_DEFS = 4239
+# added 7, and the sync met at 4,239. The repair that leaves a single-number
+# stamp only ever read (metric-stamp-11) added 1, and the sync met at 4,240.
+SRC_DEFS = 4240
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

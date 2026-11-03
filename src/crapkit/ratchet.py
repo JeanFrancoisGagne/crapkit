@@ -83,7 +83,7 @@ class MetricStamp(str):
         if not text:
             return cls.NONE
         found = _SINGLE_NUMBER.fullmatch(text)
-        stamp = SingleNumberStamp(int(found[1]), found[2]) if found else None
+        stamp = SingleNumberStamp._read(int(found[1]), found[2]) if found else None
         return stamp if stamp == text else UnreadableStamp(text)
 
     @property
@@ -106,21 +106,27 @@ class MetricStamp(str):
 class SingleNumberStamp(MetricStamp):
     """`crapkit-analysis=N lizard=X.Y.Z`: one analysis number for every language.
 
-    The form 0.8.x wrote. Only `MetricStamp.parse` builds one in crapkit, for
-    `read_stamp` and `run_stamp`, and it renders back the line it read."""
+    The form 0.8.x wrote. It has no public constructor: `MetricStamp.parse`
+    reads one from a 0.8.x file or run, for `read_stamp` and `run_stamp`, and
+    it renders back the line it read, so no code signs marks with a new one."""
 
-    def __new__(cls, analysis: int, lizard: str) -> SingleNumberStamp:
-        stamp = super().__new__(cls, _SINGLE_LINE.format(analysis, lizard))
-        stamp._versions = (analysis, lizard)
+    def __new__(cls, *args, **kwargs):
+        raise TypeError("a single-number stamp is only ever read: "
+                        "MetricStamp.parse reads the line 0.8.x wrote")
+
+    @classmethod
+    def _read(cls, analysis: int, lizard: str) -> SingleNumberStamp:
+        stamp = str.__new__(cls, _SINGLE_LINE.format(analysis, lizard))
+        stamp._lizard_version = lizard
         return stamp
 
-    def __getnewargs__(self) -> tuple[int, str]:
-        # A copy or a pickle rebuilds the stamp from its two versions, not its text.
-        return self._versions
+    def __reduce__(self):
+        # A copy or a pickle reads the stamp back from its line, as a file read does.
+        return MetricStamp.parse, (str(self),)
 
     @property
     def lizard(self) -> str:
-        return self._versions[1]
+        return self._lizard_version
 
 
 class UnreadableStamp(MetricStamp):
@@ -966,7 +972,11 @@ def dump_ratchet(entries: list[RatchetEntry], *, stamp: MetricStamp, key_version
 
 
 def _stamp_lines(stamp: MetricStamp, file_name: str | None) -> tuple[list[str], list[str]]:
-    """The stamp's lines above the key stamp, and those between it and the header."""
+    """The stamp's lines above the key stamp, and those between it and the header.
+    A plain str is refused: written as it came, it would sign the marks with a
+    line no file or run recorded, a new single-number line among them."""
+    if not isinstance(stamp, MetricStamp):
+        raise TypeError(f"a marks file's stamp is a MetricStamp, not a {type(stamp).__name__}")
     if isinstance(stamp, ScopeStamps):
         return [stamp.head(file_name)], stamp.scope_lines()
     return [f"# {stamp}"] if stamp else [], []

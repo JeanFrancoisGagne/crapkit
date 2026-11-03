@@ -601,7 +601,7 @@ def test_every_seed_transcript_under_the_running_metric_ends_with_commit_then_ve
     _print_seed_next("seed", MARKS, "")
     [after] = _as_typed(capsys.readouterr().out.splitlines())
     seeds = [(page, block) for page, block in _printed_blocks("crapkit ratchet seed", f"{MARKS}: added")
-             if "was measured under" not in block[0]]
+             if "was measured under" not in block[0] and " measured scope " not in block[0]]
 
     assert len(seeds) >= 6, seeds
     assert [(page, block[-1]) for page, block in seeds if block[-1] != after] == []
