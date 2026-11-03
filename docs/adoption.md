@@ -5,6 +5,14 @@ Use this page to choose scopes, connect tests and seed existing debt. The
 [TypeScript](../README.md#quickstart-typescript) quickstarts show the commands in
 order. Existing installations should start with [Upgrading](upgrading.md).
 
+## Evaluate with one command before `init`
+
+When your CI already writes a coverage file, score it before you write any config:
+`uvx crapkit score src --coverage lcov.info --fail-above 30`. It prints CRAP per function
+for the git-tracked source under `src`, worst first, and exits 6 when a function scores above
+30. It reads lcov, coverage.py JSON and istanbul JSON, and writes nothing under the repo.
+Run `crapkit init` once the numbers say crapkit is worth wiring in.
+
 ## Cut fewer, broader scopes first
 
 A scope is a ceiling plus a language set, not a package. One scope per language per

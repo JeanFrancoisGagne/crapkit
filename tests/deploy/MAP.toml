@@ -169,6 +169,9 @@ modules = ["tests/deploy/test_shallow_checkout_flow.py"]
 [packets.m1-readers-03]
 modules = ["tests/deploy/test_mission1_reader_cells.py"]
 
+[packets.m1-readers-11]
+modules = ["tests/deploy/test_score_command_cells.py"]
+
 # --- every-harness rows -----------------------------------------------------------
 # What a nightly run takes of each row: "all" its cells on all 17 harnesses,
 # "core" on the 3 core-image ones. The header says how a row's tests name it.
@@ -638,6 +641,9 @@ lin-up-lcov-omp = { packet = "m1-readers-03", cadence = "nightly", os = "linux",
 lin-up-lcov-opencode = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
 lin-up-lcov-vscode-test-electron = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
 "lin-up-0.8.1-cc-only-rust" = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "core" }
+# m1-readers-11: `uvx crapkit score` on the candidate wheel over a committed tracefile, exit 6 above N
+lin-score-uvx = { packet = "m1-readers-11", cadence = "push", os = "linux", image = "core" }
+win-score-uvx = { packet = "m1-readers-11", cadence = "push", os = "windows" }
 
 # --- what blocks a cell or a job -------------------------------------------------
 # Each is work outside this packet (the kit, a cell no packet writes yet) or a
