@@ -148,7 +148,7 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # and the sync met at 3,965. verify's per-scope stamp check (metric-stamp-05)
 # added 25. seed's per-scope stamps and `--scope` (metric-stamp-06) added 23.
 # The flip refusal's note (metric-stamp-07) added 1.
-SRC_DEFS = 4017
+SRC_DEFS = 4018
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

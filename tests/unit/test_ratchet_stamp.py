@@ -15,7 +15,8 @@ import sys
 
 import pytest
 
-from stamps import lane, running, scope
+from accuracy.kit import source_tree
+from stamps import lane, running, scope, single_number
 
 from crapkit import ratchet
 from crapkit.cli.ratchet_cmds import cmd_ratchet
@@ -27,7 +28,7 @@ from crapkit.ratchetfile import RatchetFile
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
-STAMP = "crapkit-analysis=9 lizard=0.1.2"
+STAMP = single_number(9, "0.1.2")
 LEGACY = "path\tlong_name\tcrap\nsrc/a.ts\tf( )\t30.0000\n"
 SRC = running([scope("src", "python", "typescript")], [lane("py", "coveragepy", "src")])
 
@@ -37,29 +38,51 @@ def test_a_parsed_single_number_stamp_renders_the_committed_wire_format():
 
 
 def _builds_a_single_number_stamp(node: ast.AST) -> bool:
-    return any(isinstance(call, ast.Call) and "SingleNumberStamp" in (getattr(call.func, "id", None),
-                                                                     getattr(call.func, "attr", None))
+    """A call of SingleNumberStamp or of one of its methods."""
+    return any(isinstance(call, ast.Call) and "SingleNumberStamp" in ast.unparse(call.func).split(".")
                for call in ast.walk(node))
 
 
-def _single_number_builders(path: Path) -> list[str]:
-    """`file:def` for each def in `path` that calls SingleNumberStamp."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    return [f"{path.name}:{node.name}" for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef) and _builds_a_single_number_stamp(node)]
+def _single_number_builders() -> list[str]:
+    """`file:def` for each def that calls SingleNumberStamp, over crapkit's
+    source tree as written: kit.source_tree names it, since in the calc
+    mutation stage the imported package is mutmut's copy, which holds every
+    mutant's body beside the original."""
+    found = set()
+    for path in source_tree.root().rglob("*.py"):
+        tree = ast.parse(path.read_bytes())
+        found |= {f"{path.name}:{node.name}" for node in ast.walk(tree)
+                  if isinstance(node, ast.FunctionDef) and _builds_a_single_number_stamp(node)}
+    return sorted(found)
 
 
 def test_no_code_can_build_a_single_number_stamp():
     """With the config-free running metric in the tree, a new writer could sign
     `crapkit-analysis=13` over per-scope marks and undo the per-scope check. It
     is gone, and the only code that builds a single-number stamp is the parser
-    that reads one from a 0.8.x file or run."""
-    src = Path(ratchet.__file__).parent
-
-    builders = sorted({hit for path in src.rglob("*.py") for hit in _single_number_builders(path)})
-
+    that reads one from a 0.8.x file or run: a call of the class refuses."""
     assert not hasattr(ratchet, "metric_version") and not hasattr(ratchet, "stamp_text")
-    assert builders == ["ratchet.py:parse"], builders
+    assert _single_number_builders() == ["ratchet.py:parse"]
+    with pytest.raises(TypeError) as refused:
+        SingleNumberStamp(13, "1.24.0")
+    assert str(refused.value) == ("a single-number stamp is only ever read: "
+                                  "MetricStamp.parse reads the line 0.8.x wrote")
+
+
+def test_the_scan_reads_the_tree_the_mutation_stage_names(tmp_path, monkeypatch):
+    (tmp_path / "forged.py").write_text("def forge():\n    return SingleNumberStamp(13, '1.24.0')\n",
+                                        encoding="utf-8")
+    monkeypatch.setenv(source_tree.ENV, str(tmp_path))
+
+    assert _single_number_builders() == ["forged.py:forge"]
+
+
+@pytest.mark.parametrize("stamp", ["", "crapkit-analysis=13 lizard=1.24.0"], ids=["empty", "single-number"])
+def test_dump_refuses_a_plain_str_stamp(stamp):
+    """Written as it came, a str would sign the marks with a line no file or run recorded."""
+    with pytest.raises(TypeError) as refused:
+        dump_ratchet([RatchetEntry("src/a.ts", "f( )", 30.0)], stamp=stamp)
+    assert str(refused.value) == "a marks file's stamp is a MetricStamp, not a str"
 
 
 def test_dump_writes_the_stamp_above_the_header():
@@ -74,11 +97,6 @@ def test_dump_names_no_stamp_by_default():
     marks another metric recorded; the marks file's stamp rules choose it now."""
     with pytest.raises(TypeError):
         dump_ratchet([RatchetEntry("src/a.ts", "f( )", 30.0)])
-
-
-def test_an_empty_stamp_writes_no_comment_line():
-    lines = dump_ratchet([RatchetEntry("src/a.ts", "f( )", 30.0)], stamp="").splitlines()
-    assert lines[0] == "path\tlong_name\tcrap"
 
 
 def test_readers_skip_comment_lines():
@@ -100,25 +118,22 @@ def test_read_stamp_returns_the_version_without_its_comment_marker():
 
 
 def test_an_unstamped_file_never_conflicts():
-    assert stamp_conflict("", "crapkit-analysis=3 lizard=1.24.0") is None
+    assert stamp_conflict(MetricStamp.NONE, single_number(3)) is None
 
 
 def test_matching_stamps_do_not_conflict():
-    assert stamp_conflict("crapkit-analysis=3 lizard=1.24.0",
-                          "crapkit-analysis=3 lizard=1.24.0") is None
+    assert stamp_conflict(single_number(3), single_number(3)) is None
 
 
 def test_a_differing_stamp_names_both_versions_and_the_fix():
-    msg = stamp_conflict("crapkit-analysis=2 lizard=1.17.10",
-                         "crapkit-analysis=3 lizard=1.24.0").refusal("crapkit-ratchet.tsv")
+    msg = stamp_conflict(single_number(2, "1.17.10"), single_number(3)).refusal("crapkit-ratchet.tsv")
     assert "crapkit-analysis=2 lizard=1.17.10" in msg
     assert "crapkit-analysis=3 lizard=1.24.0" in msg
     assert "ratchet seed" in msg
 
 
 def test_a_lizard_bump_alone_conflicts():
-    assert stamp_conflict("crapkit-analysis=3 lizard=1.17.10",
-                          "crapkit-analysis=3 lizard=1.24.0") is not None
+    assert stamp_conflict(single_number(3, "1.17.10"), single_number(3)) is not None
 
 
 def test_marks_stamped_by_0_8_0_are_refused_until_one_reseed():
@@ -177,7 +192,7 @@ def test_every_committed_spelling_round_trips_byte_for_byte(tmp_path, stamp, spe
     rendered = dump_ratchet(load_ratchet(text), stamp=read, key_version=read_key_version(text))
 
     assert isinstance(read, MetricStamp)
-    assert read == (SingleNumberStamp(13, "1.24.0") if stamp else MetricStamp.NONE)
+    assert read == (single_number(13, "1.24.0") if stamp else MetricStamp.NONE)
     assert rendered == text
     assert saved.publish(saved.kept(saved.entries)) is False
     assert path.read_bytes() == data
@@ -192,13 +207,13 @@ def test_no_stamp_is_falsy_and_renders_no_line():
 
 
 @pytest.mark.parametrize("other, equal", [
-    (SingleNumberStamp(13, "1.24.0"), True),
-    (SingleNumberStamp(12, "1.24.0"), False),
-    (SingleNumberStamp(13, "1.17.10"), False),
-    (SingleNumberStamp(130, "1.24.0"), False),
+    (single_number(13, "1.24.0"), True),
+    (single_number(12, "1.24.0"), False),
+    (single_number(13, "1.17.10"), False),
+    (single_number(130, "1.24.0"), False),
 ])
 def test_two_single_number_stamps_are_equal_exactly_when_both_numbers_are(other, equal):
-    stamp = SingleNumberStamp(13, "1.24.0")
+    stamp = single_number(13, "1.24.0")
 
     assert (stamp == other, stamp != other) == (equal, not equal)
     assert (hash(stamp) == hash(other)) is equal
@@ -215,7 +230,7 @@ def test_a_single_number_stamp_holds_its_two_versions_and_renders_the_wire_text(
 
 def test_a_0_8_1_run_reads_as_a_typed_single_number_stamp():
     stored = run_stamp({"analysis_version": "13", "lizard": "1.24.0"})
-    assert (type(stored), stored) == (SingleNumberStamp, SingleNumberStamp(13, "1.24.0"))
+    assert (type(stored), stored) == (SingleNumberStamp, single_number(13, "1.24.0"))
     assert stored.render() == "crapkit-analysis=13 lizard=1.24.0"
     assert run_stamp({"analysis_version": 13}) is MetricStamp.NONE
 
@@ -241,7 +256,7 @@ def test_a_stamp_crapkit_cannot_parse_keeps_its_line_and_the_number_it_opens_wit
 
 
 def test_a_stamp_survives_a_copy_and_a_pickle():
-    stamp = SingleNumberStamp(13, "1.24.0")
+    stamp = single_number(13, "1.24.0")
 
     for copied in (copy.deepcopy(stamp), pickle.loads(pickle.dumps(stamp))):
         assert type(copied) is SingleNumberStamp
@@ -251,7 +266,7 @@ def test_a_stamp_survives_a_copy_and_a_pickle():
 def test_the_merge_driver_needs_no_analysis_stack(tmp_path, monkeypatch, capsys):
     """git runs the driver in a temp dir with no crapkit.toml, and the stamps it
     compares come from the three files, never from the running metric."""
-    stamp = SingleNumberStamp(13, "1.24.0")
+    stamp = single_number(13, "1.24.0")
     files = []
     for side, crap in (("base", 50.0), ("ours", 40.0), ("theirs", 30.0)):
         path = tmp_path / f"{side}.tsv"
@@ -345,7 +360,7 @@ def test_a_scope_name_round_trips_whatever_it_holds(tmp_path, name, encoded, spe
     assert path.read_bytes() == data
 
 
-@pytest.mark.parametrize("stamp", [SingleNumberStamp(13, "1.24.0"), SCOPES], ids=["single-number", "per-scope"])
+@pytest.mark.parametrize("stamp", [single_number(13, "1.24.0"), SCOPES], ids=["single-number", "per-scope"])
 def test_both_stamp_forms_hold_the_same_marks_and_no_scope_line_is_one(stamp):
     """A legacy raw mark whose path is `#scope` still reads as a mark: its
     third field is a finite number. A scope stamp line read alone, as a
@@ -418,7 +433,7 @@ def test_only_a_comment_line_opens_the_per_scope_form():
     marked = RatchetEntry("src/crapkit-stamp=2.py", "h( )", 9.0)
     text = _lines(SINGLE_LINE, *ROWS, "src/crapkit-stamp=2.py\th( )\t9.0000")
 
-    assert read_stamp(text) == SingleNumberStamp(13, "1.24.0")
+    assert read_stamp(text) == single_number(13, "1.24.0")
     assert (load_ratchet(text), read_ratchet(text)) == ([*MARKED, marked], ([*MARKED, marked], []))
 
 
@@ -455,7 +470,7 @@ def test_the_number_a_stamp_gives_a_language():
     number any scope records under a per-scope one; None for none recorded."""
     legacy = ScopeStamps("1.24.0", {**SCOPES.scopes, "old": ScopeStamp({"typescript": 9}, "cc-only")})
 
-    assert [SingleNumberStamp(9, "1.24.0").language_number(name) for name in ("tsx", "python")] == [9, 9]
+    assert [single_number(9, "1.24.0").language_number(name) for name in ("tsx", "python")] == [9, 9]
     assert [SCOPES.language_number(name) for name in ("typescript", "python", "javascript")] == [13, 13, None]
     assert legacy.language_number("typescript") == 9
     assert MetricStamp.NONE.language_number("typescript") is None
@@ -796,7 +811,7 @@ TWO = {"api": (PY13, COV1), "web": (TS13, IST1)}
 def _as_stamp(data):
     """The ratchet stamp a plain-data stamp spells."""
     if data[0] == "single":
-        return SingleNumberStamp(data[1], data[2])
+        return single_number(data[1], data[2])
     lizard, scopes = data[1:] if data[0] == "scoped" else data
     return ScopeStamps(lizard, {name: ScopeStamp(dict(numbers), mode)
                                 for name, (numbers, mode) in scopes.items()})
@@ -915,10 +930,10 @@ def test_a_single_number_file_names_the_scopes_whose_mode_it_inferred():
     """A coveragepy or istanbul scope may have been measured or cc-only under
     0.8.x, so its mode is a guess the warning names; a lane-less one is not."""
     running = _as_stamp((LIZARD, {"api": (PY13, COV1), "tools": (GO13, "cc-only")}))
-    conflict = stamp_conflict(SingleNumberStamp(13, LIZARD), running, frozenset({"api", "tools"}))
+    conflict = stamp_conflict(single_number(13, LIZARD), running, frozenset({"api", "tools"}))
 
     assert conflict.inferred == ("api",) and not conflict.refuses
-    assert stamp_conflict(SingleNumberStamp(13, LIZARD), running, frozenset({"tools"})) is None
+    assert stamp_conflict(single_number(13, LIZARD), running, frozenset({"tools"})) is None
     assert stamp_conflict(_as_stamp(("scoped", LIZARD, {"api": (PY13, COV1)})), running,
                           frozenset({"api"})) is None
 
@@ -933,7 +948,7 @@ def test_the_flip_from_a_parser_0_8_x_never_read_comes_from_the_running_tables(m
     monkeypatch.setitem(coverage_format.READER_VERSIONS, "lcov", 1)
     now = running([scope("svc", "go")], [lane("go", "lcov", "svc")])
 
-    conflict = stamp_conflict(SingleNumberStamp(13, now.lizard), now, frozenset({"svc"}))
+    conflict = stamp_conflict(single_number(13, now.lizard), now, frozenset({"svc"}))
     assert [tuple(move) for move in conflict.moved] == [("svc", "coverage", "", "cc-only", {"lcov": 1})]
     assert conflict.inferred == ("svc",)
 
@@ -960,14 +975,14 @@ def test_the_model_and_stamp_conflict_agree_over_generated_stamp_pairs():
 
 
 def test_two_single_number_stamps_compare_as_one_value():
-    conflict = stamp_conflict(SingleNumberStamp(11, LIZARD), SingleNumberStamp(13, LIZARD),
+    conflict = stamp_conflict(single_number(11, LIZARD), single_number(13, LIZARD),
                               frozenset({"api"}))
 
     assert conflict.whole and conflict.refuses and conflict.moved == ()
     assert conflict.refusal("crapkit-ratchet.tsv").startswith(
         f"ratchet marks were recorded under [crapkit-analysis=11 lizard={LIZARD}] but this run "
         f"measures [crapkit-analysis=13 lizard={LIZARD}] - CRAP scores are not comparable")
-    assert stamp_conflict(SingleNumberStamp(13, LIZARD), SingleNumberStamp(13, LIZARD)) is None
+    assert stamp_conflict(single_number(13, LIZARD), single_number(13, LIZARD)) is None
 
 
 @pytest.mark.parametrize(("line", "refused", "newer"), [
@@ -1000,7 +1015,7 @@ def test_a_per_scope_file_against_a_single_running_number_compares_as_one_value(
     `_per_scope` takes this pair per scope."""
     recorded = _as_stamp(("scoped", LIZARD, TWO))
 
-    conflict = stamp_conflict(recorded, SingleNumberStamp(13, LIZARD), frozenset({"api"}))
+    conflict = stamp_conflict(recorded, single_number(13, LIZARD), frozenset({"api"}))
 
     assert conflict.whole and conflict.refuses and conflict.moved == ()
 

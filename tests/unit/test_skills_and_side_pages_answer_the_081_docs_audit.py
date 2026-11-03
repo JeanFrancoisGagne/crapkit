@@ -22,7 +22,8 @@ from pathlib import Path
 from crapkit.agent_fields import _PACKET_PROPERTIES
 from crapkit.analyze import ANALYSIS_VERSION, analyze_source
 from crapkit.cli.parser import build_parser
-from crapkit.ratchet import ScopeStamp, ScopeStamps, SingleNumberStamp, stamp_conflict
+from crapkit.ratchet import ScopeStamp, ScopeStamps, stamp_conflict
+from stamps import single_number
 
 ROOT = Path(__file__).resolve().parents[2]
 RECOVER = "plugin/skills/crapkit-recover/SKILL.md"
@@ -58,7 +59,7 @@ def _row(rel: str, key: str) -> str:
 def test_the_recover_skill_quotes_the_upgrade_this_release_makes():
     """A 0.8.0 file met by this release, in a scope 0.8.1 moved."""
     running = ScopeStamps("1.24.0", {"web": ScopeStamp({"typescript": ANALYSIS_VERSION}, {"istanbul": 1})})
-    conflict = stamp_conflict(SingleNumberStamp(11, "1.24.0"), running, frozenset({"web"}))
+    conflict = stamp_conflict(single_number(11), running, frozenset({"web"}))
     head = conflict.refusal("crapkit-ratchet.tsv").split(" - ", 1)[0]
 
     assert f"`{head}` is the 0.8.1 upgrade" in _prose(RECOVER)

@@ -519,17 +519,17 @@ EXIT=3
 
 A team upgrades one member at a time, so the other direction is the common one. A teammate
 on the newer release re-seeded and committed the marks, and your crapkit, the Action pinned
-one tag behind, or a pre-commit `rev` left at the old tag, measures the older analysis:
+one tag behind, or a pre-commit `rev` left at the old tag, runs the older analysis numbers:
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=14 lizard=1.24.0] but this run measures [crapkit-analysis=13 lizard=1.24.0] - the marks come from a newer crapkit than this install; upgrade it to the version that wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than re-seed, which would restamp the team's marks backwards and make every upgraded teammate's verify refuse them
+crapkit: ratchet marks were recorded under [crapkit-stamp=2 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 1 scope(s): api (python analysis 14 to 13) - the marks come from a newer crapkit than this install; upgrade it to the version that wrote them (the CLI, the Action's `uses:` pin and the pre-commit `rev` alike) rather than re-seed, which would restamp the team's marks backwards and make every upgraded teammate's verify refuse them
 EXIT=3
 ```
 
-crapkit prints that line from 0.8.1 on; the example is a 0.8.1 reader meeting marks a
-later release stamped 14. A 0.8.0 reader meeting 0.8.1's marks prints the older line, which
-asks for a seed; upgrade that reader instead.
+crapkit asks for that upgrade from 0.8.1 on. A 0.8.0 reader meeting 0.8.1's marks prints the
+older line, which asks for a seed; upgrade that reader instead. 0.8.x refuses a per-scope file
+by name, as [Upgrading](upgrading.md#the-first-seed-writes-one-stamp-per-scope) shows.
 
 The versions compare as numbers, so lizard 1.9.0 is older than 1.24.0. Only an analysis or a
 reader number marks a newer release. crapkit pins lizard exactly, so marks a newer lizard stamped, which a
@@ -567,7 +567,7 @@ says so, and prune's line names the run's metric the same way:
 
 ```
 $ crapkit ratchet seed
-crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a); run 9 was measured under [crapkit-analysis=9 lizard=1.24.0], not this crapkit's [crapkit-analysis=10 lizard=1.24.0], so verify refuses these marks until a fresh `crapkit coverage` and another seed
+crapkit-ratchet.tsv: added 0, tightened 0 - 2 mark(s) vs run 9 (4a06338604a); run 9 measured scope src under [lizard=1.24.0 analysis python=9; coverage coveragepy=1], not this crapkit's [lizard=1.24.0 analysis python=10; coverage coveragepy=1], so verify refuses these marks until a fresh `crapkit coverage` and another seed
 ```
 
 A run that recorded no metric per scope, as every run 0.8.x stored, vouches for none, and seed refuses it:
@@ -1366,7 +1366,7 @@ The two stamps answer different questions:
 
 | Stamp | What it records |
 | --- | --- |
-| `# crapkit-analysis=13 lizard=1.24.0` | The reader and metric rules that produced the function set and scores. |
+| `# crapkit-stamp=2 lizard=1.24.0: ...` and one `#scope` line per scope | The reader and metric rules, scope by scope, that produced the function set and scores. A file 0.8.x wrote holds one `# crapkit-analysis=N lizard=X.Y.Z` line instead. |
 | `# crapkit-keys=1` | Ordinals ordered by `(start, occurrence)`. |
 
 A missing key-version comment means the old start-only rule. For unchanged groups

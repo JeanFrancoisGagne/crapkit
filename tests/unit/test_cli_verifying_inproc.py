@@ -25,7 +25,7 @@ from crapkit.cli.verifying import _verify_exit_code
 from crapkit.cli import main
 from crapkit.cli import verifying
 from crapkit.invocation import _self
-from crapkit.ratchet import RatchetEntry, dump_ratchet, read_stamp
+from crapkit.ratchet import MetricStamp, RatchetEntry, dump_ratchet, read_stamp
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation, RatchetRegression, Verdict, parse_baseline_tsv
 
@@ -57,7 +57,7 @@ def head(repo) -> str:
     return git(repo, "rev-parse", "HEAD").strip()
 
 
-def write_marks(repo, *entries: tuple[str, str, float], stamp: str | None = None,
+def write_marks(repo, *entries: tuple[str, str, float], stamp: MetricStamp | None = None,
                 key_version: int = 0) -> None:
     (repo / MARKS).write_text(
         dump_ratchet([RatchetEntry(*e) for e in entries], file_name=MARKS,
@@ -621,7 +621,7 @@ def test_a_mark_that_rose_is_its_own_exit_code(baselined, capsys):
 def test_marks_recorded_under_another_metric_are_refused_before_the_lanes_run(baselined, capsys):
     """Finding this out after a 40-minute lane run is too late, so the guard runs
     first. A metric bump that silently kept 40k old marks is what it exists for."""
-    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp="lizard 0.0.1 analysis 0")
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp=MetricStamp.parse("lizard 0.0.1 analysis 0"))
 
     code, _, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
 
@@ -680,7 +680,7 @@ def test_an_unreadable_stamp_line_is_named_by_verify_and_doctor_as_seed_and_prun
 
 
 def test_a_marks_file_written_before_stamping_warns_and_still_verifies(baselined, capsys):
-    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp="")
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp=MetricStamp.NONE)
 
     code, _, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
 
@@ -1590,7 +1590,7 @@ def test_a_crlf_checkout_keeps_its_line_endings_through_a_tighten(marked_debt, c
 def test_a_marks_file_written_before_stamping_is_restamped_and_says_so(marked_debt, capsys):
     """The one rewrite that moves no mark: a legacy file gains the stamp line.
     `0 dropped, 0 tightened` explained nothing about the dirty file it left."""
-    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp="")
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp=MetricStamp.NONE)
 
     code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
 

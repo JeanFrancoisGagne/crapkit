@@ -26,7 +26,7 @@ from crapkit.cli.ratchet_cmds import cmd_ratchet
 from crapkit.errors import ConfigError
 from crapkit.ratchet import (RatchetEntry, coverage_then_seed, dump_ratchet, read_stamp,
                              stamp_conflict)
-from stamps import running_in, shifted
+from stamps import running_in, shifted, single_number
 
 import lizard
 
@@ -134,7 +134,7 @@ def test_marks_a_newer_lizard_stamped_clear_with_the_reseed_verify_names(repo, c
     """A crapkit that lets lizard float seeded these marks: verify, doctor,
     prune and seed all sent the user to a lizard upgrade the pin forbids. One
     lizard version signs every scope, so the seed named is the plain one."""
-    stamped = f"crapkit-analysis=13 lizard={_one_patch_up(lizard.version)}"
+    stamped = single_number(13, _one_patch_up(lizard.version))
     (repo / MARKS).write_text(
         dump_ratchet([RatchetEntry("src/app.ts", "dispatch( kind : string )", 90.0)],
                      stamp=stamped), encoding="utf-8", newline="\n")
