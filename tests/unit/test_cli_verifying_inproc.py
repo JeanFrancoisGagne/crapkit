@@ -630,6 +630,55 @@ def test_marks_recorded_under_another_metric_are_refused_before_the_lanes_run(ba
     assert "crapkit ratchet seed" in err
 
 
+def _cut_after(text: str, line_start: str) -> str:
+    """`text` cut off right after `line_start`, as a write stopped mid-line leaves it."""
+    return text[:text.index(line_start) + len(line_start)]
+
+
+def _respelled(text: str, line_start: str, rest: str) -> str:
+    """`text` with the rest of the line that opens with `line_start` replaced."""
+    return "\n".join(line_start + rest if line.startswith(line_start) else line
+                     for line in text.split("\n"))
+
+
+# A per-scope marks file whose stamp lines a cut write or a hand edit left
+# unreadable, and the complaint seed and prune refuse it with.
+UNREADABLE_STAMP_LINES = {
+    "cut-scope-line": (lambda text: _cut_after(text, "#scope\tsrc\t"),
+                       "ratchet line 3 has an unreadable scope stamp: '#scope\\tsrc\\t'"),
+    "garbage-scope-line": (lambda text: _respelled(text, "#scope\tsrc\t", "analysis typescript=thirteen"),
+                           "ratchet line 3 has an unreadable scope stamp: "
+                           "'#scope\\tsrc\\tanalysis typescript=thirteen'"),
+    "cut-first-line": (lambda text: _respelled(text, "# crapkit-stamp=2 ", "liz"),
+                       "ratchet line 3 is a scope stamp, but line 1 stamps the file [crapkit-stamp=2 liz]; "
+                       "a marks file holds one stamp form, single-number or per scope"),
+}
+
+
+@pytest.mark.parametrize("how", list(UNREADABLE_STAMP_LINES))
+def test_an_unreadable_stamp_line_is_named_by_verify_and_doctor_as_seed_and_prune_name_it(
+        baselined, capsys, how):
+    """verify read the line as marks another metric measured and named coverage,
+    prune and seed, and seed and prune refuse that same line: the remedy could
+    not run. Every command now names the line, and doctor fails on it as on any
+    marks file verify cannot read."""
+    degrade, complaint = UNREADABLE_STAMP_LINES[how]
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), key_version=1)
+    marks = baselined / MARKS
+    marks.write_text(degrade(marks.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
+    refusal = f"unreadable ratchet file {MARKS}: {complaint}"
+
+    for argv in (["ratchet", "seed"], ["ratchet", "prune"], ["verify", "--reuse-artifacts"]):
+        code, _, err = run(argv, baselined, capsys)
+        assert (code, err) == (3, f"crapkit: {refusal}\n"), argv
+    code, out, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+    assert (code, json.loads(out)["error"]["message"]) == (3, refusal)
+    code, out, _ = run(["doctor", "--json"], baselined, capsys)
+    payload = json.loads(out)
+    named = {kind: [text for text in payload[kind] if MARKS in text] for kind in ("problems", "warnings")}
+    assert (code, named) == (1, {"problems": [refusal], "warnings": []}), payload
+
+
 def test_a_marks_file_written_before_stamping_warns_and_still_verifies(baselined, capsys):
     write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp="")
 

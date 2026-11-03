@@ -214,6 +214,8 @@ def single(analysis: int, lizard: str = LIZARD) -> list[str]:
 
 
 UNSTAMPED = ["# crapkit-keys=1"]
+# A stamp line crapkit cannot read: a single-number line with its lizard field cut off.
+UNREADABLE = ["# crapkit-analysis=13", "# crapkit-keys=1"]
 BASE = scoped(**SCOPES)
 
 
@@ -260,11 +262,18 @@ MERGED = [
      scoped(api=API13, web=WEB14), single(13, "1.25.0"), scoped("1.25.0", api=API13, web=WEB14),
      (("api", "THEIRS"), ("web", "THEIRS"), ("web", "OURS"))),
     # A single-number side that wins a scope takes that scope's languages and
-    # coverage mode from OURS, or from BASE where OURS removed the scope.
+    # coverage mode from OURS, or from BASE where OURS removed the scope. A
+    # single-number BASE records neither, so OURS gives them.
     ("single-number-theirs-moved-every-scope-ours-held", BASE, BASE, single(14),
      scoped(api=API14, old=OLD14, web=WEB14), (("api", "THEIRS"), ("old", "THEIRS"), ("web", "THEIRS"))),
     ("single-number-theirs-moved-every-scope-ours-removed-old", BASE, scoped(api=API13, web=WEB13), single(14),
      scoped(api=API14, old=OLD14, web=WEB14), (("api", "THEIRS"), ("old", "THEIRS"), ("web", "THEIRS"))),
+    ("single-number-base-and-theirs-moved-every-scope-ours-held", single(13), scoped(api=API13, web=WEB13),
+     single(14), scoped(api=API14, web=WEB14), (("api", "THEIRS"), ("web", "THEIRS"))),
+    # A BASE that records no stamp records no scope, so every scope a side
+    # records is an add, as over the empty BASE of an add/add merge.
+    ("unstamped-base-ours-added-tools", UNSTAMPED, scoped(**SCOPES, tools=TOOLS13), BASE,
+     scoped(**SCOPES, tools=TOOLS13), (("tools", "OURS"),)),
     ("unstamped-and-unstamped", UNSTAMPED, UNSTAMPED, UNSTAMPED, UNSTAMPED, ()),
 ]
 
@@ -281,7 +290,16 @@ REFUSED = [
     ("single-number-theirs-and-ours-moved-web-apart", single(12), scoped(api=API13, web=WEB14), single(13),
      ["web"], ["web"]),
     ("single-number-apart", single(12), single(13), single(14), [], []),
+    # An unreadable BASE records no scope either: its number is never read as a
+    # single-number stamp, so web, which each side records otherwise, clashes.
+    ("unreadable-base-and-sides-apart-on-web", UNREADABLE, scoped(api=API13, web=WEB13),
+     scoped(api=API13, web=WEB14), ["web"], ["web"]),
     ("unstamped-against-a-stamp", UNSTAMPED, UNSTAMPED, single(13), [], []),
+    # An unstamped or unreadable side merges with no per-scope side, whichever side BASE equals.
+    ("unstamped-against-per-scope", UNSTAMPED, UNSTAMPED, BASE, [], []),
+    ("per-scope-against-unstamped", BASE, BASE, UNSTAMPED, [], []),
+    ("unreadable-against-per-scope", UNREADABLE, UNREADABLE, BASE, [], []),
+    ("per-scope-against-unreadable", BASE, BASE, UNREADABLE, [], []),
 ]
 
 SWAP = {"OURS": "THEIRS", "THEIRS": "OURS"}
@@ -331,6 +349,24 @@ def test_a_single_number_side_compares_on_its_number_and_lizard_only():
         assert (type(merged.stamp), merged.stamp.scopes) == (ScopeStamps, ours.scopes)
 
 
+def _nameless(stamp_lines: list[str]) -> ScopeStamps:
+    """The per-scope stamp those lines record, naming no marks file, as a run builds it."""
+    stamp = stamp_of(stamp_lines)
+    return ScopeStamps(stamp.lizard, stamp.scopes)
+
+
+def test_the_merged_stamp_names_the_marks_file_a_side_named_else_the_one_its_writer_gives():
+    """Line 1 of a per-scope file names the marks file. The merge takes that
+    name from OURS, else THEIRS, else BASE; with none, the writer's name stands."""
+    moved = scoped(**{**SCOPES, "api": API14})
+    from_base = merge_stamps(stamp_of(BASE), _nameless(BASE), _nameless(moved))
+    from_none = merge_stamps(_nameless(BASE), _nameless(BASE), _nameless(moved))
+
+    assert from_base.stamp == from_none.stamp == stamp_of(moved)
+    assert from_base.stamp.head("other.tsv") == moved[0]
+    assert from_none.stamp.head("other.tsv") == moved[0].replace("crapkit-ratchet.tsv", "other.tsv")
+
+
 # --- the driver: the merged file, the marks, the note and the refusal ------------------
 
 BASE_ROWS = ["a.py\tf( )\t50.0000", "b.py\tg( )\t40.0000", "c.py\th( )\t30.0000", "e.py\tk( )\t60.0000",
@@ -366,10 +402,13 @@ def _marks_of(rows: list[str]) -> dict:
     return {(path, name): float(crap) for path, name, crap in (row.split("\t") for row in rows)}
 
 
-def note(scope: str, side: str) -> str:
+def note(scope: str, side: str, changed: int | None = None) -> str:
+    """The line naming `scope`, whose stamp came from `side`, while the other
+    side changed `changed` marks: by default CHANGED's count for that side."""
     other = SWAP[side]
+    count = CHANGED[other] if changed is None else changed
     return (f"ratchet merge: scope {scope}'s stamp came from {side} and {other} changed "
-            f"{CHANGED[other]} mark(s); if verify names {scope}, run crapkit ratchet seed --scope {scope}\n")
+            f"{count} mark(s); if verify names {scope}, run crapkit ratchet seed --scope {scope}\n")
 
 
 @pytest.mark.parametrize("base, ours, theirs, want, came_from", [row[1:] for row in MERGED], ids=_ids(MERGED))
@@ -389,6 +428,23 @@ def test_the_driver_writes_the_hand_built_file_and_names_each_scope_a_side_moved
     assert {(e.path, e.long_name): e.crap for e in load_ratchet(text)} == three_way_marks(
         _marks_of(BASE_ROWS), _marks_of(OURS_ROWS), _marks_of(THEIRS_ROWS))
     assert output.err == "".join(note(scope, side) for scope, side in came_from)
+
+
+@pytest.mark.parametrize("base, ours, theirs, want, came_from", [row[1:] for row in MERGED], ids=_ids(MERGED))
+def test_swapping_the_ours_and_theirs_files_writes_the_same_file(tmp_path, capsys, base, ours, theirs, want,
+                                                                 came_from):
+    """Accuracy check 3 through the driver: OURS and THEIRS trade files, rows
+    included, and the merged file holds the same stamp and the same marks.
+    Only the notes' side names swap; each still counts the other side's changes."""
+    files = write_sides(tmp_path, base, theirs, ours, rows=(BASE_ROWS, THEIRS_ROWS, OURS_ROWS))
+
+    code = main(["ratchet", "merge", *files])
+    output = capsys.readouterr()
+
+    assert (code, output.out) == (0, "ratchet merge: 5 mark(s)\n"), output.err
+    assert (tmp_path / "ours.tsv").read_text(encoding="utf-8") == marks_file(want, MERGED_ROWS)
+    assert sorted(output.err.splitlines(keepends=True)) == sorted(
+        note(scope, SWAP[side], CHANGED[SWAP[side]]) for scope, side in came_from)
 
 
 def test_no_note_when_the_other_side_changed_no_mark(tmp_path, capsys):
@@ -425,6 +481,21 @@ def test_the_refusal_names_each_scope_what_each_side_recorded_and_the_fix(tmp_pa
         "`crapkit ratchet seed --scope web` on one branch, then merge again; OURS was left unchanged\n")
 
 
+def test_a_lizard_split_refusal_says_which_side_has_no_line_for_a_scope_and_names_the_plain_seed(
+        tmp_path, capsys):
+    files = write_sides(tmp_path, BASE, scoped("1.25.0", **SCOPES), scoped("1.26.0", api=API13, web=WEB13))
+
+    assert main(["ratchet", "merge", *files]) == 3
+
+    assert capsys.readouterr().err == (
+        "crapkit: ratchet merge refused: OURS and THEIRS moved a stamp differently - scope api: OURS "
+        f"records [lizard=1.25.0 {API13}] and THEIRS records [lizard=1.26.0 {API13}]; scope old: OURS "
+        f"records [lizard=1.25.0 {OLD13}] and THEIRS records [lizard=1.26.0 and no line for this scope]; "
+        f"scope web: OURS records [lizard=1.25.0 {WEB13}] and THEIRS records [lizard=1.26.0 {WEB13}] - "
+        "run `crapkit coverage` and `crapkit ratchet seed` on one branch, then merge again; OURS was left "
+        "unchanged\n")
+
+
 def test_a_single_number_refusal_names_the_newer_side_and_the_crapkit_to_reseed_with(tmp_path, capsys):
     files = write_sides(tmp_path, single(12), single(13), single(14))
 
@@ -436,6 +507,23 @@ def test_a_single_number_refusal_names_the_newer_side_and_the_crapkit_to_reseed_
         "THEIRS is newer, so on this branch, with a crapkit that measures [crapkit-analysis=14 "
         "lizard=1.24.0], run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with "
         "`crapkit ratchet seed`, then merge again; OURS was left unchanged\n")
+
+
+@pytest.mark.parametrize("ours, theirs, recorded", [
+    (UNSTAMPED, single(13), "OURS records [unstamped] and THEIRS records [crapkit-analysis=13 lizard=1.24.0]"),
+    (single(13), UNSTAMPED, "OURS records [crapkit-analysis=13 lizard=1.24.0] and THEIRS records [unstamped]"),
+], ids=["ours-unstamped", "theirs-unstamped"])
+def test_an_unstamped_side_refuses_as_a_stamp_that_does_not_compare(tmp_path, capsys, ours, theirs, recorded):
+    """The refusal docs/ratchet.md quotes: a side that records no stamp reads as
+    `unstamped`, and neither side is newer, so the seed may run on either branch."""
+    files = write_sides(tmp_path, UNSTAMPED, ours, theirs)
+
+    assert main(["ratchet", "merge", *files]) == 3
+
+    assert capsys.readouterr().err == (
+        f"crapkit: ratchet merge refused: {recorded}, and the two stamps do not compare; on one branch, "
+        "run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`, "
+        "then merge again; OURS was left unchanged\n")
 
 
 def test_the_driver_merges_stamps_with_no_analysis_stack_and_no_config(tmp_path, capsys, monkeypatch):

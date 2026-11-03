@@ -586,12 +586,10 @@ def metric(analysis: int, lizard: str | None = None) -> str:
 
 
 def stamp_refusal(old: int, new: int, *, old_lizard: str | None = None, new_lizard: str | None = None) -> str:
-    """The part of verify's refusal that names what moved. The candidate, the
-    newest crapkit a cell runs, names each marked scope's move: a language's
-    analysis number, else the lizard version. Only an older release reads
-    marks newer than itself, and it names both stamps whole."""
-    if old > new:
-        return f"[{metric(old, old_lizard)}] but this run measures [{metric(new, new_lizard)}]"
+    """The part of the candidate's verify refusal that names what moved: each
+    marked scope's analysis number, else the lizard version. An older release
+    never prints this: it reads the candidate's marks and quotes their
+    per-scope first line as the stamp it cannot compare."""
     if old != new:
         return f"analysis {old} to {new}"
     return f"lizard {old_lizard or lizard_version()} to {new_lizard or lizard_version()}"
