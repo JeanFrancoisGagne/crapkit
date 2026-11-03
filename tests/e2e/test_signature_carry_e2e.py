@@ -75,12 +75,13 @@ MEASURED_TOML = TOML.replace("coverage_optional = true\n", "") + (
     "artifact = \"cov/unit.json\"\nparser = \"istanbul\"\nscopes = [\"calc\"]\n")
 
 
-def seed(repo: Path, toml: str) -> Path:
-    """The probe repo after `ratchet seed`, its marks committed."""
+def seed(repo: Path, toml: str, encode=str.encode) -> Path:
+    """The probe repo after `ratchet seed`, its marks committed, its source
+    saved through `encode`."""
     (repo / "calc").mkdir()
     (repo / "crapkit.toml").write_text(toml, encoding="utf-8")
     (repo / ".gitignore").write_text(".crapkit/\ncov/\n", encoding="utf-8")
-    (repo / "calc" / "grade.py").write_text(SEEDED, encoding="utf-8")
+    (repo / "calc" / "grade.py").write_bytes(encode(SEEDED))
     git_commit_all(repo, "base")
     for step in (("coverage",), ("ratchet", "seed")):
         res = run_cli(repo, *step, env_extra=NO_REASON)
@@ -161,6 +162,14 @@ def test_check_gate_answers_ok_with_one_carried_item(seeded):
     assert [(c["key_name"], c["carried_from"], c["mark"]) for c in gate["carried"]] == [(NEW, OLD, 7.0)]
 
 
+def bash_hook(repo: Path):
+    """claude-hook as a Bash command that rewrote the file reports it: no path,
+    so the hook judges the repo's freshly written source."""
+    event = {"hook_event_name": "PostToolUse", "tool_name": "Bash", "cwd": str(repo),
+             "tool_input": {"command": "python rewrite.py calc/grade.py"}}
+    return run_cli(repo, "claude-hook", "--protocol", "1", stdin=json.dumps(event), env_extra=NO_REASON)
+
+
 def test_both_hooks_pass_the_probe(seeded):
     repo = edited(seeded, SIGNED)
 
@@ -168,7 +177,32 @@ def test_both_hooks_pass_the_probe(seeded):
     advisory = claude_hook(repo)
 
     assert hook.returncode == 0, hook.stdout + hook.stderr
-    assert advisory.returncode == 0, advisory.stdout + advisory.stderr
+    (line,) = carried_lines(hook.stderr)
+    assert line.startswith(CARRIED) and line.endswith(MOVE), line
+    assert "1 staged function(s) carry a ratchet mark" in hook.stderr
+    assert (advisory.returncode, advisory.stdout, advisory.stderr) == (0, "", "")
+
+
+def test_the_bash_fallback_draws_the_edit_s_verdicts(seeded):
+    """The same writes reported by a shell command: silence on the probe, the
+    marked block with the carried note past the mark."""
+    signed = bash_hook(edited(seeded, SIGNED))
+    risen = bash_hook(edited(seeded, "def classify(a, b, c=None):\n" + body(7)))
+
+    assert (signed.returncode, signed.stderr) == (0, "")
+    assert risen.returncode == 2 and f"mark 7.0000 (carried from {OLD})" in risen.stderr, risen.stderr
+
+
+def test_a_second_edit_past_the_carried_mark_refuses_on_both_hooks_with_the_carried_note(seeded):
+    repo = edited(seeded, "def classify(a, b, c=None):\n" + body(7))
+
+    hook = run_cli(repo, "hook-precommit", env_extra=NO_REASON)
+    advisory = claude_hook(repo)
+
+    note = f"{NEW}  mark 7.0000 (carried from {OLD})"
+    assert (hook.returncode, advisory.returncode) == (6, 2), hook.stdout + hook.stderr + advisory.stderr
+    assert note in hook.stdout and f"  ccn 8  calc/grade.py:1  {note}" in advisory.stderr
+    assert carried_lines(hook.stderr) == [] and "mark the debt" not in advisory.stderr
 
 
 def test_verify_passes_the_probe_prints_the_line_once_and_lists_a_carried_item(seeded):
@@ -221,6 +255,88 @@ def test_an_ambiguous_carry_refuses_and_names_every_key_and_the_move(seeded, sou
     (sentence,) = sentences
     assert all(key in sentence for key in keys) and f'ratchet move --function calc/grade.py "{OLD}"' in sentence
     assert sentence in gate.stderr and carried_lines(gate.stderr) == []
+
+
+def test_a_twin_refuses_on_both_hooks_until_the_move_it_names_settles_it(seeded):
+    """The edit leaves the probe at ccn 7 beside a ccn-1 twin of its new name:
+    twins never carry a mark, so both hooks refuse and name both keys and the
+    move. The move re-keys the mark, and the next commit passes."""
+    repo = edited(seeded, SIGNED + "\n\ndef classify(a, b, c=None):\n    return b\n")
+
+    hook = run_cli(repo, "hook-precommit", env_extra=NO_REASON)
+    advisory = claude_hook(repo)
+
+    assert (hook.returncode, advisory.returncode) == (6, 2), hook.stdout + advisory.stderr
+    for said in (hook.stdout, advisory.stderr):
+        assert "twins never carry a mark" in said and f'"{NEW}#2"' in said
+        assert f'ratchet move --function calc/grade.py "{OLD}" "{NEW}"' in said
+    moved = run_cli(repo, "ratchet", "move", "--function", "calc/grade.py", OLD, NEW, env_extra=NO_REASON)
+    assert moved.returncode == 0, moved.stdout + moved.stderr
+    git(repo, "add", MARKS)
+    again = run_cli(repo, "hook-precommit", env_extra=NO_REASON)
+    assert again.returncode == 0 and carried_lines(again.stderr) == [], again.stdout + again.stderr
+
+
+@pytest.mark.parametrize("extra_mark, source, keys", [
+    pytest.param("calc/grade.py\tclassify( x )\t9.0000\n", SIGNED, (f'"{OLD}"', '"classify( x )"'),
+                 id="two-marks-left"),
+    pytest.param("", SIGNED + "\n\ndef classify(q):\n" + body(6), (f'"{NEW}"', '"classify( q )"'),
+                 id="two-unmarked-functions"),
+])
+def test_several_candidates_refuse_on_both_hooks_and_name_both_keys(seeded, extra_mark, source, keys):
+    if extra_mark:
+        marks = seeded / MARKS
+        marks.write_text(marks.read_text(encoding="utf-8") + extra_mark, encoding="utf-8", newline="\n")
+        git_commit_all(seeded, "a second mark")
+    repo = edited(seeded, source)
+
+    hook = run_cli(repo, "hook-precommit", env_extra=NO_REASON)
+    advisory = claude_hook(repo)
+
+    assert (hook.returncode, advisory.returncode) == (6, 2), hook.stdout + advisory.stderr
+    for said in (hook.stdout, advisory.stderr):
+        assert all(key in said for key in keys) and "ratchet move --function is the explicit form" in said
+    assert carried_lines(hook.stderr) == []
+
+
+def utf16(text: str) -> bytes:
+    return "﻿".encode("utf-16-le") + text.encode("utf-16-le")
+
+
+def crlf(text: str) -> bytes:
+    return text.replace("\n", "\r\n").encode("utf-8")
+
+
+@pytest.mark.parametrize("encode", [utf16, crlf], ids=["utf-16-le-bom", "crlf"])
+def test_the_probe_s_hook_verdicts_hold_in_every_source_encoding(tmp_path, encode):
+    """Seeded and edited in the same encoding: the probe passes both hooks with
+    the carried line, and ccn 8 refuses on both with the carried note."""
+    repo = seed(git_init_repo(tmp_path), TOML, encode)
+    source = repo / "calc" / "grade.py"
+
+    source.write_bytes(encode(SIGNED))
+    git(repo, "add", "calc/grade.py")
+    passed = run_cli(repo, "hook-precommit", env_extra=NO_REASON), claude_hook(repo)
+    source.write_bytes(encode("def classify(a, b, c=None):\n" + body(7)))
+    git(repo, "add", "calc/grade.py")
+    risen = run_cli(repo, "hook-precommit", env_extra=NO_REASON), claude_hook(repo)
+
+    assert [done.returncode for done in passed + risen] == [0, 0, 6, 2], [d.stdout + d.stderr for d in risen]
+    assert len(carried_lines(passed[0].stderr)) == 1 and passed[1].stderr == ""
+    assert f"(carried from {OLD})" in risen[0].stdout and f"(carried from {OLD})" in risen[1].stderr
+
+
+def test_a_utf16_marks_file_carries_the_same_way(seeded):
+    marks = seeded / MARKS
+    marks.write_bytes(utf16(marks.read_text(encoding="utf-8")))
+    git_commit_all(seeded, "marks saved as UTF-16")
+    repo = edited(seeded, SIGNED)
+
+    hook = run_cli(repo, "hook-precommit", env_extra=NO_REASON)
+    advisory = claude_hook(repo)
+
+    assert (hook.returncode, advisory.returncode, advisory.stderr) == (0, 0, ""), hook.stdout + hook.stderr
+    assert len(carried_lines(hook.stderr)) == 1
 
 
 def test_two_marks_leaving_one_bare_name_refuse_and_name_both(seeded):

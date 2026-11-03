@@ -1477,8 +1477,9 @@ def _note_marked_staged(carried: int, noun: str = "staged") -> None:
 # passes, and `verify` judges the exact CRAP. A range above the mark is a marked
 # rise, refused: its ccn alone puts the CRAP past the mark at any coverage. An
 # unproven function whose ccn rose since the diff base passes too, but on the
-# warn block instead of this count.
-_CARRIED = ("pardoned", "unproven")
+# warn block instead of this count. A carried pardon counts as a pardon, so a
+# repo with no carry sees the count it always saw, and adds the carried line.
+_CARRIED = ("pardoned", "unproven", "carried")
 
 # A mark only falls, so the fix for a marked rise is in the code.
 _RISE_FIX = "bring each one's ccn back to its mark or under it (a mark only falls, so no commit raises it)."
@@ -1511,13 +1512,15 @@ def _judge_hook(root: Path, cfg, gate):
 
 
 def _violation(breach):
-    """A breach as the row the hook prints and grants: the function's ccn, its
-    ratchet key, its scope's ceiling and the high end of its CRAP bound."""
+    """A breach as the row the hook prints and grants: the function's ccn, the
+    key its mark sits under, its scope's ceiling and the high end of its CRAP
+    bound. A carried rise is granted under the key its mark was recorded under,
+    so the kept mark stays there and no second mark lands under the new key."""
     from ..hook import Violation
 
     record = breach.function.record
-    return Violation(breach.path, record.long_name, record.start, record.ccn, breach.key_name,
-                     breach.ceiling, breach.function.bound.high)
+    return Violation(breach.path, record.long_name, record.start, record.ccn,
+                     breach.carried_from or breach.key_name, breach.ceiling, breach.function.bound.high)
 
 
 def _breach_scopes(breaches) -> dict[str, list[str]]:
@@ -1535,6 +1538,7 @@ class _Refused(NamedTuple):
     rises: list  # gate.Breach rows whose ccn alone passed their mark
     carried: int
     paths: set  # the files of both lists, for the note on a fix never staged
+    ambiguous: dict  # keys' sentence for each (path, key name) no mark could carry to
 
 
 def _refused_violations(cfg, result) -> _Refused:
@@ -1547,8 +1551,9 @@ def _refused_violations(cfg, result) -> _Refused:
     refused, carried = _of_kinds(result, ("over_ceiling", "marked_rise")), _of_kinds(result, _CARRIED)
     breaches = refused + carried + list(result.unproven_rise)
     check_violations(list(map(_violation, breaches)), _breach_scopes(breaches), cfg.ceiling_of)
+    ambiguous = {(b.path, b.key_name): b.mark_ambiguity for b in result.over_ceiling if b.mark_ambiguity}
     return _Refused(list(map(_violation, _worst_first(result.over_ceiling))), _worst_first(result.marked_rise),
-                    len(carried), set(map(attrgetter("path"), refused)))
+                    len(carried), set(map(attrgetter("path"), refused)), ambiguous)
 
 
 def _of_kinds(result, kinds: tuple) -> list:
@@ -1745,6 +1750,7 @@ def _hook_override_refusal(unread: dict) -> str | None:
 
 def _judge_staged(root: Path, cfg, gate, result, unread: dict, shown: str = "") -> int:
     refused = _refused_violations(cfg, result)
+    _say_carried(result.carried)
     _note_marked_staged(refused.carried, _judged(gate))
     _warn_unproven_rises(result.unproven_rise, shown, _judged(gate))
     refusal = _hook_override_refusal(unread) if _env_override_reason() else None
@@ -1758,11 +1764,21 @@ def _judge_staged(root: Path, cfg, gate, result, unread: dict, shown: str = "") 
     return _grant_or_refuse(root, cfg, refused, gate.records, gate.whole)
 
 
+def _say_carried(carried) -> None:
+    """The carried line verify and `rescore --gate` print, once for each staged
+    function a carried mark pardons: the count line still counts it, and this
+    line names the key the mark sits under and the move that makes it its own."""
+    from ..verify import carried_line, carried_of
+
+    for breach in carried:
+        print(carried_line(carried_of(breach, False)), file=sys.stderr)
+
+
 def _print_refused(root: Path, cfg, gate, refused: _Refused, shown: str) -> None:
     """The breaches no mark covers, then the marked rises, then, inside a
     commit, each of their files whose fix was never staged."""
     if refused.violations:
-        _print_breaches(refused.violations, cfg.target, shown, _judged(gate))
+        _print_breaches(refused.violations, cfg.target, shown, _judged(gate), refused.ambiguous)
     if refused.rises:
         _print_rises(refused.rises, shown, _judged(gate))
     _note_unstaged_fix(root, gate, refused.paths, shown)
@@ -1779,12 +1795,15 @@ def _note_unstaged_fix(root: Path, gate, paths: set, shown: str) -> None:
 def _print_rises(rises: list, shown: str, judged: str) -> None:
     """Each marked function whose ccn alone puts its CRAP past its mark at any
     coverage: a blob has no coverage, and CRAP is never below ccn. The handle
-    is the key its mark sits under, `#2` for a second twin."""
+    is the key its mark sits under, `#2` for a second twin, or the function's
+    new key with the key a carried mark was recorded under."""
+    from ..gate import carried_note
+
     print(f"crapkit gate: {len(rises)} {judged} function(s) rose past their ratchet mark:")
     for breach in rises:
         record = breach.function.record
         print(f"  ccn {record.ccn:>3}  {shown}{breach.path}:{record.start}  {breach.key_name}  "
-              f"mark {breach.mark:.4f}")
+              f"mark {breach.mark:.4f}{carried_note(breach)}")
 
 
 def _warn_unproven_rises(rises, shown: str, judged: str) -> None:
@@ -1792,6 +1811,8 @@ def _warn_unproven_rises(rises, shown: str, judged: str) -> None:
     since the diff base, on stderr: the commit goes through, and `verify`
     reads the coverage that says whether the mark held. `new` stands for a
     base with no function under the key."""
+    from ..gate import carried_note
+
     if not rises:
         return
     print(f"crapkit gate: {len(rises)} {judged} marked function(s) rose in ccn and may pass their "
@@ -1800,7 +1821,7 @@ def _warn_unproven_rises(rises, shown: str, judged: str) -> None:
         record = breach.function.record
         before = "new" if breach.base_ccn is None else breach.base_ccn
         print(f"  ccn {before} -> {record.ccn}  {shown}{breach.path}:{record.start}  {breach.key_name}  "
-              f"mark {breach.mark:.4f}", file=sys.stderr)
+              f"mark {breach.mark:.4f}{carried_note(breach)}", file=sys.stderr)
 
 
 def _refuse_rises(violations: list, whole: bool) -> int:
@@ -1812,11 +1833,16 @@ def _refuse_rises(violations: list, whole: bool) -> int:
     return 6
 
 
-def _print_breaches(violations: list, target: int, shown: str, judged: str) -> None:
+_NO_AMBIGUITY: dict = {}
+
+
+def _print_breaches(violations: list, target: int, shown: str, judged: str,
+                    ambiguous: dict = _NO_AMBIGUITY) -> None:
     """The refusal's head line names the ceiling the breaches were judged
     against, a scope's own `target` included. Breaches under scopes with
     different ceilings each name theirs on the row, `ccn   6 > 5`. `target`
-    stands in for a violation built without a ceiling."""
+    stands in for a violation built without a ceiling. Under the row of a
+    function no mark could carry to goes keys' sentence from `ambiguous`."""
     ceilings = [_judged_ceiling(v, target) for v in violations]
     shared = len(set(ceilings)) == 1
     head = f"of {ceilings[0]}" if shared else "of their scope"
@@ -1824,6 +1850,12 @@ def _print_breaches(violations: list, target: int, shown: str, judged: str) -> N
     for v, ceiling in zip(violations, ceilings):
         over = "" if shared else f" > {ceiling}"
         print(f"  ccn {v.ccn:>3}{over}  {shown}{v.path}:{v.start}  {v.long_name}")
+        _print_ambiguity(ambiguous.get((v.path, v.key_name)))
+
+
+def _print_ambiguity(sentence: str | None) -> None:
+    if sentence:
+        print(f"    {sentence}")
 
 
 def _judged_ceiling(violation, target: int) -> int:

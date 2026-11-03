@@ -352,7 +352,7 @@ block:
       ccn 8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
     the commit gate refuses a ccn past its mark, and a mark only falls: bring the ccn back to its mark or under it
 
-Decompose until the ccn sits at or under the mark; no seed raises it. A range across the
+Decompose until the ccn sits at or under the mark; no seed raises it. A mark that carried through a signature edit keeps the advisory silent the same way, and an advisory that names twins or several candidates asks for the `ratchet move --function` command it prints, not a new mark. A range across the
 mark whose ccn rose since HEAD may have passed it. The commit goes through with a warn,
 and the hook prints the warn block, with the ccn at HEAD (`new` for none) and now:
 

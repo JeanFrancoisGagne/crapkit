@@ -1857,7 +1857,7 @@ Six rungs, each exiting 0 with both streams empty. Any uncaught exception does t
 | repo | no `crapkit.toml` above the edited file; the walk up stops at any `.git` entry, so a worktree never borrows its parent's config. On a `Bash` event: no git repo above the command's `cwd`, or no changed `*.py` fresh enough to judge |
 | git state | mid-rebase, mid-merge or mid-cherry-pick |
 | verdict | no scope claims the file, a reader read it and found no functions, or no changed function is over the ceiling |
-| mark | every changed function over the ceiling carries a mark that its range, ccn up to its untested CRAP, sits at or under, or that its range straddles with a ccn no higher than at HEAD |
+| mark | every changed function over the ceiling carries a mark that its range, ccn up to its untested CRAP, sits at or under, or that its range straddles with a ccn no higher than at HEAD. A mark carried through a signature edit counts within the same bounds, its ccn at HEAD read under the key the mark was recorded under |
 
 Since 0.4.7 the protocol rung is checked first, ahead of the event shape and ahead of every
 git call, so a payload for a protocol this CLI does not answer costs nothing but the read of

@@ -1,0 +1,24 @@
+{
+  "case": "carried_mark",
+  "why": "ratchet seed marked classify( a , b ) at 7.0000 in a cc-only scope at ceiling 6, and the edit changes only its signature, to classify( a , b , c = None ) at ccn 7. The mark that left the file under the bare name classify carries to the one new key of that name, and ccn 7 sits at it: the debt is signed, so the advisory stays silent at exit 0 and never asks for a new mark.",
+  "fixture": "carried_mark",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "def classify(a, b):",
+      "new_string": "def classify(a, b, c=None):"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {
+    "exit": 0,
+    "stderr": []
+  }
+}
