@@ -29,6 +29,9 @@ behind the counts. Three readers:
   lines and BRDA arms on the lines it holds and no inner span holds.
 - Cobertura: cobertura_files reads each class's line hits and condition-coverage
   with ElementTree, and the line-rate and branch-rate the producer wrote.
+- Go coverprofile: coverprofile_rows expands each block holding a statement
+  to every line l0 to l1, hit when any block over the line ran, and gives each
+  span the caller names the lines it holds and no inner span holds.
 
 ratio() is the README's coverage term: branches, else statements, else called.
 table() reads every recorded artifact of a corpus through its crapkit.toml
@@ -470,4 +473,41 @@ def jacoco_rows(data: bytes, root: str, spans: list[tuple[str, int, int]]) -> li
                            tuple(name for name, taken in arms if taken),
                            tuple(nr for nr, _ in counted), tuple(nr for nr, ci in counted if ci),
                            any(ci for _, ci in counted)))
+    return rows
+
+
+_BLOCK = re.compile(r"^(.+):(\d+)\.\d+,(\d+)\.\d+ (\d+) (\d+)$")
+
+
+def coverprofile_lines(text: str) -> dict[str, dict[int, bool]]:
+    """{import path key: {line: hit}} from a Go coverprofile: every line l0 to
+    l1 of a block with numStmt above 0, hit when any block over it counted
+    above 0. A `mode:` line and a block with numStmt 0 give nothing."""
+    files: dict[str, dict[int, bool]] = {}
+    for line in text.splitlines():
+        found = _BLOCK.match(line)
+        if not found or int(found.group(4)) == 0:
+            continue
+        key, first, last, count = found.group(1), int(found.group(2)), int(found.group(3)), int(
+            found.group(5))
+        lines = files.setdefault(key, {})
+        for number in range(first, last + 1):
+            lines[number] = lines.get(number, False) or count > 0
+    return files
+
+
+def coverprofile_rows(text: str, module: str, root: str,
+                      spans: list[tuple[str, int, int]]) -> list[Counts]:
+    """One row per (path, start, end) span: the profile's lines of the file
+    keyed `module/<file>`, read as `root/<file>`, that the span holds and no
+    inner span holds. A coverprofile carries no branches."""
+    files = {f"{root}/{key[len(module) + 1:]}": lines
+             for key, lines in coverprofile_lines(text).items() if key.startswith(module + "/")}
+    rows = []
+    for span in spans:
+        path = span[0]
+        own = [(number, hit) for number, hit in sorted(files.get(path, {}).items())
+               if _owner(spans, path, number) == span]
+        rows.append(Counts(path, "", span[1], span[2], (), (), tuple(number for number, _ in own),
+                           tuple(number for number, hit in own if hit), any(hit for _, hit in own)))
     return rows

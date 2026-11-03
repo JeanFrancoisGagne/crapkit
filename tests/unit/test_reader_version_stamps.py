@@ -1,5 +1,6 @@
 """Each coverage reader's number in the scope stamps a run records, and
-the cc-only to measured flip a new lcov, Cobertura or JaCoCo lane brings.
+the cc-only to measured flip a new lcov, Cobertura, JaCoCo or Go coverprofile
+lane brings.
 
 Parametrized by format, so each reader that lands adds its row to READERS.
 """
@@ -11,7 +12,8 @@ from crapkit.ratchet import ScopeStamp, stamp_conflict
 from stamps import MARKS, lane, running, scope
 
 # format -> (a language that format measures, a scope language with no reader)
-READERS = {"lcov": ("rust", "go"), "cobertura": ("cpp", "go"), "jacoco": ("java", "go")}
+READERS = {"lcov": ("rust", "zig"), "cobertura": ("cpp", "zig"), "jacoco": ("java", "zig"),
+           "coverprofile": ("go", "zig")}
 
 
 @pytest.mark.parametrize("fmt", sorted(READERS))
@@ -92,3 +94,24 @@ def test_a_cc_only_java_scope_that_gains_a_jacoco_lane_gets_the_flip_conflict():
     assert [move.scope for move in conflict.moved] == ["core"]
     assert "core was cc-only and is now measured by its jacoco lane(s)" in refusal
     assert "ratchet seed --scope core" in refusal
+
+
+def test_a_cc_only_go_scope_that_gains_a_coverprofile_lane_gets_the_flip_conflict():
+    before = running([scope("cmd", "go", optional=True)], [])
+    after = running([scope("cmd", "go")], [lane("cmd", "coverprofile", "cmd")])
+
+    conflict = stamp_conflict(before, after, frozenset({"cmd"}))
+    refusal = conflict.refusal(MARKS)
+
+    assert [move.scope for move in conflict.moved] == ["cmd"]
+    assert "cmd was cc-only and is now measured by its coverprofile lane(s)" in refusal
+    assert "ratchet seed --scope cmd" in refusal
+
+
+def test_a_python_only_repo_s_stamp_does_not_move_with_the_coverprofile_reader(monkeypatch):
+    scopes, lanes = [scope("api", "python")], [lane("api", "coveragepy", "api")]
+    before = running(scopes, lanes)
+
+    monkeypatch.setitem(coverage_format.READER_VERSIONS, "coverprofile", 2)
+
+    assert running(scopes, lanes) == before

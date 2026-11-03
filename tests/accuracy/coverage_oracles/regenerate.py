@@ -25,7 +25,10 @@ lcov recordings were made in debian:trixie-slim with Debian's clang and llvm
 19.1.7, rustc 1.99.1 and cargo-llvm-cov 0.9.1 on PATH; gcovr-7.2's Cobertura
 and lcov, in the same image with Debian's g++ 14.2.0 and gcovr 7.2. The two
 JaCoCo 0.8.12 recordings of the Java probe were made in gradle:8.10.2-jdk21
-(OpenJDK 21.0.5) and maven:3.9.9-eclipse-temurin-21 (OpenJDK 21.0.7).
+(OpenJDK 21.0.5) and maven:3.9.9-eclipse-temurin-21 (OpenJDK 21.0.7). The
+three Go coverprofiles were made in golang:1.26.8-bookworm (go1.26.8), and
+recorded/gocover-cobertura-1.5.0 holds gocover-cobertura 1.5.0's conversion of
+the set run there, its <source> made relative (go) by hand.
 """
 from __future__ import annotations
 
@@ -188,12 +191,23 @@ _MAVEN = Producer(f"jacoco-{JACOCO}-maven-3.9.9", "native", (
     {".xml": "target/site/jacoco/jacoco.xml", ".csv": "target/site/jacoco/jacoco.csv"},
     versions=((("mvn", "--version"), "Apache Maven 3.9.9"), (("java", "-version"), '"21.0.7"')))
 
+# go test over the Go probe in each cover mode; -C runs it in the probe's module.
+GO = "1.26.8"
+
+
+def _go(mode: str) -> Producer:
+    return Producer(f"go-{GO}-{mode}", "native", (
+        ("go", "-C", "go", "test", f"-covermode={mode}", "-coverprofile={out}/artifact.out",
+         "./..."),),
+        {".out": "artifact.out"}, versions=((("go", "version"), f"go{GO} "),))
+
+
 PRODUCERS = {producer.name: producer for producer in (
     _coveragepy("7.16.1"), _coveragepy("7.13.0"), _coveragepy("7.10.6"), _coverage_reports(),
     _pytest_cov("5.0.0", "8.3.5"), _pytest_cov("7.1.0", "9.1.1"),
     _pytest_cov("7.1.0", "9.1.1", ("--cov-context=test",), "-contexts", "py/coveragerc-contexts"),
     _vitest("v8"), _vitest("istanbul"), _jest("babel"), _jest("v8"), _NYC, _C8, _CARGO,
-    _LLVM_COV, _GCOVR, _GRADLE, _MAVEN)}
+    _LLVM_COV, _GCOVR, _GRADLE, _MAVEN, _go("set"), _go("count"), _go("atomic"))}
 
 
 # --- where the tools come from ----------------------------------------------------------------
@@ -373,6 +387,8 @@ def _counts(path: Path) -> list:
         return counts_table.jacoco_sourcefiles(path.read_bytes())
     if path.suffix == ".xml":
         return list(counts_table.cobertura_classes(path.read_bytes()))
+    if path.suffix == ".out":
+        return sorted(counts_table.coverprofile_lines(path.read_text(encoding="utf-8")).items())
     if path.suffix == ".lcov":
         text = path.read_text(encoding="utf-8")
         return [sorted(counts_table.lcov_lines(text).items()),
@@ -397,7 +413,9 @@ def _fn_coverage(path: Path, kind: str) -> dict | str:
         return str(refused).replace(str(path), "<artifact>")
 
 
-TEXT_READERS = {".lcov": "lcov", ".xml": "cobertura"}
+# A coverprofile read here has no go.mod beside it, so crapkit's reading of
+# either run is the same refusal; counts_table's lines carry that check.
+TEXT_READERS = {".lcov": "lcov", ".xml": "cobertura", ".out": "coverprofile"}
 # JaCoCo writes this DOCTYPE at the head of every XML report; Cobertura never does.
 JACOCO_DOCTYPE = b"-//JACOCO//DTD Report"
 
@@ -413,9 +431,9 @@ def _parse(path: Path, kind: str) -> dict:
     import importlib
     parser = _text_reader(path)
     if parser:
-        reader = importlib.import_module(f"crapkit.coverage_{parser}")
         lane = importlib.import_module("crapkit.config").Lane(
             name=parser, command="x", artifact=path.name, parser=parser, scopes=("probes",))
+        reader = importlib.import_module("crapkit.coverage_format").lane_format(lane)
         return reader.read(lane, path.parent, path)[1]
     if kind == "python":
         reader = importlib.import_module("crapkit.coverage_py")

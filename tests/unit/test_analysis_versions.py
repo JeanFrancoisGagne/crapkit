@@ -32,7 +32,8 @@ PINNED = (13,
           {"cpp": 13, "go": 13, "java": 13, "javascript": 13, "objectivec": 13,
            "powershell": 13, "python": 13, "rust": 13, "shell": 13, "swift": 13, "tsx": 13,
            "typescript": 13, "vue": 13, "zig": 13},
-          {"cobertura": 1, "coveragepy": 1, "istanbul": 1, "jacoco": 1, "lcov": 1})
+          {"cobertura": 1, "coveragepy": 1, "coverprofile": 1, "istanbul": 1, "jacoco": 1,
+           "lcov": 1})
 FIRSTS = {"ANALYSIS_VERSIONS": 13, "READER_VERSIONS": 1}
 RULE = ("raise the language's or reader's number and ANALYSIS_VERSION by one in one change, "
         "then update PINNED in tests/unit/test_analysis_versions.py")

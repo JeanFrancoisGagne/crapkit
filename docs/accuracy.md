@@ -111,6 +111,7 @@ or no longer (fixed). `python tools/docs/generate.py` writes this table, the
 | lcov per-file line and branch evidence | `coverage_oracles` | `test_ground_truth.py::test_crapkit_reads_each_lcov_recording_as_its_own_counts` | 0 | 0 | 0 |
 | Cobertura per-file line and branch evidence | `coverage_oracles` | `test_ground_truth.py::test_crapkit_reads_each_cobertura_recording_as_its_own_counts` | 0 | 0 | 0 |
 | JaCoCo per-file line and branch evidence | `coverage_oracles` | `test_ground_truth.py::test_crapkit_reads_each_jacoco_recording_as_its_own_counts` | 0 | 0 | 0 |
+| Go coverprofile per-file line evidence | `coverage_oracles` | `test_ground_truth.py::test_crapkit_reads_each_coverprofile_recording_as_its_own_counts` | 0 | 0 | 0 |
 | Field definitions across docs and schemas | `definitions` | `test_definition_models.py::test_sarif_over_target_messages_follow_the_definitions` | 0 | 1 | 1 |
 | Churn counts and recency weight | `history_oracles` | `test_churn_oracle.py::test_every_path_matches_the_numstat_walk` | 8 | 0 | 1 |
 | Change coupling | `history_oracles` | `test_coupling_oracle.py::test_pairs_match_the_numstat_walk` | 2 | 0 | 1 |

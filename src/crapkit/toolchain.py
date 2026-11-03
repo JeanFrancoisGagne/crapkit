@@ -80,12 +80,15 @@ class Toolchain(NamedTuple):
     markers: tuple[str, ...] = ()
     # The commented lane init writes when it finds one of `markers`.
     stanza: Stanza | None = None
+    # True when the row's format places its keys through a marker file, so a
+    # repo without one has nothing this row's reader can measure (go.mod).
+    needs_marker: bool = False
 
 
-_JS = ("javascript", "typescript", "tsx")
+_JS =("javascript", "typescript", "tsx")
 # Each stanza command is the one that recorded its fixture under
-# tests/fixtures/coverage/lcov/, cobertura/ or jacoco/, so init never prints a
-# command no run wrote.
+# tests/fixtures/coverage/lcov/, cobertura/, jacoco/ or coverprofile/, so init
+# never prints a command no run wrote.
 _BUN_STANZA = Stanza("bun", "bun test --coverage --coverage-reporter=lcov "
                             "--coverage-dir=.crapkit/cov/bun",
                      ".crapkit/cov/bun/lcov.info", "lcov")
@@ -116,6 +119,10 @@ _JACOCO_MAVEN_PLUGIN = "org.jacoco:jacoco-maven-plugin:0.8.12"
 _MAVEN_STANZA = Stanza("java-maven", f"mvn {_JACOCO_MAVEN_PLUGIN}:prepare-agent test "
                                 f"{_JACOCO_MAVEN_PLUGIN}:report",
                        "target/site/jacoco/jacoco.xml", "jacoco", path_prefix="src/main/java")
+# Every package of the module, never file arguments: the profile keys import
+# paths, and the root go.mod places them, so the lane needs no path_prefix.
+_GO_STANZA = Stanza("go", "go test -coverprofile=.crapkit/cov/go.out ./...",
+                    ".crapkit/cov/go.out", "coverprofile")
 
 _ROWS = (
     # pytest raises Interrupted at the END of collection when any module fails
@@ -181,7 +188,8 @@ _ROWS = (
               markers=("build.gradle", "build.gradle.kts"), stanza=_GRADLE_STANZA),
     Toolchain("maven", (("mvn",), ("mvnw",)), languages=("java",), formats=("jacoco",),
               markers=("pom.xml",), stanza=_MAVEN_STANZA),
-    Toolchain("go test", (("go", "test"),)),
+    Toolchain("go test", (("go", "test"),), languages=("go",), formats=("coverprofile",),
+              markers=("go.mod",), stanza=_GO_STANZA, needs_marker=True),
     Toolchain("c8", (("c8",),), languages=_JS, formats=("istanbul", "lcov")),
 )
 
@@ -199,9 +207,16 @@ def detected(markers) -> tuple[Toolchain, ...]:
     return tuple(row for row in _ROWS if present.intersection(row.markers))
 
 
-def measurable_languages() -> frozenset[str]:
-    """Every language some row measures in a format crapkit reads."""
-    return frozenset(lang for row in _ROWS if row.formats for lang in row.languages)
+def measurable_languages(markers: frozenset[str] = frozenset()) -> frozenset[str]:
+    """Every language some row measures in a format crapkit reads. A row that
+    needs its marker counts only when the repo-root files `markers` hold one,
+    so a caller that cannot see the root names no such row's language."""
+    return frozenset(lang for row in _ROWS if row.formats and _usable(row, markers)
+                     for lang in row.languages)
+
+
+def _usable(row: Toolchain, markers: frozenset[str]) -> bool:
+    return not row.needs_marker or bool(markers.intersection(row.markers))
 
 
 def readers(language: str) -> tuple[tuple[str, str], ...]:

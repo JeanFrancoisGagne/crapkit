@@ -75,8 +75,21 @@ def test_a_java_repo_holding_both_markers_or_neither_hears_of_both_toolchains(tm
 ])
 def test_a_scope_no_reader_init_lacks_a_live_lane_for_gets_none(tmp_path, languages):
     """python opted out where a live lane could measure it; the rest have no
-    toolchain row that writes a format crapkit reads."""
+    toolchain row that writes a format crapkit reads, and go's row reads only
+    beside a go.mod, which tmp_path lacks."""
     assert _doctor_cc_only_readers(tmp_path, _config(languages)) == []
+
+
+def test_a_cc_only_go_scope_beside_a_go_mod_gets_one_note_naming_coverprofile_and_go_test(
+        tmp_path):
+    (tmp_path / "go.mod").write_text("module example.com/app\n")
+
+    (finding,) = _doctor_cc_only_readers(tmp_path, _config(("go",)))
+
+    assert finding.level == "note"
+    assert "'core'" in finding.text
+    assert 'go through parser = "coverprofile" from go test;' in finding.text
+    assert ANCHOR in finding.text
 
 
 def test_a_rust_scope_without_coverage_optional_gets_none(tmp_path):

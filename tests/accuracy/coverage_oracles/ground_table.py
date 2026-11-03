@@ -9,7 +9,9 @@ with every line excluded (a coverage.py pragma); `n/a` means the model says noth
 and only called-equals-idle is asserted. `producers` narrows a JS row to the
 `v8` or `istanbul` provider family; a Python table has no such column. An lcov
 arm (Rust, C++) is `<line>.<k>`, the k-th BRDA record on its line; a JaCoCo arm
-(Java) is `<line>.<k>` too, k counting the line's branches from 0.
+(Java) is `<line>.<k>` too, k counting the line's branches from 0. A Go
+coverprofile has no arms: its stmts are the lines of its blocks, under the line
+rule docs/lanes.md#coverprofile states.
 
 expected() is the README's coverage term over a row, and crapkit_expected() adds
 the README's floor: a Python def whose body starts on its signature's last line
@@ -42,10 +44,15 @@ COBERTURA_FAMILIES = {"gcovr-7.2": "gcov"}
 # The JaCoCo recordings of the Java probe, one run through Gradle and one
 # through Maven, worked from JaCoCo's line and branch counters.
 JACOCO_FAMILIES = {"jacoco-0.8.12-gradle-8.10.2": "jacoco", "jacoco-0.8.12-maven-3.9.9": "jacoco"}
+# The Go coverprofiles of one probe run in each cover mode, worked from cmd/cover's
+# blocks under crapkit's line rule.
+COVERPROFILE_FAMILIES = {"go-1.26.8-set": "gocover", "go-1.26.8-count": "gocover",
+                         "go-1.26.8-atomic": "gocover"}
 
 
 def family(producer: str) -> str:
-    return {**FAMILIES, **LCOV_FAMILIES, **COBERTURA_FAMILIES, **JACOCO_FAMILIES}[producer]
+    return {**FAMILIES, **LCOV_FAMILIES, **COBERTURA_FAMILIES, **JACOCO_FAMILIES,
+            **COVERPROFILE_FAMILIES}[producer]
 
 
 @dataclass(frozen=True)

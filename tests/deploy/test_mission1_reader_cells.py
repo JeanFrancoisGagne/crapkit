@@ -1,5 +1,6 @@
-"""Mission 1's readers under every harness: an lcov lane gives a Rust repo, and a
-Cobertura lane a C++ repo, coverage-based CRAP.
+"""Mission 1's readers under every harness: an lcov lane gives a Rust repo, a
+Cobertura lane a C++ repo, a JaCoCo lane a Java repo and a coverprofile lane a Go
+module coverage-based CRAP.
 
 The lcov cells (row `m1-readers-03`) measure a Rust crate whose lane copies a
 committed tracefile into place: the crate and the tracefile cargo-llvm-cov
@@ -30,6 +31,11 @@ The jacoco cells (row `m1-readers-06`) do the same over the Java repo of
 tests/fixtures/coverage/jacoco and the report Gradle 8.10.2 wrote for it:
 fresh and upgrade under every harness, and `lin-up-0.8.1-cc-only-java` for the
 0.8.1 cc-only upgrade and its flip.
+
+The coverprofile cells (row `m1-readers-07`) do the same over the Go module of
+tests/fixtures/coverage/coverprofile and the profile Go 1.26.8 wrote for it:
+fresh and upgrade under every harness, and `lin-up-0.8.1-cc-only-go` for the
+0.8.1 cc-only upgrade, its flip and the scoped reseed that clears it.
 """
 from __future__ import annotations
 
@@ -396,3 +402,100 @@ def test_lin_up_0_8_1_cc_only_java(box, candidate):
 
     assert "java was cc-only and is now measured by its jacoco lane(s)" in refusal, box.transcript.text()
     assert refusal.count("ratchet seed --scope java") == 1, box.transcript.text()
+
+
+# --- m1-readers-07: a coverprofile lane over a Go module ---------------------------------------
+
+GO_ROW = "m1-readers-07"
+COVERPROFILE = Path(__file__).resolve().parents[1] / "fixtures" / "coverage" / "coverprofile"
+GO_SOURCES = ("go.mod", "shapes.go", "shapes_test.go", "internal/calc/calc.go",
+              "internal/calc/calc_test.go")
+GO_USE_CASES = "coverage, coverprofile lane, list_worklist, get_next_item"
+GO_SCOPE = ('[crapkit]\ntarget = {target}\n\n[exclude]\nglobs = ["make_profile.py", "**/*_test.go"]\n\n'
+            '[[scope]]\nname = "cmd"\npaths = ["."]\nlanguages = ["go"]\n{optional}\n')
+GO_LANE = ('[[lane]]\nname = "go"\ncommand = "python make_profile.py"\n'
+           'artifact = ".crapkit/cov/go.out"\nparser = "coverprofile"\nscopes = ["cmd"]\n')
+# Unused (ccn 2) and Mul (ccn 3) run in no test: under a ceiling of 4 they owe
+# tests, not a split, so their remedy is add-tests; under 2 the cc-only seed
+# marks Classify, SumPositive and Mul at their ccn.
+GO_MEASURED = GO_SCOPE.format(target=4, optional="") + GO_LANE
+GO_CC_ONLY_2 = GO_SCOPE.format(target=2, optional="coverage_optional = true\n")
+GO_MEASURED_2 = GO_SCOPE.format(target=2, optional="") + GO_LANE
+# The lane's command: the committed Go 1.26.8 profile copied to the artifact path.
+MAKE_PROFILE = ("from pathlib import Path\n"
+                "Path('.crapkit/cov').mkdir(parents=True, exist_ok=True)\n"
+                "Path('.crapkit/cov/go.out').write_bytes(Path('profile.out').read_bytes())\n")
+
+
+def _go_repo(box, config: str) -> Path:
+    """The Go fixture module, its committed profile and `config`, in a git repo."""
+    repo = box.root / "repo"
+    files = {rel: (COVERPROFILE / "go-repo" / rel).read_text(encoding="utf-8")
+             for rel in GO_SOURCES}
+    files.update({"profile.out": (COVERPROFILE / "go-1.26.8-set.out").read_text(encoding="utf-8"),
+                  "make_profile.py": MAKE_PROFILE, ".gitignore": ".crapkit/\n"})
+    (repo / "internal" / "calc").mkdir(parents=True)
+    state.write(repo, files)
+    _configure(repo, config)
+    box.run(["git", "init", "-q", "-b", "main"], cwd=repo, expect=0)
+    profiles.commit(box, repo, "a Go module")
+    return repo
+
+
+@pytest.mark.parametrize("key", _harness_cells(
+    "lin-coverprofile", "fresh: README pip start; a Go module's coverprofile lane (a Go 1.26.8 "
+                        "profile) measures it, and get_next_item and list_worklist show cov 0 and "
+                        "add-tests on Mul", row=GO_ROW, use_cases=GO_USE_CASES))
+def test_coverprofile_lane_fresh(box, templates, key):
+    profiles.session_crapkit(box, templates)
+    repo = _go_repo(box, GO_MEASURED)
+    _in_the_harness_shell(box, key)
+    assert_the_agent_gets_cov_and_add_tests(box, repo, "internal/calc/calc.go", "Mul")
+
+
+@pytest.mark.parametrize("key", _harness_cells(
+    "lin-up-coverprofile", "upgrade from N-1 by the guide's pip row: N-1 scores the Go module "
+                           "cc-only, the config gains a coverprofile lane, and get_next_item and "
+                           "list_worklist show cov 0 and add-tests", row=GO_ROW,
+    use_cases=GO_USE_CASES))
+def test_coverprofile_lane_upgrade(box, candidate, record_property, key):
+    n1 = wheels.n_minus_1()
+    record_property("n_minus_1", n1)
+    state.pip_venv(box, "3.12")
+    state.pip_install(box, f"crapkit=={n1}")
+    repo = _go_repo(box, GO_SCOPE.format(target=4, optional="coverage_optional = true\n"))
+    box.run(["crapkit", "coverage"], cwd=repo, expect=0)
+    state.upgrade_to(box, repo, candidate, state.upgrade_line(PIP))
+    _configure(repo, GO_MEASURED)
+    profiles.commit(box, repo, "the cmd scope gains a coverprofile lane")
+    _in_the_harness_shell(box, key)
+    assert_the_agent_gets_cov_and_add_tests(box, repo, "internal/calc/calc.go", "Mul")
+
+
+@cell("lin-up-0.8.1-cc-only-go", channel="pip venv", harness="none",
+      scenario="upgrade from 0.8.1 by the guide's pip row: a seeded cc-only Go scope verifies with no "
+               "conflict; once the config adds a coverprofile lane, verify names the flip once, exit 3, "
+               "and `ratchet seed --scope cmd` clears it",
+      use_cases="upgrade guide, ratchet lifecycle, coverprofile lane", os="linux", image="core",
+      cadence="nightly", packet=GO_ROW)
+def test_lin_up_0_8_1_cc_only_go(box, candidate):
+    state.pip_venv(box, "3.12")
+    state.pip_install(box, f"crapkit=={OLD}")
+    repo = _go_repo(box, GO_CC_ONLY_2)
+    for step in (["coverage"], ["ratchet", "seed"]):
+        box.run(["crapkit", *step], cwd=repo, expect=0)
+    state.commit(box, repo, "seeded cc-only under 0.8.1")
+
+    state.upgrade_to(box, repo, candidate, state.upgrade_line(PIP))
+    box.run(["crapkit", "coverage"], cwd=repo, expect=0)
+    state.verify(box, repo)
+
+    _configure(repo, GO_MEASURED_2)
+    state.commit(box, repo, "the cmd scope gains a coverprofile lane")
+    box.run(["crapkit", "coverage"], cwd=repo, expect=0)
+    refusal = output(box.run(["crapkit", "verify"], cwd=repo, expect=3))
+
+    assert "cmd was cc-only and is now measured by its coverprofile lane(s)" in refusal, box.transcript.text()
+    assert refusal.count("ratchet seed --scope cmd") == 1, box.transcript.text()
+    box.run(["crapkit", "ratchet", "seed", "--scope", "cmd"], cwd=repo, expect=0)
+    state.verify(box, repo)

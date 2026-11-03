@@ -43,6 +43,11 @@ CPP = ("cpp/shapes.cpp",)
 # A JaCoCo key is the package path and sourcefile name under the source root.
 JAVA_ROOT = "java/src/main/java"
 JAVA = (f"{JAVA_ROOT}/Shapes.java",)
+# A coverprofile key is the import path: the probe's module path and the file.
+GO_MODULE = "example.com/probe"
+GO = ("go/shapes.go",)
+# The probe repo's own go.mod: each Go slot's keys move under its pNN/ there.
+REPO_MODULE = "probes"
 # producer -> (parser, the probes its recording measured)
 PRODUCERS = {
     "coveragepy-7.16.1": ("coveragepy", PYTHON),
@@ -61,14 +66,17 @@ PRODUCERS = {
     "gcovr-7.2": ("cobertura", CPP),
     "jacoco-0.8.12-gradle-8.10.2": ("jacoco", JAVA),
     "jacoco-0.8.12-maven-3.9.9": ("jacoco", JAVA),
+    "go-1.26.8-set": ("coverprofile", GO),
+    "go-1.26.8-count": ("coverprofile", GO),
+    "go-1.26.8-atomic": ("coverprofile", GO),
 }
 # The text formats: their recordings are no JSON, so test_join and test_dark_lines skip them.
-TEXT = {"lcov": ".lcov", "cobertura": ".xml", "jacoco": ".xml"}
+TEXT = {"lcov": ".lcov", "cobertura": ".xml", "jacoco": ".xml", "coverprofile": ".out"}
 
 
 def artifact(name: str, scenario: str) -> Path:
     """A committed recording: an lcov producer's `.lcov`, a Cobertura or
-    JaCoCo one's `.xml`, every other one's `.json`."""
+    JaCoCo one's `.xml`, a Go coverprofile's `.out`, every other one's `.json`."""
     suffix = TEXT.get(PRODUCERS[name][0], ".json")
     return RECORDED / name / f"{scenario}{suffix}"
 
@@ -91,7 +99,7 @@ REFUSED = tuple(sorted(name for name in PRODUCERS if without_start_line(name)))
 SCORED = {name: value for name, value in PRODUCERS.items() if name not in REFUSED}
 LANGUAGES = {".py": "python", ".js": "javascript", ".mjs": "javascript", ".jsx": "javascript",
              ".ts": "typescript", ".tsx": "tsx", ".vue": "vue", ".rs": "rust", ".cpp": "cpp",
-             ".java": "java"}
+             ".java": "java", ".go": "go"}
 HEADER = "[crapkit]\ntarget = 6\nanalysis_workers = 1\n\n[exclude]\nglobs = [\"recorded/**\"]\n"
 
 
@@ -204,6 +212,23 @@ def merged_jacoco(all_slots: list[Slot]) -> bytes:
     return ET.tostring(report, encoding="utf-8", xml_declaration=True)
 
 
+def _blocks_moved(slot: Slot) -> list[str]:
+    """The recording's block lines, each import path moved from the probe's
+    module to the slot's pNN/ under the probe repo's module."""
+    moved = f"{REPO_MODULE}/{slot.prefix}/go/"
+    lines = slot.artifact.read_text(encoding="utf-8").splitlines()
+    return [line.replace(f"{GO_MODULE}/", moved, 1) for line in lines[1:]]
+
+
+def merged_coverprofile(all_slots: list[Slot]) -> str:
+    """One profile holding every coverprofile slot's blocks under one mode
+    line, as a CI script concatenates profiles. A set profile's 0 and 1 read
+    as counts, so the set, count and atomic slots share `mode: count`."""
+    lines = [line for slot in all_slots if slot.parser == "coverprofile"
+             for line in _blocks_moved(slot)]
+    return "mode: count\n" + "".join(f"{line}\n" for line in lines)
+
+
 def merged(all_slots: list[Slot], parser: str) -> dict:
     """One artifact holding every slot's recording of one format, keys moved
     under each slot's pNN/. One lane per format reads the whole matrix, so the
@@ -234,7 +259,8 @@ def _scope(slot: Slot) -> str:
 
 # (lane name, parser, artifact file name)
 LANES = (("py", "coveragepy", "py.json"), ("js", "istanbul", "js.json"), ("lcov", "lcov", "lcov.info"),
-         ("cpp", "cobertura", "cpp.xml"), ("java", "jacoco", "java.xml"))
+         ("cpp", "cobertura", "cpp.xml"), ("java", "jacoco", "java.xml"),
+         ("go", "coverprofile", "go.out"))
 
 
 def _lanes(all_slots: list[Slot]) -> str:
@@ -247,6 +273,8 @@ def _lanes(all_slots: list[Slot]) -> str:
 
 
 def _merged_bytes(all_slots: list[Slot], parser: str) -> bytes:
+    if parser == "coverprofile":
+        return merged_coverprofile(all_slots).encode()
     if parser == "jacoco":
         return merged_jacoco(all_slots)
     if parser == "cobertura":
@@ -257,9 +285,10 @@ def _merged_bytes(all_slots: list[Slot], parser: str) -> bytes:
 
 
 def files(all_slots: list[Slot]) -> dict[str, bytes]:
-    """{repo path: bytes} for the probe copies, the merged recordings and crapkit.toml."""
+    """{repo path: bytes} for the probe copies, the merged recordings, crapkit.toml
+    and the go.mod that places the merged coverprofile's keys."""
     toml = HEADER + "\n".join(map(_scope, all_slots)) + "\n" + _lanes(all_slots)
-    tree = {"crapkit.toml": toml.encode()}
+    tree = {"crapkit.toml": toml.encode(), "go.mod": f"module {REPO_MODULE}\n".encode()}
     for _, parser, file in LANES:
         tree[f"recorded/{file}"] = _merged_bytes(all_slots, parser)
     for slot in all_slots:

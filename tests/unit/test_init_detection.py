@@ -1113,3 +1113,48 @@ def test_init_on_a_gradle_repo_writes_the_commented_gradle_lane_and_names_it(tmp
     assert '# parser = "jacoco"' in text and '# path_prefix = "src/main/java"' in text
     assert _GRADLE_NOTE in text and "coverage_optional = true" in text
     assert _CC_ONLY in out and "java-gradle (gradle)" in out
+
+
+# --- Go: the go test row ----------------------------------------------------------
+
+_GO = {"cmd": ("go",)}
+_GO_STANZA = ["# [[lane]]", '# name = "go"',
+              '# command = "go test -coverprofile=.crapkit/cov/go.out ./..."',
+              '# artifact = ".crapkit/cov/go.out"', '# parser = "coverprofile"',
+              '# scopes = ["cmd"]', ""]
+
+
+def test_a_root_go_mod_gives_the_commented_go_stanza_and_keeps_coverage_optional():
+    text = starter_toml(_GO, markers=frozenset({"go.mod"}))
+
+    assert _stanzas(text)[:len(_GO_STANZA)] == _GO_STANZA
+    assert "coverage_optional = true" in text
+
+
+def test_the_uncommented_go_stanza_loads_as_a_coverprofile_lane():
+    from crapkit.config import load_config_text
+
+    text = starter_toml(_GO, markers=frozenset({"go.mod"}))
+    lines = text.split("\n")
+    at = lines.index("# [[lane]]")
+    end = lines.index("", at)
+    body = [line[2:] for line in lines[at:end]]
+    kept = [line for line in lines[:at] + body + lines[end:] if line != "coverage_optional = true"]
+
+    cfg = load_config_text("\n".join(kept))
+
+    assert [(lane.name, lane.parser, lane.artifact, lane.scopes) for lane in cfg.lanes] == [
+        ("go", "coverprofile", ".crapkit/cov/go.out", ("cmd",))]
+
+
+def test_init_on_a_go_repo_writes_the_commented_go_lane_and_names_it(tmp_path, capsys):
+    root = _init_repo(tmp_path, {"go.mod": "module example.com/app\n",
+                                 "cmd/main.go": "package main\n\nfunc main() {}\n"})
+
+    code, out = _init(root, capsys)
+    text = (root / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert code == 0
+    assert '# command = "go test -coverprofile=.crapkit/cov/go.out ./..."' in text
+    assert '# parser = "coverprofile"' in text and "coverage_optional = true" in text
+    assert _CC_ONLY in out and "go (go test)" in out

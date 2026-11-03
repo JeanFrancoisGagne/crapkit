@@ -16,7 +16,9 @@ model and the driver's calls, never from a producer's output. Three checks:
    gcovr's Cobertura recordings of the C++ probe are scored here against the
    C++ table through a `parser = "cobertura"` lane, and JaCoCo's Gradle and
    Maven recordings of the Java probe through a `parser = "jacoco"` lane that
-   reads them as one aggregate report, a <group> per recording.
+   reads them as one aggregate report, a <group> per recording. Go's set,
+   count and atomic coverprofiles of one probe run are scored through one
+   `parser = "coverprofile"` lane that reads them as one concatenated profile.
 
 Cross-format: one c8 run's istanbul JSON and lcov give each probe function the
 same cov, and each function where the two part is a named finding (C8_FINDINGS).
@@ -42,7 +44,8 @@ from accuracy.kit import rulings, runlog, tiers
 
 LIVE = "coveragepy-live"
 RECORDED = sorted(name for name in {**ground_table.FAMILIES, **ground_table.LCOV_FAMILIES,
-                                    **ground_table.JACOCO_FAMILIES} if name != LIVE)
+                                    **ground_table.JACOCO_FAMILIES,
+                                    **ground_table.COVERPROFILE_FAMILIES} if name != LIVE)
 PROBES = {**{name: probes for name, (_, probes) in probe_repo.PRODUCERS.items()},
           LIVE: probe_repo.PYTHON}
 # (producer family or name, function, scenario) -> the rulings row that explains
@@ -83,6 +86,9 @@ def _producer_rows(producer: str, artifact, spans: list) -> dict:
     if family == "jacoco":
         return {(row.path, row.start): row
                 for row in counts_table.jacoco_rows(artifact, probe_repo.JAVA_ROOT, spans)}
+    if family == "gocover":
+        return {(row.path, row.start): row for row in
+                counts_table.coverprofile_rows(artifact, probe_repo.GO_MODULE, "go", spans)}
     return {(row.path, row.start): row for row in counts_table.istanbul_rows(artifact, "position")}
 
 
@@ -138,12 +144,13 @@ def _mismatches(producer: str, scenario: str, artifact) -> list[str]:
 
 
 def _recorded(producer: str, scenario: str):
-    """A JSON recording as its value, an lcov one as its text, an XML one as its bytes."""
+    """A JSON recording as its value, an lcov or coverprofile one as its text,
+    an XML one as its bytes."""
     path = probe_repo.artifact(producer, scenario)
     data = path.read_bytes()
     if path.suffix == ".xml":
         return data
-    return data.decode("utf-8") if path.suffix == ".lcov" else json.loads(data)
+    return data.decode("utf-8") if path.suffix in (".lcov", ".out") else json.loads(data)
 
 
 @pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
@@ -845,3 +852,62 @@ def test_jacocos_csv_per_class_equals_crapkits_sums_per_class(name):
                  (int(row["BRANCH_MISSED"]), int(row["BRANCH_COVERED"]))) for row in rows}
 
     assert per_class == wrote
+
+
+# --- Go: one run in three cover modes, and its Cobertura conversion ----------------------------
+#
+# Accuracy check 3: the set, count and atomic profiles of one probe run state the
+# same lines through counts_table, and crapkit scores each against the same table
+# above. gocover-cobertura 1.5.0 converted the set run (its <source> made
+# relative); crapkit's Cobertura reader gives that conversion the evidence its
+# coverprofile reader gives the profile.
+
+GO_MODES = sorted(ground_table.COVERPROFILE_FAMILIES)
+GOCOVER_COBERTURA = probe_repo.RECORDED / "gocover-cobertura-1.5.0"
+_GOCOVER_READ = _LCOV_READ.replace("coverage_lcov", "coverage_gocover").replace(
+    'parser="lcov", scopes=("src",)', 'parser="coverprofile", scopes=("go",), cwd="go"')
+
+
+def _gocover_evidence(path: Path, repo: Path) -> dict:
+    """crapkit's evidence for a profile of the Go probe, read in `repo` beside
+    a copy of the probe's go.mod and source."""
+    for name in ("go.mod", "shapes.go"):
+        (repo / "go").mkdir(exist_ok=True)
+        (repo / "go" / name).write_bytes((probe_repo.PROBES / "go" / name).read_bytes())
+    (repo / path.name).write_bytes(path.read_bytes())
+    child = hang_guard.run([sys.executable, "-c", _GOCOVER_READ.replace(
+        "path.parent, path", "Path(sys.argv[2]), path"), str(repo / path.name), str(repo)],
+        text=True, encoding="utf-8")
+    assert child.returncode == 0, child.stderr
+    return json.loads(child.stdout)
+
+
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+def test_set_count_and_atomic_profiles_of_one_run_state_the_same_lines(scenario):
+    stated = [counts_table.coverprofile_lines(_recorded(name, scenario)) for name in GO_MODES]
+
+    assert stated[0] and all(lines == stated[0] for lines in stated)
+
+
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+@pytest.mark.parametrize("name", GO_MODES)
+def test_crapkit_reads_each_coverprofile_recording_as_its_own_counts(tmp_path, name, scenario):
+    lines = counts_table.coverprofile_lines(_recorded(name, scenario))
+    (key, stated), = lines.items()
+
+    evidence = _gocover_evidence(probe_repo.artifact(name, scenario), tmp_path)
+
+    hit, missed, branches = evidence["go/shapes.go"]
+    assert key == f"{probe_repo.GO_MODULE}/shapes.go" and list(evidence) == ["go/shapes.go"]
+    assert (hit, missed, branches) == (sorted(n for n, ran in stated.items() if ran),
+                                       sorted(n for n, ran in stated.items() if not ran), [])
+
+
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+def test_one_go_run_reads_the_same_through_coverprofile_and_its_cobertura_conversion(
+        tmp_path, scenario):
+    profile = _gocover_evidence(probe_repo.artifact("go-1.26.8-set", scenario), tmp_path)
+
+    cobertura = _cobertura_evidence(GOCOVER_COBERTURA / f"{scenario}.xml")
+
+    assert cobertura == profile

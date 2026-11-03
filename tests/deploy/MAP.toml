@@ -181,6 +181,9 @@ modules = ["tests/deploy/test_mission1_reader_cells.py"]
 [packets.m1-readers-06]
 modules = ["tests/deploy/test_mission1_reader_cells.py"]
 
+[packets.m1-readers-07]
+modules = ["tests/deploy/test_mission1_reader_cells.py"]
+
 # --- every-harness rows -----------------------------------------------------------
 # What a nightly run takes of each row: "all" its cells on all 17 harnesses,
 # "core" on the 3 core-image ones. The header says how a row's tests name it.
@@ -733,6 +736,42 @@ lin-up-jacoco-omp = { packet = "m1-readers-06", cadence = "nightly", os = "linux
 lin-up-jacoco-opencode = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
 lin-up-jacoco-vscode-test-electron = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
 "lin-up-0.8.1-cc-only-java" = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core" }
+# m1-readers-07: a coverprofile lane's cov and add-tests over MCP, every harness, fresh and upgrade; the 0.8.1 cc-only Go upgrade, its flip and the scoped reseed
+lin-coverprofile-aider = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-amp = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-claude-agent-sdk = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-claude-agent-sdk-py = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-claude-code = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-coverprofile-cline = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-codex = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-coverprofile-continue = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-copilot-cli = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-crush = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-cursor-agent = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-coverprofile-gemini-cli = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-goose = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-junie = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-omp = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-opencode = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-vscode-test-electron = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-aider = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-amp = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-claude-agent-sdk = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-claude-agent-sdk-py = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-claude-code = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-up-coverprofile-cline = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-codex = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-up-coverprofile-continue = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-copilot-cli = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-crush = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-cursor-agent = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-up-coverprofile-gemini-cli = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-goose = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-junie = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-omp = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-opencode = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-vscode-test-electron = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+"lin-up-0.8.1-cc-only-go" = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core" }
 # m1-readers-04: init writes a Rust repo's lane commented and doctor notes the lcov reader, every harness fresh; the 0.8.1 upgrade keeps crapkit.toml
 lin-cc-only-reader-aider = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
 lin-cc-only-reader-amp = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
