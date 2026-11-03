@@ -44,6 +44,8 @@
 
 <!-- 0.9.0:m1-readers -->
 - crapkit reads lcov: a lane with parser = "lcov" gives Rust, C, C++, Swift and Objective-C scopes coverage-based CRAP. Each SF record's DA lines and BRDA arms go to the innermost function that holds them; FN and FNDA records give nothing. A relative SF key takes the lane's `path_prefix`, an absolute one under the checkout becomes root-relative, and one from another tree refuses the lane with exit 5. `coverage_format.READER_VERSIONS` gains `lcov: 1` and no existing score moves. (accuracy change C89)
+- crapkit init leaves a commented coverage lane for each toolchain it detects at the repo root (cargo llvm-cov, Bun, Deno), and crapkit doctor notes each cc-only scope whose language a reader can now measure, naming the language, the parser and the toolchain. brief's uncovered_lines_note for such a function names the parser and its lanes.md recipe.
+- crapkit creates the directory of a lane's declared artifact before the lane runs, so a runner that does not create it runs as written in a fresh clone.
 <!-- /0.9.0:m1-readers -->
 
 <!-- 0.9.0:m5-comment-fixture -->

@@ -5,11 +5,18 @@ runner name one fact at a time. The expected values below are copied from those
 dicts as they stood at the merge base, never computed from the table, so a row
 that drifts from what init used to write fails here before init's goldens move.
 """
+import re
 import subprocess
 import sys
+from pathlib import Path
+
+import pytest
 
 from crapkit import toolchain
 from crapkit.toolchain import TOOLCHAINS, Toolchain
+
+ROOT = Path(__file__).resolve().parents[2]
+LCOV = ROOT / "tests" / "fixtures" / "coverage" / "lcov"
 
 # The runners mission-1 names, by the row name every reader keys on.
 MISSION_1 = ("pytest", "vitest", "jest", "bun", "deno", "cargo llvm-cov", "go test", "c8")
@@ -80,10 +87,96 @@ def test_the_pytest_row_carries_the_flags_the_pytest_lane_wrote():
     assert pytest_row.junit_env == ()
 
 
-def test_the_rows_without_facts_yet_carry_their_spelling_alone():
-    for name in ("bun", "deno", "cargo llvm-cov", "go test", "c8"):
-        row = TOOLCHAINS[name]
-        assert row == Toolchain(name, row.words), name
+def test_the_row_without_facts_yet_carries_its_spelling_alone():
+    row = TOOLCHAINS["go test"]
+
+    assert row == Toolchain("go test", row.words)
+
+
+def test_every_format_a_row_names_is_a_registered_parser():
+    """toolchain.py imports nothing from coverage_format, so this test is what
+    keeps a row from naming a parser crapkit does not have."""
+    from crapkit.coverage_format import _FORMATS
+
+    assert {fmt for row in TOOLCHAINS.values() for fmt in row.formats} <= set(_FORMATS)
+
+
+def test_every_stanza_row_has_markers_languages_and_the_stanzas_parser():
+    stanzas = [row for row in TOOLCHAINS.values() if row.stanza]
+
+    assert [row.name for row in stanzas] == ["bun", "deno", "cargo llvm-cov"]
+    for row in stanzas:
+        assert row.markers and row.languages and row.formats, row.name
+        assert row.stanza.parser in row.formats, row.name
+    assert len({row.stanza.name for row in stanzas}) == len(stanzas)
+    assert all(row.stanza for row in TOOLCHAINS.values() if row.markers)
+
+
+@pytest.mark.parametrize("name, languages, formats, markers", [
+    ("pytest", ("python",), ("coveragepy",), ()),
+    ("vitest", ("javascript", "typescript", "tsx", "vue"), ("istanbul",), ()),
+    ("jest", ("javascript", "typescript", "tsx"), ("istanbul",), ()),
+    ("bun", ("javascript", "typescript", "tsx"), ("lcov",), ("bun.lock", "bun.lockb", "bunfig.toml")),
+    ("deno", ("javascript", "typescript", "tsx"), ("lcov",), ("deno.json", "deno.jsonc")),
+    ("cargo llvm-cov", ("rust",), ("lcov",), ("Cargo.toml",)),
+    ("c8", ("javascript", "typescript", "tsx"), ("istanbul", "lcov"), ()),
+])
+def test_each_row_carries_its_languages_formats_and_markers(name, languages, formats, markers):
+    row = TOOLCHAINS[name]
+
+    assert (row.languages, row.formats, row.markers) == (languages, formats, markers)
+
+
+def test_the_stanza_commands_are_the_ones_the_fixture_readme_records():
+    """init never prints a command no run wrote: each stanza command is the one
+    tests/fixtures/coverage/lcov/README.md records for its fixture."""
+    readme = (LCOV / "README.md").read_text(encoding="utf-8")
+    recorded = dict(re.findall(r"^- Stanza `([^`]+)`: `([^`]+)`", readme, re.M))
+    stanzas = {row.stanza.name: row.stanza.command for row in TOOLCHAINS.values() if row.stanza}
+
+    assert recorded == stanzas
+
+
+@pytest.mark.parametrize("recording, files", [
+    ("bun-1.4.4.lcov", ["harness/drive.mjs", "js/shapes.js", "ts/shapes.ts"]),
+    ("deno-2.9.8.lcov", ["harness/drive.mjs", "js/shapes.js"]),
+    ("cargo-llvm-cov-0.9.1-stanza.lcov", ["rust/drive.rs", "rust/shapes.rs"]),
+])
+def test_each_stanza_recording_reads_through_the_lcov_reader(recording, files, tmp_path):
+    from crapkit.config import Lane
+    from crapkit.coverage_format import lane_format
+
+    artifact = tmp_path / recording
+    artifact.write_bytes((LCOV / recording).read_bytes())
+    lane = Lane(name="js", command="true", artifact=recording, parser="lcov", scopes=())
+    unplaced: dict = {}
+
+    functions, evidence, _ = lane_format(lane).read(lane, tmp_path, artifact, unplaced=unplaced)
+
+    assert sorted(evidence) == files
+    assert unplaced == {}
+    assert all(evidence[path].hit_lines for path in files)
+
+
+def test_the_rust_stanza_is_the_ticket_spelling():
+    stanza = TOOLCHAINS["cargo llvm-cov"].stanza
+
+    assert stanza == toolchain.Stanza("rust", "cargo llvm-cov --lcov --output-path "
+                                              ".crapkit/cov/rust.lcov",
+                                      ".crapkit/cov/rust.lcov", "lcov")
+
+
+def test_the_measurable_languages_and_the_live_lane_languages():
+    from crapkit.scaffold import LIVE_LANE_LANGUAGES
+
+    assert toolchain.measurable_languages() == frozenset(
+        {"python", "javascript", "typescript", "tsx", "vue", "rust"})
+    assert LIVE_LANE_LANGUAGES == frozenset({"python", "javascript", "typescript", "tsx", "vue"})
+
+
+def test_readers_name_each_parser_and_toolchain_for_a_language():
+    assert toolchain.readers("rust") == (("lcov", "cargo llvm-cov"),)
+    assert toolchain.readers("zig") == ()
 
 
 def test_the_table_loads_without_any_cli_module():

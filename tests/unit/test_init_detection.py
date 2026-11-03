@@ -908,3 +908,89 @@ def test_a_package_json_that_names_nothing_detects_no_lane():
     longer read as this: cli.admin refuses them by name before scaffold sees
     them (test_outside_input_encodings)."""
     assert detect_lanes(frozenset(), _package()) == ()
+
+
+# --- a toolchain shown by a repo-root file, through `crapkit init` -----------------
+
+_CC_ONLY = "every scope is cc-only (coverage_optional = true) and needs no lane"
+_UPGRADE = "docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one"
+
+
+def _init_repo(root, files: dict[str, str]):
+    """A git repo holding `files`, added to the index, as init reads it."""
+    import subprocess
+
+    for rel, text in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8", newline="\n")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
+    return root
+
+
+def _init(root, capsys) -> tuple[int, str]:
+    from crapkit.cli import main
+
+    code = main(["init", "--repo", str(root)])
+    return code, capsys.readouterr().out
+
+
+def test_the_next_step_of_a_cc_only_rust_repo_names_the_commented_lane():
+    from crapkit.cli.admin import _next_step
+
+    line = _next_step({"core": ("rust",)}, (), frozenset({"Cargo.toml"}))
+
+    assert line.startswith(_CC_ONLY + "; ")
+    assert "rust (cargo llvm-cov)" in line and _UPGRADE in line
+    assert "no coverage parser reads" not in line
+
+
+def test_the_next_step_of_a_go_repo_with_no_go_mod_is_the_first_clause_only():
+    from crapkit.cli.admin import _next_step
+
+    line = _next_step({"cmd": ("go",)}, ())
+
+    assert line.startswith(_CC_ONLY + " - next: run `")
+    assert "commented" not in line and "no coverage parser reads" not in line
+
+
+def test_init_on_a_rust_repo_writes_the_commented_lane_and_names_it(tmp_path, capsys):
+    root = _init_repo(tmp_path, {"Cargo.toml": "[package]\nname = \"core\"\n",
+                                 "core/lib.rs": "pub fn f() {}\n"})
+
+    code, out = _init(root, capsys)
+    text = (root / "crapkit.toml").read_text(encoding="utf-8")
+
+    assert code == 0
+    assert '# command = "cargo llvm-cov --lcov --output-path .crapkit/cov/rust.lcov"' in text
+    assert "coverage_optional = true" in text
+    assert _CC_ONLY in out and "rust (cargo llvm-cov)" in out
+
+
+def test_init_reads_markers_at_the_repo_root_only(tmp_path, capsys):
+    """A nested crate's lane is the owner's to declare with `cwd`."""
+    root = _init_repo(tmp_path, {"svc/Cargo.toml": "[package]\nname = \"svc\"\n",
+                                 "svc/lib.rs": "pub fn f() {}\n"})
+
+    code, out = _init(root, capsys)
+
+    assert code == 0
+    assert "cargo llvm-cov" not in (root / "crapkit.toml").read_text(encoding="utf-8")
+    assert "commented lane" not in out
+
+
+def test_init_on_an_initialized_rust_repo_leaves_crapkit_toml_byte_identical(tmp_path, capsys):
+    from crapkit.errors import ConfigError
+
+    root = _init_repo(tmp_path, {"Cargo.toml": "[package]\nname = \"core\"\n",
+                                 "core/lib.rs": "pub fn f() {}\n"})
+    _init(root, capsys)
+    before = (root / "crapkit.toml").read_bytes()
+
+    try:
+        _init(root, capsys)
+    except ConfigError:
+        pass
+
+    assert (root / "crapkit.toml").read_bytes() == before

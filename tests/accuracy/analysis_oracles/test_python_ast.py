@@ -148,8 +148,9 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # and the sync met at 3,965. verify's per-scope stamp check (metric-stamp-05)
 # added 25. seed's per-scope stamps and `--scope` (metric-stamp-06) added 23.
 # The flip refusal's note (metric-stamp-07) added 1. The lcov reader
-# (m1-readers-03) added 34.
-SRC_DEFS = 4052
+# (m1-readers-03) added 34. The commented toolchain lanes and the reader
+# note (m1-readers-04) added 15.
+SRC_DEFS = 4067
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

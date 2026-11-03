@@ -506,7 +506,9 @@ word:
   other file keeps its lines.
 - `flag: "cc-only"`: the scope sets `coverage_optional = true`, so no artifact was ever
   going to name lines for it. Nothing clears this one, and nothing should: `crap` is `ccn`
-  and the only remedy is `decompose`.
+  and the only remedy is `decompose`. When the note names a reader (`parser = "lcov"` and
+  a lanes.md recipe), adding that lane is a config change for the repo's owner, followed by
+  `crapkit ratchet seed --scope NAME`; an agent's remedy stays `decompose`.
 
 `[]` means the artifact answered and nothing is dark. The note is prose and may be
 reworded; `flag` is the contract. `flag: "excluded"` comes with `[]`: the lane's coverage

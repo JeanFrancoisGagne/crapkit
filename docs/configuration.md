@@ -275,7 +275,7 @@ still apply.
 | `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file, so `paths = ["core/hot.py"]` claims one file and editing it marks that scope's lane changed. The **deepest** declared path wins when two claim the same file; see [Scope matching](#scope-matching). Written the way git writes one: a leading `./`, a leading or trailing `/` and a `\` separator are all normalized away, so `./src`, `src\` and `src` are one path. A path holding `..` or a drive letter is refused, because no tracked file can match it. |
 | `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`, `rust`, `shell`, `powershell`, `cpp`, `objectivec`, `vue`, `java`, `zig`. A file joins the scope only when both its path prefix and its extension match. |
 | `target` | int >= 1 | no | the repo `target` | This scope's ceiling. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
-| `coverage_optional` | bool | no | `false` | Code no test can reach, or code no parser can measure. See below. |
+| `coverage_optional` | bool | no | `false` | Code no test can reach, or a scope init writes no live lane for. See below. |
 | `notes` | array of string | no | `[]` | House rules for this scope alone. They follow the repo-wide `[crapkit] notes` into every packet `brief` builds for a function this scope owns. |
 
 Fourteen languages, three coverage parsers. A lane's `parser` is `coveragepy`, `istanbul` or
@@ -486,11 +486,14 @@ per-scope file lists before measuring them.
 ### `coverage_optional = true`
 
 Two reasons to set it. Either no test can reach the code (entry points, deploy scripts,
-generated shims), or nothing produces a coverage artifact crapkit reads for it (Go, Rust,
-Swift, C and the rest).
+generated shims), or no lane measures it yet (Go, Rust, Swift, C and the rest).
 
-`crapkit init` writes the key for the second reason on its own: a scope whose languages
-all lack a parser gets it, a scope holding one language a parser reads does not. The first
+`crapkit init` writes the key for the second reason on its own: a scope init writes no live
+lane for gets it (init writes live lanes for pytest, Vitest and Jest), a scope holding one
+language such a lane measures does not. When a repo-root file shows a toolchain whose report
+crapkit reads (`Cargo.toml` for cargo llvm-cov, Bun, Deno), init also leaves that
+toolchain's lane commented; uncommenting it and deleting this key measures the scope
+([upgrading.md](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)). The first
 reason is yours to declare, because only you know a test cannot reach the code.
 
 Four effects:

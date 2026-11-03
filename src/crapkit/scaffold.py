@@ -7,29 +7,29 @@ from typing import NamedTuple
 from .config import PYTEST_CONFIG_FILES, pytest_testpaths_texts as pytest_testpaths  # noqa: F401  init and tests import it from here
 from .config import _as_testpath
 from .coverage_format import lane_format
-from .toolchain import TOOLCHAINS, Toolchain, infer
+from .toolchain import TOOLCHAINS, Stanza, Toolchain, detected, infer
 
 from .universe import (LANGUAGE_EXTENSIONS, exclude_matcher, excluded, is_test_file,
                        scopes_with_tests)
 
 _EXT_LANGUAGE = {ext: lang for lang, exts in LANGUAGE_EXTENSIONS.items() for ext in exts}
 
-# The languages a coverage parser can read: coverage.py reads python, istanbul
-# reads the JavaScript family and the .vue files a vitest run reports on. Every
-# other supported language scores on complexity alone, which is what
-# `coverage_optional = true` declares — so init writes the key for a scope built
-# entirely from the rest, rather than leaving it to score `no-lane` forever
-# against a lane nobody can write.
-COVERABLE_LANGUAGES = frozenset({"python", "javascript", "typescript", "tsx", "vue"})
+# The rows init writes live lanes for: pytest from its config file, vitest and
+# jest from package.json. Every other language scores on complexity alone until
+# its config adds a lane, which is what `coverage_optional = true` declares, so
+# init writes the key for a scope built entirely from the rest rather than
+# leaving it to score `no-lane` against a lane init cannot write.
+LIVE_LANE_LANGUAGES = frozenset(lang for name in ("pytest", "vitest", "jest")
+                                for lang in TOOLCHAINS[name].languages)
 
 
 def cc_only_scope(languages: tuple[str, ...]) -> bool:
-    """True when no coverage parser reads any of this scope's languages.
+    """True when init writes no live lane for any of this scope's languages.
 
-    One coverable language is enough to keep the key off: a lane can still
-    measure that part, and `coverage_optional` would forgive the whole scope.
+    One such language is enough to keep the key off: a lane can still measure
+    that part, and `coverage_optional` would forgive the whole scope.
     """
-    return not any(lang in COVERABLE_LANGUAGES for lang in languages)
+    return not any(lang in LIVE_LANE_LANGUAGES for lang in languages)
 
 DEFAULT_EXCLUDES = (
     # A leading `**/` matches zero or more directories (universe._glob_regex),
@@ -778,13 +778,64 @@ def _template_stanza(parser: str, launcher: str) -> list[str]:
     return [line.replace("{python}", launcher) for line in _TEMPLATES[parser]]
 
 
+class CommentedLane(NamedTuple):
+    """A detected toolchain's stanza, written commented, and the scopes it
+    would measure: those holding its languages that no live lane measures."""
+    toolchain: str
+    stanza: Stanza
+    scopes: tuple[str, ...]
+
+
+def commented_lanes(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...],
+                    markers: frozenset[str]) -> tuple[CommentedLane, ...]:
+    """One per toolchain whose markers sit at the repo root and whose languages
+    some unmeasured scope holds, in table order. Markers are root files only:
+    a nested Cargo.toml is a crate whose lane the owner declares with `cwd`."""
+    measured = {name for lane in live_lanes(lanes, scopes) for name in _scopes_for(lane, scopes)}
+    found = ((row, _unmeasured(row, scopes, measured)) for row in detected(markers))
+    return tuple(CommentedLane(row.name, row.stanza, names) for row, names in found if names)
+
+
+def _unmeasured(row: Toolchain, scopes: dict[str, tuple[str, ...]],
+                measured: set[str]) -> tuple[str, ...]:
+    """The scopes holding one of the row's languages that no live lane measures."""
+    return tuple(name for name, languages in scopes.items()
+                 if name not in measured and set(languages).intersection(row.languages))
+
+
+_TOOLCHAIN_HEADING = ("# Lanes for the toolchains this repo uses: uncomment one and delete "
+                      "coverage_optional from its scopes to measure them "
+                      "(docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one).")
+
+
+def _toolchain_lanes(commented: tuple[CommentedLane, ...]) -> list[str]:
+    """The commented stanzas under their one heading line, or nothing."""
+    lines = [line for lane in commented for line in _toolchain_stanza(lane)]
+    return [_TOOLCHAIN_HEADING, *lines] if lines else []
+
+
+def _toolchain_stanza(lane: CommentedLane) -> list[str]:
+    """The stanza's keys in its field order (name, command, artifact, parser),
+    then the scopes it would measure."""
+    keys = [f'# {key} = "{value}"' for key, value in lane.stanza._asdict().items()]
+    return ["# [[lane]]", *keys, f"# scopes = [{_quoted(lane.scopes)}]", ""]
+
+
 def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]],
-                    launcher: str = _DEFAULT_PYTHON) -> list[str]:
+                    launcher: str = _DEFAULT_PYTHON,
+                    commented: tuple[CommentedLane, ...] = ()) -> list[str]:
+    """The parser templates no live lane covers, then one commented stanza per
+    detected toolchain."""
+    return _parser_templates(covered, scopes, launcher) + _toolchain_lanes(commented)
+
+
+def _parser_templates(covered: set[str], scopes: dict[str, tuple[str, ...]],
+                      launcher: str) -> list[str]:
     """Commented lane templates for the parsers no live lane covers.
 
-    None at all when every scope is cc-only. Neither parser reads any language
-    in the repo, so both templates would be a step the reader cannot take, under
-    a heading telling them to take it before running `crapkit coverage`.
+    None at all when every scope is cc-only: no template fits a language init
+    writes no live lane for, and a template would be a step the reader cannot
+    take. A detected toolchain's own stanza is that step.
     """
     if all(cc_only_scope(languages) for languages in scopes.values()):
         return []
@@ -802,7 +853,8 @@ def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]],
 def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...] = (),
                  *, interpreter: str = _DEFAULT_PYTHON,
                  testpaths: tuple[str, ...] = (), tracked=(),
-                 package_json: PackageJson = None) -> str:
+                 package_json: PackageJson = None,
+                 markers: frozenset[str] = frozenset()) -> str:
     """The starter crapkit.toml. `interpreter` is the python a committed config
     on this repo can call, the lockfile's manager prefix included; every python
     line the file holds names it, commented templates as much as live lanes.
@@ -815,6 +867,8 @@ def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...]
     `detect_lanes` read; together they decide which scoped-test form each scope
     gets. A caller passing neither gets the whole-suite form for python and
     the placeholder for js, the two forms that cannot collect nothing.
+    `markers` are the repo-root files init read; a toolchain they show gets
+    its lane commented (`commented_lanes`).
     """
     lines = ["[crapkit]", "target = 6", ""]
     for name, languages in scopes.items():
@@ -824,7 +878,8 @@ def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...]
     live += _testpath_lane_stubs(lanes, scopes, testpaths)
     launcher = python_launcher(lanes, interpreter)
     facts = _scoped_facts(scopes, lanes, launcher, testpaths, tracked, package_json)
-    return "\n".join(lines + live + _template_lines(covered, scopes, launcher)
+    commented = commented_lanes(scopes, lanes, markers)
+    return "\n".join(lines + live + _template_lines(covered, scopes, launcher, commented)
                      + _scoped_tests_stub(scopes, facts))
 
 

@@ -20,6 +20,17 @@ from types import MappingProxyType
 from typing import NamedTuple
 
 
+class Stanza(NamedTuple):
+    """The commented lane init writes for a toolchain it detects. Each command
+    runs from the repo root and reads the same under sh and cmd.exe, and the
+    runner keys its report from the root, so no stanza needs a per-dialect
+    command or a path_prefix."""
+    name: str
+    command: str
+    artifact: str
+    parser: str
+
+
 class Toolchain(NamedTuple):
     """One runner's facts. A fact the row does not carry yet is None, or empty
     where empty is the whole fact (no extra flags, no environment)."""
@@ -48,7 +59,28 @@ class Toolchain(NamedTuple):
     # What doctor tells a lane that declares no results_artifact: the junit
     # reporter's flags and the key. `{name}` is the lane's name.
     junit_hint: str | None = None
+    # The crapkit languages the runner measures.
+    languages: tuple[str, ...] = ()
+    # The parsers crapkit's recipes pair with it, each a key of
+    # coverage_format._FORMATS (a table test holds that, so no import here).
+    formats: tuple[str, ...] = ()
+    # Repo-root files that show init the toolchain is in use.
+    markers: tuple[str, ...] = ()
+    # The commented lane init writes when it finds one of `markers`.
+    stanza: Stanza | None = None
 
+
+_JS = ("javascript", "typescript", "tsx")
+# Each stanza command is the one that recorded its fixture under
+# tests/fixtures/coverage/lcov/, so init never prints a command no run wrote.
+_BUN_STANZA = Stanza("bun", "bun test --coverage --coverage-reporter=lcov "
+                            "--coverage-dir=.crapkit/cov/bun",
+                     ".crapkit/cov/bun/lcov.info", "lcov")
+_DENO_STANZA = Stanza("deno", "deno test --coverage=.crapkit/cov/deno-raw && deno coverage "
+                              "--lcov --output=.crapkit/cov/deno.lcov .crapkit/cov/deno-raw",
+                      ".crapkit/cov/deno.lcov", "lcov")
+_RUST_STANZA = Stanza("rust", "cargo llvm-cov --lcov --output-path .crapkit/cov/rust.lcov",
+                      ".crapkit/cov/rust.lcov", "lcov")
 
 _ROWS = (
     # pytest raises Interrupted at the END of collection when any module fails
@@ -64,7 +96,8 @@ _ROWS = (
               junit_flags="--junitxml={cov}/junit-py.xml",
               extra_flags=" --continue-on-collection-errors",
               junit_hint=("add --junitxml=.crapkit/cov/junit-{name}.xml to the command and "
-                          'results_artifact = ".crapkit/cov/junit-{name}.xml" to the lane')),
+                          'results_artifact = ".crapkit/cov/junit-{name}.xml" to the lane'),
+              languages=("python",), formats=("coveragepy",)),
     # Each JS runner spells "write the coverage report here" its own way and
     # rejects the other's spelling outright. vitest ships its junit reporter, so
     # its flags cost the repo nothing. vitest also writes no coverage report
@@ -80,7 +113,8 @@ _ROWS = (
               related_tests="npx vitest related --run {files}",
               junit_hint=("add --reporter=default --reporter=junit "
                           "--outputFile=.crapkit/cov/{name}/junit.xml to the command and "
-                          'results_artifact = ".crapkit/cov/{name}/junit.xml" to the lane')),
+                          'results_artifact = ".crapkit/cov/{name}/junit.xml" to the lane'),
+              languages=(*_JS, "vue"), formats=("istanbul",)),
     # jest needs the separate `jest-junit` package, and naming a reporter jest
     # cannot resolve turns a working lane into an error, so its flags are
     # written only when package.json already carries it. jest-junit takes no
@@ -98,15 +132,40 @@ _ROWS = (
               junit_hint=("add the jest-junit package, --reporters=default --reporters=jest-junit "
                           'to the command, JEST_JUNIT_OUTPUT_DIR = ".crapkit/cov/{name}" and '
                           'JEST_JUNIT_OUTPUT_NAME = "junit.xml" to its [lane.env], and '
-                          'results_artifact = ".crapkit/cov/{name}/junit.xml" to the lane')),
-    Toolchain("bun", (("bun",),)),
-    Toolchain("deno", (("deno",),)),
-    Toolchain("cargo llvm-cov", (("cargo", "llvm-cov"),)),
+                          'results_artifact = ".crapkit/cov/{name}/junit.xml" to the lane'),
+              languages=_JS, formats=("istanbul",)),
+    Toolchain("bun", (("bun",),), languages=_JS, formats=("lcov",),
+              markers=("bun.lock", "bun.lockb", "bunfig.toml"), stanza=_BUN_STANZA),
+    Toolchain("deno", (("deno",),), languages=_JS, formats=("lcov",),
+              markers=("deno.json", "deno.jsonc"), stanza=_DENO_STANZA),
+    Toolchain("cargo llvm-cov", (("cargo", "llvm-cov"),), languages=("rust",), formats=("lcov",),
+              markers=("Cargo.toml",), stanza=_RUST_STANZA),
     Toolchain("go test", (("go", "test"),)),
-    Toolchain("c8", (("c8",),)),
+    Toolchain("c8", (("c8",),), languages=_JS, formats=("istanbul", "lcov")),
 )
 
 TOOLCHAINS = MappingProxyType({row.name: row for row in _ROWS})
+# Every repo-root file some row's markers name: what init reads to detect them.
+MARKERS = frozenset(marker for row in _ROWS for marker in row.markers)
+
+
+def detected(markers) -> tuple[Toolchain, ...]:
+    """The rows whose markers are among the repo-root files `markers`, in
+    table order."""
+    present = frozenset(markers)
+    return tuple(row for row in _ROWS if present.intersection(row.markers))
+
+
+def measurable_languages() -> frozenset[str]:
+    """Every language some row measures in a format crapkit reads."""
+    return frozenset(lang for row in _ROWS if row.formats for lang in row.languages)
+
+
+def readers(language: str) -> tuple[tuple[str, str], ...]:
+    """(parser, row name) for each format a row that measures `language`
+    writes, in table order."""
+    return tuple((parser, row.name) for row in _ROWS if language in row.languages
+                 for parser in row.formats)
 
 
 # --- which row a lane runs ------------------------------------------------------

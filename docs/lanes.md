@@ -266,6 +266,17 @@ because the coverage half was never measured. The scope carries `coverage_option
 so `doctor` stops asking for a lane that cannot exist, and `crapkit init` writes that key
 for you. See [configuration.md](configuration.md#coverage_optional--true).
 
+`crapkit init` writes live lanes for pytest, Vitest and Jest only. When a repo-root file
+shows another toolchain whose report a parser reads (`Cargo.toml` for cargo llvm-cov,
+`bun.lock`, `bun.lockb` or `bunfig.toml` for Bun, `deno.json` or `deno.jsonc` for Deno), init
+writes that toolchain's lane commented, with `parser = "lcov"` and the scopes it would measure,
+and the scope keeps `coverage_optional = true`. `crapkit doctor` then prints a note per such
+scope naming the language, the parser and the toolchain. Uncomment the lane, delete
+`coverage_optional`, and follow
+[Turning a cc-only scope into a measured one](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)
+for the marks. init reads markers at the repo root only: declare a nested crate's lane by hand,
+with `cwd` set to the crate's directory.
+
 A repo where **every** scope is cc-only declares no `[[lane]]` at all, and both `coverage`
 and `verify` run on it: the lane list is empty because there is nothing left to measure,
 not because something is unwired. They still exit 3 for a scope that has neither a lane nor
