@@ -149,7 +149,8 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # added 25. seed's per-scope stamps and `--scope` (metric-stamp-06) added 23.
 # The flip refusal's note (metric-stamp-07) added 1.
 # The one whole-key rewrite for marks (mission-4-01) added 2.
-SRC_DEFS = 4020
+# `ratchet move --function` (mission-4-02) added 16.
+SRC_DEFS = 4036
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

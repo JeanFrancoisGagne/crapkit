@@ -1,7 +1,8 @@
 """The `ratchet` subcommand's five actions and the burn-down report behind
 `ratchet report`: seed new debt, prune marks whose code left (renames followed
-first), merge two marks files as a git merge driver, move marks at their
-recorded values, and report ages and repayment from the marks file's history."""
+first), merge two marks files as a git merge driver, move marks or re-key one
+function's mark at their recorded values, and report ages and repayment from the
+marks file's history."""
 from __future__ import annotations
 
 import argparse
@@ -263,15 +264,19 @@ def _move_path(raw: str, root: Path, cwd: Path | None) -> str:
     return path + "/" if raw.endswith(("/", os.sep)) else path
 
 
-def _ratchet_move(root: Path, cfg, files: list, cwd: Path | None) -> int:
+def _ratchet_move(root: Path, cfg, files: list, cwd: Path | None, function: list | None = None) -> int:
     """`cwd` is where the user typed the paths (`_stand`), None under --repo.
     It has no default: leaving it out read every path root-relative from any
-    directory, and nothing said so."""
+    directory, and nothing said so. FUNCTION is `--function PATH OLD NEW`, the
+    form that re-keys one mark instead of re-pathing marks."""
     from ..ratchet import move_marks
     from ..ratchetfile import RatchetFile
 
+    if function is not None:
+        return _ratchet_move_function(root, cfg, files, function, cwd)
     if len(files) != 2:
-        raise ConfigError("ratchet move takes exactly two paths: OLD NEW")
+        raise ConfigError("ratchet move takes exactly two paths, OLD NEW, or --function PATH OLD NEW "
+                          "to re-key one function's mark")
     old, new = (_move_path(raw, root, cwd) for raw in files)
     saved = RatchetFile.read(root / cfg.ratchet_file)
     entries, moved = move_marks(saved.entries, old, new)
@@ -281,6 +286,176 @@ def _ratchet_move(root: Path, cfg, files: list, cwd: Path | None) -> int:
     saved.publish(saved.kept(entries))  # values never change, so both stamps stay
     print(f"{cfg.ratchet_file}: moved {moved} mark(s) from {old} to {new}")
     return 0
+
+
+_FUNCTION_MOVE = "ratchet move --function"
+
+
+def _ratchet_move_function(root: Path, cfg, files: list, function: list, cwd: Path | None) -> int:
+    """`ratchet move --function PATH OLD NEW`: the mark OLD names in PATH, re-keyed
+    to the function NEW names in the working tree's PATH, at its recorded value.
+
+    It reads PATH and the marks file only, so it works right after an edit no
+    run measured: one lizard parse and no store. The key goes through
+    `rekey_marks`, the one writer of a mark's key."""
+    from ..ratchetfile import RatchetFile
+
+    if files:
+        raise ConfigError("ratchet move takes OLD NEW or --function PATH OLD NEW, not both")
+    raw, old_name, new_name = function
+    path = _function_path(raw, root, cwd)
+    saved = RatchetFile.read(root / cfg.ratchet_file)
+    old = _marked_key(path, old_name, saved.entries)
+    new = _function_key(path, new_name, _parsed(root, path))
+    saved.publish(saved.kept(_rekeyed(saved.entries, old, new)))  # the value moves as written
+    print(f"{cfg.ratchet_file}: re-keyed 1 mark in {path} from {old[1]} to {new[1]}")
+    return 0
+
+
+def _function_path(raw: str, root: Path, cwd: Path | None) -> str:
+    """PATH read as every `ratchet move` path is, refused when it names a
+    directory: a mark's key is one function in one file."""
+    path = _move_path(raw, root, cwd)
+    if path.endswith("/"):
+        raise ConfigError(f"{_FUNCTION_MOVE}: {path} ends in '/', which names a directory; the "
+                          "function form re-keys a mark in one file, so name the file, or drop "
+                          "--function to move every mark under the directory")
+    return path
+
+
+def _quoted_names(names) -> str:
+    return ", ".join(f'"{name}"' for name in names)
+
+
+def _marked_key(path: str, name: str, entries: list) -> tuple[str, str]:
+    """The one mark OLD names among PATH's marks, or the refusal that lists them."""
+    from ..keys import MarkIndex
+
+    marked = sorted(key for key in MarkIndex(entries).keys() if key[0] == path)
+    hits = _marks_named(path, marked, name)
+    if len(hits) != 1:
+        raise ConfigError(_old_refusal(path, name, marked, hits))
+    return hits[0]
+
+
+def _marks_named(path: str, marked: list, name: str) -> list:
+    """The marks NAME names: the mark under its whole key name, else each mark
+    whose function NAME names as keys reads a NAME, where `#N` picks the Nth
+    twin and a name with no `#N` names every twin."""
+    if (path, name) in marked:
+        return [(path, name)]
+    return [key for key in marked if _names_mark(key[1], name)]
+
+
+def _names_mark(key_name: str, name: str) -> bool:
+    from ..keys import named_by, split_ordinal
+
+    wanted, ordinal = split_ordinal(name)
+    long_name, held = split_ordinal(key_name)
+    return named_by(long_name, wanted) and (wanted == name or held == ordinal)
+
+
+def _old_refusal(path: str, name: str, marked: list, hits: list) -> str:
+    if hits:
+        return (f"{_FUNCTION_MOVE}: {name} names {len(hits)} marks in {path}: "
+                f"{_quoted_names(key for _, key in hits)}; name one of them as OLD")
+    listed = (f"its marks are {_quoted_names(key for _, key in marked)}; name one of them as OLD"
+              if marked else f"{path} holds no mark; name the file whose mark moves as PATH")
+    return f"{_FUNCTION_MOVE}: no mark named {name} in {path}; {listed}"
+
+
+def _parsed(root: Path, path: str) -> list:
+    """PATH's functions as the working tree holds them, from one silent lizard
+    parse: the command prints its one line and no twin note.
+
+    `keys.select` ranks a bare name's twins by CRAP, and a parse scores
+    nothing, so every row carries none and ranks as unscored."""
+    from types import SimpleNamespace
+
+    from ..analyze import _source_records, decode_source
+
+    try:
+        raw = (root / path).read_bytes()
+    except OSError as exc:
+        raise ConfigError(f"{_FUNCTION_MOVE}: cannot read {path} ({exc.strerror or exc}); NEW names "
+                          f"a function in the working tree's {path}") from exc
+    return [SimpleNamespace(**record._asdict(), crap=None)
+            for record in _source_records(path, decode_source(raw))]
+
+
+def _function_key(path: str, name: str, rows: list) -> tuple[str, str]:
+    """The key of the one function NEW names in PATH, or the refusal that lists
+    the handles: of PATH's functions when NEW names none, of the ones it names
+    when it names several."""
+    from ..keys import handles, key_names, key_of, lookup
+
+    found = handles(rows)
+    named = _named_rows(rows, name)
+    picked = sorted({found[lookup(row)] for row in named})
+    if len(picked) != 1:
+        raise ConfigError(_new_refusal(path, name, picked, sorted(set(found.values()))))
+    return key_of(key_names(rows), named[0])
+
+
+def _named_rows(rows: list, name: str) -> list:
+    """The functions NEW names: the function whose whole key name NEW is, as
+    OLD reads one, so the first twin's key that keys' refusal prints names that
+    twin; else `keys.select`'s pick, widened to every twin of it when NEW is a
+    name with no `#N`. select's worst twin is a ranking, and a re-key has to
+    name one function."""
+    from ..keys import split_ordinal
+
+    keyed = _rows_keyed(rows, lambda pair: pair[1] == name)
+    if keyed:
+        return keyed
+    picked = _selected(rows, name)
+    if name.isdigit() or split_ordinal(name)[0] != name:
+        return _rows_keyed(rows, picked.__contains__)
+    return _twins_of(rows, picked)
+
+
+def _selected(rows: list, name: str) -> set:
+    """`keys.select`'s (long name, key name) pairs; its refusal of a start line
+    several functions open on, which lists their handles, exits 3 here."""
+    from ..keys import select
+
+    try:
+        return set(select(rows, name))
+    except CrapkitError as exc:
+        raise ConfigError(f"{_FUNCTION_MOVE}: {exc}") from exc
+
+
+def _rows_keyed(rows: list, wanted) -> list:
+    """The rows whose (long name, key name) pair WANTED accepts."""
+    from ..keys import key_names, lookup
+
+    names = key_names(rows)
+    return [row for row in rows if wanted((row.long_name, names[lookup(row)]))]
+
+
+def _twins_of(rows: list, picked: set) -> list:
+    long_names = {long_name for long_name, _ in picked}
+    return [row for row in rows if row.long_name in long_names]
+
+
+def _new_refusal(path: str, name: str, picked: list, every: list) -> str:
+    if picked:
+        return (f"{_FUNCTION_MOVE}: {name} names {len(picked)} functions in {path}: "
+                f"{', '.join(picked)}; name one of them as NEW")
+    return (f"{_FUNCTION_MOVE}: {name} names no function in {path}; its functions are "
+            f"{', '.join(every) or 'none'}; name one of them as NEW")
+
+
+def _rekeyed(entries: list, old: tuple[str, str], new: tuple[str, str]) -> list:
+    """The marks with OLD's mark under NEW, refused when NEW's key holds a mark."""
+    from ..ratchet import rekey_marks
+
+    try:
+        return rekey_marks(entries, [(old, new)])[0]
+    except ValueError as exc:
+        raise ConfigError(f"{_FUNCTION_MOVE}: {exc}; name a function that holds no mark as NEW, or "
+                          "leave the old mark for `crapkit ratchet prune` once a run no longer "
+                          "holds its function") from exc
 
 
 class _Renames(NamedTuple):
@@ -586,6 +761,7 @@ def _ratchet_report(root: Path, cfg, as_json: bool, enforce: bool) -> int:
 def cmd_ratchet(args: argparse.Namespace) -> int:
     scope = getattr(args, "scope", None)  # a Namespace built by hand may predate --scope
     requested = _requested_run(args, scope)
+    function = _function_form(args)
     if args.action == "merge":  # a git merge driver runs with no crapkit.toml in sight
         return _ratchet_merge(args.files)
     root = _command_root(args.repo)
@@ -593,8 +769,18 @@ def cmd_ratchet(args: argparse.Namespace) -> int:
     if args.action == "report":
         return _ratchet_report(root, cfg, args.json, args.enforce)
     if args.action == "move":  # a hand-declared rename needs no run to follow
-        return _ratchet_move(root, cfg, args.files, _stand(args.repo))
+        return _ratchet_move(root, cfg, args.files, _stand(args.repo), function)
     return _ratchet_from_run(root, cfg, args.action, requested, _known_scope(cfg, scope))
+
+
+def _function_form(args: argparse.Namespace) -> list | None:
+    """`--function PATH OLD NEW`, which only move takes. A Namespace built by
+    hand may predate the flag."""
+    function = getattr(args, "function", None)
+    if function is not None and args.action != "move":
+        raise ConfigError(f"ratchet {args.action} re-keys no mark, so it takes no --function; "
+                          "only move does")
+    return function
 
 
 def _requested_run(args: argparse.Namespace, scope: str | None = None) -> int | None:

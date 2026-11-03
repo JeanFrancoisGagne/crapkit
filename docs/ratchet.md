@@ -753,6 +753,44 @@ scored row carries. `./calc/grading.py` and, on Windows, `calc\grading.py` name
 `calc/`, `crapkit ratchet move grade.py grading.py` is the first example above. Under
 `--repo` the paths stay root-relative. The line names the paths as the marks file spells them.
 
+A mark's key holds its function's whole signature, so adding a parameter re-keys the
+function: after `def classify(a, b):` becomes `def classify(a, b, c=None):`, the mark
+under `classify( a , b )` keys no function. `--function PATH OLD NEW` moves that one mark
+to the function NEW names in PATH, at its recorded value:
+
+```
+$ crapkit ratchet move --function calc/grade.py "classify( a , b )" classify
+crapkit-ratchet.tsv: re-keyed 1 mark in calc/grade.py from classify( a , b ) to classify( a , b , c = None )
+```
+
+The row before and after, with every other byte of the file kept:
+
+```
+calc/grade.py	classify( a , b )	7.0000
+calc/grade.py	classify( a , b , c = None )	7.0000
+```
+
+Then `git add crapkit-ratchet.tsv` and commit it with the edit. OLD names a mark in PATH by
+its key name, or by a function name with `#N` for the Nth twin. NEW names a function the
+working tree's PATH holds by its key name, or as `brief` reads a name: a name, a handle such
+as `classify#2` or `(anonymous)#1`, or a start line. The command reads PATH and the marks
+file only: one lizard parse and no run, so it works right after an edit nothing measured.
+To move the second twin's mark, name both twins by their ordinal:
+`crapkit ratchet move --function calc/grade.py "classify( a )#2" "classify#2"`. When the
+commit gate cannot say which function a mark carries to, its refusal prints the
+`ratchet move --function` line that settles it.
+
+Each refusal exits 3, names PATH and its fix, and leaves the marks file as it was: OLD
+names no mark in PATH, or several; NEW names no function, or several (a bare name twins
+share names each twin, so it lists their handles); NEW's key already holds a mark; or
+PATH ends in `/`:
+
+```
+$ crapkit ratchet move --function calc/grade.py "classify( z )" classify
+crapkit: ratchet move --function: no mark named classify( z ) in calc/grade.py; its marks are "classify( a , b )"; name one of them as OLD
+EXIT=3
+```
+
 ---
 
 ## The git merge driver

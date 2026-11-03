@@ -598,7 +598,8 @@ def build_parser() -> argparse.ArgumentParser:
                           "merge: 3-way git merge driver (BASE OURS THEIRS), which a "
                           "clone running crapkit through uvx configures as "
                           "`uvx crapkit ratchet merge %%O %%A %%B`; "
-                          "move: re-path marks at their recorded values (OLD NEW); "
+                          "move: re-path marks at their recorded values (OLD NEW), or re-key "
+                          "one function's mark (--function PATH OLD NEW); "
                           "report: the burn-down: open marks are the file's rows, committed or "
                           "not, or the rows its history last held when it is missing or blank, "
                           "and ages and repayments come from its git history")
@@ -610,6 +611,15 @@ def build_parser() -> argparse.ArgumentParser:
                      help="for merge: the three files git passes as %%O %%A %%B; "
                           "for move: OLD NEW" + _WHERE
                           + ", where a trailing '/' on OLD moves a directory")
+    # Three values on the flag, not a flag before FILE: argparse before 3.12.7
+    # gives a `*` positional nothing once an option precedes it, and refuses the
+    # three words keys' carry refusal prints for the user to paste.
+    rat.add_argument("--function", nargs=3, default=None, metavar=("PATH", "OLD", "NEW"),
+                     help="move only: re-key the mark of function OLD in file PATH to function NEW "
+                          "at its recorded value, after an edit to its signature; OLD names a mark "
+                          "in PATH by its key name, or a function name with #N for the Nth twin; "
+                          "NEW names a function the working tree's PATH holds, by name, handle or "
+                          "start line; reads PATH and the marks file only, no run; PATH" + _WHERE)
     rat.add_argument("--baseline", type=int, default=None, metavar="ID",
                      help="seed and prune: read run ID instead of the run verify would pick, "
                           "the audited way past a failed verify; refused for a failed verify, "

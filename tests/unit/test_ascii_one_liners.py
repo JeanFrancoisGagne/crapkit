@@ -7,7 +7,8 @@ the process prints them (tests/e2e/test_encoding_e2e.py, and the watch banner
 in tests/unit/test_watch_shell.py); these are the three no e2e run reaches: a
 lane that cannot import pytest-cov, a rewritten history, and a directory with
 no crapkit.toml, on both the CLI and the MCP side. doctor's runner line is
-pinned here in each of its shapes.
+pinned here in each of its shapes, and so is the line `ratchet move
+--function` prints when it re-keys a mark.
 """
 from pathlib import Path
 
@@ -92,4 +93,24 @@ def test_each_shape_of_doctors_runner_line_is_ascii(command, found, line):
     lane = Lane(name="x", command=command, artifact="x.json", parser="istanbul", scopes=("s",))
 
     assert _runner_line(lane, found).text == line
+    assert line.isascii()
+
+
+def test_the_function_move_line_is_ascii(tmp_path: Path, capsys):
+    from crapkit.cli import main
+
+    (tmp_path / "crapkit.toml").write_text(
+        '[[scope]]\nname = "calc"\npaths = ["calc"]\nlanguages = ["python"]\n', encoding="utf-8")
+    (tmp_path / "calc").mkdir()
+    (tmp_path / "calc" / "grade.py").write_text("def classify(a, b, c=None):\n    return a\n",
+                                                encoding="utf-8")
+    (tmp_path / "crapkit-ratchet.tsv").write_text(
+        "path\tlong_name\tcrap\ncalc/grade.py\tclassify( a , b )\t7.0000\n", encoding="utf-8")
+
+    assert main(["ratchet", "move", "--function", "calc/grade.py", "classify( a , b )", "classify",
+                 "--repo", str(tmp_path)]) == 0
+    line = capsys.readouterr().out
+
+    assert line == ("crapkit-ratchet.tsv: re-keyed 1 mark in calc/grade.py from classify( a , b ) "
+                    "to classify( a , b , c = None )\n")
     assert line.isascii()
