@@ -544,7 +544,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <!-- ============================ 08 RATCHET ============================ -->
 <h2 id="ratchet"><span class="sn">08</span>The ratchet</h2>
 <p class="lede">How a brownfield repo turns the gate on today instead of after the cleanup.</p>
-<p><code>crapkit ratchet seed</code> writes every standing over-target score into <code>crapkit-ratchet.tsv</code>, a committed, human-readable file of pardons. A mark pardons debt <em>at or under</em> its recorded score. The function may stay bad; it may not get <em>worse</em>. Improve it and the mark tightens at the next green verify. Debt can only shrink. That is the ratchet.</p>
+<p><code>crapkit ratchet seed</code> writes every standing over-target score into <code>crapkit-ratchet.tsv</code>, a committed, human-readable file of pardons. A mark pardons debt <em>at or under</em> its recorded score. The function may stay bad; it may not get <em>worse</em>. Improve it and the mark tightens at the next green verify. Debt can only shrink. That is the ratchet. A mark follows its function through a signature edit: when the old key has left the file and exactly one mark that left shares the function's bare name, that carried mark judges the function, and the gates print one line naming both keys. Twins never carry a mark; <code>crapkit ratchet move --function</code> moves one by hand.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 900 240" role="img" aria-label="Ratchet mark lifecycle">

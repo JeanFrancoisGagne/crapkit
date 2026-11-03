@@ -802,6 +802,14 @@ def _verify_result(verdict, run_id: int | None, baseline: dict, commit: str, ran
     }
 
 
+def _uncarried(unmarked: list, carried) -> list:
+    """The standing debt less each function a carried mark judged: its mark sits
+    under its old key, so telling the reader to seed it would add a second one.
+    A twin never carries, so a carried function's key name is its long name."""
+    held = {(c.path, c.key_name) for c in carried}
+    return [row for row in unmarked if (row.path, row.long_name) not in held]
+
+
 def _warn_standing_debt(unmarked: list) -> None:
     """One stderr line for the over-ceiling functions no mark covers.
 
@@ -925,6 +933,11 @@ def _retried_suffix(out: dict) -> str:
 
 def _report_verify(as_json: bool, out: dict, verdict, ratchet_file: str,
                    sources: frozenset[str] = frozenset()) -> None:
+    from ..verify import lines_of
+
+    # The carried line goes to stderr in both modes: --json stdout stays one object.
+    for line in lines_of("carried", verdict.carried):
+        print(line, file=sys.stderr)
     if as_json:
         _print_json(out)
         return
@@ -1100,7 +1113,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
     uncovered = diff_uncovered(ranges, missing_by_path(root, cfg, folded=run.dead_lines),
                                scored) if ranges else []
     _warn_diff_uncovered(uncovered)
-    unmarked = unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets)
+    unmarked = _uncarried(unmarked_over_ceiling(scored, ratchet, cfg.target, cfg.scope_targets),
+                          verdict.carried)
     _warn_standing_debt(unmarked)
     verdict = with_diff_coverage(verdict, uncovered, cfg.diff_uncovered_max, dirty)
     _warn_diff_cover_breach(verdict, cfg.diff_uncovered_max)

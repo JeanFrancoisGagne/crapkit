@@ -45,8 +45,10 @@ function: its exact key, a Twin's `name#N` key, the carry, or a refusal
 naming the ambiguity. The carry is the mark that left the function's file under
 its bare name when exactly one did and the function is the one unmarked key
 that took the name. `pair_moves` says, by the same rule, which key that left a
-file pairs with a key that arrived in it. `MarkIndex.mark` still answers the
-exact key only: no gate, merge or report acts on a carry until mission-4.
+file pairs with a key that arrived in it, and `pair_path_moves` which mark left
+one path for another under the same key name at the same mark. The merge
+driver reads both pairings. `MarkIndex.mark` still answers the exact key only:
+no gate or report acts on a carry yet.
 """
 from __future__ import annotations
 
@@ -670,6 +672,23 @@ def pair_moves(path: str, dropped_keys, added_keys) -> Moves:
     pairs = sorted((a.old_key, a.new_key) for a in answers.values() if isinstance(a, Carry))
     paired = {key for pair in pairs for key in pair}
     return Moves(pairs, sorted((dropped | added) - paired), _refusals(answers))
+
+
+def pair_path_moves(dropped: dict, added: dict) -> list[tuple[Key, Key]]:
+    """Which marks moved to another path: a dropped key and an added key, each
+    mapped to its mark, with the same key name and the same mark, exactly one
+    of each. A path move never changes a mark, so the equal mark is the
+    evidence; a Twin's `name#N` pairs only with the same `name#N`."""
+    gone, came = _by_name_and_mark(dropped), _by_name_and_mark(added)
+    return sorted((gone[seen][0], came[seen][0]) for seen in gone.keys() & came.keys()
+                  if len(gone[seen]) == len(came[seen]) == 1)
+
+
+def _by_name_and_mark(marks: dict) -> dict[tuple[str, float], list[Key]]:
+    groups: dict[tuple[str, float], list[Key]] = {}
+    for key, mark in marks.items():
+        groups.setdefault((key[1], mark), []).append(key)
+    return groups
 
 
 def _in_file(path: str, keys) -> set[Key]:

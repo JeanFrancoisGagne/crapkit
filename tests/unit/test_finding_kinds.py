@@ -20,12 +20,12 @@ from types import SimpleNamespace
 import pytest
 
 from accuracy.verdict_model import model_verdict as model
-from crapkit import sarif, universe, verify
+from crapkit import invocation, sarif, universe, verify
 from crapkit.cli import _shared, verifying
 from crapkit.merge import UNREAD_ADVICE
-from crapkit.verify import (FINDING_KINDS, FindingKind, GateViolation, RatchetRegression,
-                            Refusal, Sarif, UncoveredViolation, UnreadableName, Unread,
-                            Verdict)
+from crapkit.verify import (FINDING_KINDS, Carried, FindingKind, GateViolation,
+                            RatchetRegression, Refusal, Sarif, UncoveredViolation, UnreadableName,
+                            Unread, Verdict)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -35,6 +35,8 @@ ROSE = RatchetRegression("lib/m.py", "g( y )", 4.0, 9.0)
 FAILURE = "tests/t.py::test_a"
 LINE = UncoveredViolation("src/a.py", 7)
 NAME = UnreadableName("src/caf\udce9.py", "src")
+NEW_KEY = "classify( a , b , c = None )"
+CARRIED = Carried("calc/grade.py", NEW_KEY, NEW_KEY, "classify( a , b )", 7.0)
 
 # One entry per kind, a second one its file's uncommitted edits make dirty,
 # and the Verdict field it lives in.
@@ -46,8 +48,15 @@ KINDS = {
     "new_failure": ("new_failures", FAILURE, "tests/u.py::test_b"),
     "diff_uncovered": ("uncovered_violations", LINE, LINE._replace(line=8, dirty=True)),
     "overridden": ("overridden", GATE, GATE._replace(start=30, dirty=True)),
+    "carried": ("carried", CARRIED, CARRIED._replace(path="calc/rank.py", dirty=True)),
 }
 ORDER = list(KINDS)
+
+
+@pytest.fixture(autouse=True)
+def console_script(monkeypatch):
+    """The carried line names crapkit as this process runs it; pin the console script."""
+    monkeypatch.setattr(invocation, "_self", lambda: "crapkit")
 
 
 def holding(*kinds: str, dirty: bool = False) -> Verdict:
@@ -70,10 +79,10 @@ def row(kind: str) -> FindingKind:
 
 def test_the_table_lists_every_kind_in_exit_order():
     """3 first, then 6, 7, 8, 9; gate_violation before unread_file, both exit 6;
-    overridden fails nothing and comes last."""
+    overridden and carried fail nothing and come last."""
     assert [r.kind for r in FINDING_KINDS] == ORDER
-    assert [r.exit for r in FINDING_KINDS] == [3, 6, 6, 7, 8, 9, None]
-    assert [r.fails for r in FINDING_KINDS] == [True] * 6 + [False]
+    assert [r.exit for r in FINDING_KINDS] == [3, 6, 6, 7, 8, 9, None, None]
+    assert [r.fails for r in FINDING_KINDS] == [True] * 6 + [False, False]
     assert [r.field for r in FINDING_KINDS] == [KINDS[k][0] for k in ORDER]
 
 
@@ -82,8 +91,8 @@ def test_each_row_labels_its_findings_items_with_its_rule():
     kinds of exit 6 share the complexity gate's."""
     assert [r.rule for r in FINDING_KINDS] == [
         "unreadable name", "complexity gate", "complexity gate", "ratchet regressions",
-        "new test failures", "diff-coverage ceiling", "override"]
-    assert [r.cap for r in FINDING_KINDS] == [None] * 5 + [50, None]
+        "new test failures", "diff-coverage ceiling", "override", "carried mark"]
+    assert [r.cap for r in FINDING_KINDS] == [None] * 5 + [50, None, None]
 
 
 def test_every_row_names_a_verdict_field_and_the_verdict_names_no_kind_twice():
@@ -94,7 +103,7 @@ def test_every_row_names_a_verdict_field_and_the_verdict_names_no_kind_twice():
 # --- the exit code --------------------------------------------------------------
 
 EXITS = {"unreadable_name": 3, "gate_violation": 6, "unread_file": 6, "ratchet_regression": 7,
-         "new_failure": 8, "diff_uncovered": 9, "overridden": 0}
+         "new_failure": 8, "diff_uncovered": 9, "overridden": 0, "carried": 0}
 
 
 @pytest.mark.parametrize("kind", ORDER)
@@ -193,7 +202,7 @@ def test_the_hook_refuses_its_unread_files_with_the_line_verify_prints():
 
 @pytest.mark.parametrize("kind", ORDER)
 def test_each_failing_kind_counts_its_clean_and_its_dirty_entry(kind):
-    """overridden is a report: it fails nothing, so it counts nowhere."""
+    """overridden and carried are reports: they fail nothing, so they count nowhere."""
     expected = (1, 1) if row(kind).fails else (0, 0)
 
     assert verify.dirty_counts(holding(kind, dirty=True)) == expected
@@ -217,6 +226,9 @@ LINES = {
     "new_failure": ["  NEW FAILURE  tests/t.py::test_a"],
     "diff_uncovered": ["  uncovered src/a.py:7"],
     "overridden": ["  OVERRIDDEN  src/a.py:3  f( x )"],
+    "carried": [f"crapkit gate: calc/grade.py {NEW_KEY} carries the mark 7.0000 recorded for "
+                f"classify( a , b ); a passing verify re-keys it, or run crapkit ratchet move "
+                f'--function calc/grade.py "classify( a , b )" "{NEW_KEY}"'],
 }
 
 
@@ -239,6 +251,7 @@ DIRTY_LINES = {
     "new_failure": [LINES["new_failure"][0], "  NEW FAILURE  tests/u.py::test_b  [dirty]"],
     "diff_uncovered": [*_clean("diff_uncovered"), "  uncovered src/a.py:8"],
     "overridden": [*_clean("overridden"), "  OVERRIDDEN  src/a.py:30  f( x )"],
+    "carried": [*_clean("carried"), _clean("carried")[0].replace("calc/grade.py", "calc/rank.py")],
 }
 
 
@@ -436,3 +449,22 @@ def test_every_subset_of_the_six_kinds_settles_ok_only_at_exit_0():
         kinds = [kind for kind, on in zip(ORDER[:6], bits) if on]
         verdict = holding(*kinds)
         assert verdict.ok is (verify.exit_code(verdict) == 0) is (not kinds)
+
+
+def test_a_carried_item_is_a_report_that_no_override_grants_and_sarif_never_names():
+    """The carried row: no exit code, out of the exit order, never fails, never
+    overridable, dirty from its own file, its line on stderr, its rule label and
+    no SARIF result; its findings item names both keys and the mark."""
+    verdict = holding("carried", dirty=True)
+    payload = verifying._verify_result(verdict, 1, {"id": 1, "commit": "a" * 40}, "a" * 40,
+                                       {}, [], None, 0)
+
+    assert (row("carried").exit, row("carried").fails, row("carried").granted) == (None, False, False)
+    assert (verify.exit_code(verdict), verdict.ok, verify.dirty_counts(verdict)) == (0, True, (0, 0))
+    assert verify.override_refusal(verdict) is None and verify.override_grants(verdict) == ()
+    assert verify.sarif_results(verdict) == []
+    common = {"kind": "carried", "fails": False, "exit_code": None, "overridable": False,
+              "rule": "carried mark", "long_name": NEW_KEY, "key_name": NEW_KEY,
+              "carried_from": "classify( a , b )", "mark": 7.0}
+    assert payload["findings"] == [{**common, "dirty": False, "path": "calc/grade.py"},
+                                   {**common, "dirty": True, "path": "calc/rank.py"}]

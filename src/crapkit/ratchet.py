@@ -29,7 +29,7 @@ from typing import ClassVar, NamedTuple
 
 from .invariants import check_dump, check_marks_kept
 from .invocation import _self
-from .keys import MarkIndex, mark_key, rows_by_key, split_ordinal
+from .keys import Key, MarkIndex, mark_key, pair_moves, pair_path_moves, rows_by_key, split_ordinal
 from .score import ScoredRow, over_ceiling
 from .records import decode_record, encode_record, record_lines
 
@@ -986,19 +986,79 @@ def _merge_key(b: float | None, o: float | None, t: float | None) -> float | Non
 
 def merge_ratchets(base: list[RatchetEntry], ours: list[RatchetEntry],
                    theirs: list[RatchetEntry]) -> list[RatchetEntry]:
-    b, o, t = MarkIndex(base), MarkIndex(ours), MarkIndex(theirs)
-    merged = []
-    for key in sorted(b.keys() | o.keys() | t.keys()):
-        crap = _merge_key(b.mark(key), o.mark(key), t.mark(key))
-        if crap is not None:
-            merged.append(RatchetEntry(key[0], key[1], crap))
-    return merged
+    """git's 3-way merge of the marks, one mark at a time by `_merge_key`.
+
+    A key a side dropped and a key it added that keys pairs (`_mark_moves`) are one
+    mark: the merged line takes the key the moving side gave it, or both keys
+    when the two sides moved it apart. Two marks that land on one key keep the
+    lower, since a mark can only fall.
+    """
+    merged: dict[Key, float] = {}
+    for landing, crap in _merged_marks(base, ours, theirs):
+        for key in landing:
+            merged[key] = min(crap, merged.get(key, crap))
+    return [RatchetEntry(path, name, crap) for (path, name), crap in sorted(merged.items())]
+
+
+def split_moves(base: list[RatchetEntry], ours: list[RatchetEntry],
+                theirs: list[RatchetEntry]) -> list[tuple[Key, ...]]:
+    """Each mark OURS and THEIRS moved to different keys: the keys the merge keeps it under."""
+    return [landing for landing, _ in _merged_marks(base, ours, theirs) if len(landing) > 1]
 
 
 def changed_marks(base: list[RatchetEntry], side: list[RatchetEntry]) -> int:
-    """How many keys `side` marks otherwise than `base`: added, dropped or moved."""
-    b, s = MarkIndex(base), MarkIndex(side)
-    return sum(b.mark(key) != s.mark(key) for key in b.keys() | s.keys())
+    """How many marks `side` holds otherwise than `base`: added, dropped, set to
+    another value or moved to another key. A moved mark counts once."""
+    b = MarkIndex(base)
+    held = _by_mark(b, MarkIndex(side))
+    return sum(held.get(mark) != (mark, b.mark(mark)) for mark in b.keys() | held.keys())
+
+
+# The merge names each mark by its BASE key, or by its own key when it is new.
+# _ABSENT is the (key, value) of a mark a side does not hold.
+_ABSENT = (None, None)
+
+
+def _merged_marks(base: list, ours: list, theirs: list):
+    """(the keys a merged mark lands on, its value) for each mark that survives the merge."""
+    b = MarkIndex(base)
+    o, t = (_by_mark(b, MarkIndex(side)) for side in (ours, theirs))
+    for mark in sorted(b.keys() | o.keys() | t.keys()):
+        (o_key, o_crap), (t_key, t_crap) = o.get(mark, _ABSENT), t.get(mark, _ABSENT)
+        crap = _merge_key(b.mark(mark), o_crap, t_crap)
+        if crap is not None:
+            yield _landing(mark, o_key, t_key), crap
+
+
+def _landing(mark: Key, *sides: Key | None) -> tuple[Key, ...]:
+    """Each key a side moved MARK to, sorted, or MARK itself when no side moved it."""
+    moved = sorted({key for key in sides if key not in (None, mark)})
+    return tuple(moved) or (mark,)
+
+
+def _by_mark(base: MarkIndex, side: MarkIndex) -> dict[Key, tuple[Key, float]]:
+    """SIDE's (key, value) by the mark it holds: a moved key under the BASE key it left."""
+    left = {new: old for old, new in _mark_moves(base, side)}
+    return {left.get(key, key): (key, side.mark(key)) for key in side.keys()}
+
+
+def _mark_moves(base: MarkIndex, side: MarkIndex) -> list[tuple[Key, Key]]:
+    """Each (BASE key, SIDE key) pair SIDE moved: a re-key inside one file by
+    keys.pair_moves, then a path move of the keys left by keys.pair_path_moves."""
+    dropped, added = base.keys() - side.keys(), side.keys() - base.keys()
+    pairs = _file_moves(dropped, added)
+    paired = {key for pair in pairs for key in pair}
+    return pairs + pair_path_moves(_marks_of(base, dropped - paired), _marks_of(side, added - paired))
+
+
+def _file_moves(dropped: set, added: set) -> list[tuple[Key, Key]]:
+    """keys.pair_moves's pairs in each file that both lost and gained a key."""
+    paths = {key[0] for key in dropped} & {key[0] for key in added}
+    return [pair for path in sorted(paths) for pair in pair_moves(path, dropped, added).pairs]
+
+
+def _marks_of(index: MarkIndex, keys: set) -> dict[Key, float]:
+    return {key: index.mark(key) for key in keys}
 
 
 # --- the stamps of a 3-way merge ------------------------------------------------
@@ -1305,7 +1365,9 @@ def raised_marks(prior: list[RatchetEntry], seeded: list[RatchetEntry]) -> list[
 
 
 def _repath(entries: list[RatchetEntry], dest_of) -> tuple[list[RatchetEntry], int]:
-    """Rewrite paths by a per-mark chooser (None leaves a mark alone); values never move."""
+    """Rewrite whole keys by a per-mark chooser that answers a (path, key name)
+    or None to leave the mark alone. The one place a mark's key changes: the
+    value never moves, so the file writes the same digits under the new key."""
     out = []
     moved = 0
     for e in entries:
@@ -1313,9 +1375,34 @@ def _repath(entries: list[RatchetEntry], dest_of) -> tuple[list[RatchetEntry], i
         if dest is None:
             out.append(e)
             continue
-        out.append(e._replace(path=dest))
+        out.append(e._replace(path=dest[0], long_name=dest[1]))
         moved += 1
     return sorted(out, key=lambda e: (e.path, e.long_name)), moved
+
+
+def _same_name(entry: RatchetEntry, path: str | None) -> tuple[str, str] | None:
+    """ENTRY's key name at PATH, or None when no path was chosen."""
+    return None if path is None else (path, entry.long_name)
+
+
+def rekey_marks(entries: list[RatchetEntry], moves) -> tuple[list[RatchetEntry], int]:
+    """The marks with each (old key, new key) move of MOVES applied, and how many
+    moved. A key is (path, key name). An old key that holds no mark moves
+    nothing and takes no key. Moving a mark onto a key that holds a mark, or
+    that another mark's move already took, raises ValueError naming both keys.
+    Sorted by path, then key name."""
+    dest = dict(moves)
+    held = MarkIndex(entries)
+    taken = set(held.keys())
+    for old, new in sorted(dest.items()):
+        if old not in held:
+            continue
+        if new in taken:
+            target = f"{new[0]} {new[1]}"
+            why = f"{target} already holds a mark" if new in held else f"another mark moves to {target}"
+            raise ValueError(f"cannot move the mark of {old[0]} {old[1]} to {target}: {why}")
+        taken.add(new)
+    return _repath(entries, lambda e: dest.get(mark_key(e)))
 
 
 def _moved_path(path: str, old: str, new: str) -> str | None:
@@ -1329,7 +1416,7 @@ def move_marks(entries: list[RatchetEntry], old: str,
                new: str) -> tuple[list[RatchetEntry], int]:
     """Re-path marks at their recorded values. A trailing "/" on `old` moves a whole
     directory; anything else matches one exact path."""
-    return _repath(entries, lambda e: _moved_path(e.path, old, new))
+    return _repath(entries, lambda e: _same_name(e, _moved_path(e.path, old, new)))
 
 
 def _rename_target(entry: RatchetEntry, present: set, renames: dict[str, str]) -> str | None:
@@ -1352,7 +1439,7 @@ def follow_renames(prior: list[RatchetEntry], fresh: list[ScoredRow],
     """Marks for renamed files, re-pathed. Runs BEFORE prune so a rename reads as a
     move, not as code that left the repo and forfeits its high-water mark."""
     present = set(rows_by_key(fresh))
-    return _repath(prior, lambda e: _rename_target(e, present, renames))
+    return _repath(prior, lambda e: _same_name(e, _rename_target(e, present, renames)))
 
 
 def prune_ratchet(prior: list[RatchetEntry],

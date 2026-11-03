@@ -4,8 +4,10 @@ already carry them, and a fixed history reports deterministically.
 
 The history is the marks file's parsed revisions (marks_history.MarksRevision):
 mark_events diffs the marks each revision found against the marks it left."""
+import pytest
+
 from crapkit.marks_history import MarksRevision
-from crapkit.ratchet_report import held_event, mark_events, report_from_events
+from crapkit.ratchet_report import held_event, mark_age_days, mark_events, report_from_events
 
 DAY = 86400
 
@@ -73,6 +75,146 @@ def test_report_ages_and_velocity_anchor_on_the_newest_commit():
     (oldest,) = report["oldest"][:1]
     assert oldest["path"] == "src/a.ts"
     assert oldest["age_days"] == 60
+
+
+# --- a moved mark: one event, its age kept, no repayment --------------------
+# marks_history.revision_moves pairs a re-key inside one file (keys.pair_moves)
+# and a path move (keys.pair_path_moves); mark_events reads each pair as one
+# "moved" event keyed (old key, new key) at the value the mark arrived with.
+
+F, F_SIGNED = ("calc/grade.py", "f( a )"), ("calc/grade.py", "f( a , b )")
+MOVED_ROWS = [
+    pytest.param({F: 7.0}, {F_SIGNED: 7.0}, [((F, F_SIGNED), "moved", 7.0)], id="re-key"),
+    pytest.param({F: 7.0}, {F_SIGNED: 6.0}, [((F, F_SIGNED), "moved", 6.0)],
+                 id="re-key-and-tighten"),
+    pytest.param({F: 7.0}, {("calc/grading.py", "f( a )"): 7.0},
+                 [((F, ("calc/grading.py", "f( a )")), "moved", 7.0)], id="path-move"),
+    pytest.param({F: 7.0, ("calc/grade.py", "f( c )"): 5.0},
+                 {F_SIGNED: 7.0, ("calc/grade.py", "f( c , d )"): 5.0},
+                 [(F_SIGNED, "added", 7.0), (("calc/grade.py", "f( c , d )"), "added", 5.0),
+                  (F, "dropped", 7.0), (("calc/grade.py", "f( c )"), "dropped", 5.0)],
+                 id="two-for-two-one-bare-name"),
+    pytest.param({F: 7.0, ("calc/grade.py", "f( a )#2"): 5.0}, {F: 7.0, F_SIGNED: 5.0},
+                 [(F_SIGNED, "added", 5.0), (("calc/grade.py", "f( a )#2"), "dropped", 5.0)],
+                 id="twin-drop"),
+    pytest.param({("a.py", "f( )"): 4.0, ("b.py", "f( )"): 4.0},
+                 {("c.py", "f( )"): 4.0, ("d.py", "f( )"): 4.0},
+                 [(("c.py", "f( )"), "added", 4.0), (("d.py", "f( )"), "added", 4.0),
+                  (("a.py", "f( )"), "dropped", 4.0), (("b.py", "f( )"), "dropped", 4.0)],
+                 id="two-files-move-one-name-at-one-value"),
+]
+
+
+@pytest.mark.parametrize("before, after, expected", MOVED_ROWS)
+def test_mark_events_reads_a_paired_drop_and_add_as_one_move(before, after, expected):
+    events = mark_events(_history((1000, before), (2000, after)))
+
+    assert [(key, kind, crap) for ts, key, kind, crap in events if ts == 2000] == expected
+
+
+def test_a_rekeyed_mark_keeps_its_age_and_repays_nothing():
+    """The report probe: a mark committed 400 days before the commit that
+    re-keys it is 400 days old under its new key, and nothing was repaid."""
+    revisions = _history((1000, {F: 7.0}), (1000 + 400 * DAY, {F_SIGNED: 7.0}))
+
+    report = report_from_events(mark_events(revisions) + held_event(revisions))
+
+    assert report["oldest"] == [{"path": F[0], "long_name": F_SIGNED[1], "age_days": 400}]
+    assert (report["open"], report["dropped_total"], report["uncommitted"]) == (1, 0, 0)
+
+
+def test_a_rekey_and_a_tighten_keep_the_age_and_take_the_new_value():
+    revisions = _history((1000, {F: 7.0}), (1000 + 400 * DAY, {F_SIGNED: 6.0}))
+    events = mark_events(revisions)
+
+    report = report_from_events(events + held_event(revisions))
+
+    assert mark_age_days(events, F_SIGNED) == 400 and mark_age_days(events, F) is None
+    assert (report["oldest"][0]["age_days"], report["dropped_total"]) == (400, 0)
+    assert held_event(revisions)[0][3] == {F_SIGNED: 6.0}
+
+
+def test_a_directory_move_keeps_every_moved_marks_age():
+    old = {(f"calc/{name}.py", f"{name}( )"): 3.0 + n for n, name in enumerate("xyz")}
+    new = {(f"lib/{name}.py", f"{name}( )"): 3.0 + n for n, name in enumerate("xyz")}
+    revisions = _history((1000, old), (1000 + 30 * DAY, new))
+
+    report = report_from_events(mark_events(revisions) + held_event(revisions))
+
+    assert [(row["path"], row["age_days"]) for row in report["oldest"]] == [
+        ("lib/x.py", 30), ("lib/y.py", 30), ("lib/z.py", 30)]
+    assert report["dropped_total"] == 0
+
+
+def test_an_uncommitted_rekey_counts_once_and_keeps_the_committed_age():
+    """verify re-keyed the mark on disk and nobody committed it: the working
+    tree and HEAD pair as a commit's revisions pair."""
+    revisions = _history((1000, {F: 7.0}), (1000 + 400 * DAY, {F: 7.0}))
+
+    report = report_from_events(mark_events(revisions) + held_event(revisions),
+                                working={F_SIGNED: 7.0})
+
+    assert (report["open"], report["uncommitted"], report["dropped_total"]) == (1, 1, 0)
+    assert report["oldest"] == [{"path": F[0], "long_name": F_SIGNED[1], "age_days": 400}]
+
+
+def test_a_moved_mark_the_replay_does_not_hold_enters_at_the_move():
+    """A history that begins mid-way (a shallow clone's first revision reads
+    against nothing) can show a move whose old key never entered."""
+    events = [(1000, None, "observed", 0.0),
+              (1000 + 5 * DAY, (("old.py", "f( )"), ("new.py", "f( )")), "moved", 4.0),
+              (1000 + 9 * DAY, None, "observed", 0.0)]
+
+    assert mark_age_days(events, ("new.py", "f( )")) == 4
+
+
+def _moved_in(steps: list, at: int, old: tuple, new: tuple) -> list:
+    """`steps` with a commit after step `at`, at its time, that moves `old` to
+    `new`, and `new` in place of `old` in every later step."""
+    def renamed(marks: dict) -> dict:
+        return {new if key == old else key: crap for key, crap in marks.items()}
+
+    return steps[:at + 1] + [(steps[at][0], renamed(steps[at][1]))] + [
+        (ts, renamed(marks)) for ts, marks in steps[at + 1:]]
+
+
+def _ages(steps: list) -> tuple[dict, int]:
+    report = report_from_events(mark_events(_history(*steps)))
+    return {(row["path"], row["long_name"]): row["age_days"] for row in report["oldest"]}, \
+        report["dropped_total"]
+
+
+def test_hypothesis_inserted_moves_change_no_age_and_no_repayment_count():
+    """Check 3: inserting any number of re-key or path-move commits into a
+    history, each at the time of the commit before it, leaves every age and
+    dropped_total as they were, read under each mark's last key. Every key's
+    bare name is its own, so only the inserted commits pair."""
+    from test_keys_resolve import hypothesis_or_skip
+
+    hypothesis, st, quiet = hypothesis_or_skip()
+    keys = [(f"p{n}.py", f"f{n}( x )") for n in range(4)]
+    revision = st.dictionaries(st.sampled_from(keys), st.sampled_from([3.0, 5.0, 8.0]))
+
+    @quiet
+    @hypothesis.given(marks=st.lists(revision, min_size=1, max_size=5),
+                      moves=st.lists(st.tuples(st.integers(0, 9), st.integers(0, 3),
+                                               st.booleans()), max_size=4))
+    def check(marks, moves):
+        steps = [(1000 + n * 7 * DAY, held) for n, held in enumerate(marks)]
+        expected_ages, expected_dropped = _ages(steps)
+        names = {key: key for key in keys}
+        for serial, (at, which, by_path) in enumerate(moves):
+            at = at % len(steps)
+            old = names[keys[which]]
+            if old not in steps[at][1]:
+                continue
+            new = (f"moved{serial}/{old[0]}", old[1]) if by_path else (old[0], f"{old[1][:-1]}, m{serial} )")
+            steps, names[keys[which]] = _moved_in(steps, at, old, new), new
+        ages, dropped = _ages(steps)
+        assert ages == {names[key]: age for key, age in expected_ages.items()}
+        assert dropped == expected_dropped
+
+    check()
 
 
 # --- the committed marks: the newest revision's own -------------------------

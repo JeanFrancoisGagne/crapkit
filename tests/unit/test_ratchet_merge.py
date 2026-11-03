@@ -11,8 +11,8 @@ import pytest
 
 from crapkit import invocation
 from crapkit.cli import main
-from crapkit.ratchet import (KEY_VERSION, RatchetEntry, ScopeStamps, SingleNumberStamp, dump_ratchet,
-                             load_ratchet, merge_ratchets, merge_stamps,
+from crapkit.ratchet import (KEY_VERSION, RatchetEntry, ScopeStamps, SingleNumberStamp, changed_marks,
+                             dump_ratchet, load_ratchet, merge_ratchets, merge_stamps,
                              read_key_version, read_stamp)
 from merge_oracle import three_way_marks
 from stamps import FIXED
@@ -50,6 +50,93 @@ def test_identical_sides_pass_through():
 def test_disjoint_new_debt_unions_sorted():
     merged = merge_ratchets([], [RatchetEntry("src/b.ts", "g", 10.0)], [e("f", 40.0)])
     assert merged == [e("f", 40.0), RatchetEntry("src/b.ts", "g", 10.0)]
+
+
+# --- a mark one side moved: re-keyed in its file, or moved to another path ---------------
+
+GRADE, GRADING = "calc/grade.py", "calc/grading.py"
+OLD, NEW = "classify( a , b )", "classify( a , b , c = None )"
+D1 = "classify( a , b , d = 1 )"
+POST = "__post_init__( self )"
+
+
+def marks(*rows) -> dict:
+    """{(path, key name): mark} from (path, key name, mark) rows."""
+    return {(path, name): crap for path, name, crap in rows}
+
+
+def entries(side: dict) -> list[RatchetEntry]:
+    return [RatchetEntry(path, name, crap) for (path, name), crap in side.items()]
+
+
+def merged_marks(base: dict, ours: dict, theirs: dict) -> dict:
+    return {(m.path, m.long_name): m.crap for m in merge_ratchets(entries(base), entries(ours), entries(theirs))}
+
+
+# id, BASE, OURS, THEIRS, the merged marks
+MOVED = [
+    ("probe: ours re-keyed, theirs tightened", marks((GRADE, OLD, 7.0)), marks((GRADE, NEW, 7.0)),
+     marks((GRADE, OLD, 6.0)), marks((GRADE, NEW, 6.0))),
+    ("probe mirror: ours tightened, theirs re-keyed", marks((GRADE, OLD, 7.0)), marks((GRADE, OLD, 6.0)),
+     marks((GRADE, NEW, 7.0)), marks((GRADE, NEW, 6.0))),
+    ("a re-key against a drop: the mark leaves", marks((GRADE, OLD, 7.0)), marks((GRADE, NEW, 7.0)), {}, {}),
+    ("a re-key and a tighten on one side", marks((GRADE, OLD, 7.0)), marks((GRADE, NEW, 6.5)),
+     marks((GRADE, OLD, 7.0)), marks((GRADE, NEW, 6.5))),
+    ("both re-keyed to one key: the lower value", marks((GRADE, OLD, 7.0)), marks((GRADE, NEW, 6.5)),
+     marks((GRADE, NEW, 6.0)), marks((GRADE, NEW, 6.0))),
+    ("both re-keyed apart: both keys at the merged value", marks((GRADE, OLD, 7.0)), marks((GRADE, NEW, 7.0)),
+     marks((GRADE, D1, 6.0)), marks((GRADE, NEW, 6.0), (GRADE, D1, 6.0))),
+    ("a path move against a tighten", marks((GRADE, "f( )", 7.0)), marks((GRADING, "f( )", 7.0)),
+     marks((GRADE, "f( )", 6.0)), marks((GRADING, "f( )", 6.0))),
+    ("a directory move of three files against a tighten to one",
+     marks(("calc/a.py", "f( )", 7.0), ("calc/b.py", "g( )", 8.0), ("calc/c.py", "h( )", 9.0)),
+     marks(("lib/a.py", "f( )", 7.0), ("lib/b.py", "g( )", 8.0), ("lib/c.py", "h( )", 9.0)),
+     marks(("calc/a.py", "f( )", 7.0), ("calc/b.py", "g( )", 5.0), ("calc/c.py", "h( )", 9.0)),
+     marks(("lib/a.py", "f( )", 7.0), ("lib/b.py", "g( )", 5.0), ("lib/c.py", "h( )", 9.0))),
+    ("a path move that changed the value does not pair", marks((GRADE, "f( )", 7.0)),
+     marks((GRADING, "f( )", 6.5)), marks((GRADE, "f( )", 6.0)),
+     marks((GRADE, "f( )", 6.0), (GRADING, "f( )", 6.5))),
+    ("a twin never pairs by bare name", marks((GRADE, "f( a )", 7.0), (GRADE, "f( a )#2", 8.0)),
+     marks((GRADE, "f( a )", 7.0), (GRADE, "f( a , b )#2", 8.0)),
+     marks((GRADE, "f( a )", 7.0), (GRADE, "f( a )#2", 6.0)),
+     marks((GRADE, "f( a )", 7.0), (GRADE, "f( a )#2", 6.0), (GRADE, "f( a , b )#2", 8.0))),
+    ("two drops and two adds of one bare name do not pair",
+     marks((GRADE, "g( x )", 7.0), (GRADE, "g( y )", 8.0)),
+     marks((GRADE, "g( x , z )", 7.0), (GRADE, "g( y , z )", 8.0)),
+     marks((GRADE, "g( x )", 6.0), (GRADE, "g( y )", 8.0)),
+     marks((GRADE, "g( x )", 6.0), (GRADE, "g( x , z )", 7.0), (GRADE, "g( y , z )", 8.0))),
+    ("docs/ratchet.md's twins merge as two keys", marks(("a.py", POST, 40.0), ("a.py", f"{POST}#2", 30.0)),
+     marks(("a.py", POST, 31.5), ("a.py", f"{POST}#2", 30.0)), marks(("a.py", POST, 40.0), ("a.py", f"{POST}#2", 22.0)),
+     marks(("a.py", POST, 31.5), ("a.py", f"{POST}#2", 22.0))),
+    ("a bare-name pair never crosses files", marks((GRADE, OLD, 7.0)), marks((GRADING, NEW, 7.0)),
+     marks((GRADE, OLD, 6.0)), marks((GRADE, OLD, 6.0), (GRADING, NEW, 7.0))),
+    ("two files that each move f at one value do not pair",
+     marks(("calc/a.py", "f( )", 7.0), ("calc/b.py", "f( )", 7.0)),
+     marks(("lib/a.py", "f( )", 7.0), ("lib/b.py", "f( )", 7.0)),
+     marks(("calc/a.py", "f( )", 6.0), ("calc/b.py", "f( )", 7.0)),
+     marks(("calc/a.py", "f( )", 6.0), ("lib/a.py", "f( )", 7.0), ("lib/b.py", "f( )", 7.0))),
+    ("two marks that land on one key keep the lower", marks((GRADE, OLD, 7.0)), marks((GRADE, NEW, 7.0)),
+     marks((GRADE, OLD, 7.0), (GRADE, NEW, 9.0)), marks((GRADE, NEW, 7.0))),
+]
+MOVED_IDS = [row[0] for row in MOVED]
+
+
+@pytest.mark.parametrize("base, ours, theirs, want", [row[1:] for row in MOVED], ids=MOVED_IDS)
+def test_a_mark_one_side_moved_merges_as_one_mark(base, ours, theirs, want):
+    assert merged_marks(base, ours, theirs) == want
+
+
+@pytest.mark.parametrize("base, ours, theirs, want", [row[1:] for row in MOVED], ids=MOVED_IDS)
+def test_swapping_ours_and_theirs_merges_the_moved_marks_alike(base, ours, theirs, want):
+    assert merged_marks(base, theirs, ours) == want
+
+
+def test_a_moved_mark_counts_as_one_changed_mark():
+    """The stamp note counts the marks a side changed; a re-key is one."""
+    base = entries(marks((GRADE, OLD, 7.0), (GRADE, "g( )", 5.0)))
+
+    assert changed_marks(base, entries(marks((GRADE, NEW, 7.0), (GRADE, "g( )", 5.0)))) == 1
+    assert changed_marks(base, entries(marks((GRADING, OLD, 7.0), (GRADE, "g( )", 4.0)))) == 2
 
 
 # --- the driver on an add/add merge ------------------------------------------------
@@ -469,3 +556,119 @@ def test_utf16_crlf_sides_merge_and_ours_keeps_its_encoding_and_line_endings(tmp
     want = marks_file(scoped(**{**SCOPES, "web": WEB14}), MERGED_ROWS).replace("\n", "\r\n")
     assert (tmp_path / "ours.tsv").read_bytes() == bom + want.encode(codec)
     assert capsys.readouterr().err == note("web", "THEIRS")
+
+
+# --- the driver on a moved mark ---------------------------------------------------------------
+
+def split_line(*keys: tuple[str, str]) -> str:
+    named = " and ".join(f'{path} "{name}"' for path, name in keys)
+    return (f"ratchet merge: OURS and THEIRS moved one mark to different keys, so it stays under both: {named}; "
+            "the next crapkit ratchet prune drops the one no function holds\n")
+
+
+def rows_of(side: dict) -> list[str]:
+    return [f"{path}\t{name}\t{crap:.4f}" for (path, name), crap in sorted(side.items())]
+
+
+def test_the_driver_keeps_a_mark_both_sides_moved_apart_under_both_keys_and_says_so(tmp_path, capsys):
+    base, ours, theirs = marks((GRADE, OLD, 7.0)), marks((GRADE, NEW, 7.0)), marks((GRADE, D1, 6.0))
+    files = write_sides(tmp_path, BASE, BASE, BASE, rows=(rows_of(base), rows_of(ours), rows_of(theirs)))
+
+    code = main(["ratchet", "merge", *files])
+    output = capsys.readouterr()
+
+    assert (code, output.out, output.err) == (0, "ratchet merge: 2 mark(s)\n", split_line((GRADE, NEW), (GRADE, D1)))
+    assert (tmp_path / "ours.tsv").read_text(encoding="utf-8") == marks_file(
+        BASE, rows_of(marks((GRADE, NEW, 6.0), (GRADE, D1, 6.0))))
+    assert output.err.isascii() and output.err.count("\n") == 1
+
+
+def test_a_re_key_against_a_tighten_keeps_every_other_line_and_the_scope_stamps(tmp_path, capsys):
+    """THEIRS moved web's stamp and tightened `classify`; OURS re-keyed it. The
+    marks neither side changed keep their bytes, the stamps are what the
+    per-scope merge writes, and the note counts OURS's re-key as one mark."""
+    kept = ["a.py\tf( )\t1234.5678", "b.py\tg( )\t0.0001"]
+    files = write_sides(tmp_path, BASE, BASE, scoped(**{**SCOPES, "web": WEB14}),
+                        rows=([*kept, f"{GRADE}\t{OLD}\t7.0000"], [*kept, f"{GRADE}\t{NEW}\t7.0000"],
+                              [*kept, f"{GRADE}\t{OLD}\t6.0000"]))
+
+    code = main(["ratchet", "merge", *files])
+    output = capsys.readouterr()
+
+    assert (code, output.out) == (0, "ratchet merge: 3 mark(s)\n"), output.err
+    assert (tmp_path / "ours.tsv").read_text(encoding="utf-8") == marks_file(
+        scoped(**{**SCOPES, "web": WEB14}), [*kept, f"{GRADE}\t{NEW}\t6.0000"])
+    assert output.err == ("ratchet merge: scope web's stamp came from THEIRS and OURS changed 1 mark(s); "
+                          "if verify names web, run crapkit ratchet seed --scope web\n")
+
+
+# git runs the driver with no crapkit.toml and no analysis stack. A fresh
+# interpreter, so no earlier test's import of either can hide one.
+NO_STACK = """
+import sys
+for name in ("lizard", "crapkit.analyze", "crapkit.config"):
+    sys.modules[name] = None
+import crapkit.keys
+from crapkit.ratchet import RatchetEntry, merge_ratchets
+old, new = "classify( a , b )", "classify( a , b , c = None )"
+merged = merge_ratchets([RatchetEntry("calc/grade.py", old, 7.0)], [RatchetEntry("calc/grade.py", new, 7.0)],
+                        [RatchetEntry("calc/grade.py", old, 6.0)])
+print([(m.path, m.long_name, m.crap) for m in merged])
+"""
+
+
+def test_the_probe_merges_with_no_analysis_stack_and_no_config(tmp_path):
+    import hang_guard
+
+    done = hang_guard.run([sys.executable, "-c", NO_STACK], cwd=tmp_path, text=True, encoding="utf-8")
+
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.splitlines()[-1] == str([(GRADE, NEW, 6.0)])
+    assert not (tmp_path / "crapkit.toml").exists()
+
+
+# --- docs/ratchet.md's subsection, held to what the driver prints ---------------------------------
+
+SIGNATURE_SECTION = "### A signature change on one branch, a tighten on the other"
+DOC_STAMP = ["# crapkit-analysis=13 lizard=1.24.0", "# crapkit-keys=1"]
+
+
+def signature_section() -> list[str]:
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[2] / "docs" / "ratchet.md").read_text(encoding="utf-8")
+    start = text.index(SIGNATURE_SECTION)
+    return text[start:text.index("\n---\n", start)].splitlines()
+
+
+def driver_lines(lines: list[str]) -> list[list[str]]:
+    """The driver's own lines under each `$ git merge` of the section."""
+    blocks = []
+    for at, line in enumerate(lines):
+        if line.startswith("$ git merge"):
+            under = lines[at + 1:lines.index("```", at)]
+            blocks.append([said for said in under if said.startswith("ratchet merge: ")])
+    return blocks
+
+
+def merge_story(tmp_path, name: str, ours: dict, theirs: dict, capsys) -> tuple[list[str], str]:
+    """main (OURS) and feature (THEIRS) from one base holding `classify` at 7.0000."""
+    root = tmp_path / name
+    root.mkdir()
+    files = write_sides(root, DOC_STAMP, DOC_STAMP, DOC_STAMP,
+                        rows=(rows_of(marks((GRADE, OLD, 7.0))), rows_of(ours), rows_of(theirs)))
+    assert main(["ratchet", "merge", *files]) == 0
+    output = capsys.readouterr()
+    return (output.out + output.err).splitlines(), (root / "ours.tsv").read_text(encoding="utf-8")
+
+
+def test_the_signature_section_prints_what_the_driver_prints(tmp_path, capsys):
+    """Main tightened `classify` to 6.0000 and the feature branch re-keyed it;
+    then each branch re-keyed it its own way. Each story's driver lines are the
+    section's, and the first story's merged file is the one the section shows."""
+    lines = signature_section()
+    tightened, file = merge_story(tmp_path, "tightened", marks((GRADE, OLD, 6.0)), marks((GRADE, NEW, 7.0)), capsys)
+    apart, _ = merge_story(tmp_path, "apart", marks((GRADE, D1, 6.0)), marks((GRADE, NEW, 7.0)), capsys)
+
+    assert driver_lines(lines) == [tightened, apart]
+    assert "\n".join(lines).count(file.rstrip("\n")) == 1, file

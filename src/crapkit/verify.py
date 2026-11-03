@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
+import shlex
 from typing import Any, NamedTuple
 
 from .gate import WHOLE, ChangedFile, CrapBound, Function, GateResult, Unread, UnreadableName, judge
@@ -134,6 +135,53 @@ class GateViolation(NamedTuple):
     # an ordinal when the file gives that name to more than one function. Empty
     # means nobody keyed it, and `keys.stated_key` reads that as the bare name.
     key_name: str = ""
+    # keys' refusal when a mark left the file under this function's bare name
+    # and could not carry to it; None when no carry was in question.
+    mark_ambiguity: str | None = None
+
+
+class Carried(NamedTuple):
+    """A function over its ceiling that the mark recorded under another key of
+    its file pardons: `carried_from` names that key and `mark` its value."""
+    path: str
+    long_name: str
+    key_name: str
+    carried_from: str
+    mark: float
+    dirty: bool = False
+
+
+def carried_of(breach, dirty: bool) -> Carried:
+    """A gate breach a carried mark pardons, as the finding every adapter reports."""
+    return Carried(breach.path, breach.function.long_name, breach.key_name, breach.carried_from,
+                   breach.mark, dirty)
+
+
+def carried_line(c: Carried, dirty: bool = False) -> str:
+    """The one line every gate prints for a carried mark, naming the explicit
+    move that makes the carry a mark of the function's own. A pardon fails
+    nothing, so the line carries no dirty tag."""
+    from .invocation import _self, shell_arg
+
+    return (f"crapkit gate: {c.path} {c.key_name} carries the mark {c.mark:.4f} recorded for "
+            f"{c.carried_from}; a passing verify re-keys it, or run {_self()} ratchet move "
+            f"--function {shell_arg(c.path)} {_key_arg(c.carried_from)} {_key_arg(c.key_name)}")
+
+
+# What sh or bash reads as more than itself inside double quotes. A string
+# default (`mode = "fast"`) or a JavaScript `$init` holds one, and the move
+# printed in double quotes handed crapkit a key that names no function.
+_REWRITTEN_IN_DOUBLE_QUOTES = frozenset('"$`\\!')
+
+
+def _key_arg(key: str) -> str:
+    """A function key as one argument of a printed command. A plain key goes in
+    the double quotes sh, PowerShell and cmd.exe all read back. Any other goes in
+    POSIX single quotes, which sh, Git Bash and PowerShell 7 read literally and
+    cmd.exe does not: no one spelling of such a key serves every shell."""
+    if _REWRITTEN_IN_DOUBLE_QUOTES.isdisjoint(key):
+        return f'"{key}"'
+    return shlex.quote(key)
 
 
 class RatchetRegression(NamedTuple):
@@ -171,6 +219,8 @@ class Verdict(NamedTuple):
     # and nothing else: no lane ran. The payload's `unreadable_names` lists
     # the other kind, names no scope takes.
     claimed_names: tuple[UnreadableName, ...] = ()
+    # Functions a carried mark pardons: reported, never failed on.
+    carried: tuple[Carried, ...] = ()
 
     @classmethod
     def passing(cls) -> Verdict:
@@ -318,8 +368,9 @@ def gate_line(v, dirty: bool, unmeasured: bool = False) -> str:
     `cov -` for a cov no measurement stands behind: the GATE line said 0% where
     the rescore table under it said `-` and `coverage not measured`."""
     cov = "-" if unmeasured else f"{v.cov:.0%}"
+    ambiguity = f"; {v.mark_ambiguity}" if v.mark_ambiguity else ""
     return (f"  GATE  crap {v.crap:8.1f}  ccn {v.ccn:>3} cov {cov}  "
-            f"{v.path}:{v.start}  {v.long_name}  -> {v.remedy}{_dirty_tag(dirty)}")
+            f"{v.path}:{v.start}  {v.long_name}  -> {v.remedy}{ambiguity}{_dirty_tag(dirty)}")
 
 
 def _unread_file_line(u: Unread, dirty: bool) -> str:
@@ -485,6 +536,11 @@ FINDING_KINDS: tuple[FindingKind, ...] = (
     FindingKind(kind="overridden", field="overridden", exit=None, granted=False, refusal=None,
                 dirty=_own_flags, text=each(_overridden_line), stream="stdout", sarif=None,
                 rule="override", item=_own_fields),
+    # A pardon by a mark that left under the function's old key: reported, so the
+    # reader learns which mark judged it, and never failed on.
+    FindingKind(kind="carried", field="carried", exit=None, granted=False, refusal=None,
+                dirty=_own_flags, text=each(carried_line), stream="stderr", sarif=None,
+                rule="carried mark", item=_own_fields),
 )
 
 
@@ -665,7 +721,7 @@ def _gate_violations(judged: GateResult, fresh: list[ScoredRow], dirty: set[str]
 def _violation(breach, dirty: set[str]) -> GateViolation:
     r = breach.function.record
     return GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
-                         r.path in dirty, breach.key_name)
+                         r.path in dirty, breach.key_name, breach.mark_ambiguity)
 
 
 def _worst_first(row: ScoredRow | GateViolation) -> tuple:
@@ -744,4 +800,5 @@ def evaluate(
         dirty_failures=dirty_failure_ids(new_failures, dirty, test_files),
         forgiven_failures=tuple(sorted(fresh_failures & baseline_failures)),
         unread_files=judged.unread,
+        carried=tuple(carried_of(breach, breach.path in dirty) for breach in judged.carried),
     ))

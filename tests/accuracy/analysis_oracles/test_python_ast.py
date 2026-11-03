@@ -148,7 +148,14 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # and the sync met at 3,965. verify's per-scope stamp check (metric-stamp-05)
 # added 25. seed's per-scope stamps and `--scope` (metric-stamp-06) added 23.
 # The flip refusal's note (metric-stamp-07) added 1.
-SRC_DEFS = 4017
+# The one whole-key rewrite for marks (mission-4-01) added 2.
+# `ratchet move --function` (mission-4-02) added 16.
+# The merge driver's move pairing (mission-4-05) added 10.
+# 090/integration reached 4,017 once no code could build a single-number stamp
+# (metric-stamp-11), and the sync met at 4,045.
+# ratchet report's move events (mission-4-06) added 5.
+# The gate's pardon through a carried mark (mission-4-03a) added 14.
+SRC_DEFS = 4064
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

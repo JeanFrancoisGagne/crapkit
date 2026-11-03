@@ -4,16 +4,22 @@ The last tests hold docs/agent-json.md's findings kind table and its 50-item
 sentence to the table and the cap verify builds its findings from."""
 from fractions import Fraction
 from itertools import takewhile
+import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
+
+import pytest
 
 from accuracy.kit import exact
 
-from crapkit import verify
+from crapkit import invocation, verify
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
-from crapkit.verify import (FINDING_KINDS, GateViolation, RatchetRegression, UncoveredViolation,
-                            UnreadableName, Unread, Verdict, evaluate, unmarked_over_ceiling)
+from crapkit.verify import (FINDING_KINDS, Carried, GateViolation, RatchetRegression,
+                            UncoveredViolation, UnreadableName, Unread, Verdict, evaluate,
+                            unmarked_over_ceiling)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -146,6 +152,60 @@ def test_unmarked_debt_with_the_same_crap_lists_in_path_order():
     assert [r.path for r in rows] == ["src/a.ts", "src/b.ts"]
 
 
+# --- the carried line --------------------------------------------------------------------
+
+def _carried(key: str) -> Carried:
+    return Carried("calc/grade.py", key, key, "classify( a , b )", 7.0)
+
+
+@pytest.mark.parametrize("spelled", ["uvx crapkit", "/usr/bin/python3 -P -m crapkit"])
+def test_the_carried_line_names_crapkit_the_way_this_process_runs_it(monkeypatch, spelled):
+    """uvx puts no `crapkit` on PATH and a module-form install runs through its
+    interpreter, so the move names crapkit through invocation._self."""
+    monkeypatch.setattr(invocation, "_self", lambda: spelled)
+
+    assert verify.carried_line(_carried("classify( a , b , c = None )")) == (
+        "crapkit gate: calc/grade.py classify( a , b , c = None ) carries the mark 7.0000 recorded "
+        f"for classify( a , b ); a passing verify re-keys it, or run {spelled} ratchet move "
+        '--function calc/grade.py "classify( a , b )" "classify( a , b , c = None )"')
+
+
+# A string default, a JavaScript name opening with `$`, a backtick, a backslash
+# and a `!`: each is a character sh or bash rewrites inside double quotes. A key
+# holding only a single quote stays in the double quotes every shell reads.
+QUOTED_KEYS = {
+    'classify( a , b , mode = "fast" )': "'classify( a , b , mode = \"fast\" )'",
+    "$init( a )": "'$init( a )'",
+    "tick( s = `x` )": "'tick( s = `x` )'",
+    "esc( s = '\\n' )": "'esc( s = '\"'\"'\\n'\"'\"' )'",
+    "neg( a = !b )": "'neg( a = !b )'",
+    "grade( x = 'a' )": "\"grade( x = 'a' )\"",
+}
+
+
+@pytest.mark.parametrize("key", QUOTED_KEYS)
+def test_the_carried_move_quotes_each_key_so_the_shell_hands_it_over_intact(monkeypatch, key):
+    monkeypatch.setattr(invocation, "_self", lambda: "crapkit")
+
+    line = verify.carried_line(_carried(key))
+
+    assert line.endswith(f'--function calc/grade.py "classify( a , b )" {QUOTED_KEYS[key]}'), line
+
+
+@pytest.mark.skipif(os.name == "nt" or shutil.which("sh") is None,
+                    reason="reads the printed move through a POSIX sh")
+@pytest.mark.parametrize("key", QUOTED_KEYS)
+def test_sh_reads_both_keys_of_the_carried_move_back_as_written(monkeypatch, key):
+    monkeypatch.setattr(invocation, "_self", lambda: "crapkit")
+    move = verify.carried_line(_carried(key)).split(" or run crapkit ", 1)[1]
+
+    read = subprocess.run(["sh", "-c", f"printf '%s\\n' {move}"], capture_output=True, text=True,
+                          check=True)
+
+    assert read.stdout.splitlines() == ["ratchet", "move", "--function", "calc/grade.py",
+                                        "classify( a , b )", key]
+
+
 # --- docs/agent-json.md's findings kind table ------------------------------------------
 
 AGENT_JSON = ROOT / "docs" / "agent-json.md"
@@ -159,6 +219,8 @@ ENTRY = {
     "new_failure": "tests/t.py::test_a",
     "diff_uncovered": UncoveredViolation("src/a.py", 7),
     "overridden": GateViolation("src/a.py", "f( x )", 3, 9, 0.5, 84.0, "decompose"),
+    "carried": Carried("calc/grade.py", "classify( a , b , c = None )",
+                       "classify( a , b , c = None )", "classify( a , b )", 7.0),
 }
 COMMON = {"kind", "fails", "exit_code", "overridable", "dirty", "rule"}
 
