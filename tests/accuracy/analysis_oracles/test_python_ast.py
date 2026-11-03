@@ -154,7 +154,8 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # 090/integration reached 4,017 once no code could build a single-number stamp
 # (metric-stamp-11), and the sync met at 4,045.
 # ratchet report's move events (mission-4-06) added 5.
-SRC_DEFS = 4050
+# The gate's pardon through a carried mark (mission-4-03a) added 14.
+SRC_DEFS = 4064
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

@@ -133,6 +133,53 @@ that twin, wherever it sits in the file. Twins whose CRAP is equal to 4 decimal 
 resolve to the first in the file.
 
 ---
+
+## A signature change keeps its mark
+
+New in 0.9.0. A key holds the function's parameters, so a signature edit gives it a new key
+that holds no mark. Before 0.9.0 the gates read that as new debt: `rescore --gate` exited 6
+and the advisory said to mark the debt again. **A mark now follows its function through a
+signature edit inside its file** when the old key has left the file and it is the one mark of
+the function's bare name that did. Its CRAP is judged against that mark by the usual rule: at
+or under it the function passes, above it the gates refuse it. Where a lane measures the scope,
+`rescore --gate` reads that CRAP from the coverage the baseline run holds under the old key.
+
+`ratchet seed` wrote `calc/grade.py classify( a , b ) 7.0000` in a cc-only scope at
+ceiling 6, and the edit changed only the signature, to `def classify(a, b, c=None):`, at
+ccn 7:
+
+```
+$ crapkit rescore calc/grade.py --gate
+crapkit gate: calc/grade.py classify( a , b , c = None ) carries the mark 7.0000 recorded for classify( a , b ); a passing verify re-keys it, or run crapkit ratchet move --function calc/grade.py "classify( a , b )" "classify( a , b , c = None )"
+rescore vs run 1 @ b3f1678eeff (coverage STALE, complexity fresh)
+   ccn   cov     crap  remedy      function
+     7     -      7.0  decompose   calc/grade.py:1  classify( a , b , c = None )  (coverage not measured)
+gate: 1 changed function(s) judged, 0 over ceiling 6
+$ crapkit verify
+crapkit gate: calc/grade.py classify( a , b , c = None ) carries the mark 7.0000 recorded for classify( a , b ); a passing verify re-keys it, or run crapkit ratchet move --function calc/grade.py "classify( a , b )" "classify( a , b , c = None )"
+verify OK @ 627b1606b2b vs baseline b3f1678eeff (2 changed files)
+  changed files: calc/grade.py, crapkit-ratchet.tsv
+```
+
+The line goes to stderr, once per carried function, and `check_gate`, `rescore --gate
+--json` and `verify --json` list the function as a `carried` item
+([agent JSON](agent-json.md#the-findings-list)). A second edit to ccn 8 passes the mark,
+and every gate refuses it with no carried line.
+
+**Twins never carry a mark, and neither does a name that several marks left or several
+unmarked functions took.** The gate cannot say which function the mark belongs to, so it
+pardons none, and the GATE line names every candidate key and the command that ends the
+ambiguity:
+
+```
+crapkit ratchet move --function calc/grade.py "classify( a , b )" "classify( a , b , c = None )#2"
+```
+
+`ratchet move --function` ([Moving marks by hand](#moving-marks-by-hand)) writes the mark
+under the key you name, and the carry is then an exact mark. Only a function over its
+ceiling asks for a mark, so one at or under its ceiling prints no carried line.
+
+---
 <a id="the-commit-gate-skips-marked-functions"></a>
 ## The commit gate refuses a marked function whose ccn passed its mark
 

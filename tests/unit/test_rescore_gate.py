@@ -11,7 +11,8 @@ filters run before the ceiling rule, or a repo with seeded debt gates red foreve
 Each case runs the rescore adapter's own path: its changed files, the gate
 module's judge, and the breaches it fails on.
 """
-from crapkit.cli.scoring import _gate_breaches, _gate_changes
+from crapkit import invocation
+from crapkit.cli.scoring import _gate_breaches, _gate_changes, _report_gate, _RescoreGate, gate_block
 from crapkit.config import Config, Scope
 from crapkit.gate import judge
 from crapkit.hook import file_ceilings
@@ -29,12 +30,17 @@ def row(path: str, name: str, ccn: int, cov: float, crap: float, start: int = 10
                      12, 2, 1, cov, "measured", crap, "decompose")
 
 
-def gated(rows: list, marks=(), ranges: dict | None = None) -> list:
-    """The breaches rescore --gate fails on. With no `ranges` every file is
-    untracked, so the gate takes each whole."""
+def judged(rows: list, marks=(), ranges: dict | None = None):
+    """The gate module's result on rescore --gate's changes. With no `ranges`
+    every file is untracked, so the gate takes each whole."""
     untracked = {r.path for r in rows} if ranges is None else set()
     changes = _gate_changes(rows, ranges or {}, untracked, {})
-    return _gate_breaches(judge(changes, CFG.ceiling_of, lambda: MarkIndex(marks)), rows)
+    return judge(changes, CFG.ceiling_of, lambda: MarkIndex(marks))
+
+
+def gated(rows: list, marks=(), ranges: dict | None = None) -> list:
+    """The breaches rescore --gate fails on."""
+    return _gate_breaches(judged(rows, marks, ranges), rows)
 
 
 def test_coverage_never_saves_a_function_over_the_ceiling():
@@ -118,3 +124,81 @@ def test_marks_compare_at_the_four_decimals_they_are_stored_at():
     rows = [row("src/a.py", "legacy( n )", 15, 0.4, 63.60001)]
 
     assert gated(rows, [RatchetEntry("src/a.py", "legacy( n )", 63.6)]) == []
+
+
+OLD, NEW = "classify( a , b )", "classify( a , b , c = None )"
+CARRY_LINE = (f"crapkit gate: src/a.py {NEW} carries the mark 7.0000 recorded for {OLD}; a passing "
+              f'verify re-keys it, or run crapkit ratchet move --function src/a.py "{OLD}" "{NEW}"')
+
+
+def test_a_signature_edit_passes_on_the_mark_its_old_key_carries(monkeypatch, capsys):
+    """The probe: seed marked classify( a , b ) at 7.0; the edit added `c=None`
+    at ccn 7. The JSON lists the carry and the stderr line names both keys."""
+    monkeypatch.setattr(invocation, "_self", lambda: "crapkit")
+    rows = [row("src/a.py", NEW, 7, 1.0, 7.0)]
+    result = judged(rows, [RatchetEntry("src/a.py", OLD, 7.0)])
+    verdict = _RescoreGate(result, _gate_breaches(result, rows), {"src/a.py": 6}, [])
+
+    block = gate_block(result, verdict.ceilings, verdict.breaches)
+
+    assert (block["ok"], block["breaches"]) == (True, [])
+    assert block["carried"] == [{"path": "src/a.py", "long_name": NEW, "key_name": NEW,
+                                 "carried_from": OLD, "mark": 7.0}]
+    assert _report_gate(verdict, as_json=True) == 0
+    assert capsys.readouterr().err.splitlines() == [CARRY_LINE]
+
+
+def test_a_carried_function_is_judged_on_the_coverage_its_old_key_holds(tmp_path):
+    """The overlay joins the baseline's coverage by name, so the edit's new
+    name joins nothing and its CRAP spans 7 to 56 across the mark of 7.0.
+    The adapter joins it again under the key the mark carried from: the stale
+    number a body edit keeps under its own name."""
+    from functools import partial
+
+    from crapkit.cli.scoring import _carried_judgement, _overlay_named
+    from crapkit.snapshot import InventoryRow
+    from crapkit.store import SnapshotStore
+
+    latest = {"id": 1, "commit": "0123456789abcdef", "lanes": {"unit": {"scopes": ["src"]}}}
+    store = SnapshotStore(tmp_path / "crap.sqlite")
+    store.write_run(commit=latest["commit"], tool_versions={}, rows=[row("src/a.py", OLD, 7, 1.0, 7.0)],
+                    lanes=latest["lanes"])
+    fresh = [InventoryRow("src", "src/a.py", NEW, 10, 15, 7, 7, 7, 12, 3, 1)]
+    overlay_of = partial(_overlay_named, store, latest, fresh, ["src/a.py"], CFG)
+    first = overlay_of({})
+    marks = [RatchetEntry("src/a.py", OLD, 7.0)]
+    assert [b.carried_from for b in judged(first.rows, marks).unproven] == [OLD]
+
+    result, view = _carried_judgement(lambda rows: judged(rows, marks), first, overlay_of)
+    store.close()
+
+    assert ([(b.carried_from, b.mark) for b in result.carried], result.unproven) == ([(OLD, 7.0)], ())
+    assert [(r.long_name, r.cov, r.crap) for r in view.rows] == [(NEW, 1.0, 7.0)]
+    assert view.unjoined == set()
+
+
+def test_a_carried_function_past_its_mark_fails_with_no_carried_item(capsys):
+    rows = [row("src/a.py", NEW, 8, 1.0, 8.0)]
+    result = judged(rows, [RatchetEntry("src/a.py", OLD, 7.0)])
+    verdict = _RescoreGate(result, _gate_breaches(result, rows), {"src/a.py": 6}, [])
+
+    block = gate_block(result, verdict.ceilings, verdict.breaches)
+
+    assert (block["ok"], block["carried"]) == (False, [])
+    assert [(b["function"], b["mark_ambiguity"]) for b in block["breaches"]] == [(NEW, None)]
+    assert _report_gate(verdict, as_json=True) == 6
+    assert "carries the mark" not in capsys.readouterr().err
+
+
+def test_twins_left_by_the_edit_refuse_and_the_breach_names_the_ambiguity():
+    """`classify` and `classify#2` after the edit: the refusal names the move."""
+    rows = [row("src/a.py", NEW, 7, 1.0, 7.0, start=10), row("src/a.py", NEW, 7, 1.0, 7.0, start=40)]
+    result = judged(rows, [RatchetEntry("src/a.py", OLD, 7.0)])
+
+    block = gate_block(result, {"src/a.py": 6}, _gate_breaches(result, rows))
+
+    assert (block["ok"], block["carried"]) == (False, [])
+    ambiguity = {b["key_name"]: b["mark_ambiguity"] for b in block["breaches"]}
+    assert set(ambiguity) == {NEW, f"{NEW}#2"}
+    assert all("twins never carry a mark" in text for text in ambiguity.values())
+    assert f'ratchet move --function src/a.py "{OLD}" "{NEW}#2"' in ambiguity[f"{NEW}#2"]

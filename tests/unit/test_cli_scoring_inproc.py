@@ -625,7 +625,7 @@ def test_rescore_gate_json_carries_the_verdict_the_exit_code_says(scored, capsys
     assert gate["ceilings"] == {"src/app.ts": 6} and gate["untracked"] == []
     (breach,) = gate["breaches"]
     assert set(breach) == {"path", "function", "start", "ccn", "cov", "crap", "remedy",
-                           "key_name", "ceiling"}
+                           "key_name", "ceiling", "mark_ambiguity"}
     assert breach["path"] == "src/app.ts" and "knotty" in breach["function"]
     assert (breach["ccn"], breach["ceiling"], breach["remedy"]) == (8, 6, "decompose")
     assert "GATE" in err, "the stderr lines stay for a reader"
@@ -640,7 +640,8 @@ def test_a_passing_gate_json_says_ok_and_what_it_judged(scored, capsys):
 
     assert (code, err) == (0, "")
     assert json.loads(out)["gate"] == {"ok": True, "judged": 1, "ceilings": {"src/app.ts": 6},
-                                       "breaches": [], "untracked": [], "unread_files": []}
+                                       "breaches": [], "carried": [], "untracked": [],
+                                       "unread_files": []}
 
 
 def test_the_text_form_prints_the_gate_line_when_it_passes(scored, capsys):

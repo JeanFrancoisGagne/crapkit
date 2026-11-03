@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from cli_inproc_repo import repo, template_repo  # noqa: F401
+from cli_inproc_repo import commit_all, git, repo, template_repo  # noqa: F401
 
 from crapkit.cli import main
 from crapkit.cli.verifying import _ratchet_suffix
@@ -544,6 +544,55 @@ def test_each_function_move_transcript_prints_what_the_command_prints(tmp_path, 
         assert printed == _output_under(lines[at + 1:]), command
         marks = (root / MARKS).read_text(encoding="utf-8").splitlines()[1:]
         assert marks == [before if code else after], command
+
+
+CARRY_SECTION = "## A signature change keeps its mark"
+_PROBE_TOML = ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "calc"\npaths = ["calc"]\n'
+               'languages = ["python"]\ncoverage_optional = true\n')
+_COMMIT_ID = re.compile(r"\b[0-9a-f]{11}\b")
+
+
+def _classify(params: str) -> str:
+    """calc/grade.py with classify at ccn 7, under the signature PARAMS."""
+    branches = "".join(f"    if a == {n}:\n        return {n}\n" for n in range(6))
+    return f"def classify({params}):\n{branches}    return b\n"
+
+
+def _carry_probe(root: Path) -> Path:
+    """The section's story: seed marked classify( a , b ) at 7.0000, the marks
+    were committed, and the edit changed only the signature."""
+    (root / "calc").mkdir(parents=True)
+    (root / "crapkit.toml").write_text(_PROBE_TOML, encoding="utf-8")
+    (root / ".gitignore").write_text(".crapkit/\n", encoding="utf-8")
+    (root / "calc" / "grade.py").write_text(_classify("a, b"), encoding="utf-8")
+    git(root, "init", "-q")
+    commit_all(root, "base")
+    assert main(["coverage", "--repo", str(root)]) == 0
+    assert main(["ratchet", "seed", "--repo", str(root)]) == 0
+    commit_all(root, "seed")
+    (root / "calc" / "grade.py").write_text(_classify("a, b, c=None"), encoding="utf-8")
+    return root
+
+
+def test_the_signature_carry_transcripts_print_what_rescore_gate_and_verify_print(tmp_path, capsys):
+    """Each block in "A signature change keeps its mark" runs as typed over the
+    probe, exits 0, and prints its carried line and its verdict lines as the
+    page shows them, stderr first, commit ids aside."""
+    import shlex
+
+    text = _page("docs/ratchet.md")
+    start = text.index(CARRY_SECTION)
+    section = text[start:text.index("\n---\n", start)]
+    root = _carry_probe(tmp_path / "probe")
+    capsys.readouterr()
+    for command in ("crapkit rescore calc/grade.py --gate", "crapkit verify"):
+        [block] = _blocks(section, command)
+        code = main([*shlex.split(command)[1:], "--repo", str(root)])
+        out = capsys.readouterr()
+        printed = _as_typed(out.err.splitlines() + out.out.splitlines())
+        assert code == 0, printed
+        assert [_COMMIT_ID.sub("<id>", line) for line in printed] == [
+            _COMMIT_ID.sub("<id>", line) for line in block], command
 
 
 def test_every_seed_transcript_under_the_running_metric_ends_with_commit_then_verify(capsys):
