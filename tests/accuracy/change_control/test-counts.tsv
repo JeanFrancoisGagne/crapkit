@@ -4,7 +4,7 @@ change_control	244
 corpus_goldens	171
 coverage_oracles	100
 definitions	43
-history_oracles	79
+history_oracles	81
 kit	344
 mark_carry	9
 runtime_guards	19

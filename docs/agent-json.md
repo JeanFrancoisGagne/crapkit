@@ -523,7 +523,7 @@ session need not read the config to learn which number it is aiming at.
 | `ceiling` | int | The scope's effective target. `rescore --gate` compares `ccn` against this and nothing else. Same value as `target`. |
 | `binds` | string | The gate's scope rule as one sentence, the same string in every packet: `changed functions only; a ratchet mark pardons standing debt at or under it`. Print it, do not branch on it. |
 | `ratchet_mark` | float or null | The mark this function already carries. At or under it, an edit inside the function passes `rescore --gate` and `verify`'s gate alike. Push it past the mark and both refuse, `rescore --gate` at exit 6 and `verify` at exit 6 as well since #29. The pre-commit hook sees no coverage and refuses the function only once its staged ccn alone passes the mark. Exit 7 is what is left for a mark that rose in a function the diff never touched. |
-| `mark_age_days` | int or null | How old that mark is, measured from the newest commit that touched the ratchet file, never from the wall clock. |
+| `mark_age_days` | int or null | How old that mark is, measured from the newest commit that touched the ratchet file, never from the wall clock. A re-key or a path move keeps the age: it counts from the commit that brought the mark in under its first key, as `ratchet report` counts it. |
 | `diff_uncovered_max` | int or null | The configured ceiling on changed lines with no coverage. `null` means warn only: `verify` prints the count and exits 0. |
 
 ### `commands`: steps 3 to 5, already written
@@ -1505,7 +1505,7 @@ How much debt is open, how much was repaid, and whether the configured policy is
 |---|---|
 | `open` | Marks open **on disk**, working tree included. A seed you have not committed counts. |
 | `uncommitted` | Marks the working tree and the newest committed version disagree on: added, repaid or tightened but not committed. |
-| `dropped_total`, `dropped_last_30d`, `dropped_last_90d` | Repayments, from committed history only. |
+| `dropped_total`, `dropped_last_30d`, `dropped_last_90d` | Repayments, from committed history only. A re-key or a path move is not a repayment: the moved mark keeps its age under its new key. |
 | `oldest` | Up to 20 open marks, oldest first, each with `age_days`. |
 | `anchor_ts` | Unix seconds of the **newest commit** that touched the ratchet file. Every age and window is measured back from here, never from the wall clock, which is what makes the report deterministic on a fixed history. `0` when no commit has touched the file yet; every age is then 0. |
 | `policy_violations` | `null` when no policy was evaluated, `[]` when it ran clean, otherwise the findings. See [ratchet.md](ratchet.md#the-debt-policy). |

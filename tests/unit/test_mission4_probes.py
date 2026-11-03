@@ -1,17 +1,15 @@
 """The two mission-4 probes.
 
 A mark re-keyed on one side of a merge, or re-keyed in a commit long after it
-was seeded, reads by exact key as one mark dropped and another added. The merge
-probe passes: `merge_ratchets` pairs the drop with the add through
-`keys.pair_moves`. The report probe still reads them apart and is pinned as a
-strict xfail, which fails the suite once it passes: the signal to drop the
-marker. The same shapes are pairing rows in tests/unit/test_keys_resolve.py.
+was seeded, reads by exact key as one mark dropped and another added. Both
+probes pass: `merge_ratchets` pairs the drop with the add through
+`keys.pair_moves`, and ratchet report reads the re-key as one move through
+`marks_history.revision_moves`. The same shapes are pairing rows in
+tests/unit/test_keys_resolve.py.
 """
 from __future__ import annotations
 
 from pathlib import Path
-
-import pytest
 
 from crapkit.marks_history import marks_history
 from crapkit.ratchet import RatchetEntry, merge_ratchets
@@ -55,13 +53,14 @@ def test_a_merge_keeps_the_tighten_against_a_rename():
     assert merge_ratchets(base, ours, theirs) == [RatchetEntry(PATH, NEW, 6.0)]
 
 
-@pytest.mark.xfail(strict=True, reason="mission-4-06: ratchet report keeps a re-keyed mark's age")
 def test_ratchet_report_keeps_a_rekeyed_marks_age(tmp_path: Path):
     """The mark was seeded 400 days before the newest commit and re-keyed 30
-    days before it. Today its age restarts at the re-key and reads 30 days."""
+    days before it. Its age counts from the seed, and the re-key repaid
+    nothing; 0.8.1 restarted the age at the re-key and counted one repayment."""
     rekey_history(tmp_path)
 
     report = report_from_events(mark_events(marks_history(tmp_path, MARKS)))
 
     ages = {(row["path"], row["long_name"]): row["age_days"] for row in report["oldest"]}
     assert ages[(PATH, NEW)] == AGES[0]
+    assert report["dropped_total"] == 0

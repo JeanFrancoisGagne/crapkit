@@ -3,7 +3,8 @@ version and a hand table.
 
 oracles/marks_history_walk.py reads every committed revision of the ratchet
 file whole through pygit2 and diffs the mark sets; hand_burn_down.tsv works the
-same report out by hand from repos/history_specs.py (BURN, BURN_TIGHTEN).
+same report out by hand from repos/history_specs.py (BURN, BURN_TIGHTEN, and
+BURN_MOVES, whose re-keys and path move keep each mark's age).
 crapkit is read through `ratchet report --json` and its text. This file imports
 no crapkit.
 
@@ -89,6 +90,26 @@ def test_value_changes_move_mark_age(make_repo):
 
     hand = _hand("BURN_TIGHTEN")
     assert _as_hand(report, hand) == hand
+
+
+def test_moves_keep_every_age_and_repay_nothing(make_repo):
+    """A re-key, a re-key with a tighten and a path move each read as the
+    one mark they moved: its age counts from day 0, and no repayment counts.
+    0.8.1 read each as a repayment and a new mark, so dropped_total was 3."""
+    built = make_repo(specs.BURN_MOVES)
+
+    _, report = said(built.root)
+
+    hand = _hand("BURN_MOVES")
+    assert _as_hand(report, hand) == hand
+
+
+@pytest.mark.nightly
+def test_the_history_walk_pairs_the_moves_the_report_pairs(make_repo, oracle):
+    oracle("pygit2")
+    built = make_repo(specs.BURN_MOVES)
+
+    assert said(built.root)[1] == marks_history_walk.report(built.root, MARKS)
 
 
 def _depth_one_clone(root: Path, top: Path) -> Path:
@@ -267,6 +288,7 @@ def _walked_at_every_commit(root: Path, names: list[str]) -> int:
     pytest.param(specs.BURN, [MARKS] * 6, id="BURN"),
     pytest.param(specs.BURN_TIGHTEN, [MARKS] * 3, id="BURN_TIGHTEN"),
     pytest.param(SAVED_EVERY_WAY, [OLD] * 3 + [MARKS] * 4, id="saved-every-way"),
+    pytest.param(specs.BURN_MOVES, [MARKS] * 5, id="BURN_MOVES"),
 ])
 def test_report_matches_the_history_walk_at_every_commit(make_repo, oracle, spec, names):
     oracle("pygit2")

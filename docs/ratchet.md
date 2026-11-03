@@ -1039,8 +1039,8 @@ ratchet burn-down: 1 open mark(s), 0 repaid (0 in the last 30d, 0 in 90d)
       0d  calc/grade.py  classify( score , attempts , late , bonus )
 ```
 
-A mark with no commit behind it reports `0d`. The burn-down clock starts when you commit the
-file.
+A mark with no commit behind it reports `0d`. The burn-down clock starts when you commit the file.
+A move keeps the clock: a re-key (verify's, after a signature edit) or a path move (`ratchet move`, or `ratchet prune` following a `git mv`) carries the mark's age to its new key and repays nothing, so `dropped_total` does not grow. A move still on disk counts once in `uncommitted` and keeps the committed key's age.
 
 ### A history the checkout does not hold
 
@@ -1077,8 +1077,8 @@ Two optional `[crapkit]` keys turn the report into a gate:
 
 | Key | Flags |
 |---|---|
-| `debt_max_age_months` | Open marks older than this, counted at 30 days per month. |
-| `repayment_min_per_30d` | A burn-down that repaid fewer marks than this in the last 30 days, while debt is open. |
+| `debt_max_age_months` | Open marks older than this, counted at 30 days per month. A re-key or a path move keeps a mark's age. |
+| `repayment_min_per_30d` | A burn-down that repaid fewer marks than this in the last 30 days, while debt is open. A re-key or a path move is not a repayment. |
 
 `--enforce` evaluates them and exits 1 on a violation:
 
