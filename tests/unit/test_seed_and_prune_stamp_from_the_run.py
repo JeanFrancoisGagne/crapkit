@@ -17,7 +17,7 @@ from crapkit.cli.verifying import _guard_ratchet_stamp, verify_stamp_conflict
 from crapkit.config import load_config_text
 from crapkit.errors import ConfigError
 from crapkit.invocation import _self
-from crapkit.ratchet import ScopeStamp, ScopeStamps, metric_version, read_stamp, running_stamp
+from crapkit.ratchet import ScopeStamp, ScopeStamps, read_stamp, running_stamp
 from crapkit.ratchetfile import RatchetFile
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
@@ -169,7 +169,7 @@ def test_prune_that_creates_the_marks_file_stamps_the_running_metric(repo, capsy
 
     assert ratchet(repo, "prune") == 0
 
-    assert stamp(repo) == metric_version()
+    assert stamp(repo) == RUNNING
     assert _guard_ratchet_stamp(RatchetFile.read(repo / MARKS), CFG) is None
     assert capsys.readouterr().out == (
         f"{MARKS}: pruned 0, followed 0 rename(s) - 0 mark(s) vs run {run_id} ({SHA[:11]}); "
