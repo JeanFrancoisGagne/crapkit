@@ -147,7 +147,8 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # reached 3,943 once the marks history read one patch stream (mission-3-11),
 # and the sync met at 3,965. verify's per-scope stamp check (metric-stamp-05)
 # added 25. seed's per-scope stamps and `--scope` (metric-stamp-06) added 23.
-SRC_DEFS = 4017
+# The one whole-key rewrite for marks (mission-4-01) added 2.
+SRC_DEFS = 4019
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

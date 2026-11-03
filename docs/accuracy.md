@@ -51,6 +51,7 @@ The work is split into packets, one directory each under `tests/accuracy`:
 | `analysis_oracles` | The file universe, decoding, every language reader: functions, ccn, cognitive, nesting, nloc, params |
 | `coverage_oracles` | coverage.py and istanbul attribution, the coverage join, flags, dark lines, diff coverage |
 | `history_oracles` | Churn, coupling, changed ranges, renames, burn-down |
+| `mark_carry` | A mark's value kept when its key moves |
 | `corpus_goldens` | The corpora and goldens, the wheel diff, the cross-platform exports, every output surface |
 | `change_control` | The rules that stop an undeclared golden or metric move |
 | `definitions` | Each field's definition, the same in the README, CONTEXT.md, agent-json.md, MCP and SARIF |
@@ -113,6 +114,7 @@ or no longer (fixed). `python tools/docs/generate.py` writes this table, the
 | Changed line ranges | `history_oracles` | `test_changed_ranges.py::test_touched_functions_match_unidiff` | 1 | 0 | 0 |
 | Identity across renames and moves | `history_oracles` | `test_renames.py::test_marks_follow_the_documented_renames` | 0 | 0 | 0 |
 | Burn-down, mark age and debt policy | `history_oracles` | `test_burn_down.py::test_report_matches_the_history_walk` | 0 | 1 | 0 |
+| Mark value kept across a re-key | `mark_carry` | `test_rekey_values.py::test_every_hand_move_writes_the_hand_bytes` | 0 | 0 | 0 |
 | Runtime invariant verdict | `runtime_guards` | `test_invariant_verdict.py::test_crapkit_stops_exactly_where_the_documented_bounds_do` | 2 | 3 | 0 |
 | CRAP score | `score_model` | `test_crap.py::test_reduced_grid_matches_the_exact_value` | 6 | 0 | 1 |
 | Function coverage ratio | `score_model` | `test_counts_join.py::test_every_scored_row_matches_its_artifact_counts` | 1 | 2 | 0 |

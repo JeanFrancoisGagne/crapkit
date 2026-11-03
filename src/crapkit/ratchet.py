@@ -1279,7 +1279,9 @@ def raised_marks(prior: list[RatchetEntry], seeded: list[RatchetEntry]) -> list[
 
 
 def _repath(entries: list[RatchetEntry], dest_of) -> tuple[list[RatchetEntry], int]:
-    """Rewrite paths by a per-mark chooser (None leaves a mark alone); values never move."""
+    """Rewrite whole keys by a per-mark chooser that answers a (path, key name)
+    or None to leave the mark alone. The one place a mark's key changes: the
+    value never moves, so the file writes the same digits under the new key."""
     out = []
     moved = 0
     for e in entries:
@@ -1287,9 +1289,34 @@ def _repath(entries: list[RatchetEntry], dest_of) -> tuple[list[RatchetEntry], i
         if dest is None:
             out.append(e)
             continue
-        out.append(e._replace(path=dest))
+        out.append(e._replace(path=dest[0], long_name=dest[1]))
         moved += 1
     return sorted(out, key=lambda e: (e.path, e.long_name)), moved
+
+
+def _same_name(entry: RatchetEntry, path: str | None) -> tuple[str, str] | None:
+    """ENTRY's key name at PATH, or None when no path was chosen."""
+    return None if path is None else (path, entry.long_name)
+
+
+def rekey_marks(entries: list[RatchetEntry], moves) -> tuple[list[RatchetEntry], int]:
+    """The marks with each (old key, new key) move of MOVES applied, and how many
+    moved. A key is (path, key name). An old key that holds no mark moves
+    nothing and takes no key. Moving a mark onto a key that holds a mark, or
+    that another mark's move already took, raises ValueError naming both keys.
+    Sorted by path, then key name."""
+    dest = dict(moves)
+    held = MarkIndex(entries)
+    taken = set(held.keys())
+    for old, new in sorted(dest.items()):
+        if old not in held:
+            continue
+        if new in taken:
+            target = f"{new[0]} {new[1]}"
+            why = f"{target} already holds a mark" if new in held else f"another mark moves to {target}"
+            raise ValueError(f"cannot move the mark of {old[0]} {old[1]} to {target}: {why}")
+        taken.add(new)
+    return _repath(entries, lambda e: dest.get(mark_key(e)))
 
 
 def _moved_path(path: str, old: str, new: str) -> str | None:
@@ -1303,7 +1330,7 @@ def move_marks(entries: list[RatchetEntry], old: str,
                new: str) -> tuple[list[RatchetEntry], int]:
     """Re-path marks at their recorded values. A trailing "/" on `old` moves a whole
     directory; anything else matches one exact path."""
-    return _repath(entries, lambda e: _moved_path(e.path, old, new))
+    return _repath(entries, lambda e: _same_name(e, _moved_path(e.path, old, new)))
 
 
 def _rename_target(entry: RatchetEntry, present: set, renames: dict[str, str]) -> str | None:
@@ -1326,7 +1353,7 @@ def follow_renames(prior: list[RatchetEntry], fresh: list[ScoredRow],
     """Marks for renamed files, re-pathed. Runs BEFORE prune so a rename reads as a
     move, not as code that left the repo and forfeits its high-water mark."""
     present = set(rows_by_key(fresh))
-    return _repath(prior, lambda e: _rename_target(e, present, renames))
+    return _repath(prior, lambda e: _same_name(e, _rename_target(e, present, renames)))
 
 
 def prune_ratchet(prior: list[RatchetEntry],
