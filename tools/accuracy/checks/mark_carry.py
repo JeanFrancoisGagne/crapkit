@@ -4,8 +4,9 @@ Push reads `rekey_marks` against hand_rekey.tsv's bytes and two pure
 properties: the value strings stay one multiset, and a move set and its
 inverse give back the file. It reads `gate.judge` against hand_pardon.tsv's
 answers and a packet-local oracle, the tighten's counts and verify's ratchet
-check against hand_changes.tsv, and prune's and seed's counts against
-hand_prune_seed.tsv. Seconds are a serial ubuntu estimate: no git, no CLI, a
+check against hand_changes.tsv, prune's and seed's counts against
+hand_prune_seed.tsv, and brief's mark read and mark age against
+hand_brief.tsv. Seconds are a serial ubuntu estimate: no git, no CLI, a
 few hundred in-process rewrites and judgements of small files.
 """
 SHARD = "history"
@@ -21,4 +22,6 @@ CHECKS = [
      "pytest": [_HERE + "test_ratchet_changes.py"]},
     {"name": "prune and seed counts", "seconds": 2,
      "pytest": [_HERE + "test_prune_seed.py"]},
+    {"name": "carried mark in the packet and the worklist", "seconds": 2,
+     "pytest": [_HERE + "test_brief_marks.py"]},
 ]

@@ -3,6 +3,7 @@
  "structuredContent": {
   "functions": [
    {
+    "carried_from": null,
     "history": [
      {
       "ccn": 4,
@@ -42,6 +43,7 @@
  "text": {
   "functions": [
    {
+    "carried_from": null,
     "history": [
      {
       "ccn": 4,
