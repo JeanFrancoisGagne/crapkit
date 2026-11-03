@@ -37,6 +37,8 @@ PYTHON = ("py/shapes.py",)
 VITEST = ("js/shapes.js", "mjs/shapes.mjs", "ts/shapes.ts", "tsx/shapes.tsx", "jsx/shapes.jsx",
           "vue/Shapes.vue")
 JEST = ("js/shapes.js", "ts/shapes.ts")
+RUST = ("rust/shapes.rs",)
+CPP = ("cpp/shapes.cpp",)
 # producer -> (parser, the probes its recording measured)
 PRODUCERS = {
     "coveragepy-7.16.1": ("coveragepy", PYTHON),
@@ -50,7 +52,15 @@ PRODUCERS = {
     "jest-v8-30.5.2": ("istanbul", JEST),
     "nyc-18.0.0": ("istanbul", ("js/shapes.js",)),
     "c8-12.0.0": ("istanbul", ("mjs/shapes.mjs",)),
+    "cargo-llvm-cov-0.9.1": ("lcov", RUST),
+    "llvm-cov-19.1.7": ("lcov", CPP),
 }
+
+
+def artifact(name: str, scenario: str) -> Path:
+    """A committed recording: an lcov producer's `.lcov`, every other one's `.json`."""
+    suffix = ".lcov" if PRODUCERS[name][0] == "lcov" else ".json"
+    return RECORDED / name / f"{scenario}{suffix}"
 
 
 def _regions(artifact: Path) -> list[dict]:
@@ -70,7 +80,7 @@ def without_start_line(name: str) -> bool:
 REFUSED = tuple(sorted(name for name in PRODUCERS if without_start_line(name)))
 SCORED = {name: value for name, value in PRODUCERS.items() if name not in REFUSED}
 LANGUAGES = {".py": "python", ".js": "javascript", ".mjs": "javascript", ".jsx": "javascript",
-             ".ts": "typescript", ".tsx": "tsx", ".vue": "vue"}
+             ".ts": "typescript", ".tsx": "tsx", ".vue": "vue", ".rs": "rust", ".cpp": "cpp"}
 HEADER = "[crapkit]\ntarget = 6\nanalysis_workers = 1\n\n[exclude]\nglobs = [\"recorded/**\"]\n"
 
 
@@ -85,16 +95,19 @@ class Slot:
     artifact: Path
 
 
-def _committed() -> list[tuple]:
-    return [(name, scenario, parser, probes, RECORDED / name / f"{scenario}.json")
-            for name, (parser, probes) in SCORED.items() for scenario in SCENARIOS]
+def _committed(lcov: bool) -> list[tuple]:
+    return [(name, scenario, parser, probes, artifact(name, scenario))
+            for name, (parser, probes) in SCORED.items() for scenario in SCENARIOS
+            if (parser == "lcov") == lcov]
 
 
-def slots(live: dict[tuple[str, str], Path] | None = None) -> list[Slot]:
-    """Every committed recording crapkit reads, then the live ones, each with its
-    own pNN/."""
-    found = _committed() + [(name, scenario, "coveragepy", PYTHON, path)
-                            for (name, scenario), path in sorted((live or {}).items())]
+def slots(live: dict[tuple[str, str], Path] | None = None, lcov: bool = False) -> list[Slot]:
+    """Every committed JSON recording crapkit reads, then the live ones, then
+    with `lcov` the lcov ones, each with its own pNN/. measure() scores all of
+    them; test_join and test_dark_lines walk the JSON ones and parse them."""
+    found = _committed(False) + [(name, scenario, "coveragepy", PYTHON, path)
+                                 for (name, scenario), path in sorted((live or {}).items())]
+    found += _committed(True) if lcov else []
     return [Slot(name, scenario, f"p{number:02d}", parser, probes, path)
             for number, (name, scenario, parser, probes, path) in enumerate(found)]
 
@@ -108,10 +121,30 @@ def _rekeyed(files: dict, prefix: str, istanbul: bool) -> dict:
     return moved
 
 
+def _lcov_moved(text: str, slot: Slot) -> list[str]:
+    """The tracefile's records of the slot's probes (a driver's record is
+    dropped), each SF key moved under the slot's pNN/."""
+    kept: list[str] = []
+    for record in text.split("end_of_record"):
+        lines = [line for line in record.splitlines() if line]
+        key = next((line[3:] for line in lines if line.startswith("SF:")), None)
+        if key in slot.probes:
+            kept += [line.replace(f"SF:{key}", f"SF:{slot.prefix}/{key}") for line in lines]
+            kept.append("end_of_record")
+    return kept
+
+
+def merged_lcov(all_slots: list[Slot]) -> str:
+    """One tracefile holding every lcov slot's records."""
+    lines = [line for slot in all_slots if slot.parser == "lcov"
+             for line in _lcov_moved(slot.artifact.read_text(encoding="utf-8"), slot)]
+    return "\n".join(lines) + "\n"
+
+
 def merged(all_slots: list[Slot], parser: str) -> dict:
     """One artifact holding every slot's recording of one format, keys moved
-    under each slot's pNN/. Two lanes read the whole matrix, so the run starts
-    two lane commands, not one per recording."""
+    under each slot's pNN/. One lane per format reads the whole matrix, so the
+    run starts three lane commands, not one per recording."""
     if parser == "istanbul":
         return _moved(all_slots, parser, lambda part: part)
     return {"meta": {"format": 3, "branch_coverage": True},
@@ -136,24 +169,31 @@ def _scope(slot: Slot) -> str:
             f"languages = {json.dumps(_languages(slot))}\n")
 
 
-LANES = (("py", "coveragepy"), ("js", "istanbul"))
+# (lane name, parser, artifact file name)
+LANES = (("py", "coveragepy", "py.json"), ("js", "istanbul", "js.json"), ("lcov", "lcov", "lcov.info"))
 
 
 def _lanes(all_slots: list[Slot]) -> str:
     tables = []
-    for name, parser in LANES:
+    for name, parser, file in LANES:
         scopes = [slot.prefix for slot in all_slots if slot.parser == parser]
-        tables.append(repos.lane_toml(name, f".crapkit/cov/{name}.json", parser, scopes,
-                                      f"recorded/{name}.json"))
+        tables.append(repos.lane_toml(name, f".crapkit/cov/{file}", parser, scopes,
+                                      f"recorded/{file}"))
     return "\n".join(tables)
 
 
+def _merged_bytes(all_slots: list[Slot], parser: str) -> bytes:
+    if parser == "lcov":
+        return merged_lcov(all_slots).encode()
+    return json.dumps(merged(all_slots, parser), sort_keys=True).encode()
+
+
 def files(all_slots: list[Slot]) -> dict[str, bytes]:
-    """{repo path: bytes} for the probe copies, the two merged recordings and crapkit.toml."""
+    """{repo path: bytes} for the probe copies, the merged recordings and crapkit.toml."""
     toml = HEADER + "\n".join(map(_scope, all_slots)) + "\n" + _lanes(all_slots)
     tree = {"crapkit.toml": toml.encode()}
-    for name, parser in LANES:
-        tree[f"recorded/{name}.json"] = json.dumps(merged(all_slots, parser), sort_keys=True).encode()
+    for _, parser, file in LANES:
+        tree[f"recorded/{file}"] = _merged_bytes(all_slots, parser)
     for slot in all_slots:
         tree.update({f"{slot.prefix}/{probe}": (PROBES / probe).read_bytes() for probe in slot.probes})
     return tree
@@ -260,7 +300,7 @@ def _coverage(work: Path, *args: str) -> None:
 
 def measure(base: Path, live: dict[tuple[str, str], Path] | None = None) -> ProbeRun:
     """The session's one scored probe repo, built under `base` once."""
-    all_slots = slots(live)
+    all_slots = slots(live, lcov=True)
     tree = files(all_slots)
     work = base / f"probe-repo-{_digest(tree)}"
     with FileLock(str(work) + ".lock"):

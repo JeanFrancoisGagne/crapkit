@@ -200,7 +200,8 @@
           "parser": {
             "enum": [
               "istanbul",
-              "coveragepy"
+              "coveragepy",
+              "lcov"
             ]
           },
           "scopes": {
@@ -214,7 +215,7 @@
           },
           "path_prefix": {
             "type": "string",
-            "description": "prefix joined onto coverage.py relative paths"
+            "description": "prefix joined onto the relative keys of coverage.py and lcov artifacts"
           },
           "env": {
             "type": "object",

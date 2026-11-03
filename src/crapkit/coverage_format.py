@@ -1,7 +1,8 @@
 """Which coverage format reads a lane's artifact.
 
 A lane names its format with `parser`, and each format is one adapter module:
-coverage_istanbul for istanbul JSON, coverage_py for a coverage.py JSON report.
+coverage_istanbul for istanbul JSON, coverage_py for a coverage.py JSON report,
+coverage_lcov for an lcov tracefile.
 An adapter owns what its format decides when an artifact is read: function
 coverage, dead lines, per-line test contexts, the path key it builds, the
 absolute keys it did not place with the placing step's reason (the record the
@@ -23,7 +24,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from . import coverage_istanbul, coverage_py
+from . import coverage_istanbul, coverage_lcov, coverage_py
 from .errors import ToolError
 
 if TYPE_CHECKING:
@@ -74,14 +75,14 @@ class CoverageFormat(Protocol):
                  source_path: str) -> dict[int, list[str]]: ...
 
 
-_FORMATS = {"istanbul": coverage_istanbul, "coveragepy": coverage_py}
+_FORMATS = {"istanbul": coverage_istanbul, "coveragepy": coverage_py, "lcov": coverage_lcov}
 
 # One version per key of _FORMATS. A change that moves what a reader reads
 # raises its number and analyze.ANALYSIS_VERSION by one in the same change; a
 # new reader enters at FIRST_READER_VERSION and raises nothing. Literals:
 # tools/accuracy reads them with ast.literal_eval.
 FIRST_READER_VERSION = 1
-READER_VERSIONS = {"istanbul": 1, "coveragepy": 1}
+READER_VERSIONS = {"istanbul": 1, "coveragepy": 1, "lcov": 1}
 
 
 def lane_format(lane: Lane) -> CoverageFormat:

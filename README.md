@@ -530,7 +530,7 @@ the file it goes in and where the agent starts the server.
 
 ## Languages
 
-14 languages, two coverage parsers. Coverage joins where a parser exists; everything else
+14 languages, three coverage parsers. Coverage joins where a parser exists; everything else
 scores on complexity alone.
 
 | Language | Files | Coverage |
@@ -540,13 +540,13 @@ scores on complexity alone.
 | TSX | `.tsx` | istanbul |
 | JavaScript | `.js` `.jsx` `.mjs` `.cjs` | istanbul |
 | Vue | `.vue` | istanbul, when your vitest run reports on `.vue` files |
-| Swift | `.swift` | none: cc-only |
+| Swift | `.swift` | lcov, once a lane is declared; cc-only until then |
 | Go | `.go` | none: cc-only |
-| Rust | `.rs` | none: cc-only |
+| Rust | `.rs` | lcov, once a lane is declared; cc-only until then |
 | shell | `.sh` `.bash` | none: cc-only |
 | PowerShell | `.ps1` `.psm1` | none: cc-only |
-| C and C++ | `.c` `.cc` `.cpp` `.cxx` `.h` `.hpp` | none: cc-only |
-| Objective-C | `.m` `.mm` | none: cc-only |
+| C and C++ | `.c` `.cc` `.cpp` `.cxx` `.h` `.hpp` | lcov, once a lane is declared; cc-only until then |
+| Objective-C | `.m` `.mm` | lcov, once a lane is declared; cc-only until then |
 | Java | `.java` | none: cc-only |
 | Zig | `.zig` | none: cc-only |
 
