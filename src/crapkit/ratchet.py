@@ -619,7 +619,8 @@ class StampConflict(NamedTuple):
                     f"the rules have moved since in {_scopes_moved(self.moved)}")
         if self.newer:
             return f"{head} - {upgrade_remedy(['crapkit'])} {_BACKWARDS}"
-        return f"{head} - {_NOT_COMPARABLE}; {remedy or coverage_then_seed(seed=self.seeds())}"
+        flips = "".join(_flip_note(move) for move in self.moved if _raise_kind(move) == "coverage flip")
+        return f"{head} - {_NOT_COMPARABLE}; {remedy or coverage_then_seed(seed=self.seeds())}{flips}"
 
     def seeds(self, baseline: str = "") -> str:
         """`crapkit ratchet seed --scope NAME` for each scope a scoped seed
@@ -634,6 +635,18 @@ class StampConflict(NamedTuple):
         if any(move.kind == "lizard" for move in self.moved):
             return ()
         return tuple(dict.fromkeys(move.scope for move in self.moved))
+
+
+# The upgrade guide's section a flip refusal links. A test pins the anchor, so
+# moving the section breaks that test before it breaks every printed link.
+FLIP_PROCEDURE = "docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one"
+
+
+def _flip_note(move: StampMove) -> str:
+    """The sentence a coverage flip adds to the refusal: the scope, the parsers
+    of the lanes that measure it now, and the procedure that re-marks it."""
+    return (f"; {move.scope} was {move.old} and is now measured by its {' and '.join(sorted(move.new))} "
+            f"lane(s), so its marks hold no coverage yet: follow {FLIP_PROCEDURE}")
 
 
 def _label(stamp: MetricStamp) -> str:
