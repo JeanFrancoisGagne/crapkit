@@ -7,18 +7,23 @@ the adapter `coverage_format.lane_format` hands back, so no other module asks
 which parser a lane declared. These scans hold that line: a compare of
 `parser` against a string, or of a format name against anything, fails outside
 coverage_format.py, and every other read of `.parser` or spelling of a format
-name is a place that writes the name out, listed below with its reason.
+name is a place that writes the name out, listed below with its reason. The
+format names are the keys of `coverage_format._FORMATS`, so a new reader's
+name is guarded the day it joins the registry.
 """
 import ast
 from pathlib import Path
+import shutil
+import sys
 
 import pytest
 
 import crapkit
+from crapkit import coverage_format
 
 SRC = Path(crapkit.__file__).resolve().parent
 OWNER = "coverage_format.py"
-FORMAT_NAMES = frozenset({"coveragepy", "istanbul"})
+FORMAT_NAMES = frozenset(coverage_format._FORMATS)
 
 # Each read of a `.parser` attribute outside coverage_format.py: none compares it.
 ALLOWED_READS = {
@@ -110,6 +115,10 @@ def _modules():
             yield rel, _sites(path.read_text(encoding="utf-8"))
 
 
+def _line_of(text: str, needle: str) -> int:
+    return text.splitlines().index(needle) + 1
+
+
 def test_no_module_but_coverage_format_compares_a_parser_string():
     found = [f"{rel}:{line}" for rel, sites in _modules() for line in sites.compares]
 
@@ -138,6 +147,32 @@ def test_every_other_spelling_of_a_format_name_writes_it_out():
 ])
 def test_the_scan_catches_each_shape_a_parser_test_takes(compare):
     assert _sites(f"def f():\n    return {compare}\n").compares == [2]
+
+
+@pytest.mark.parametrize("name", sorted(coverage_format._FORMATS))
+def test_every_registered_format_name_is_guarded(name):
+    """A format name compared against anything but `parser` still fails."""
+    assert _sites(f'def f(fmt):\n    return fmt == "{name}"\n').compares == [2]
+
+
+PLANTED = [("lanes.py", '    return lane.parser == "jacoco"'),
+           ("doctor.py", '    return parser in ("lcov", "cobertura")')]
+
+
+@pytest.mark.parametrize(("module", "plant"), PLANTED, ids=[m for m, _ in PLANTED])
+def test_a_compare_planted_in_a_scratch_copy_fails_the_guard_by_file_and_line(
+        tmp_path, monkeypatch, module, plant):
+    copy = tmp_path / "crapkit"
+    shutil.copytree(SRC, copy, ignore=shutil.ignore_patterns("__pycache__"))
+    target = copy / module
+    text = target.read_text(encoding="utf-8") + f"\n\ndef _planted(lane, parser):\n{plant}\n"
+    target.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "SRC", copy)
+
+    with pytest.raises(AssertionError) as failed:
+        test_no_module_but_coverage_format_compares_a_parser_string()
+
+    assert f"{module}:{_line_of(text, plant)}" in str(failed.value)
 
 
 @pytest.mark.parametrize("compare", ['parser not in covered', 'lane.parser is None',

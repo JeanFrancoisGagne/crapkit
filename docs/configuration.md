@@ -278,10 +278,17 @@ still apply.
 | `coverage_optional` | bool | no | `false` | Code no test can reach, or a scope init writes no live lane for. See below. |
 | `notes` | array of string | no | `[]` | House rules for this scope alone. They follow the repo-wide `[crapkit] notes` into every packet `brief` builds for a function this scope owns. |
 
-Fourteen languages, five coverage parsers. A lane's `parser` is `coveragepy`, `istanbul`,
-`lcov`, `cobertura`, `jacoco` or `coverprofile`, so a lane can measure a scope only when its runner writes coverage.py's JSON
-report, istanbul's `coverage-final.json`, an lcov tracefile, a Cobertura XML report or a JaCoCo XML report. That means Python, the
-JavaScript/TypeScript family, Rust, C, C++, Swift, Objective-C and Java. A scope whose runner writes none scores complexity alone and
+Fourteen languages, six coverage formats. A lane's `parser` names the format its runner
+writes, and each serves these languages:
+
+- `coveragepy`, coverage.py's JSON report: Python.
+- `istanbul`, istanbul's `coverage-final.json`: JavaScript, TypeScript, TSX and Vue.
+- `lcov`, an lcov tracefile: Rust, C, C++, Swift and Objective-C, and JavaScript through Bun, Deno or c8.
+- `cobertura`, a Cobertura XML report: C and C++ through gcovr.
+- `jacoco`, a JaCoCo XML report: Java through Gradle or Maven.
+- `coverprofile`, the profile `go test -coverprofile` writes: Go.
+
+A scope whose runner writes none of them, such as a Zig scope, scores complexity alone and
 declares `coverage_optional = true`. See
 [lanes.md](lanes.md#which-languages-a-lane-can-measure).
 

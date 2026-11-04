@@ -42,19 +42,21 @@ Three ways to stop a file reading as untested debt, and they are not interchange
 |---|---|---|
 | `[exclude] globs` | generated, vendored, minified, build output | the code leaves the corpus completely and never scores again |
 | a new `[[lane]]` | code you would test if a runner were wired to it | one command and one artifact path to keep true |
-| `coverage_optional = true` | code no test can reach (entry points, deploy scripts, generated shims), and any scope whose language has no coverage parser | the scope still scores on complexity, and `remedy` narrows to `ok` or `decompose` |
+| `coverage_optional = true` | code no test can reach (entry points, deploy scripts, generated shims), and any scope whose runner writes none of the six coverage formats crapkit reads | the scope still scores on complexity, and `remedy` narrows to `ok` or `decompose` |
 
 The wrong pick in either direction is expensive. Excluding real code hides its debt
 permanently and silently, and nothing ever reports what you excluded. Setting
 `coverage_optional` on testable code turns every `add-tests` verdict in that scope into `ok`.
 Prefer the lane whenever a runner could plausibly reach the code.
 
-Sometimes none can. crapkit reads two coverage formats, coverage.py's JSON and istanbul's
-`coverage-final.json`, so a Go, Rust or Swift scope has no lane to prefer. There
-`coverage_optional` is the honest answer, not a shortcut, and `crapkit init` already wrote
-it: any scope whose languages all lack a parser comes out of `init` carrying the key. What
-is left for you is the first reason: code no test can reach, such as entry points and
-deploy scripts. See
+Sometimes none can. crapkit reads six coverage formats, and Zig has none of them, so a Zig
+scope has no lane to prefer; neither has a shell or PowerShell scope unless kcov or Pester
+writes a report for it. There `coverage_optional` is the honest answer, not a shortcut, and
+`crapkit init` already wrote it: every scope init writes no live lane for comes out of
+`init` carrying the key. When init detects a toolchain at the repo root that writes one of
+the formats, such as cargo llvm-cov, Gradle or go test, it leaves that lane commented in
+`crapkit.toml`: uncomment it and delete the key to measure the scope. What is left for you
+is the first reason: code no test can reach, such as entry points and deploy scripts. See
 [lanes.md](lanes.md#which-languages-a-lane-can-measure).
 
 ## What to do about `no_lane_over_target`

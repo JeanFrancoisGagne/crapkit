@@ -13,10 +13,13 @@ body:
         PowerShell. So "lizard does not read it" is a bigger job, not a
         refusal.
 
-        Coverage comes from two parsers and no others: `istanbul` and
-        `coveragepy`. A language with neither still scores. Mark the scope
-        `coverage_optional` and it ranks on complexity alone, which is what
-        swift, go, rust, shell and powershell do here.
+        Coverage comes from the report your test runner writes, in one of
+        the six formats crapkit reads: coverage.py JSON (`coveragepy`),
+        istanbul JSON (`istanbul`), an lcov tracefile (`lcov`), Cobertura
+        XML (`cobertura`), JaCoCo XML (`jacoco`) or a Go coverprofile
+        (`coverprofile`). A language whose runner writes none of them still
+        scores cc-only: mark the scope `coverage_optional` and it ranks on
+        complexity alone, which is what zig does here.
 
   - type: input
     id: language
@@ -52,10 +55,11 @@ body:
   - type: input
     id: coverage_tool
     attributes:
-      label: The coverage tool projects in this language use
+      label: The coverage format this language's test runner writes
       description: >
-        Name the tool and the report format it writes. Put "none" if the
-        ecosystem has no per-line or per-branch coverage worth joining.
+        Name the tool and the report format it writes, and say whether it is
+        one of the six above. Put "none" if the ecosystem has no per-line or
+        per-branch coverage worth joining.
       placeholder: kover, writes an XML report
     validations:
       required: true

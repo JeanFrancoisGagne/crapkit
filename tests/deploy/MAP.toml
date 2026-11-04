@@ -184,6 +184,9 @@ modules = ["tests/deploy/test_mission1_reader_cells.py"]
 [packets.m1-readers-07]
 modules = ["tests/deploy/test_mission1_reader_cells.py"]
 
+[packets.m1-readers-09]
+modules = ["tests/deploy/test_mission1_reader_cells.py"]
+
 # --- every-harness rows -----------------------------------------------------------
 # What a nightly run takes of each row: "all" its cells on all 17 harnesses,
 # "core" on the 3 core-image ones. The header says how a row's tests name it.
@@ -772,6 +775,24 @@ lin-up-coverprofile-omp = { packet = "m1-readers-07", cadence = "nightly", os = 
 lin-up-coverprofile-opencode = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
 lin-up-coverprofile-vscode-test-electron = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
 "lin-up-0.8.1-cc-only-go" = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core" }
+# m1-readers-09: the README's 60-second start on a polyglot repo (pytest, go.mod, Gradle, Cargo.toml), every harness, with check_config
+lin-polyglot-aider = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-amp = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-claude-agent-sdk = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-claude-agent-sdk-py = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-claude-code = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-09" }
+lin-polyglot-cline = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-codex = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-09" }
+lin-polyglot-continue = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-copilot-cli = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-crush = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-cursor-agent = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-09" }
+lin-polyglot-gemini-cli = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-goose = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-junie = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-omp = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-opencode = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
+lin-polyglot-vscode-test-electron = { packet = "m1-readers-09", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-09" }
 # m1-readers-04: init writes a Rust repo's lane commented and doctor notes the lcov reader, every harness fresh; the 0.8.1 upgrade keeps crapkit.toml
 lin-cc-only-reader-aider = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
 lin-cc-only-reader-amp = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
