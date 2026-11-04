@@ -100,7 +100,7 @@ def test_doctor_takes_the_plugin_root_flag_the_readme_documents():
 def test_the_gate_help_names_the_exemption_the_gate_applies():
     """Two commands exempt on a mark and they do not exempt the same functions.
     `rescore --gate` drops a breach only when its CRAP sits at or under the
-    mark: `_unmarked_breaches` in cli/scoring.py keeps every row where
+    mark: the gate module's pardon (gate._pardon) keeps every breach where
     `round(v.crap, 4) > mark`. The pre-commit hook exempts on the mark
     existing, because a staged blob carries no coverage to score. Help that
     says a mark "already covers" the function spells the hook's rule on the

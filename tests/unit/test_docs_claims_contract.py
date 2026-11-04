@@ -353,7 +353,7 @@ def test_the_gate_section_says_a_set_hooks_path_moves_every_hook():
 # tool install, whose interpreter is not the one on PATH.
 HOOK_BODY = ("command -v crapkit >/dev/null 2>&1 && exec crapkit hook-precommit",
              "command -v uvx >/dev/null 2>&1 && exec uvx crapkit hook-precommit",
-             "exec python -m crapkit hook-precommit")
+             "exec python -P -m crapkit hook-precommit")
 FENCE_NAMES = {"sh": "sh", "powershell": "PowerShell", "yaml": "YAML"}
 
 
@@ -456,11 +456,11 @@ def test_the_gate_section_names_the_order_the_hook_tries():
     gate = " ".join(_section(_doc("README.md"), "## The gate").split())
 
     assert "the `crapkit` command" in gate
-    assert "then `uvx crapkit`, then `python -m crapkit`" in gate
+    assert "then `uvx crapkit`, then `python -P -m crapkit`" in gate
 
 
 # What each line of the hook body runs, as the prose names it.
-BODY_LAUNCHERS = {"crapkit hook-precommit": "`crapkit`", "uvx crapkit": "`uvx`", "python -m crapkit": "`python`"}
+BODY_LAUNCHERS = {"crapkit hook-precommit": "`crapkit`", "uvx crapkit": "`uvx`", "python -P -m crapkit": "`python`"}
 
 
 def test_every_line_of_the_hook_body_has_a_launcher_the_prose_names():
@@ -631,9 +631,30 @@ def test_the_lanes_page_prints_the_crashed_worker_refusal_the_parser_raises():
 _ROOT = Path("/repo")
 
 
+def _read(lane, paths, root: Path) -> tuple:
+    """(measured keys, the reader's record of unplaced keys) for a coverage.py
+    report keying these paths, read against `root`."""
+    import tempfile
+
+    from crapkit import coverage_py
+
+    region = {"start_line": 1, "executed_lines": [1], "missing_lines": [],
+              "summary": {"covered_lines": 1, "num_statements": 1,
+                          "num_branches": 0, "covered_branches": 0}}
+    report = {"meta": {"branch_coverage": True},
+              "files": {path: {"missing_lines": [], "functions": {"f": region}}
+                        for path in paths}}
+    unplaced: dict = {}
+    with tempfile.TemporaryDirectory() as scratch:
+        artifact = Path(scratch) / "py.json"
+        artifact.write_text(json.dumps(report), encoding="utf-8")
+        per_file, _, _ = coverage_py.read(lane, root, artifact, unplaced=unplaced)
+    return per_file, unplaced
+
+
 def _judged(paths, root: Path = _ROOT) -> tuple:
     """(refusal or None, stderr) for a lane whose scopes declare `src` and whose
-    artifact measured these paths, judged against `root`."""
+    artifact measured these paths, read and judged against `root`."""
     import io
     from contextlib import redirect_stderr
 
@@ -643,10 +664,11 @@ def _judged(paths, root: Path = _ROOT) -> tuple:
 
     lane = Lane(name="py", command="true", artifact=".crapkit/cov/py.json",
                 parser="coveragepy", scopes=("src",))
+    coverage, unplaced = _read(lane, paths, root)
     err = io.StringIO()
     try:
         with redirect_stderr(err):
-            _judge_artifact_scope(lane, dict.fromkeys(paths, []), {"src": ("src",)}, root)
+            _judge_artifact_scope(lane, coverage, {"src": ("src",)}, root, unplaced)
     except ToolError as raised:
         return raised, err.getvalue()
     return None, err.getvalue()

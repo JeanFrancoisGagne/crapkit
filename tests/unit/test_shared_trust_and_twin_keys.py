@@ -17,7 +17,7 @@ from pathlib import Path
 
 import lizard
 
-from crapkit.analyze import ANALYSIS_VERSION
+from crapkit.analyze import ANALYSIS_VERSION, ANALYSIS_VERSIONS
 from crapkit.cli.ratchet_cmds import _latest_full_run, _ratchet_merge
 from crapkit.cli.verifying import _prior_crap
 from crapkit.ratchet import RatchetEntry, load_ratchet, merge_ratchets, unstable_marks
@@ -30,7 +30,9 @@ NAME = "__post_init__( self )"
 STAMP = "# crapkit-analysis=4 lizard=1.17.31"
 HEADER = "path\tlong_name\tcrap"
 # The running metric: seed stamps the one its run recorded, and refuses a run with none.
-MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version}
+# The stamps this crapkit records for the one python scope with no lane.
+MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version,
+            "scope_stamps": {"src": {"analysis": {"python": ANALYSIS_VERSIONS["python"]}, "coverage": "no-lane"}}}
 
 
 def scored(crap: float, *, start: int = 1, ccn: int = 8, name: str = NAME) -> ScoredRow:

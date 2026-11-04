@@ -25,6 +25,20 @@
 # as { <os> = "<gap>" }, the one OS of a cell no runner can take. The scope
 # job never schedules a blocked job, and a blocked cell (or OS) is exempt from
 # the reach check until the gap closes.
+#
+# [every_harness] holds the every-harness rows: a set of cells that runs under
+# each harness tools/deploy/pins.toml pins, in that harness's image, fresh and
+# upgrade. An entry is keyed by the ticket whose cells make up the row, or
+# "<ticket>/<part>" where one ticket's row splits, and has one key: nightly =
+# "all" runs the row on all 17 harnesses nightly, nightly = "core" on the 3
+# core-image harnesses only. A test of a row names its entry with
+# @cell(..., row="<key>"), and its [cell] entry carries the same `row`. A key
+# no [cell] entry names yet is pending: its ticket has not added its cells,
+# and test_deploy_map.py's row check skips it, naming it. A nightly run
+# (run.py passes --deploy-cadence) drops a `core` row's items on the full
+# image and the images built on it (gui, full-latest), where the 14 non-core
+# harnesses run. Every other cadence, the release candidate's release run
+# included, keeps every row on every harness.
 
 # --- packets ------------------------------------------------------------------
 # The packet that writes each cell, and the files that show it has landed in
@@ -91,6 +105,116 @@ modules = []
 # The plan lists these cells, and no packet's module writes them yet.
 [packets.unowned]
 modules = []
+
+# The 0.9.0 tickets that create a deploy module: each packet holds the cell
+# ids its ticket names, and the landed-packet check skips them by name until
+# the module is in the tree.
+
+[packets.metric-stamp-04]
+modules = ["tests/deploy/test_mixed_versions.py"]
+
+[packets.metric-stamp-06]
+modules = ["tests/deploy/test_seed_converts.py"]
+
+[packets.metric-stamp-07]
+modules = ["tests/deploy/test_cc_only_to_measured.py", "tests/deploy/test_flip_reaches_the_agent.py"]
+
+[packets.criterion-13]
+modules = ["tests/deploy/test_criterion.py"]
+
+[packets.mission-2-14]
+modules = ["tests/deploy/test_language_map_cells.py"]
+
+[packets.mission-3]
+modules = ["tests/deploy/test_mission3_marked_rise.py"]
+
+[packets.mission-4-09]
+modules = ["tests/deploy/test_mission4_signature_carry.py"]
+
+[packets.m6-step-coverage-06]
+modules = ["tests/deploy/test_step_coverage_cells.py"]
+
+[packets.protocol-2-step-03a]
+modules = ["tests/deploy/test_step_neutral_cells.py"]
+
+[packets.protocol-2-step-06]
+modules = ["tests/deploy/test_claude_p2_cells.py"]
+
+[packets.protocol-2-step-07]
+modules = ["tests/deploy/test_claude_bash_cells.py"]
+
+[packets.protocol-2-step-11]
+modules = ["tests/deploy/test_codex_adapter_cells.py"]
+
+[packets.protocol-2-step-12]
+modules = ["tests/deploy/test_cursor_adapter_cells.py"]
+
+[packets.gate-group-06]
+modules = ["tests/deploy/test_claimed_name_cells.py"]
+
+[packets.gate-group-10]
+modules = ["tests/deploy/test_claimed_name_cells.py"]
+
+[packets.gate-group-07]
+modules = ["tests/deploy/test_claimed_name_cells.py"]
+[packets.gate-group-08]
+modules = ["tests/deploy/test_claimed_name_hook_cells.py"]
+
+[packets.gate-group-09]
+modules = ["tests/deploy/test_claimed_name_cells.py"]
+
+[packets.gate-group-04a]
+modules = ["tests/deploy/test_shallow_checkout_flow.py"]
+
+[packets.m1-readers-03]
+modules = ["tests/deploy/test_mission1_reader_cells.py"]
+
+[packets.m1-readers-11]
+modules = ["tests/deploy/test_score_command_cells.py"]
+
+[packets.m1-readers-04]
+modules = ["tests/deploy/test_cc_only_reader_cells.py"]
+
+[packets.m1-readers-05]
+modules = ["tests/deploy/test_mission1_reader_cells.py"]
+
+[packets.m1-readers-06]
+modules = ["tests/deploy/test_mission1_reader_cells.py"]
+
+[packets.m1-readers-07]
+modules = ["tests/deploy/test_mission1_reader_cells.py"]
+
+# --- every-harness rows -----------------------------------------------------------
+# What a nightly run takes of each row: "all" its cells on all 17 harnesses,
+# "core" on the 3 core-image ones. The header says how a row's tests name it.
+
+[every_harness]
+lanes-visible-06 = { nightly = "all" }
+m1-readers-09 = { nightly = "all" }
+"mission-4-09/harness" = { nightly = "all" }
+mission-9-06 = { nightly = "all" }
+protocol-2-step-08 = { nightly = "all" }
+schema-2-15 = { nightly = "all" }
+gate-group-06 = { nightly = "core" }
+gate-group-10 = { nightly = "core" }
+gate-group-07 = { nightly = "core" }
+lanes-visible-04 = { nightly = "core" }
+lanes-visible-05 = { nightly = "core" }
+lanes-visible-08 = { nightly = "core" }
+lanes-visible-09 = { nightly = "core" }
+lanes-visible-10 = { nightly = "core" }
+m1-readers-03 = { nightly = "core" }
+m1-readers-04 = { nightly = "core" }
+m1-readers-05 = { nightly = "core" }
+m1-readers-06 = { nightly = "core" }
+m1-readers-07 = { nightly = "core" }
+m5-comment-fixture-03 = { nightly = "core" }
+m5-comment-fixture-04 = { nightly = "core" }
+m5-comment-fixture-05 = { nightly = "core" }
+m5-comment-fixture-07 = { nightly = "core" }
+m5-comment-fixture-13 = { nightly = "core" }
+mission-2-14 = { nightly = "core" }
+"mission-4-09/cli" = { nightly = "core" }
 
 # --- cells --------------------------------------------------------------------
 # cadence: push, nightly, weekly, published ("weekly+published" gives both).
@@ -330,6 +454,344 @@ published-precommit = { packet = "unowned", cadence = "published", os = "linux",
 published-registry = { packet = "unowned", cadence = "published", os = "linux", image = "core", online = true }
 published-action-tag = { packet = "deploy-action", cadence = "published", job = "deploy.yml:published-action-tag" }
 
+# 0.9.0: the cell ids the tickets name, grouped by the ticket that adds each
+# test, with the cadence, os and image that ticket gives (nightly where it
+# gives none). The ticket edits its entries in place when it adds the @cell.
+# metric-stamp-04, -06 and -07
+"lin-mixed-0.8.0-reads-0.9.0-marks" = { packet = "metric-stamp-04", cadence = "nightly", os = "linux", image = "core" }
+"lin-up-pip-0.8.1-seed-converts" = { packet = "metric-stamp-06", cadence = "nightly", os = "linux", image = "core" }
+lin-cc-only-to-measured = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+# metric-stamp-07: the flip refusal reaches the agent in each core-image harness, fresh and upgrade
+lin-flip-route-claude-code = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+lin-flip-route-codex = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+lin-flip-route-cursor-agent = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+lin-up-flip-route-claude-code = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+lin-up-flip-route-codex = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+lin-up-flip-route-cursor-agent = { packet = "metric-stamp-07", cadence = "nightly", os = "linux", image = "core" }
+# criterion-13
+lin-criterion-fresh = { packet = "criterion-13", cadence = "push", os = "linux", image = "core" }
+lin-criterion-upgrade = { packet = "criterion-13", cadence = "push", os = "linux", image = "core" }
+win-criterion-fresh = { packet = "criterion-13", cadence = "push", os = "windows" }
+win-criterion-upgrade = { packet = "criterion-13", cadence = "push", os = "windows" }
+# mission-2-14
+"lin-up-languages-0.8.1" = { packet = "mission-2-14", cadence = "nightly", os = "linux", image = "core" }
+"win-up-languages-0.8.1" = { packet = "mission-2-14", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+# mission-3-09
+lin-marked-rise-route1 = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
+lin-marked-rise-precommit = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
+lin-marked-warn = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
+lin-marked-override = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
+lin-up-marked-rise-n1 = { packet = "mission-3", cadence = "nightly", os = "linux", image = "cells" }
+lin-marked-advisory = { packet = "mission-3", cadence = "nightly", os = "linux", image = "core" }
+lin-up-marked-advisory-n1 = { packet = "mission-3", cadence = "nightly", os = "linux", image = "core" }
+win-marked-rise-ps51 = { packet = "mission-3", cadence = "nightly", os = "windows" }
+win-marked-advisory = { packet = "mission-3", cadence = "nightly", os = "windows" }
+win-up-marked-rise-n1 = { packet = "mission-3", cadence = "nightly", os = "windows" }
+# mission-4-09: the harness-less and Windows cells; its per-harness cells carry their row
+lin-signature-carry = { packet = "mission-4-09", cadence = "push", os = "linux", image = "cells" }
+lin-up-signature-carry-n1 = { packet = "mission-4-09", cadence = "push", os = "linux", image = "cells" }
+win-m4-carry = { packet = "mission-4-09", cadence = "push", os = "windows" }
+win-up-m4-carry = { packet = "mission-4-09", cadence = "push", os = "windows" }
+# mission-9-04 moves it into deploy-channels, whose test_fresh_start.py the tree holds
+lin-ts-provider-mismatch = { packet = "unowned", cadence = "push", os = "linux", image = "core" }
+# m6-step-coverage-06; -08 moves the JS cells into m6-step-coverage-06 once that module exists
+lin-step-coverage-py-fresh = { packet = "m6-step-coverage-06", cadence = "nightly", os = "linux", image = "core" }
+lin-step-coverage-py-upgrade = { packet = "m6-step-coverage-06", cadence = "nightly", os = "linux", image = "core" }
+win-step-coverage-py-fresh = { packet = "m6-step-coverage-06", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-step-coverage-py-upgrade = { packet = "m6-step-coverage-06", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+lin-step-coverage-jest-fresh = { packet = "unowned", cadence = "nightly", os = "linux", image = "core" }
+lin-step-coverage-vitest-fresh = { packet = "unowned", cadence = "nightly", os = "linux", image = "core" }
+win-step-coverage-jest-fresh = { packet = "unowned", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-step-coverage-vitest-fresh = { packet = "unowned", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+# protocol-2-step-03a, -06, -07, -11 and -12
+lin-step-neutral-fresh = { packet = "protocol-2-step-03a", cadence = "push", os = "linux", image = "core" }
+lin-step-neutral-upgrade = { packet = "protocol-2-step-03a", cadence = "push", os = "linux", image = "core" }
+win-step-neutral-fresh = { packet = "protocol-2-step-03a", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-claude-p2-fresh = { packet = "protocol-2-step-06", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-claude-bash-fresh = { packet = "protocol-2-step-07", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-codex-adapter-fresh = { packet = "protocol-2-step-11", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+win-cursor-adapter-fresh = { packet = "protocol-2-step-12", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+# gate-group-06: the class U claimed-name cells, one per pinned harness, fresh and upgrade
+lin-claimed-name-aider = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-amp = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-claude-agent-sdk = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-claude-agent-sdk-py = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-claude-code = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "core", row = "gate-group-06" }
+lin-claimed-name-cline = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-codex = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "core", row = "gate-group-06" }
+lin-claimed-name-continue = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-copilot-cli = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-crush = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-cursor-agent = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "core", row = "gate-group-06" }
+lin-claimed-name-gemini-cli = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-goose = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-junie = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-omp = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-opencode = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-claimed-name-vscode-test-electron = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-aider = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-amp = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-claude-agent-sdk = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-claude-agent-sdk-py = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-claude-code = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "core", row = "gate-group-06" }
+lin-up-claimed-name-cline = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-codex = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "core", row = "gate-group-06" }
+lin-up-claimed-name-continue = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-copilot-cli = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-crush = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-cursor-agent = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "core", row = "gate-group-06" }
+lin-up-claimed-name-gemini-cli = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-goose = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-junie = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-omp = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-opencode = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+lin-up-claimed-name-vscode-test-electron = { packet = "gate-group-06", cadence = "nightly", os = "linux", image = "full", row = "gate-group-06" }
+# gate-group-10: the class U claimed-name cells running verify --json, one per pinned harness, fresh and upgrade
+lin-claimed-name-json-aider = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-amp = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-claude-agent-sdk = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-claude-agent-sdk-py = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-claude-code = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-claimed-name-json-cline = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-codex = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-claimed-name-json-continue = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-copilot-cli = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-crush = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-cursor-agent = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-claimed-name-json-gemini-cli = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-goose = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-junie = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-omp = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-opencode = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-claimed-name-json-vscode-test-electron = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-aider = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-amp = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-claude-agent-sdk = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-claude-agent-sdk-py = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-claude-code = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-up-claimed-name-json-cline = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-codex = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-up-claimed-name-json-continue = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-copilot-cli = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-crush = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-cursor-agent = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "core", row = "gate-group-10" }
+lin-up-claimed-name-json-gemini-cli = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-goose = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-junie = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-omp = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-opencode = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+lin-up-claimed-name-json-vscode-test-electron = { packet = "gate-group-10", cadence = "nightly", os = "linux", image = "full", row = "gate-group-10" }
+# gate-group-07: the class U claimed-name cells running rescore --gate --json and check_gate, one per pinned harness, fresh and upgrade
+lin-claimed-name-gate-aider = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-amp = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-claude-agent-sdk = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-claude-agent-sdk-py = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-claude-code = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-claimed-name-gate-cline = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-codex = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-claimed-name-gate-continue = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-copilot-cli = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-crush = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-cursor-agent = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-claimed-name-gate-gemini-cli = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-goose = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-junie = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-omp = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-opencode = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-claimed-name-gate-vscode-test-electron = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-aider = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-amp = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-claude-agent-sdk = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-claude-agent-sdk-py = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-claude-code = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-up-claimed-name-gate-cline = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-codex = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-up-claimed-name-gate-continue = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-copilot-cli = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-crush = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-cursor-agent = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "core", row = "gate-group-07" }
+lin-up-claimed-name-gate-gemini-cli = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-goose = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-junie = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-omp = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-opencode = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+lin-up-claimed-name-gate-vscode-test-electron = { packet = "gate-group-07", cadence = "nightly", os = "linux", image = "full", row = "gate-group-07" }
+# gate-group-08: the class U claimed-name cells committing through the hook, fresh and upgrade
+lin-claimed-name-hook = { packet = "gate-group-08", cadence = "nightly", os = "linux", image = "core" }
+lin-up-claimed-name-hook = { packet = "gate-group-08", cadence = "nightly", os = "linux", image = "core" }
+# gate-group-09: the class U claimed-name cells driving claude-hook, fresh and upgrade
+lin-claimed-name-claude-hook = { packet = "gate-group-09", cadence = "nightly", os = "linux", image = "core" }
+lin-up-claimed-name-claude-hook = { packet = "gate-group-09", cadence = "nightly", os = "linux", image = "core" }
+# gate-group-04a: a depth-1 clone reads one commit of the marks history, says so, and refuses --enforce
+lin-depth1-checkout = { packet = "gate-group-04a", cadence = "nightly", os = "linux", image = "cells" }
+# m1-readers-03: an lcov lane's cov and add-tests over MCP, every harness, fresh and upgrade; the 0.8.1 cc-only Rust upgrade
+lin-lcov-aider = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-amp = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-claude-agent-sdk = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-claude-agent-sdk-py = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-claude-code = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-03" }
+lin-lcov-cline = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-codex = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-03" }
+lin-lcov-continue = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-copilot-cli = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-crush = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-cursor-agent = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-03" }
+lin-lcov-gemini-cli = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-goose = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-junie = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-omp = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-opencode = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-lcov-vscode-test-electron = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-aider = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-amp = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-claude-agent-sdk = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-claude-agent-sdk-py = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-claude-code = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-03" }
+lin-up-lcov-cline = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-codex = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-03" }
+lin-up-lcov-continue = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-copilot-cli = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-crush = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-cursor-agent = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-03" }
+lin-up-lcov-gemini-cli = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-goose = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-junie = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-omp = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-opencode = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+lin-up-lcov-vscode-test-electron = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-03" }
+"lin-up-0.8.1-cc-only-rust" = { packet = "m1-readers-03", cadence = "nightly", os = "linux", image = "core" }
+# m1-readers-11: `uvx crapkit score` on the candidate wheel over a committed tracefile, exit 6 above N
+lin-score-uvx = { packet = "m1-readers-11", cadence = "push", os = "linux", image = "core" }
+win-score-uvx = { packet = "m1-readers-11", cadence = "push", os = "windows" }
+# m1-readers-05: a cobertura lane's cov and add-tests over MCP, every harness, fresh and upgrade; the 0.8.1 cc-only C++ upgrade; a Windows absolute <source>
+lin-cobertura-aider = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-amp = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-claude-agent-sdk = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-claude-agent-sdk-py = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-claude-code = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-cobertura-cline = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-codex = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-cobertura-continue = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-copilot-cli = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-crush = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-cursor-agent = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-cobertura-gemini-cli = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-goose = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-junie = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-omp = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-opencode = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-cobertura-vscode-test-electron = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-aider = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-amp = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-claude-agent-sdk = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-claude-agent-sdk-py = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-claude-code = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-up-cobertura-cline = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-codex = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-up-cobertura-continue = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-copilot-cli = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-crush = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-cursor-agent = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-05" }
+lin-up-cobertura-gemini-cli = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-goose = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-junie = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-omp = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-opencode = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+lin-up-cobertura-vscode-test-electron = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-05" }
+"lin-up-0.8.1-cc-only-cpp" = { packet = "m1-readers-05", cadence = "nightly", os = "linux", image = "core" }
+win-cobertura-absolute-source = { packet = "m1-readers-05", cadence = "nightly", os = "windows", blocked = "windows-nightly-packet-unscheduled" }
+# m1-readers-06: a jacoco lane's cov and add-tests over MCP, every harness, fresh and upgrade; the 0.8.1 cc-only Java upgrade
+lin-jacoco-aider = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-amp = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-claude-agent-sdk = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-claude-agent-sdk-py = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-claude-code = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-jacoco-cline = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-codex = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-jacoco-continue = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-copilot-cli = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-crush = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-cursor-agent = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-jacoco-gemini-cli = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-goose = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-junie = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-omp = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-opencode = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-jacoco-vscode-test-electron = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-aider = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-amp = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-claude-agent-sdk = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-claude-agent-sdk-py = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-claude-code = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-up-jacoco-cline = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-codex = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-up-jacoco-continue = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-copilot-cli = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-crush = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-cursor-agent = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-06" }
+lin-up-jacoco-gemini-cli = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-goose = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-junie = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-omp = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-opencode = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+lin-up-jacoco-vscode-test-electron = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-06" }
+"lin-up-0.8.1-cc-only-java" = { packet = "m1-readers-06", cadence = "nightly", os = "linux", image = "core" }
+# m1-readers-07: a coverprofile lane's cov and add-tests over MCP, every harness, fresh and upgrade; the 0.8.1 cc-only Go upgrade, its flip and the scoped reseed
+lin-coverprofile-aider = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-amp = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-claude-agent-sdk = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-claude-agent-sdk-py = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-claude-code = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-coverprofile-cline = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-codex = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-coverprofile-continue = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-copilot-cli = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-crush = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-cursor-agent = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-coverprofile-gemini-cli = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-goose = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-junie = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-omp = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-opencode = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-coverprofile-vscode-test-electron = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-aider = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-amp = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-claude-agent-sdk = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-claude-agent-sdk-py = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-claude-code = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-up-coverprofile-cline = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-codex = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-up-coverprofile-continue = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-copilot-cli = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-crush = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-cursor-agent = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-07" }
+lin-up-coverprofile-gemini-cli = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-goose = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-junie = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-omp = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-opencode = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+lin-up-coverprofile-vscode-test-electron = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-07" }
+"lin-up-0.8.1-cc-only-go" = { packet = "m1-readers-07", cadence = "nightly", os = "linux", image = "core" }
+# m1-readers-04: init writes a Rust repo's lane commented and doctor notes the lcov reader, every harness fresh; the 0.8.1 upgrade keeps crapkit.toml
+lin-cc-only-reader-aider = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-amp = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-claude-agent-sdk = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-claude-agent-sdk-py = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-claude-code = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-04" }
+lin-cc-only-reader-cline = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-codex = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-04" }
+lin-cc-only-reader-continue = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-copilot-cli = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-crush = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-cursor-agent = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "core", row = "m1-readers-04" }
+lin-cc-only-reader-gemini-cli = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-goose = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-junie = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-omp = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-opencode = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+lin-cc-only-reader-vscode-test-electron = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "full", row = "m1-readers-04" }
+"lin-up-0.8.1-cc-only-reader" = { packet = "m1-readers-04", cadence = "nightly", os = "linux", image = "core" }
+
 # --- what blocks a cell or a job -------------------------------------------------
 # Each is work outside this packet (the kit, a cell no packet writes yet) or a
 # runner that cannot take the cell. Delete the entry, and the `blocked` keys
@@ -337,6 +799,7 @@ published-action-tag = { packet = "deploy-action", cadence = "published", job = 
 
 [gaps]
 host-cells-unwritten = "no packet writes lin-host-up-docker-0.7.6, lin-devcontainer, lin-codex-cloud-sim or lin-podman yet; weekly-host names only the last two, and a run whose cells do not exist collects nothing, so pytest exits 5"
+windows-nightly-packet-unscheduled = "nightly-windows-a and -b run one --packet each and name no 0.9.0 packet yet, since a run naming a packet whose module the tree lacks collects nothing and pytest exits 5; the ticket that adds one of these Windows cells' @cell adds its packet's run to nightly-windows-a or -b and drops the cell's `blocked` in the same change, and the last one deletes this gap"
 windows-linux-containers = "the windows-2025 runner's Docker runs Windows containers only, so no CI job can build the Linux product image docs-docker-user serves; its Windows half runs on a Windows machine with Docker Desktop"
 
 # --- deploy.yml's work ------------------------------------------------------------
@@ -472,7 +935,8 @@ harness = "core"
 runs = ["--native --os windows --cadence {cadence} --packet deploy-channels -n 4",
         "--native --os windows --cadence {cadence} --packet deploy-git -n 4",
         "--native --os windows --cadence {cadence} --packet deploy-upgrade -n 4",
-        "--native --os windows --cadence {cadence} --packet deploy-fixes -n 4"]
+        "--native --os windows --cadence {cadence} --packet deploy-fixes -n 4",
+        "--native --os windows --cadence {cadence} --packet mission-3 -n 4"]
 timeout = 60
 measured = 0
 
@@ -584,21 +1048,11 @@ measured = 0
 timeout = 10
 measured = 0
 
-# --- the pull-request scope ---------------------------------------------------------
-# A pull request runs the nightly set when its diff touches one of these paths,
-# and every cadence (the release set) when it carries the label.
+# --- the schedules ------------------------------------------------------------------
+# The cadence deploy.yml's scope job runs for each cron of its schedule trigger.
 
 [scope]
-label = "deploy-full"
 schedules = { "17 6 * * *" = "nightly", "17 7 * * 1" = "weekly" }
-paths = [
-    "README.md", "CHANGELOG.md", "AGENTS.md", "Dockerfile", ".dockerignore", "action.yml", "pyproject.toml",
-    "server.json", ".pre-commit-hooks.yaml", ".claude-plugin/", "plugin/", "git-hooks/", "docs/",
-    "tools/action/", "tools/deploy/", "tools/release/", "tests/deploy/", ".github/workflows/deploy.yml",
-    "src/crapkit/__init__.py", "src/crapkit/__main__.py", "src/crapkit/cli/", "src/crapkit/doctor.py",
-    "src/crapkit/scaffold.py", "src/crapkit/hook.py", "src/crapkit/merge.py", "src/crapkit/mcp_server.py",
-    "src/crapkit/_mcp_stdio.py", "src/crapkit/store.py", "src/crapkit/ratchetfile.py",
-]
 
 # --- channels -----------------------------------------------------------------------
 # Each way crapkit reaches a machine or a repo, and the cells that take it.
@@ -618,8 +1072,8 @@ paths = [
 "PyPI, online" = ["lin-online-pypi"]
 "Docker product image" = ["lin-host-docker-product", "lin-host-up-docker-0.7.6", "docs-docker-user"]
 "MCP registry entry" = ["lin-registry-entry", "published-registry"]
-"Claude Code marketplace" = ["lin-claude-plugin-fresh", "lin-up-claude-plugin-0.7.6", "lin-claude-plugin-ahead", "lin-main-between-releases", "lin-marketplace-pinned-tag", "lin-up-claude-plugin-0.4.2", "lin-up-claude-plugin-0.5.1", "win-uvtool-claude-plugin", "lin-online-marketplaces"]
-"Codex marketplace" = ["lin-codex-plugin-fresh", "lin-up-codex-plugin-0.7.6", "lin-codex-autoupgrade", "win-codex-plugin", "lin-online-marketplaces", "lin-codex-plugin-manifest", "win-codex-plugin-manifest", "lin-codex-onboard-explicit", "lin-codex-plugin-hooks-0.8.0"]
+"Claude Code marketplace" = ["lin-claude-plugin-fresh", "lin-up-claude-plugin-0.7.6", "lin-claude-plugin-ahead", "lin-main-between-releases", "lin-marketplace-pinned-tag", "lin-up-claude-plugin-0.4.2", "lin-up-claude-plugin-0.5.1", "win-uvtool-claude-plugin", "lin-online-marketplaces", "lin-flip-route-claude-code", "lin-up-flip-route-claude-code", "lin-flip-route-cursor-agent", "lin-up-flip-route-cursor-agent"]
+"Codex marketplace" = ["lin-codex-plugin-fresh", "lin-up-codex-plugin-0.7.6", "lin-codex-autoupgrade", "win-codex-plugin", "lin-online-marketplaces", "lin-codex-plugin-manifest", "win-codex-plugin-manifest", "lin-codex-onboard-explicit", "lin-codex-plugin-hooks-0.8.0", "lin-flip-route-codex", "lin-up-flip-route-codex"]
 "Copilot CLI plugin" = ["lin-copilot-plugin-hooks"]
 "skills copy" = ["lin-skills-copy"]
 "claude mcp add" = ["lin-claude-mcp-scopes"]
@@ -645,11 +1099,11 @@ paths = [
 # The 27 harness profiles, then the tools that drive a surface without an agent.
 
 [harnesses]
-claude-code = ["lin-claude-plugin-fresh", "lin-claude-mcp-scopes", "lin-call-claude", "lin-claude-hook-stub", "lin-plugin-floors", "win-uvtool-claude-plugin", "win-claude-hook-stub", "lin-profiles-sim", "lin-hooks-sim", "lin-plugin-floor-doctor", "lin-plugin-validate-strict", "win-plugin-validate-strict", "docs-plugin-floors"]
+claude-code = ["lin-claude-plugin-fresh", "lin-claude-mcp-scopes", "lin-call-claude", "lin-claude-hook-stub", "lin-plugin-floors", "win-uvtool-claude-plugin", "win-claude-hook-stub", "lin-profiles-sim", "lin-hooks-sim", "lin-plugin-floor-doctor", "lin-plugin-validate-strict", "win-plugin-validate-strict", "docs-plugin-floors", "lin-flip-route-claude-code", "lin-up-flip-route-claude-code"]
 claude-desktop = ["lin-profiles-sim", "win-profiles-sim"]
 claude-agent-sdk = ["lin-agent-sdk", "lin-agent-sdk-py"]
-codex = ["lin-codex-plugin-fresh", "lin-codex-mcp-add", "lin-codex-autoupgrade", "lin-up-codex-plugin-0.7.6", "lin-up-codex-tools-0.5.1", "win-codex-plugin", "lin-codex-plugin-manifest", "win-codex-plugin-manifest", "lin-codex-onboard-explicit", "lin-codex-plugin-hooks-0.8.0", "docs-codex-skills"]
-cursor = ["lin-cursor-cli", "lin-up-cursor-0.7.6", "lin-cursor-claude-import", "win-cursor-cli"]
+codex = ["lin-codex-plugin-fresh", "lin-codex-mcp-add", "lin-codex-autoupgrade", "lin-up-codex-plugin-0.7.6", "lin-up-codex-tools-0.5.1", "win-codex-plugin", "lin-codex-plugin-manifest", "win-codex-plugin-manifest", "lin-codex-onboard-explicit", "lin-codex-plugin-hooks-0.8.0", "docs-codex-skills", "lin-flip-route-codex", "lin-up-flip-route-codex"]
+cursor = ["lin-cursor-cli", "lin-up-cursor-0.7.6", "lin-cursor-claude-import", "win-cursor-cli", "lin-flip-route-cursor-agent", "lin-up-flip-route-cursor-agent"]
 windsurf = ["lin-profiles-sim", "calibrate-all"]
 vscode-copilot = ["lin-vscode-electron", "lin-profiles-sim", "lin-hooks-sim"]
 copilot-cli = ["lin-copilot-cli", "lin-call-copilot", "lin-copilot-plugin-hooks", "win-real-cli"]
@@ -761,7 +1215,7 @@ devcontainers-cli = ["lin-devcontainer"]
 "MCP tool renames" = ["lin-up-pyextra-0.5.1", "lin-up-codex-tools-0.5.1", "lin-mcp-renamed-tools", "win-mcp-renamed-tools", "lin-up-pyextra-0.5.1-renames", "win-up-pyextra-0.5.1-renames"]
 "PostToolUse hook, Edit and Write" = ["lin-claude-hook-stub", "win-claude-hook-stub", "lin-hooks-sim"]
 "PostToolUse hook, Bash matcher" = ["lin-claude-hook-stub", "lin-up-bash-matcher-0.7.6"]
-"skills" = ["lin-onboard-skill", "lin-recover-skill", "lin-skills-copy", "docs-codex-skills", "lin-codex-onboard-explicit"]
+"skills" = ["lin-onboard-skill", "lin-recover-skill", "lin-skills-copy", "docs-codex-skills", "lin-codex-onboard-explicit", "lin-flip-route-claude-code", "lin-up-flip-route-claude-code", "lin-flip-route-codex", "lin-up-flip-route-codex", "lin-flip-route-cursor-agent", "lin-up-flip-route-cursor-agent"]
 "Action verdict" = ["gha-action-consumer", "gha-act-delta", "gha-action-windows"]
 "Action comment" = ["gha-action-readonly-token", "gha-act-readonly"]
 "container guard" = ["lin-pip-start-py311", "lin-route4-ci", "lin-precommit", "lin-devcontainer", "lin-codex-cloud-sim", "gha-action-container-job", "lin-doctor-container-warn", "win-doctor-container-warn"]
@@ -777,6 +1231,7 @@ devcontainers-cli = ["lin-devcontainer"]
 "repeatability" = ["lin-repeat", "win-repeat", "lin-clock", "lock-drift"]
 "plugin manifest validation" = ["lin-plugin-validate-strict", "win-plugin-validate-strict"]
 "release check" = ["lin-release-check-candidate", "win-release-check-candidate"]
+"ratchet report in a depth-1 clone" = ["lin-depth1-checkout"]
 
 # --- channel and consumer pairs ------------------------------------------------------
 # What finds crapkit when a consumer starts it: a git hook, the merge driver,
@@ -1035,13 +1490,18 @@ exclude = "reference: how a lane is read and refused; tests/e2e drives each case
 
 [[doc]]
 page = "docs/ratchet.md"
-headings = ["The commit gate skips marked functions"]
+headings = ["The commit gate refuses a marked function whose ccn passed its mark"]
 cells = ["lin-uvtool-ts-quickstart"]
 
 [[doc]]
 page = "docs/ratchet.md"
 headings = ["Seeding", "How `verify` uses the ratchet", "Adoption checklist"]
 cells = ["lin-pip-start-py311", "lin-follow-hints"]
+
+[[doc]]
+page = "docs/ratchet.md"
+headings = ["Repairing one scope: `--scope`"]
+cells = ["lin-up-pip-0.8.1-seed-converts"]
 
 [[doc]]
 page = "docs/ratchet.md"
@@ -1082,6 +1542,11 @@ cells = ["lin-override-commit"]
 page = "docs/ratchet.md"
 headings = ["Naming the run to seed from", "Moving marks by hand", "Reporting the burn-down", "The debt policy"]
 exclude = "reference: ratchet subcommands no install or upgrade path runs"
+
+[[doc]]
+page = "docs/ratchet.md"
+headings = ["A signature change keeps its mark"]
+exclude = "reference: the signature-carry probe; tests/e2e/test_signature_carry_e2e.py drives rescore --gate, check_gate and verify over it"
 
 [[doc]]
 page = "docs/resources.md"

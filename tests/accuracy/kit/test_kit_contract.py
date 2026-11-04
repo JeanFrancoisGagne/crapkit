@@ -29,10 +29,17 @@ REPO = TESTS.parent
 TOOLS = REPO / "tools" / "accuracy"
 DATA_DIRS = frozenset({"fixtures", "small", "recorded", "probes", "goldens", "__pycache__",
                        "node_modules"})
-# The plan shares 480 serial seconds among the ten packets; the kit's own push
-# checks (24 s: the contract, the run tool, the lock) come on top of those shares.
-# 504 s is about 2 min at -n 4; the nightly run judges the real job time.
-PUSH_BUDGET_SECONDS = 504
+# The plan shared 480 serial push seconds among ten packets, 48 s each; a packet
+# added later brings the same share. The kit's own push checks (24 s: the contract,
+# the run tool, the lock) come on top, so eleven packets give 552 s, about 2.3 min
+# at -n 4; the nightly run judges the real job time.
+PACKET_PUSH_SECONDS = 48
+KIT_PUSH_SECONDS = 24
+
+
+def push_budget(root: Path = ACCURACY) -> int:
+    """Serial push seconds: 48 for each packet (a directory with a calcs.tsv) plus the kit's 24."""
+    return PACKET_PUSH_SECONDS * len(list(root.glob("*/calcs.tsv"))) + KIT_PUSH_SECONDS
 
 
 def _rel(path: Path) -> str:
@@ -447,9 +454,20 @@ def test_declared_push_seconds_fit_the_budget():
     run = _run_tool()
     push = run.selected(run.load_checks(), "push", None, "linux")
 
-    overrun = budget_overrun(push, PUSH_BUDGET_SECONDS)
+    overrun = budget_overrun(push, push_budget())
 
     assert overrun is None, overrun
+
+
+def test_a_new_packet_brings_its_share_of_the_push_budget(tmp_path):
+    """A packet is a directory holding a calcs.tsv; the kit holds none and gets no share."""
+    packets = sorted(path.parent.name for path in ACCURACY.glob("*/calcs.tsv"))
+    for name in [*packets, "kit", "twelfth"]:
+        (tmp_path / name).mkdir()
+    for name in [*packets, "twelfth"]:
+        (tmp_path / name / "calcs.tsv").write_bytes(b"")
+
+    assert push_budget(tmp_path) - push_budget() == 48
 
 
 def _check_targets() -> list[Path]:

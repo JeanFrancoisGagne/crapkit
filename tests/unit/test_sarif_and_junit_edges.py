@@ -13,11 +13,12 @@ import pytest
 from crapkit import junitparse, sarif
 from crapkit.errors import ToolError
 from crapkit.score import ScoredRow
-from crapkit.verify import RatchetRegression
+from crapkit.verify import RatchetRegression, Verdict, sarif_results
 
 
 def test_a_ratchet_regression_is_an_error_on_the_file_s_first_line():
-    assert sarif.regression_results([RatchetRegression("src/a b.py", "f( )", 12.0, 13.5)]) == [{
+    regression = RatchetRegression("src/a b.py", "f( )", 12.0, 13.5)
+    assert sarif_results(Verdict.passing()._replace(ratchet_regressions=[regression])) == [{
         "ruleId": "crapkit/ratchet-regression", "level": "error",
         "message": {"text": "f( ): recorded 12.0 -> fresh 13.5"},
         "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/a%20b.py"},

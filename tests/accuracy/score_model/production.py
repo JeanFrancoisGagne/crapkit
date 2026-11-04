@@ -69,7 +69,7 @@ def scored_row(scope: str, path: str, name: str, start: int, end: int, ccn: int,
 def fn_coverage(name: str, start: int, end: int, *, invoked: bool, branches: tuple = (0, 0),
                 statements: tuple = (0, 0)):
     """FnCoverage from (covered, total) pairs."""
-    return make("coverage_istanbul:FnCoverage", name=name, start=start, end=end,
+    return make("score:FnCoverage", name=name, start=start, end=end,
                 invoked=invoked, branches_total=branches[1], branches_covered=branches[0],
                 statements_total=statements[1], statements_covered=statements[0])
 

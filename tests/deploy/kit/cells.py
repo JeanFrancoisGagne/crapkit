@@ -14,15 +14,24 @@ and run in every job; `--cell` or `--packet` narrows a run to the cells it
 names, and `--packet deploy-kit` runs the kit's tests alone. `--shard K/N`
 then keeps part K of N of what is left, kit tests included.
 
-JUnit properties: every field above plus packet, the image digest and the
-toolchain hash, written by the autouse fixture in tests/deploy/conftest.py.
+A test of an every-harness row (tests/deploy/MAP.toml [every_harness]) names
+its row with `row="<entry key>"`, and its [cell] entry carries the same `row`.
+A nightly run drops the items of a `core` row on the full image and the images
+built on it (`nightly_keeps`); every other cadence keeps them.
+
+JUnit properties: every field above plus packet and row when set, the image
+digest and the toolchain hash, written by the autouse fixture in
+tests/deploy/conftest.py.
 """
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
+import importlib.util
 import os
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -81,13 +90,13 @@ def markers(meta: dict) -> list:
 
 def cell(cell_id: str, *, channel: str, harness: str, scenario: str, use_cases: str, os: str | tuple,
          image: str | None = "core", cadence: str = "push", real_cli: bool = True, packet: str | None = None,
-         nonblocking: bool = False, docker_host: bool = False, online: bool = False):
-    """Mark a test as the deploy cell `cell_id`."""
+         nonblocking: bool = False, docker_host: bool = False, online: bool = False, row: str | None = None):
+    """Mark a test as the deploy cell `cell_id`; `row` is its every-harness row's key in MAP.toml."""
     if image is not None:
         _unknown([image], IMAGES, "image")
     meta = {"id": cell_id, "channel": channel, "harness": harness, "scenario": scenario,
             "use_cases": use_cases, "os": os, "image": image, "cadence": cadence, "real_cli": real_cli,
-            "packet": packet, "nonblocking": nonblocking, "docker_host": docker_host, "online": online}
+            "packet": packet, "nonblocking": nonblocking, "docker_host": docker_host, "online": online, "row": row}
 
     def apply(function):
         for mark in markers(meta):
@@ -124,13 +133,60 @@ def _text(value) -> str:
 
 def properties(meta: dict) -> list[tuple[str, str]]:
     """The JUnit <property> pairs for one cell: every ALWAYS field, then any
-    other field that is set (packet, nonblocking, docker_host, online)."""
+    other field that is set (packet, nonblocking, docker_host, online, row)."""
     pairs = [(f"cell_{key}", _text(meta.get(key))) for key in ALWAYS]
     pairs += [(f"cell_{key}", _text(value)) for key, value in meta.items()
               if key not in ALWAYS and value not in (None, False, "")]
     pairs.append(("image_digest", os.environ.get("CRAPKIT_DEPLOY_IMAGE_DIGEST", "native")))
     pairs.append(("toolchain_hash", toolchain_hash()))
     return pairs
+
+
+# --- the nightly run's every-harness rows ---------------------------------------
+
+MAP_TOML = Path(__file__).resolve().parents[1] / "MAP.toml"
+PINS_PY = Path(__file__).resolve().parents[3] / "tools" / "deploy" / "pins.py"
+
+
+def every_harness(path: Path = MAP_TOML) -> dict[str, dict]:
+    """MAP.toml's [every_harness]: each row's key and its nightly tag."""
+    return tomllib.loads(path.read_text(encoding="utf-8")).get("every_harness", {})
+
+
+@functools.cache
+def image_chain() -> dict[str, list[str]]:
+    """tools/deploy/pins.py's IMAGE_CHAIN: each image and the images it is built on."""
+    spec = importlib.util.spec_from_file_location("deploy_cells_pins", PINS_PY)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.IMAGE_CHAIN
+
+
+def _row_tag(meta: dict, every_harness: dict) -> str | None:
+    """The nightly tag of the item's row, None for an item with no row. A row
+    MAP.toml lacks is refused: the ticket that adds the row adds its entry."""
+    row = meta.get("row")
+    if row is None:
+        return None
+    if row not in every_harness:
+        raise ValueError(f"@cell {meta.get('id')} names row {row!r}, which tests/deploy/MAP.toml's [every_harness] "
+                         f"lacks: add the row's entry, nightly = \"all\" or \"core\", in the change that adds its cells")
+    return every_harness[row]["nightly"]
+
+
+def _on_full(image: str | None) -> bool:
+    """The item runs on the full image or one built on it, where the 14 non-core harnesses are."""
+    return image is not None and "full" in image_chain()[image]
+
+
+def nightly_keeps(meta: dict | None, cadence: str | None, every_harness: dict) -> bool:
+    """Whether a run of this cadence keeps the item. A nightly run drops a
+    `core` row's items on the full image and those built on it; it keeps an
+    item with no row, an `all` row's items, core-image and native items, and
+    every other cadence keeps every item, so the release run takes every row
+    on every harness. An unknown row raises at every cadence."""
+    tag = _row_tag(meta or {}, every_harness)
+    return not (cadence == "nightly" and tag == "core" and _on_full(meta.get("image")))
 
 
 def partition(items: list, keep_item) -> tuple[list, list]:

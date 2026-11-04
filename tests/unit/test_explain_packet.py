@@ -15,13 +15,16 @@ cmd_explain takes a namespace rather than running through the CLI, because the
 handler is the seam that decides what the flag does.
 """
 import argparse
+import itertools
 import json
 import subprocess
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 
-from crapkit.cli import reports
+from crapkit import mcp_server
+from crapkit.cli import main, reports
 from crapkit.cli.reports import cmd_explain
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
@@ -258,6 +261,174 @@ def test_the_mark_text_reads_the_same_as_it_always_did(repo, capsys):
 
     assert "  mark: 12.5000 (committed high-water mark)\n" in out
     assert "  mark: none (below target or never marked)\n" in out
+
+
+# --- a mark a signature edit carried -------------------------------------------
+
+KEYED = "# crapkit-keys=1\n"
+
+
+def _write_keyed(repo: Path, *rows: tuple[str, float]) -> None:
+    """A marks file whose key line proves its key identity, so a mark can carry."""
+    _write_ratchet(repo, *rows)
+    path = repo / "crapkit-ratchet.tsv"
+    path.write_text(KEYED + path.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+
+
+def _mark_of(repo: Path, capsys, fragment: str) -> tuple:
+    entry = _named(_payload(repo, capsys), fragment)
+    return entry["ratchet_mark"], entry["carried_from"]
+
+
+def test_a_mark_whose_key_left_the_file_reads_as_carried_from_that_key(repo, capsys):
+    """`guarded( a )` left the file and `guarded( a , b )` is the one unmarked
+    function of the bare name `guarded`: keys.resolve carries the mark to it."""
+    _write_keyed(repo, ("guarded( a )", 12.5))
+
+    assert _mark_of(repo, capsys, "guarded( ") == (12.5, "guarded( a )")
+    assert _mark_of(repo, capsys, "guarded_twin") == (None, None)
+
+
+def test_the_text_names_the_key_a_carried_mark_was_recorded_under(repo, capsys):
+    _write_keyed(repo, ("guarded( a )", 12.5))
+
+    out = _explain(repo, capsys)
+
+    assert "  mark: 12.5000 (committed high-water mark) (carried from guarded( a ))\n" in out
+    assert out.isascii()
+
+
+def test_a_mark_under_the_function_s_own_key_names_no_carry(repo, capsys):
+    _write_keyed(repo, ("guarded( a , b )", 12.5))
+
+    assert _mark_of(repo, capsys, "guarded( ") == (12.5, None)
+    assert "(carried from" not in _explain(repo, capsys)
+
+
+def test_no_marks_file_keeps_its_note_and_carries_nothing(repo, capsys):
+    entry = _named(_payload(repo, capsys), "guarded( ")
+
+    assert (entry["ratchet_mark"], entry["carried_from"], entry["ratchet_mark_note"]) == (
+        None, None, "no ratchet file")
+
+
+def test_two_marks_that_left_under_one_bare_name_carry_neither(repo, capsys):
+    _write_keyed(repo, ("guarded( a )", 12.5), ("guarded( x )", 9.0))
+
+    assert _mark_of(repo, capsys, "guarded( ") == (None, None)
+
+
+def test_a_marks_file_whose_key_identity_is_unproved_carries_nothing(repo, capsys):
+    """No key line, and no row holds `guarded( a )`: the file cannot prove what
+    its keys named, so the mark stays under its own key."""
+    _write_ratchet(repo, ("guarded( a )", 12.5))
+
+    assert _mark_of(repo, capsys, "guarded( ") == (None, None)
+
+
+CALLBACKS = (("(anonymous)", 1), ("(anonymous)", 1), ("f( )", 5), ("(anonymous) ( x )", 9))
+OVERLOADS = (("f( a )", 1), ("f( a )", 1), ("f( )", 5))
+SIBLING = (*OVERLOADS, ("f( b )", 9))
+
+
+def _legacy_collision(tmp_path: Path, marks: tuple[str, ...], spans=CALLBACKS) -> Path:
+    """SPANS as one run of src/app.ts with no recorded position: by default two
+    callbacks share line 1, `f( )` opens alone on line 5 and a third callback
+    on line 9. A keyed marks file holds MARKS, one TSV row each."""
+    root = tmp_path / "repo"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "app.ts").write_text("//\n" * 20, encoding="utf-8")
+    (root / "crapkit.toml").write_text(
+        '[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src"]\n'
+        'languages = ["typescript"]\ncoverage_optional = true\n', encoding="utf-8")
+    body = "".join(f"{mark}\n" for mark in marks)
+    (root / "crapkit-ratchet.tsv").write_text(f"{KEYED}path\tlong_name\tcrap\n{body}",
+                                              encoding="utf-8", newline="\n")
+    (root / ".crapkit").mkdir()
+    store = SnapshotStore(root / ".crapkit" / "crap.sqlite")
+    rows = [ScoredRow("src", "src/app.ts", name, start, start, 3, 3, 3, 1, 0, 0, 0.0,
+                      "untested", 12.0, "add-tests")
+            for name, start in spans]
+    with closing(store._conn):
+        store.write_run(commit="a" * 40, tool_versions={}, rows=rows)
+        if "occurrence" in {r[1] for r in store._conn.execute("PRAGMA table_info(functions)")}:
+            store._conn.execute("ALTER TABLE functions DROP COLUMN occurrence")
+            store._conn.commit()
+    return root
+
+
+@pytest.mark.parametrize("name, mark, spans, read", [
+    ("f", "src/other.ts\tg( )\t9.0", CALLBACKS, (None, None)),
+    ("f", "src/app.ts\tf( a )\t7.0", CALLBACKS, (7.0, "f( a )")),
+    ("(anonymous) ( x )", "src/app.ts\tf( a )\t7.0", CALLBACKS, (None, None)),
+    ("f( )", "src/other.ts\tg( )\t9.0", OVERLOADS, (None, None)),
+    ("f( )", "src/app.ts\tg( )\t9.0", OVERLOADS, (None, None)),
+], ids=["mark-in-another-file", "mark-carried-to-f", "anonymous-never-carries",
+        "overload-collision-mark-in-another-file", "overload-collision-mark-under-g"])
+def test_a_legacy_collision_under_another_name_refuses_no_mark_read(tmp_path, capsys,
+                                                                    name, mark, spans, read):
+    """The line-1 collision refuses neither explain nor get_function_history,
+    the server's own spawn included, for a name outside it. A mark that left
+    under f still carries to f when only anonymous functions collide, and an
+    anonymous function never carries, so it reads no other one's key."""
+    root = _legacy_collision(tmp_path, (mark,), spans)
+
+    assert main(["explain", "src/app.ts", name, "--json", "--repo", str(root)]) == 0
+    (entry,) = json.loads(capsys.readouterr().out)["functions"]
+    result = mcp_server._call_tool(root, "get_function_history",
+                                   {"path": "src/app.ts", "name": name})
+    assert result["isError"] is False, result["content"][0]["text"][-600:]
+    (served,) = result["structuredContent"]["functions"]
+    assert (entry["ratchet_mark"], entry["carried_from"]) == read
+    assert (served["ratchet_mark"], served["carried_from"]) == read
+
+
+# Marks around the overload collision: f( a ) and its twin key on the colliding
+# long name, f( b ) on a held sibling (a mark that left when the run holds no
+# f( b )), and f( c ), which left the file under the bare name f.
+OVERLOAD_MARKS = {"f( a )": 7.0, "f( a )#2": 6.5, "f( b )": 9.0, "f( c )": 5.0}
+MARK_SETS = [chosen for size in range(len(OVERLOAD_MARKS) + 1)
+             for chosen in itertools.combinations(OVERLOAD_MARKS, size)]
+INSIDE = ("f( a )", "f( a )#2")
+
+
+def _read_through_both(root: Path, capsys, name: str) -> tuple:
+    """explain --json and get_function_history for NAME, the tool's CLI run in
+    this process: each as (exit, (ratchet_mark, carried_from) or None)."""
+    def run_cli(tool, arguments, repo):
+        return _read_cli(capsys, mcp_server.build_argv(tool, arguments, repo))
+
+    return (_read_cli(capsys, ["explain", "src/app.ts", name, "--json", "--repo", str(root)]),
+            mcp_server._call_tool(root, "get_function_history",
+                                  {"path": "src/app.ts", "name": name}, run_cli=run_cli))
+
+
+def _read_cli(capsys, argv: list[str]) -> tuple:
+    code = main(argv)
+    out = capsys.readouterr().out
+    if code:
+        return code, None
+    (entry,) = json.loads(out)["functions"]
+    return code, (entry["ratchet_mark"], entry["carried_from"])
+
+
+@pytest.mark.parametrize("spans", [OVERLOADS, SIBLING], ids=["f-b-absent", "f-b-held"])
+@pytest.mark.parametrize("marks", MARK_SETS, ids=lambda marks: "+".join(marks) or "no-marks")
+def test_only_a_name_inside_the_legacy_collision_refuses_and_none_carries_past_it(
+        tmp_path, capsys, spans, marks):
+    """Every set of marks around the `f( a )` collision. A name outside it
+    reads through explain and get_function_history as the merge base read it,
+    its own key's mark, with no carry: the collision leaves the carry of the
+    bare name f unresolvable, so no mark carries and nothing keys it. A name
+    inside it refuses, as the merge base refused it."""
+    root = _legacy_collision(tmp_path, tuple(f"src/app.ts\t{n}\t{OVERLOAD_MARKS[n]}"
+                                             for n in marks), spans)
+    outside = sorted({name for name, _ in spans} - {"f( a )"})
+    read = {name: _read_through_both(root, capsys, name) for name in [*outside, *INSIDE]}
+
+    own = {name: (0, (OVERLOAD_MARKS[name] if name in marks else None, None)) for name in outside}
+    refused = dict.fromkeys(INSIDE, (5, None))
+    assert read == {name: (answer, answer) for name, answer in {**own, **refused}.items()}
 
 
 def test_json_carries_the_dark_lines_as_null_plus_the_reason(repo, capsys):

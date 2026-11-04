@@ -47,7 +47,12 @@ def _slug(title: str) -> str:
 # --- the order of the page (da-33) -------------------------------------------------
 
 def test_the_steps_are_the_first_section_after_the_installer_table():
-    assert _headings()[1] == STEPS
+    """While the next release is built, its section and subsections may sit above the steps."""
+    heads = _headings()[1:]
+    if re.fullmatch(r"## Upgrading to \d+\.\d+\.\d+", heads[0]):
+        heads = [head for head in heads[1:] if not head.startswith("###")]
+
+    assert heads[0] == STEPS
 
 
 def test_each_step_links_a_heading_on_the_page_and_holds_no_fence():

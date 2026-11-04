@@ -11,8 +11,8 @@ import math
 import pytest
 
 from crapkit import score
-from crapkit.coverage_istanbul import FnCoverage
-from crapkit.score import ScoredRow, overlay_stale_coverage, parse_scored_row, score_rows
+from crapkit.score import (FnCoverage, ScoredRow, overlay_stale_coverage, parse_scored_row,
+                           score_rows)
 from crapkit.snapshot import InventoryRow
 
 

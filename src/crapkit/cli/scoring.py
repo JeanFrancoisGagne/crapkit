@@ -7,14 +7,18 @@ from __future__ import annotations
 
 import argparse
 import sys
+from functools import cache, partial
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from .. import __version__
 from ..cache import merged_cache
-from ..errors import ConfigError, CrapkitError, GitError, ToolError
+from ..errors import UNREAD_NAME_REASON, ConfigError, CrapkitError, GitError, ToolError
+from ..gate import WHOLE, ChangedFile, CrapBound, Function, GateResult, Unread, UnreadableName, judge
+from ..gitpaths import shown
 from ..invariants import check_rows
 from ..gitio import GitFacts, ls_files
+from ..keys import MarkIndex
 from ..invocation import _self
 from ..repopath import typed_path
 from ..snapshot import build_inventory_rows, tsv_lines
@@ -26,6 +30,9 @@ from ._shared import (_analysis_tools, _command_root, _emit_findings, _file_size
                       _print_unread, _ratchet_entries, _refuse_unwritable_outputs,
                       _repo_out_path, _say_left_out, _scan, _scored_arguments, _stand,
                       _unreadable_json, _write_tsv)
+
+if TYPE_CHECKING:
+    from ..verify import GateViolation
 
 
 def _tracked_files(files_by_scope: dict) -> list[str]:
@@ -120,19 +127,34 @@ def _warn_empty_scopes(cfg, empty: dict[str, int]) -> None:
             print(_empty_scope_line(scope, empty[scope.name]), file=sys.stderr)
 
 
+def _run_versions(cfg, lizard_version: str) -> dict:
+    """The tool_versions a run records: the three keys verify --json prints, and
+    the store-only analysis number per language, reader number per parser, and
+    each scope's stamp (`ratchet.running_stamp`)."""
+    from ..analyze import ANALYSIS_VERSION, ANALYSIS_VERSIONS
+    from ..coverage_format import READER_VERSIONS
+    from ..ratchet import running_stamp
+
+    return {"crapkit": __version__, "lizard": lizard_version,
+            "analysis_version": str(ANALYSIS_VERSION),
+            "analysis_versions": dict(ANALYSIS_VERSIONS), "reader_versions": dict(READER_VERSIONS),
+            "scope_stamps": {name: stamp._asdict()
+                             for name, stamp in running_stamp(cfg).scopes.items()}}
+
+
 def _build_inventory(root: Path, cfg, git=None) -> tuple[str, list, _Corpus, int, dict]:
     """Shared by inventory/coverage: returns (commit, rows, corpus, cache_hits, tool_versions)."""
     lizard, *_ = _analysis_tools()
-    from ..analyze import ANALYSIS_VERSION, unread_reasons
-    commit = (git or GitFacts(root)).head_commit()
-    universe = _scan(root, ls_files(root), cfg)
+    from ..analyze import unread_reasons
+    facts = git or GitFacts(root)
+    commit = facts.head_commit()
+    universe = _scan(root, list(facts.tracked_files()), cfg)
     _say_left_out(universe.unreadable)
     flat = _present_on_disk(root, _tracked_files(universe.by_scope))
     records_by_path, cache_hits = _analyzed_corpus(
         root, root / ".crapkit" / "cache.json", flat, _analysis_workers(cfg), cfg.analysis_worker_budget)
     rows = build_inventory_rows(_records_by_scope(universe.by_scope, records_by_path))
-    tool_versions = {"crapkit": __version__, "lizard": lizard.version,
-                     "analysis_version": str(ANALYSIS_VERSION)}
+    tool_versions = _run_versions(cfg, lizard.version)
     unread = unread_reasons(records_by_path)
     empty = _empty_scopes(cfg, universe.by_scope, unread)
     _warn_empty_scopes(cfg, empty)
@@ -288,10 +310,13 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
     """Fold the outcomes back together in DECLARATION order, whatever order they
     finished in, and persist every stamp in one write: the fresh stamps of the
     lanes that succeeded, and the refusal each failed lane's error carries for
-    the artifact its attempt left unwritten."""
+    the artifact its attempt left unwritten. Each lane's FileEvidence joins
+    evidence_by_path as its own entry under the path: score_rows joins every
+    lane on its own and never unions their hits."""
     from ..lanes import refusal_stamp, write_stamps
 
     coverage_by_path: dict[str, list] = {}
+    evidence_by_path: dict[str, list] = {}
     provenance: dict[str, dict] = {}
     lane_errors: dict[str, str] = {}
     stamps: dict[str, dict] = {}
@@ -303,14 +328,22 @@ def _collect_lanes(root: Path, lanes, outcomes: dict):
             print(f"crapkit: lane {lane.name!r} FAILED: {error}", file=sys.stderr)
             stamps.update(refusal_stamp(root, lane, error))
             continue
-        for path, fns in outcome.coverage.items():
-            coverage_by_path.setdefault(path, []).extend(fns)
+        _gather(coverage_by_path, outcome, evidence_by_path)
         provenance[lane.name] = outcome.provenance
         stamps[lane.artifact] = outcome.stamp
         succeeded.append(lane)
     write_stamps(root, stamps)
     _refuse_all_failed(lanes, lane_errors, succeeded)
-    return coverage_by_path, provenance, lane_errors, succeeded
+    return coverage_by_path, provenance, lane_errors, succeeded, evidence_by_path
+
+
+def _gather(coverage_by_path: dict, outcome, evidence_by_path: dict) -> None:
+    """One lane's function records onto each path's list, and its evidence as
+    one more entry on each path's."""
+    for path, fns in outcome.coverage.items():
+        coverage_by_path.setdefault(path, []).extend(fns)
+    for path, evidence in outcome.evidence.items():
+        evidence_by_path.setdefault(path, []).append(evidence)
 
 
 def _run_lanes(root: Path, lanes, reuse_artifacts: bool, scope_paths: dict | None = None,
@@ -385,7 +418,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
     sources = _content_record(root, rows)
     dead_lines = DeadLineFold()
 
-    coverage_by_path, provenance, lane_errors, succeeded = _run_lanes(
+    coverage_by_path, provenance, lane_errors, succeeded, evidence_by_path = _run_lanes(
         root, lanes, reuse_artifacts, cfg.scope_paths, reuse_unchanged,
         cfg.max_parallel_lanes, git, dead_lines)
 
@@ -396,7 +429,7 @@ def _scored_run(root: Path, cfg, lanes, *, reuse_artifacts: bool, reuse_unchange
     scored = score_rows(rows, coverage_by_path, lane_scopes=lane_scopes, target=cfg.target,
                         scope_targets=cfg.scope_targets,
                         cc_only_scopes=cfg.coverage_optional_scopes,
-                        shared_spans=shared_spans)
+                        shared_spans=shared_spans, evidence_by_path=evidence_by_path)
     _note_shared_spans(shared_spans, cfg)
     return _ScoredRun(commit, scored, provenance, lane_errors, set(failure_ids(provenance)),
                       tool_versions, corpus, cache_hits, dead_lines, sources)
@@ -823,6 +856,30 @@ def _rescore_overlay(store: SnapshotStore, latest: dict, rows: list, flat: list,
                                   baseline_run_id=latest["id"], unjoined=unjoined)
 
 
+class _Overlay(NamedTuple):
+    """The rescored rows over the baseline's coverage, and the rows whose cov
+    no measurement stands behind."""
+    rows: list
+    unjoined: set
+
+
+def _renamed(rows, names: dict) -> list:
+    """ROWS with each (path, long_name) that NAMES holds under the name it maps to."""
+    return [r._replace(long_name=names.get((r.path, r.long_name), r.long_name)) for r in rows]
+
+
+def _overlay_named(store: SnapshotStore, latest: dict, rows: list, flat: list, cfg,
+                   names: dict) -> _Overlay:
+    """The overlay with each (path, long_name) in NAMES joined to the baseline
+    under the name it maps to, then given its own name back. A signature edit
+    leaves the function's stale coverage under its old key, and a carried mark
+    names that key."""
+    unjoined: set = set()
+    joined = _rescore_overlay(store, latest, _renamed(rows, names), flat, cfg, unjoined)
+    back = {(path, old): new for (path, new), old in names.items()}
+    return _Overlay(_renamed(joined, back), set(_renamed(unjoined, back)))
+
+
 def _unmeasured(row, unjoined: set) -> bool:
     """No measurement behind this row's cov: the overlay found nothing to join
     it to (a function added or renamed since the run), or its flag says no
@@ -857,28 +914,6 @@ def _rescore_json(overlay, latest: dict, gate: dict | None = None,
     _print_json(payload)
 
 
-def _ceiling_breaches(rows, ceilings: dict[str, int], keys: dict | None = None) -> list:
-    """The pre-commit hook's policy over already-scored rows: ccn against the
-    file's ceiling, coverage ignored. Shaped as gate violations so verify's
-    printer serves this verdict too.
-
-    `keys` is the ratchet key map over the WHOLE file, because `rows` here is
-    the touched subset: counting ordinals over it would call an untouched
-    file's second twin the first and hand it the first's mark. Defaulted from
-    the rows for a caller holding nothing else, which is right for one function
-    per name and the only shape that arises.
-    """
-    from ..keys import key_names, key_of
-    from ..verify import GateViolation
-
-    names = key_names(rows) if keys is None else keys
-    breaches = [GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy,
-                              False, key_of(names, r)[1])
-                for r in rows if r.ccn > ceilings[r.path]]
-    breaches.sort(key=lambda v: (-v.ccn, v.path, v.start))
-    return breaches
-
-
 def _changed_since_head(root: Path) -> dict:
     """The spans the working tree changed against HEAD, index included, which is
     the set the pre-commit hook will see."""
@@ -888,34 +923,85 @@ def _changed_since_head(root: Path) -> dict:
     return worktree_ranges(diff_since(root, "HEAD"), root)
 
 
-def _gate_candidates(rows: list, ranges: dict, untracked: set[str]) -> list:
-    """The functions this commit could be about: the rows `ranges` touch, and
-    every row of an untracked file, which git diff cannot scope.
+# What `rescore --gate` exits on each kind of finding the gate module gives, in
+# precedence order. A name no reader can key is refused before anything is
+# judged (3); a breach or a changed file no reader could read fails the gate
+# (6). A breach whose mark sits between its fresh ccn and its stale CRAP is
+# unproven, and nothing pardons it. A pardoned breach is no finding.
+_GATE_EXITS = (("unreadable_name", 3), ("over_ceiling", 6), ("marked_rise", 6), ("unproven", 6),
+               ("unread", 6))
+# The exits check_gate answers as a verdict when they carry the gate payload.
+GATE_VERDICT_EXITS = tuple(sorted({code for _, code in _GATE_EXITS}))
 
-    Judging the whole file instead would flag every legacy function in it, so on
-    any repo with seeded debt the flag is red forever and says nothing.
-    """
-    from ..verify import touched_rows
 
-    return touched_rows(rows, ranges) + [r for r in rows if r.path in untracked]
+def gate_exit(result: GateResult) -> int:
+    """rescore --gate's exit on the gate's findings: the first kind present decides."""
+    return next((code for kind, code in _GATE_EXITS if getattr(result, kind)), 0)
 
 
-def _unmarked_breaches(breaches: list, entries: list) -> list:
-    """Breaches no ratchet mark already covers.
+def _gate_function(row) -> Function:
+    """A rescored row as the gate judges it. rescore knows the fresh ccn, which
+    no CRAP sits under, and the CRAP over the baseline's stale coverage: the
+    ceiling reads the ccn, and a mark pardons only at or above that CRAP."""
+    return Function(row.long_name, row.start, row.end, CrapBound(row.ccn, row.crap), row.scope,
+                    row.occurrence, row)
 
-    A mark is a recorded decision to carry a function as it stands. At or under
-    it the function is exactly the debt the repo signed up for; past it, verify's
-    ratchet check would fail too, so the gate says so early.
-    """
-    from ..keys import stated_key
-    from ..ratchet import mark_for
 
-    kept = []
-    for v in breaches:
-        mark = mark_for(entries, *stated_key(v))
-        if mark is None or round(v.crap, 4) > mark:
-            kept.append(v)
-    return kept
+def _gate_spans(path: str, ranges: dict, untracked: set[str]):
+    """What the change since HEAD touched in one file: all of an untracked
+    file, which git diff cannot scope, else the spans the diff gives. Judging
+    every file whole would flag every legacy function, so on a repo with
+    seeded debt the gate would be red forever."""
+    return WHOLE if path in untracked else ranges.get(path, ())
+
+
+def _unread_changes(unread: dict[str, str], ranges: dict, untracked: set[str]) -> list[ChangedFile]:
+    """Each rescored file no reader could read, taken whole when the change
+    touched it, which the gate refuses. Every file this gate judges is a
+    working-tree change, so each is dirty."""
+    changed = set(ranges) | untracked
+    return [ChangedFile(path, WHOLE if path in changed else (), Unread(path, why, True))
+            for path, why in sorted(unread.items())]
+
+
+def _gate_changes(overlay, ranges: dict, untracked: set[str], unread: dict[str, str]) -> list[ChangedFile]:
+    """The rescored files as the gate reads the change since HEAD, each with
+    every rescored function in it, so the gate keys a twin over its whole file."""
+    functions: dict[str, list[Function]] = {}
+    for row in overlay:
+        functions.setdefault(row.path, []).append(_gate_function(row))
+    read = [ChangedFile(path, _gate_spans(path, ranges, untracked), tuple(found))
+            for path, found in functions.items()]
+    return read + _unread_changes(unread, ranges, untracked)
+
+
+def _violation(breach) -> GateViolation:
+    from ..verify import GateViolation
+
+    r = breach.function.record
+    return GateViolation(r.path, r.long_name, r.start, r.ccn, r.cov, r.crap, r.remedy, False,
+                         breach.key_name, breach.mark_ambiguity)
+
+
+def _gate_breaches(result: GateResult, overlay) -> list[GateViolation]:
+    """The breaches the gate fails on as verify's printer reads them: worst ccn
+    first, then path and start, twins on one line in the overlay's order."""
+    place = {id(row): n for n, row in enumerate(overlay)}
+    found = sorted((*result.over_ceiling, *result.marked_rise, *result.unproven),
+                   key=lambda breach: place[id(breach.function.record)])
+    return sorted(map(_violation, found), key=lambda v: (-v.ccn, v.path, v.start))
+
+
+def _unreadable_item(name: UnreadableName) -> dict:
+    """A name no reader can key, as the item the CLI's error object lists it in."""
+    return {"path": shown(name.path), "reason": UNREAD_NAME_REASON, "dirty": name.dirty}
+
+
+def gate_unread_files(result: GateResult) -> list[dict]:
+    """`gate.unread_files`: verify's name and item shape, {path, reason, dirty},
+    for each name no reader can key and each changed file no reader could read."""
+    return [*map(_unreadable_item, result.unreadable_name),
+            *({"path": u.path, "reason": u.reason, "dirty": u.dirty} for u in result.unread)]
 
 
 def _untracked_of(root: Path, paths: set[str]) -> set[str]:
@@ -932,54 +1018,61 @@ def _warn_untracked(untracked: set[str]) -> None:
               file=sys.stderr)
 
 
-class _GateVerdict(NamedTuple):
-    """The commit's verdict, hours before the commit: what was judged, against
-    which ceiling per file, the breaches no ratchet mark covers, the changed
-    files no reader could read, which it refuses because it judged nothing in
-    them, and the (path, start, long_name) of each row whose cov no measurement
-    stands behind."""
-    judged: int
-    ceilings: dict[str, int]
+class _RescoreGate(NamedTuple):
+    """The commit's verdict, hours before the commit: the gate module's
+    findings, the breaches it fails on, the ceiling each rescored file is
+    judged at, the untracked files it took whole, and the (path, start,
+    long_name) of each row whose cov no measurement stands behind."""
+    result: GateResult
     breaches: list
+    ceilings: dict[str, int]
     untracked: list[str]
-    unread: dict[str, str] = {}
     unmeasured: frozenset = frozenset()
 
-    @property
-    def ok(self) -> bool:
-        return not (self.breaches or self.unread)
 
+def _gate_verdict(root: Path, cfg, overlay_of, ceilings: dict[str, int],
+                  unread: dict[str, str]) -> tuple[_RescoreGate, _Overlay]:
+    """The verdict and the rows it judged, once the rows and the breaches meet
+    their bounds against the parsed config (`invariants.check_gate`).
+    `overlay_of` is `_overlay_named` over the rescored rows.
 
-def _unpardoned_breaches(root: Path, cfg, overlay, touched: list) -> list:
-    """The touched breaches no ratchet mark pardons, reading the marks only
-    when there is a breach to pardon.
-
-    hook-precommit follows the same rule. On a large consumer repo the read
-    cost a clean gate several seconds, most of it proving legacy ratchet keys
-    against every stored run. The trade: a clean gate no longer reports a marks
-    file it cannot parse, and the next gate that breaches still does.
-    """
-    if not touched:
-        return []
-    return _unmarked_breaches(touched, _ratchet_entries(root, cfg, overlay) or [])
-
-
-def _gate_verdict(root: Path, cfg, overlay, ceilings: dict[str, int],
-                  unread: dict[str, str], unjoined: set = frozenset()) -> _GateVerdict:
-    """The verdict, once the rescored rows and the breaches meet their bounds
-    against the parsed config (`invariants.check_gate`)."""
+    The gate reads the marks only when a touched function is over its ceiling,
+    as hook-precommit does. On a large consumer repo the read cost a clean gate
+    several seconds, most of it proving legacy ratchet keys against every
+    stored run. The trade: a clean gate no longer reports a marks file it
+    cannot parse, and the next gate that breaches still does."""
     from ..invariants import check_gate
-    from ..keys import key_names
 
-    untracked = _untracked_of(root, {r.path for r in overlay} | set(unread))
+    first = overlay_of({})
+    untracked = _untracked_of(root, {r.path for r in first.rows} | set(unread))
+    judged = _judging(root, cfg, first.rows, untracked, unread)
+    result, view = _carried_judgement(judged, first, overlay_of)
+    breaches = _gate_breaches(result, view.rows)
+    check_gate(view.rows, breaches, cfg.ceiling_of)
+    unmeasured = _unmeasured_keys(view.rows, view.unjoined)
+    return _RescoreGate(result, breaches, ceilings, sorted(untracked), unmeasured), view
+
+
+def _judging(root: Path, cfg, overlay: list, untracked: set[str], unread: dict[str, str]):
+    """The gate module's judgement of rescored rows against the change since
+    HEAD, the marks read at most once however often it judges."""
     ranges = _changed_since_head(root)
-    candidates = _gate_candidates(overlay, ranges, untracked)
-    touched = _ceiling_breaches(candidates, ceilings, key_names(overlay))
-    breaches = _unpardoned_breaches(root, cfg, overlay, touched)
-    check_gate(overlay, breaches, cfg.ceiling_of)
-    changed = {path: unread[path] for path in unread if path in ranges or path in untracked}
-    return _GateVerdict(len(candidates), ceilings, breaches, sorted(untracked), changed,
-                        _unmeasured_keys(candidates, unjoined))
+    marks = cache(lambda: MarkIndex(_ratchet_entries(root, cfg, overlay) or []))
+    return lambda rows: judge(_gate_changes(rows, ranges, untracked, unread), cfg.ceiling_of, marks)
+
+
+def _carried_judgement(judged, view: _Overlay, overlay_of) -> tuple[GateResult, _Overlay]:
+    """The verdict on VIEW, judged again where a carried mark judges a breach
+    whose new name joined no coverage: that function takes the coverage the
+    baseline holds under the key its mark carried from, so an unproven carry
+    can pass and a rise reports the CRAP verify would measure."""
+    result = judged(view.rows)
+    stale = {(b.path, b.function.long_name): b.carried_from for b in (*result.unproven, *result.marked_rise)
+             if b.carried_from is not None and b.function.record in view.unjoined}
+    if not stale:
+        return result, view
+    view = overlay_of(stale)
+    return judged(view.rows), view
 
 
 def _unmeasured_keys(rows, unjoined: set) -> frozenset:
@@ -991,19 +1084,34 @@ def _unmeasured_keys(rows, unjoined: set) -> frozenset:
 def _breach_json(v, ceilings: dict[str, int]) -> dict:
     return {"path": v.path, "function": v.long_name, "start": v.start, "ccn": v.ccn,
             "cov": v.cov, "crap": v.crap, "remedy": v.remedy, "key_name": v.key_name,
-            "ceiling": ceilings[v.path]}
+            "ceiling": ceilings[v.path], "mark_ambiguity": v.mark_ambiguity}
 
 
-def _gate_json(verdict: _GateVerdict) -> dict:
-    """The `gate` block of `rescore --gate --json`: the fields a wrapper needs
-    to say which function, which rule, and whether the tree clears the gate.
-    `unread_files` has verify's name and shape; every file this gate judges is
-    a working-tree change, so each is dirty."""
-    return {"ok": verdict.ok, "judged": verdict.judged, "ceilings": verdict.ceilings,
-            "breaches": [_breach_json(v, verdict.ceilings) for v in verdict.breaches],
-            "untracked": verdict.untracked,
-            "unread_files": [{"path": path, "reason": why, "dirty": True}
-                             for path, why in sorted(verdict.unread.items())]}
+def gate_carried(result: GateResult) -> list:
+    """The functions a carried mark pardons, as verify's `carried` finding;
+    every file this gate judges is a working-tree change, so each is dirty."""
+    from ..verify import carried_of
+
+    return [carried_of(breach, True) for breach in result.carried]
+
+
+def gate_block(result: GateResult, ceilings: dict[str, int], breaches: list = (),
+               untracked: list = ()) -> dict:
+    """The `gate` block of `rescore --gate --json`, check_gate's verdict on a
+    name no reader can key included: the fields a wrapper needs to say which
+    function, which rule, and whether the tree clears the gate. `carried` lists
+    each function a carried mark pardons, with verify's carried item fields."""
+    from ..agent_fields import CARRIED_FIELDS
+
+    return {"ok": gate_exit(result) == 0, "judged": result.judged, "ceilings": ceilings,
+            "breaches": [_breach_json(v, ceilings) for v in breaches],
+            "carried": [{name: getattr(c, name) for name in CARRIED_FIELDS}
+                        for c in gate_carried(result)],
+            "untracked": list(untracked), "unread_files": gate_unread_files(result)}
+
+
+def _gate_json(verdict: _RescoreGate) -> dict:
+    return gate_block(verdict.result, verdict.ceilings, verdict.breaches, verdict.untracked)
 
 
 def _gate_ceiling_label(ceilings: dict[str, int]) -> str:
@@ -1013,27 +1121,45 @@ def _gate_ceiling_label(ceilings: dict[str, int]) -> str:
     return f"ceiling {distinct[0]}" if len(distinct) == 1 else "their ceilings"
 
 
-def _report_gate(verdict: _GateVerdict, as_json: bool) -> int:
+def _report_gate(verdict: _RescoreGate, as_json: bool) -> int:
     """The verdict on stderr when it fails, so `--json` stdout stays one
     parseable object; one stdout line when it passes, so the exit code is
     not the only signal."""
+    from ..verify import carried_line
+
     _warn_untracked(set(verdict.untracked))
-    if verdict.ok:
+    for carried in gate_carried(verdict.result):
+        print(carried_line(carried), file=sys.stderr)
+    code = gate_exit(verdict.result)
+    if code == 0:
         if not as_json:
-            print(f"gate: {verdict.judged} changed function(s) judged, "
+            print(f"gate: {verdict.result.judged} changed function(s) judged, "
                   f"0 over {_gate_ceiling_label(verdict.ceilings)}")
         return 0
-    _print_unread(verdict.unread, "changed", file=sys.stderr)
-    _print_breaches(verdict.breaches, verdict.unmeasured)
-    return 6
+    _print_unread({u.path: u.reason for u in verdict.result.unread}, "changed", file=sys.stderr)
+    _print_breaches(verdict.breaches, verdict.ceilings, verdict.unmeasured)
+    return code
 
 
-def _print_breaches(breaches: list, unmeasured: frozenset = frozenset()) -> None:
-    if breaches:
-        print(f"crapkit gate: {len(breaches)} rescored function(s) over their scope ceiling:",
-              file=sys.stderr)
-    for v in breaches:
-        print(_gate_line(v, (v.path, v.start, v.long_name) in unmeasured), file=sys.stderr)
+def refusal_head(judged: str, ceilings: list[int], no_coverage: bool) -> str:
+    """The head line of a gate refusal, the hook's and `rescore --gate`'s:
+    the CRAP ceiling the breaches share, else `their scope`. With
+    `no_coverage`, a listed function has no known coverage, so the line says
+    why its ccn decides: coverage brings CRAP down to ccn at best."""
+    of = f"of {ceilings[0]}" if len(set(ceilings)) == 1 else "of their scope"
+    why = " (with no coverage known, CRAP is at least ccn)" if no_coverage else ""
+    return f"crapkit gate: {len(ceilings)} {judged} function(s) exceed the CRAP ceiling {of}{why}:"
+
+
+def _print_breaches(breaches: list, ceilings: dict[str, int], unmeasured: frozenset) -> None:
+    """The breaches under the hook's head line, each as verify's GATE row; a
+    row whose cov no measurement stands behind prints `cov -`."""
+    if not breaches:
+        return
+    blind = [(v.path, v.start, v.long_name) in unmeasured for v in breaches]
+    print(refusal_head("rescored", [ceilings[v.path] for v in breaches], any(blind)), file=sys.stderr)
+    for v, no_cov in zip(breaches, blind):
+        print(_gate_line(v, no_cov), file=sys.stderr)
 
 
 def _rescore_baseline(root: Path) -> tuple[SnapshotStore, dict]:
@@ -1055,14 +1181,22 @@ def cmd_rescore(args: argparse.Namespace) -> int:
     store, latest = _rescore_baseline(root)
 
     rows, flat, ceilings, unread = _rescore_analyze(root, cfg, args.files, cwd=_stand(args.repo))
-    unjoined: set = set()
-    overlay = _rescore_overlay(store, latest, rows, flat, cfg, unjoined)
-    verdict = _gate_verdict(root, cfg, overlay, ceilings, unread, unjoined) if args.gate else None
-    if args.json:
-        _rescore_json(overlay, latest, None if verdict is None else _gate_json(verdict), unjoined)
+    overlay_of = partial(_overlay_named, store, latest, rows, flat, cfg)
+    if not args.gate:
+        _print_rescore(overlay_of({}), latest, args.json)
+        return 0
+    verdict, view = _gate_verdict(root, cfg, overlay_of, ceilings, unread)
+    _print_rescore(view, latest, args.json, _gate_json(verdict))
+    return _report_gate(verdict, args.json)
+
+
+def _print_rescore(view: _Overlay, latest: dict, as_json: bool, gate: dict | None = None) -> None:
+    """The rescored rows as the payload, the gate's verdict beside them under
+    --gate, or as the table."""
+    if as_json:
+        _rescore_json(view.rows, latest, gate, view.unjoined)
     else:
-        _print_rescore_table(overlay, latest, unjoined)
-    return 0 if verdict is None else _report_gate(verdict, args.json)
+        _print_rescore_table(view.rows, latest, view.unjoined)
 
 
 def _rescore_cov(r, unjoined: set) -> tuple[str, str]:

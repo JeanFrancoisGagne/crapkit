@@ -10,13 +10,17 @@ because 91.5% of joinable rows hit a candidate declaring their exact start and
 the scan behind them was 936,818 pairwise comparisons on the consumer repo. An index may
 only ever be a faster route to the same winner, so the whole join is diffed
 against the pre-index scan, kept verbatim below as its oracle.
+
+Records score joins from line evidence enter the same candidate list, one set
+per lane, so two lanes' evidence for one file is selected between exactly as
+two lanes' producer records are: never unioned, the better one kept.
 """
+from array import array
 import random
 
 import pytest
 
-from crapkit.coverage_istanbul import FnCoverage
-from crapkit.score import ScoredRow, score_rows
+from crapkit.score import FileEvidence, FnCoverage, ScoredRow, score_rows
 from crapkit.snapshot import InventoryRow
 
 
@@ -193,3 +197,46 @@ def test_the_indexed_join_agrees_with_the_scan_on_other_corpora(seed):
     coverage, rows = _corpus(seed=seed)
     scored = score_rows(rows, coverage, lane_scopes=LANE)
     assert [(s.cov, s.flag) for s in scored] == [_scan_join(r, coverage) for r in rows]
+
+
+@pytest.mark.parametrize("seed", [1, 2])
+def test_no_evidence_keyword_and_an_empty_one_answer_alike(seed):
+    coverage, rows = _corpus(seed=seed)
+    assert (score_rows(rows, coverage, lane_scopes=LANE, evidence_by_path={})
+            == score_rows(rows, coverage, lane_scopes=LANE))
+
+
+# --- two lanes' evidence for one file ----------------------------------------
+
+def _lines(hit, missed):
+    return FileEvidence(array("I", hit), array("I", missed))
+
+
+def test_two_lanes_evidence_joins_separately_never_as_a_union_of_hits():
+    """Each lane ran line 11 or line 12 of three, so each reads 1/3. A union of
+    hits would read 2/3: a lane merge that moves scores, which score never does."""
+    row = _row(start=10, end=20)
+    first, second = _lines([11], [12, 13]), _lines([12], [11, 13])
+    for lanes in ([first, second], [second, first]):
+        (out,) = score_rows([row], {}, lane_scopes=LANE, evidence_by_path={"src/a.ts": lanes})
+        assert (out.cov, out.flag) == (1 / 3, "measured")
+
+
+def test_two_lanes_evidence_on_one_span_keeps_the_better_record():
+    row = _row(start=10, end=20)
+    poor, rich = _lines([11], [12, 13]), _lines([11, 12], [13])
+    for lanes in ([poor, rich], [rich, poor]):
+        (out,) = score_rows([row], {}, lane_scopes=LANE, evidence_by_path={"src/a.ts": lanes})
+        assert out.cov == 2 / 3
+
+
+def test_a_joined_record_and_a_producer_record_are_judged_by_one_rule():
+    """A producer record on the same span stands beside the joined one, and the
+    better measurement wins whichever side made it."""
+    row = _row(start=10, end=20)
+    evidence = {"src/a.ts": [_lines([11, 12], [13])]}
+    for producer, expected in ((_fn("f", 10, 20, covered=0), 2 / 3),
+                               (_fn("f", 10, 20, covered=4), 1.0)):
+        (out,) = score_rows([row], {"src/a.ts": [producer]}, lane_scopes=LANE,
+                            evidence_by_path=evidence)
+        assert (out.cov, out.flag) == (expected, "measured")

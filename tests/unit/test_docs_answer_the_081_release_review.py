@@ -159,7 +159,8 @@ def test_verify_reads_a_hand_typed_mark_at_four_decimals_as_the_guide_row_says(r
     30.0000 and 30.00004". verify reads that mark as 30.0 and compares the CRAP
     rounded to four places, so no CRAP there fails: 0.8.1 only passes what 0.8.0
     failed, never the other way."""
-    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+    from crapkit.ratchet import RatchetEntry
+    from stamps import marks_in
 
     with open(repo / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
         fh.write(FIVE)
@@ -171,7 +172,7 @@ def test_verify_reads_a_hand_typed_mark_at_four_decimals_as_the_guide_row_says(r
              {"dispatch": (1, 13, 2), "plain": (13, 18, 1), "five": (start, start + 6, 0)})
     assert main(["coverage", "--reuse-artifacts", "--repo", str(repo)]) == 0
     capsys.readouterr()
-    marks = dump_ratchet([RatchetEntry("src/app.ts", "five ( n )", 30.0)], stamp=metric_version())
+    marks = marks_in(repo, [RatchetEntry("src/app.ts", "five ( n )", 30.0)])
 
     def verify(typed: str) -> tuple[int, str]:
         (repo / "crapkit-ratchet.tsv").write_text(marks.replace("\t30.0000\n", f"\t{typed}\n"),
@@ -206,10 +207,11 @@ MARKS = "crapkit-ratchet.tsv"
 
 def _untracked_mark(repo, path: str, long_name: str, crap: float) -> None:
     """A mark in the working tree's marks file that no commit and no index holds."""
-    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+    from crapkit.ratchet import RatchetEntry
+    from stamps import marks_in
 
-    (repo / MARKS).write_text(dump_ratchet([RatchetEntry(path, long_name, crap)],
-                                           stamp=metric_version()), encoding="utf-8", newline="\n")
+    (repo / MARKS).write_text(marks_in(repo, [RatchetEntry(path, long_name, crap)]),
+                              encoding="utf-8", newline="\n")
     assert git(repo, "status", "--porcelain", "--", MARKS) == f"?? {MARKS}\n"
 
 
@@ -237,12 +239,12 @@ def test_hook_precommit_pardons_a_staged_function_on_a_mark_no_commit_holds(repo
     assert "1 staged function(s) carry a ratchet mark and were not gated" in err, err
     readme = _prose("README.md")
     assert "the committed ratchet already carries a mark for" not in readme
-    assert ("Both hooks pardon a function that the marks file in the working tree carries a mark "
-            "for, whether or not that mark is staged or committed") in readme
+    assert ("Both hooks read the marks file in the working tree, whether or not a mark is staged or "
+            "committed") in readme
     assert ("In CI the file on disk is the committed one, so `verify` there fails a function "
             "whose mark never reached a commit") in readme
-    assert ("pardoned: any function the working-tree marks file marks, counted in one stderr line"
-            in _doc("docs/handbook.html"))
+    assert ("pardoned: a marked function whose ccn sits at or under its working-tree mark, counted in one "
+            "stderr line" in _doc("docs/handbook.html"))
 
 
 def test_hook_precommit_with_nothing_staged_pardons_on_the_working_tree_marks(repo, capsys):  # noqa: F811

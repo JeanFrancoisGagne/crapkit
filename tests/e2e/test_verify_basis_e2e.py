@@ -19,7 +19,8 @@ from conftest import cli_runner
 from repo_templates import copy_of, template
 
 from crapkit.analyze import ANALYSIS_VERSION
-from crapkit.ratchet import metric_version
+from crapkit.config import load_config_text
+from crapkit.ratchet import RatchetEntry, dump_ratchet, running_stamp
 
 PY = sys.executable
 GEN = "gen_cov.py"
@@ -59,9 +60,7 @@ with open(artifact, "w", encoding="utf-8") as fh:
 """
 
 
-VERDICT_KEYS = ("ok", "gate_violations", "ratchet_regressions", "new_failures",
-                "diff_uncovered", "diff_uncovered_count",
-                "committed_findings", "dirty_findings", "dirty_failures")
+VERDICT_KEYS = ("ok", "findings", "counts", "committed_findings", "dirty_findings", "dirty_failures")
 
 
 run_cli = cli_runner(timeout=300, encoding="utf-8", errors="replace",
@@ -119,6 +118,11 @@ def init_repo(repo: Path) -> Path:
     return repo
 
 
+def gate_items(payload: dict) -> list[dict]:
+    """verify --json's gate_violation items."""
+    return [item for item in payload["findings"] if item["kind"] == "gate_violation"]
+
+
 def verdict_of(res: subprocess.CompletedProcess) -> dict:
     payload = json.loads(res.stdout)
     return {k: payload[k] for k in VERDICT_KEYS}
@@ -155,7 +159,7 @@ def test_a_mid_branch_coverage_run_shrinks_the_diff_basis(branch_repo: Path):
     assert res.returncode == 0, res.stdout + res.stderr
     payload = json.loads(res.stdout)
     assert payload["changed_files"] == 1, "only the last commit's file is in the diff"
-    assert payload["gate_violations"] == [], "the branch's ccn-8 function is behind the baseline"
+    assert gate_items(payload) == [], "the branch's ccn-8 function is behind the baseline"
 
 
 def test_base_drives_the_diff_from_the_fork_point(branch_repo: Path):
@@ -166,7 +170,7 @@ def test_base_drives_the_diff_from_the_fork_point(branch_repo: Path):
     assert res.returncode == 6, res.stdout + res.stderr
     payload = json.loads(res.stdout)
     assert payload["changed_files"] == 2, "the whole branch is the diff, not the last commit"
-    assert [(g["path"], g["ccn"]) for g in payload["gate_violations"]] == [("src/debt.py", 8)]
+    assert [(g["path"], g["ccn"]) for g in gate_items(payload)] == [("src/debt.py", 8)]
 
 
 def test_base_picks_a_baseline_run_at_or_behind_the_fork_point(branch_repo: Path):
@@ -290,7 +294,7 @@ def test_findings_from_uncommitted_edits_are_tagged_in_json(dirty_repo: Path):
 
     assert res.returncode == 6, res.stdout + res.stderr
     payload = json.loads(res.stdout)
-    assert {g["path"]: g["dirty"] for g in payload["gate_violations"]} == \
+    assert {g["path"]: g["dirty"] for g in gate_items(payload)} == \
         {"src/a.py": False, "src/b.py": True}
     assert payload["committed_findings"] == 1
     assert payload["dirty_findings"] == 1
@@ -352,8 +356,9 @@ def test_the_verdict_hashes_the_ratchet_it_was_decided_against(receipt_repo: Pat
     second = run_cli(receipt_repo, "verify", "--json")
 
     ratchet = (receipt_repo / "crapkit-ratchet.tsv").read_bytes()
-    # the metric stamp rides the file, so the receipt hashes stamped bytes
-    assert ratchet.splitlines()[0].startswith(b"# crapkit-analysis=")
+    # the per-scope stamp rides the file, so the receipt hashes stamped bytes
+    assert ratchet.splitlines()[0].startswith(b"# crapkit-stamp=2 lizard=")
+    assert b"\n#scope\t" in ratchet
     assert ratchet.endswith(b"path\tlong_name\tcrap\n")
     assert json.loads(second.stdout)["ratchet_sha256"] == hashlib.sha256(ratchet).hexdigest()
     assert json.loads(second.stdout)["ratchet_changes"] is None, "nothing to move, nothing written"
@@ -362,8 +367,9 @@ def test_the_verdict_hashes_the_ratchet_it_was_decided_against(receipt_repo: Pat
 def mark(repo: Path, crap: float) -> None:
     """One mark on `alpha`, stamped with the running metric the way `ratchet
     seed` writes it, so the stamp guard has nothing to say."""
-    write(repo, "crapkit-ratchet.tsv",
-          f"# {metric_version()}\npath\tlong_name\tcrap\nsrc/mod.py\talpha( n )\t{crap:.4f}\n")
+    running = running_stamp(load_config_text((repo / "crapkit.toml").read_text(encoding="utf-8"), root=repo))
+    write(repo, "crapkit-ratchet.tsv", dump_ratchet([RatchetEntry("src/mod.py", "alpha( n )", crap)],
+                                                   stamp=running, file_name="crapkit-ratchet.tsv"))
 
 
 ALERT_PY = "import sys\nopen('.crapkit/alerts.log', 'a', encoding='utf-8').write(sys.stdin.read())\n"

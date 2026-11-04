@@ -21,7 +21,7 @@ from test_doctor_plugin_root import ON_PATH, _write, plugin
 from test_launchers import shim
 
 CLI = crapkit.__version__
-UPGRADE = "python -m pip install --upgrade crapkit"
+UPGRADE = "python -P -m pip install --upgrade crapkit"
 CLAUDE_UPDATE = ("update it with `claude plugin marketplace update crapkit`, then `claude plugin "
                  "update crapkit@crapkit --scope user`, and restart Claude Code's sessions.")
 CLAUDE_REINSTALL = ("reinstall it with `claude plugin uninstall crapkit@crapkit --scope user`, then "

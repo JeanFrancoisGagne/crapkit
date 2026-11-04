@@ -17,9 +17,10 @@ from mcp_stdio import run as run_mcp
 
 from crapkit.cli import main
 from crapkit.config import Config, Scope
-from crapkit.sarif import diff_uncovered_results, github_annotation
+from crapkit.sarif import github_annotation
 from crapkit.store import SnapshotStore
 from crapkit.universe import assign_files
+from crapkit.verify import Verdict, sarif_results
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -27,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.parametrize("path", ["src/a#b.py", "src/a%20b.py", "src/a?b.py", "src/a b.py",
                                       "src/ā.py", "src/a\\b.py"])
 def test_sarif_uri_and_annotation_name_the_original_file(path):
-    result = diff_uncovered_results([(path, 7)])[0]
+    result = sarif_results(Verdict.passing(), [(path, 7)])[0]
     uri = result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
     parsed = urlsplit(uri)
     assert (unquote(parsed.path), parsed.query, parsed.fragment) == (path, "", "")

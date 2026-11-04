@@ -1,12 +1,14 @@
 """Coverage artifacts must carry counts that can represent a measurement."""
 import hashlib
 import json
+from array import array
 
 import pytest
 
 from crapkit.coverage_istanbul import parse_istanbul_both_file
 from crapkit.coverage_py import parse_coveragepy_both_file
 from crapkit.errors import ToolError
+from crapkit.score import FileEvidence
 
 
 def python_report(**counts):
@@ -70,7 +72,7 @@ def test_valid_fallbacks_keep_the_original_digest(tmp_path, branches, statements
     artifact = tmp_path / "valid.json"
     raw = json.dumps(report).encode("utf-8")
     artifact.write_bytes(raw)
-    measured, dead, digest = parse_coveragepy_both_file(artifact, path_prefix="", chunk=7)
+    measured, evidence, digest = parse_coveragepy_both_file(artifact, path_prefix="", chunk=7)
     assert measured["src/a.py"][0].coverage == expected
-    assert dead == {"src/a.py": {2}}
+    assert evidence == {"src/a.py": FileEvidence(None, array("I", [2]))}
     assert digest == hashlib.sha256(raw).hexdigest()

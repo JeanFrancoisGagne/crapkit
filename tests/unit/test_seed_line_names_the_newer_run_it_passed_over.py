@@ -10,13 +10,15 @@ from pathlib import Path
 import lizard
 import pytest
 
-from crapkit.analyze import ANALYSIS_VERSION
+from crapkit.analyze import ANALYSIS_VERSION, ANALYSIS_VERSIONS
 from crapkit.cli.ratchet_cmds import _skip_note, cmd_ratchet
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version}
+# The stamps this crapkit records for the one python scope with no lane.
+MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version,
+            "scope_stamps": {"src": {"analysis": {"python": ANALYSIS_VERSIONS["python"]}, "coverage": "no-lane"}}}
 CONFIG = ('[crapkit]\ntarget = 6\n\n'
           '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n')
 

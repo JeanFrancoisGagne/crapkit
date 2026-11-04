@@ -1,6 +1,6 @@
 ---
 name: crapkit
-description: "Work one crapkit debt item end to end: the packet that replaces reading the file, the ceiling the edit is judged against, the verdict that clears the commit. Use when the session already names crapkit (crapkit.toml, .crapkit/, crapkit-ratchet.tsv, a CRAP score, `crapkit next-item`, `crapkit brief`), when the user asks to burn down debt or lower complexity in a repo crapkit measures, when a commit is refused with \"crapkit: commit blocked by the complexity gate\", \"crapkit gate: N staged function(s) exceed the complexity ceiling\" or \"decompose before committing\", or when an edit draws the mid-session advisory \"crapkit advisory: N function(s) over ceiling C\". Not for eslint, husky, or any other pre-commit gate."
+description: "Work one crapkit debt item end to end: the packet that replaces reading the file, the ceiling the edit is judged against, the verdict that clears the commit. Use when the session already names crapkit (crapkit.toml, .crapkit/, crapkit-ratchet.tsv, a CRAP score, `crapkit next-item`, `crapkit brief`), when the user asks to burn down debt or lower complexity in a repo crapkit measures, when a commit is refused with \"crapkit: commit blocked by the complexity gate\", \"crapkit gate: N staged function(s) exceed the CRAP ceiling\" or \"decompose before committing\", or when an edit draws the mid-session advisory \"crapkit advisory: N function(s) over ceiling C\". Not for eslint, husky, or any other pre-commit gate."
 ---
 
 # Working a crapkit item
@@ -14,13 +14,17 @@ session works in does not hold those pages.
 
 | Moment | What answers it |
 |---|---|
-| Before opening the file | `crapkit brief PATH NAME --json`, or the MCP `get_function_brief` tool where the server is registered |
+| Before opening the file | `crapkit brief PATH NAME --json`, or the MCP `get_function_brief` tool where the server is registered. A `carried_from` value means the mark followed the function through a signature edit: it is the function's own debt, and a passing `crapkit verify` re-keys it |
 | Which house rules bind here | `notes.repo` and `notes.scope` in the packet |
 | An advisory fired on the edit you just made | Decompose that function now, not at the commit wall. The edit landed and nothing was blocked, but the gate refuses the same function later |
 | An advisory says a file could not be read | No function in it was judged, and the commit gate refuses the file once staged. Change what the `UNREAD` line's reason names, or list the file under `[exclude]` |
+| An advisory says a marked function rose past its ratchet mark | The marked block: its ccn alone puts its CRAP above the mark at any coverage, and the commit gate refuses it. Decompose until the ccn sits at or under the mark; the mark does not rise |
+| An advisory says a marked function rose in ccn and may pass its ratchet mark | The warn block: the commit will go through with a warn, and `crapkit verify` judges the mark with coverage. Add tests that run the new branches, or decompose, before `verify` runs |
 | An advisory fired after a Bash command, not an edit | The same verdict, read off the working tree. See [After a shell write](#after-a-shell-write) |
 | Before committing | `crapkit rescore FILE --gate` |
-| The gate says a staged function carries a ratchet mark | Nothing. The repo signed for that function, so the commit gate skips it. `crapkit verify` still fails a mark that rises |
+| The gate says a staged function rose past its ratchet mark | The commit is refused: its ccn alone puts its CRAP above the mark at any coverage. Bring the ccn back to the mark or under it; the mark does not rise |
+| The gate says a staged marked function rose in ccn and may pass its ratchet mark | The commit went through, but the higher ccn may have taken its CRAP past the mark, and `crapkit verify` judges that with coverage. Add tests that run the new branches, or decompose, before `verify` runs |
+| The gate says a staged function carries the mark recorded for another key | A signature edit renamed the function, and the mark its old key held counts for it: the count line counts it, and a rise names the old key as `(carried from OLD)`. The line names the move: a passing `crapkit verify` re-keys the mark, or run the `crapkit ratchet move --function` command it prints |
 | Where does new code go | `crapkit worklist --top N`, `crapkit coupling`, `crapkit duplication` |
 | Which branches need tests | `uncovered_lines` and `est_uncovered_paths` in the packet |
 | Running the owning scope's tests | `commands.scoped_tests`, run verbatim, never retyped |
@@ -31,6 +35,7 @@ session works in does not hold those pages.
 | Boy-scout scan of the file | `file_functions` and `file_totals` in the packet |
 | A lane command crapkit refuses on Windows | Write the value in double quotes. cmd.exe does not treat `'` as a quote, so a single-quoted value reaches the runner one word per space and the guard reads a positional |
 | `crapkit doctor` WARNs that a lane declares no `results_artifact` | Coverage is measured either way. Two checks go dark for that lane's scopes until it names a junit file: the crashed-worker trust check, and exit 8, the no-new-failures check |
+| `crapkit doctor` notes that a reader can measure a cc-only scope | Adding the lane is the repo owner's call: uncomment the lane init left, delete `coverage_optional`, then `crapkit ratchet seed --scope NAME`. Until then the remedy stays `decompose` |
 | `trend` or `report` writing in a checkout you meant to keep read-only | Both fill a per-run rollup cache in the store. `commands.refresh_writes_run` marks a new coverage run; it does not promise that the other packet commands leave the filesystem unchanged |
 | `mutate` left worktrees behind | Every worker uses a kept worktree, including the default of one. `crapkit mutate --drop-pool` reclaims them. See [mutation worktrees](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md#mutation-worktrees) for preparation, concurrent runs and cleanup |
 
@@ -77,7 +82,7 @@ means no artifact named lines for this file, and `flag` says which case you are 
 
 - `untested`: write the first test at the public seam, then `crapkit coverage`. The lines appear. The exception is `remedy: split-lines`: another function shares the source lines, or a Python def's body starts on the line its signature ends, so no test moves the score. Put each definition on its own lines, and such a def's body on its own line after the signature, first.
 - `measured`: the file's bytes changed since a lane measured it. Rerun `crapkit coverage`; committing changes nothing.
-- `cc-only`: the scope sets `coverage_optional`, so only decompose clears it. Most languages land here, because only Python and JS/TS have coverage parsers.
+- `cc-only`: the scope sets `coverage_optional`, so only decompose clears it. Every scope init writes no live lane for lands here (init writes live lanes for pytest, Vitest and Jest). When a reader can measure the scope's language, the note names its parser and lanes.md recipe.
 - `no-lane`: no lane measures this scope, so no test run can name lines. Declare a `[[lane]]` for it, or set `coverage_optional` when no test can reach it. `next-item` never hands one out; `brief` can.
 
 An `uncovered_lines` of `[]` means the artifact answered and nothing is dark. An `excluded`

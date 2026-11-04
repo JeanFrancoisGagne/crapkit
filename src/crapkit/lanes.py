@@ -19,12 +19,13 @@ import socket
 import sys
 import time
 import warnings
+from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from types import MappingProxyType
 from typing import IO, NamedTuple
 
 from .config import Lane
-from .coverage_istanbul import FnCoverage
 from .coverage_format import lane_format
 from .doctor import container_marker, refused_in_container
 from .errors import GitError, ToolError
@@ -42,8 +43,9 @@ from .lane_stamps import (STAMPS_FILE, Stamps, file_sha256, read, read_stamps,  
 from .named import first_few
 from .plaintext import strip_escapes
 from .procs import CwdMissing, NoProgress, own_processes, run_bounded
-from .repopath import Placing
+from .repopath import Unplaced, absolute
 from .repotext import lenient, os_bytes
+from .score import FileEvidence, FnCoverage
 from .universe import ScopeMatch, owning_scope
 from .userhome import user_home
 
@@ -292,32 +294,40 @@ def _shard_hint(root: Path, lane: Lane) -> str:
     crashed-worker check exists to refuse; whether this half-run is worth
     scoring is the operator's call, and `--reuse-artifacts` is where they say so.
 
-    `coverage combine` is coverage.py's command, so only a coveragepy lane gets
-    the recipe: a JS lane sharing the root with a python one finds the python
-    lane's shards and would be handed advice that cannot work for it.
+    The shards and the commands that combine them are the producer's facts, so
+    only a lane whose format names them gets the recipe (coverage_format's
+    `SHARD_GLOB` and `COMBINE_RECIPE`), whatever runner its command spells: a JS
+    lane sharing the root with a python one finds the python lane's shards and
+    would be handed advice that cannot work for it.
 
     The `-o` target is printed relative to the shard directory, because that is
     where the operator is told to stand. `artifact` is repo-relative, so a lane
     with a `cwd` that pasted the key verbatim wrote the JSON one directory below
     the path crapkit reads, and the next run refused it again. The target goes
-    in as one word of the operator's shell, and the recipe is two commands, not
-    a chain: Windows PowerShell 5.1 has no `&&`.
+    in as one word of the operator's shell, and the recipe is commands one after
+    another, not a chain: Windows PowerShell 5.1 has no `&&`.
     """
-    if lane.parser != "coveragepy":
+    producer = lane_format(lane)
+    if producer.SHARD_GLOB is None:
         return ""
     shard_dir = launch_spec(root, lane).cwd
-    shards = sorted(shard_dir.glob(".coverage.*"))
+    shards = sorted(shard_dir.glob(producer.SHARD_GLOB))
     if not shards:
         return ""
     unreadable = _unreadable_shard_name(shard_dir, shards[0])
     if unreadable:
         return unreadable
-    target = Path(os.path.relpath(root / lane.artifact, shard_dir)).as_posix()
+    target = shell_arg(Path(os.path.relpath(root / lane.artifact, shard_dir)).as_posix())
     noun, verb = ("shard", "sits") if len(shards) == 1 else ("shards", "sit")
     return (f"; {len(shards)} coverage {noun} ({shards[0].name}, ...) {verb} in "
             f"{shard_dir}, which is what a killed parallel run leaves behind: "
-            f"`coverage combine` followed by `coverage json -o {shell_arg(target)}` "
+            f"{_recipe(producer.COMBINE_RECIPE, target)} "
             "there, then a re-run with --reuse-artifacts, scores what that suite did measure")
+
+
+def _recipe(commands: tuple[str, ...], target: str) -> str:
+    """The combine commands as one phrase, each in backticks, `{target}` filled."""
+    return " followed by ".join(f"`{command.format(target=target)}`" for command in commands)
 
 
 def _unreadable_shard_name(shard_dir: Path, shard: Path) -> str:
@@ -651,9 +661,13 @@ def staleness_reads(root: Path, lanes, scope_paths: dict, git=None):
     return nullcontext(_facts(root, git))
 
 
-def _read_and_parse(lane: Lane, root: Path,
-                    artifact_path: Path, dead_lines=None) -> tuple[dict[str, list[FnCoverage]], str]:
-    """This lane's coverage, plus the sha256 of the artifact's own bytes.
+def _read_and_parse(lane: Lane, root: Path, artifact_path: Path, dead_lines=None,
+                    evidence: dict[str, FileEvidence] | None = None
+                    ) -> tuple[dict[str, list[FnCoverage]], str, dict[str, Unplaced]]:
+    """This lane's coverage, the sha256 of the artifact's own bytes, and each
+    absolute key the reader did not place, with the placing step's reason.
+    `evidence`, when handed one, takes each file's FileEvidence from the same
+    walk, the record score_rows joins for a reader with no function records.
 
     The reader takes the PATH, not the text: a whole-document parse needs the
     bytes and their UTF-8 decode both live before the first function is
@@ -663,33 +677,27 @@ def _read_and_parse(lane: Lane, root: Path,
 
     The lane's format adapter reads it, and yields uncovered lines from the same
     walk. An optional collector combines them for this command without keeping
-    separate lane maps or global state.
+    separate lane maps or global state; the record of unplaced keys is one the
+    same way, handed to the wrong-tree check.
     """
-    per_file, dead, digest = lane_format(lane).read(lane, root, artifact_path)
+    unplaced: dict[str, Unplaced] = {}
+    per_file, by_path, digest = lane_format(lane).read(lane, root, artifact_path,
+                                                       unplaced=unplaced)
     if dead_lines is not None:
-        dead_lines.add(artifact_path, dead, digest)
-    return per_file, digest
-
-
-# A path the runner did not write relative to this checkout: absolute, drive
-# lettered, or climbing out of the tree. Both parsers rebase a file INSIDE the
-# repo to a repo-relative path, so one that is not either came from elsewhere or
-# was spelled absolutely by a runner told to spell it that way. Which of the two
-# is decided against the root, below; the shape alone does not say.
-_DRIVE = re.compile(r"[A-Za-z]:[\\/]")
-
-
-def _is_absolute(path: str) -> bool:
-    """Absolute in either spelling: a POSIX root, or a drive letter."""
-    return path.startswith("/") or _DRIVE.match(path) is not None
+        dead_lines.add(artifact_path, by_path, digest)
+    if evidence is not None:
+        evidence.update(by_path)
+    return per_file, digest, unplaced
 
 
 def _escapes_repo(path: str) -> bool:
-    return _is_absolute(path) or path.startswith("../")
+    """A measured key the runner did not write relative to this checkout, by
+    its shape: absolute, drive lettered, or climbing out of the tree."""
+    return absolute(path) or path.startswith("../")
 
 
 def _unreached_paths(lane: Lane, matchers: tuple[ScopeMatch, ...],
-                     coverage: dict) -> tuple[str, ...]:
+                     coverage: dict, unplaced: dict) -> tuple[str, ...]:
     """The paths this lane's scopes declare when NOTHING the artifact measured
     reaches any of them, else (). Empty too when the lane's scopes declare no
     path at all: nothing to compare against is not evidence.
@@ -702,48 +710,61 @@ def _unreached_paths(lane: Lane, matchers: tuple[ScopeMatch, ...],
     individual file, and the prefix half of that is `src/faro/core.py/`, a path
     that exists neither in the config the reader is about to open nor on disk.
     """
-    relative = _relative_keys(lane, coverage)
+    relative = _relative_keys(lane, coverage, unplaced)
     if not matchers or any(owning_scope(path, matchers) for path in relative):
         return ()
     return tuple(dict.fromkeys(m.path for m in matchers))
 
 
-def _relative_keys(lane: Lane, coverage: dict):
+def _relative_keys(lane: Lane, coverage: dict, unplaced: dict):
     """The measured keys the runner wrote relative to this checkout, the only
-    ones a scope can claim. The coverage.py reader glues path_prefix onto every
-    key, and `backend/` + `/other/checkout/a.py` is a path under a `backend`
-    scope, as any key is under a root scope; asked of such keys, the check
-    found the scope reached and every function in it scored untested with
-    exit 0. A key that escapes the repo goes to the refusals instead."""
-    as_reported = lane_format(lane).as_reported
-    return (key for key in coverage if not _escapes_repo(as_reported(lane, key)))
+    ones a scope can claim. A root scope claims any key, and so did a
+    `backend` scope claim `backend//other/checkout/a.py` while the coverage.py
+    reader glued path_prefix onto absolute keys: the check found the scope
+    reached and every function in it scored untested with exit 0. A key that
+    escapes the repo goes to the refusals instead."""
+    return (key for key in coverage if not _escaped(_written(lane, key), unplaced))
 
 
-def _escaped_paths(lane: Lane, coverage: dict) -> list[str]:
+def _written(lane: Lane, key: str) -> str:
+    """A measured key as the runner wrote it: the lane's path_prefix taken back
+    off when its format joins one onto a relative key (coverage.py), and
+    nothing taken off an istanbul key, whose reader never reads path_prefix."""
+    glued = lane.path_prefix and lane_format(lane).TAKES_PATH_PREFIX
+    prefix = lane.path_prefix.rstrip("/") + "/"
+    return key[len(prefix):] if glued and key.startswith(prefix) else key
+
+
+def _escaped(written: str, unplaced: dict) -> bool:
+    """Did the runner write this key somewhere other than relative to this
+    checkout? The reader recorded every absolute key it did not place, and a
+    `../` key climbs out of the directory the runner stood in."""
+    return written in unplaced or written.startswith("../")
+
+
+def _escaped_paths(lane: Lane, coverage: dict, unplaced: dict) -> list[str]:
     """The measured files the runner did not write relative to this checkout,
-    spelled the way the artifact spells them. The format's own inverse takes
-    back only what its reader added: path_prefix on a coveragepy key, nothing
-    on an istanbul one, which never reads the key."""
-    as_reported = lane_format(lane).as_reported
-    reported = (as_reported(lane, path) for path in coverage)
-    return sorted(path for path in reported if _escapes_repo(path))
+    spelled the way the artifact spells them."""
+    written = (_written(lane, key) for key in coverage)
+    return sorted(path for path in written if _escaped(path, unplaced))
 
 
-def _split_escaped(root: Path, escaped: list[str]) -> tuple[list[str], list[str]]:
-    """(paths from another tree, absolute paths that land under this root).
+def _split_escaped(escaped: list[str], unplaced: dict) -> tuple[list[str], list[str]]:
+    """(paths from another tree, absolute paths that land under this root), by
+    the reason the reader recorded when it read the key: the placing step's,
+    so the reader and this check cannot disagree about a key, and this check
+    resolves nothing itself.
 
-    An absolute path is placed by the rule the istanbul reader rebases its keys
-    with (repopath.Placing), so a junction, a symlink, a lower-case drive, a
-    `\\\\?\\` prefix or the admin share naming this checkout lands in it, and the
-    reader and this check cannot disagree about a key. `../` stays elsewhere
-    on purpose: it is relative to the runner's working directory, which the
-    artifact never records, so there is nothing to place it against."""
-    placing = Placing(root)
+    A key in this checkout that its format keeps absolute (KEPT_ABSOLUTE) names
+    the runner's own switch. Another tree, a name this platform cannot open
+    (UNOPENABLE, which the check has always called another tree) and a `../`
+    key are the wrong tree: `../` is relative to the runner's working
+    directory, which the artifact never records, so there is nothing to place
+    it against."""
     elsewhere: list[str] = []
     within: list[str] = []
     for path in escaped:
-        lands = _is_absolute(path) and placing(path) is not None
-        (within if lands else elsewhere).append(path)
+        (within if unplaced.get(path) is Unplaced.KEPT_ABSOLUTE else elsewhere).append(path)
     return elsewhere, within
 
 
@@ -814,8 +835,7 @@ def _prefix_meant(lane: Lane, coverage: dict, matchers, root: Path) -> str:
 
 def _prefix_candidates(lane: Lane, coverage: dict, matchers) -> list[tuple[str, str]]:
     """(prefix, key the runner wrote): no prefix first, then each declared path."""
-    as_reported = lane_format(lane).as_reported
-    written = sorted(as_reported(lane, key) for key in coverage)[:_MEANT_PROBES]
+    written = sorted(_written(lane, key) for key in coverage)[:_MEANT_PROBES]
     return [(prefix, key) for prefix in _declared_prefixes(matchers) for key in written]
 
 
@@ -839,7 +859,7 @@ def _meant(prefix: str, key: str) -> str:
 
 
 def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
-                          root: Path) -> None:
+                          root: Path, unplaced: dict[str, Unplaced] | None = None) -> None:
     """Say something when a lane's artifact reaches none of the scopes it claims.
 
     Coverage joins on path and nothing else, so such an artifact contributes
@@ -863,12 +883,17 @@ def _judge_artifact_scope(lane: Lane, coverage: dict, scope_paths: dict | None,
     A mixed artifact is another tree. A path from somewhere else can only have
     come from somewhere else, and the absolute in-tree ones are what the same
     wrong run reports about the files it did reach.
+
+    `unplaced` is the reader's record: each absolute key it did not place, as
+    the runner wrote it, with the placing step's reason. Which tree a key names
+    is read there, never resolved here.
     """
+    record = unplaced or {}
     matchers = lane_matchers(lane, scope_paths or {})
-    declared = _unreached_paths(lane, matchers, coverage)
+    declared = _unreached_paths(lane, matchers, coverage, record)
     if not declared:
         return
-    elsewhere, inside = _split_escaped(root, _escaped_paths(lane, coverage))
+    elsewhere, inside = _split_escaped(_escaped_paths(lane, coverage, record), record)
     if elsewhere:
         raise ToolError(_wrong_tree_message(lane, coverage, declared, elsewhere))
     if inside:
@@ -979,10 +1004,13 @@ def _retested_passes(root: Path, lane: Lane) -> set[str]:
 
 class LaneOutcome(NamedTuple):
     """One lane's result. `stamp` is what the caller must persist (empty when the
-    lane reused an artifact, or when there is no git repo to stamp against)."""
+    lane reused an artifact, or when there is no git repo to stamp against).
+    `evidence` is each measured file's FileEvidence from the walk that read
+    `coverage`, which score_rows joins per lane."""
     coverage: dict[str, list[FnCoverage]]
     provenance: dict
     stamp: dict
+    evidence: Mapping[str, FileEvidence] = MappingProxyType({})
 
 
 def _run_or_reuse(lane: Lane, fresh: Freshness, reuse_artifact: bool,
@@ -1063,8 +1091,10 @@ def _run_owned_lane(lane: Lane, fresh: Freshness, reuse_artifact: bool, dead_lin
     root = fresh.root
     before = None if reuse_artifact else _before_run(lane, fresh)
     exit_code, seconds = _run_or_reuse(lane, fresh, reuse_artifact, owner)
-    coverage, digest = _read_and_parse(lane, root, _artifact_path(root, lane), dead_lines)
-    _judge_artifact_scope(lane, coverage, fresh.scope_paths, root)
+    evidence: dict[str, FileEvidence] = {}
+    coverage, digest, unplaced = _read_and_parse(lane, root, _artifact_path(root, lane),
+                                                 dead_lines, evidence)
+    _judge_artifact_scope(lane, coverage, fresh.scope_paths, root, unplaced)
     provenance = {
         "artifact_sha256": digest,
         "exit_code": exit_code,
@@ -1076,7 +1106,7 @@ def _run_owned_lane(lane: Lane, fresh: Freshness, reuse_artifact: bool, dead_lin
     stamp = {} if before is None else _stamp_entry(
         _facts(root, fresh.git), lane, seconds, provenance,
         _after_run(lane, fresh, coverage, before), fresh)
-    return LaneOutcome(coverage, provenance, stamp)
+    return LaneOutcome(coverage, provenance, stamp, evidence)
 
 
 def _output_lock(path: Path) -> Path:

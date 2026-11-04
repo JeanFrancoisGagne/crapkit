@@ -180,10 +180,27 @@ def _regressed(fresh: dict, marks: dict) -> frozenset:
     return frozenset(key for key, crap in fresh.items() if model.regression(crap, marks.get(key)))
 
 
+# The list verify --json printed each kind under before 0.9.0 listed every
+# finding once under `findings`. A retro replay runs such a crapkit.
+LISTED_BEFORE_FINDINGS = {"gate_violation": "gate_violations",
+                          "ratchet_regression": "ratchet_regressions",
+                          "new_failure": "new_failures"}
+
+
+def findings_of(payload: dict, kind: str) -> list:
+    """verify --json's findings of one kind, each as its item carries it and a
+    new_failure as its test id. A crapkit before 0.9.0 printed the kind's own
+    list instead, holding the same entries: that list."""
+    if "findings" not in payload:
+        return payload[LISTED_BEFORE_FINDINGS[kind]]
+    items = [item for item in payload["findings"] if item["kind"] == kind]
+    return [item["test"] for item in items] if kind == "new_failure" else items
+
+
 def json_verdict(payload: dict) -> Verdict:
-    gate = {(v["path"], v["key_name"] or v["long_name"]) for v in payload["gate_violations"]}
-    ratchet = {(r["path"], r["long_name"]) for r in payload["ratchet_regressions"]}
-    return Verdict(frozenset(gate), frozenset(ratchet), frozenset(payload["new_failures"]))
+    gate = {(v["path"], v["key_name"] or v["long_name"]) for v in findings_of(payload, "gate_violation")}
+    ratchet = {(r["path"], r["long_name"]) for r in findings_of(payload, "ratchet_regression")}
+    return Verdict(frozenset(gate), frozenset(ratchet), frozenset(findings_of(payload, "new_failure")))
 
 
 def digest_pair(history: list[Measured]) -> set[int]:
@@ -232,6 +249,10 @@ class History(RuleBasedStateMachine):
         self.marks: dict | None = None
         self.stamp: str | None = None
         self.running: str | None = None
+        # The per-scope stamp this crapkit's runs record: seed signs it from the
+        # run, and every write of measured numbers and every file a write
+        # creates take it. `running` is the single number 0.8.x wrote.
+        self.scoped: str | None = None
         self.overrides: set[int] = set()
         self.last_marks: dict = {}
         self.side = itertools.count()
@@ -284,6 +305,7 @@ class History(RuleBasedStateMachine):
         if self.running is None:
             versions = json.loads(self.sc.runs()[-1]["tool_versions"])
             self.running = f"crapkit-analysis={versions['analysis_version']} lizard={versions['lizard']}"
+            self.scoped = model.run_stamp(versions)
             self.history[-1].run = replace(self.history[-1].run, metric=self.running)
 
     def _baseline(self) -> Measured | None:
@@ -302,7 +324,13 @@ class History(RuleBasedStateMachine):
         return self.stamp if self.marks is not None else None
 
     def _stamp_refused(self) -> bool:
-        return self.marks is not None and model.stamp_refused(self.stamp, self.running)
+        return (self.marks is not None and model.stamp_refused(self.stamp, self.running)
+                and model.stamp_refused(self.stamp, self.scoped))
+
+    def _measured_stamp(self) -> str:
+        """The stamp a write of measured numbers leaves: the running per-scope
+        stamp, which converts a single-number or unstamped file."""
+        return self.scoped
 
     def _lanes(self) -> tuple:
         return tuple(lane for lane in vw.LANES if lane not in self.sc.world.failing_lanes)
@@ -399,8 +427,9 @@ class History(RuleBasedStateMachine):
             return
         after = model.tighten(before, scores(measured.world), vw.TARGET,
                               self._previous_same_commit(measured))
-        if after != before:
-            self.marks, self.stamp = after, self.running
+        # A pass that moves no mark still converts a file it would stamp otherwise.
+        if after != before or self.stamp != self._measured_stamp():
+            self.marks, self.stamp = after, self._measured_stamp()
 
     def _expected_now(self) -> Verdict | None:
         base = self._baseline()
@@ -422,15 +451,17 @@ class History(RuleBasedStateMachine):
     def _grant(self, measured: Measured, violations) -> None:
         fresh = scores(measured.world)
         self.marks = {**self._marks(), **{key: model.mark_value(fresh[key]) for key in violations}}
-        self.stamp = self.running
+        self.stamp = self._measured_stamp()
         self.overrides.add(measured.id)
 
     def _staged_violations(self, ccn: dict) -> set:
+        marks = self._marks()
         return {key for key in changed(self.head, self.sc.world)
-                if model.hook_gate(ccn[key], vw.TARGET, key in self._marks())}
+                if model.hook_gate(ccn[key], vw.TARGET, marks.get(key))}
 
     def _tracked_violations(self, ccn: dict) -> set:
-        return {key for key in ccn if model.hook_gate(ccn[key], vw.TARGET, key in self._marks())}
+        marks = self._marks()
+        return {key for key in ccn if model.hook_gate(ccn[key], vw.TARGET, marks.get(key))}
 
     def _hook_violations(self, ccn: dict) -> tuple[set, bool]:
         """(violations, whole). docs/upgrading.md, the commit gate in 0.8.1: run
@@ -447,6 +478,8 @@ class History(RuleBasedStateMachine):
         result = vw.drive.Driver(self.sc.root, env={"CRAPKIT_OVERRIDE_REASON": reason}).run(
             "hook-precommit")
         # Outside a commit nothing is granted: the breach is already committed.
+        # A marked function whose ccn passed its mark joins the grant, which
+        # keeps its mark: a mark only falls.
         granted = grant and not whole
         assert result.code == _hook_exit(violations, granted), result.stdout + result.stderr
         if violations and granted:
@@ -472,11 +505,13 @@ class History(RuleBasedStateMachine):
                 if (vw.FILES[scope], fn.long_name) not in marks]
 
     def _hook_grant(self, violations, ccn) -> None:
-        """The hook synthesizes the worst case, ccn^2 + ccn, keeps the recorded
-        stamp and records a hook run."""
-        worst = {key: model.mark_value(ccn[key] * ccn[key] + ccn[key]) for key in violations}
+        """The hook synthesizes the worst case, ccn^2 + ccn, for each violation
+        no mark covers, keeps every mark there is and the recorded stamp, and
+        records a hook run."""
+        marks = self._marks()
+        worst = {key: model.mark_value(ccn[key] * ccn[key] + ccn[key]) for key in violations if key not in marks}
         self._read_upgraded_marks()
-        self.stamp = model.stamp_after("hook-override", self._recorded(), self.running)
+        self.stamp = model.stamp_after("hook-override", self._recorded(), self.scoped)
         self.marks = {**self._marks(), **worst}
         self.overrides.add(self._append("hook-override").id)
 
@@ -489,7 +524,7 @@ class History(RuleBasedStateMachine):
         if base is not None:
             self._read_upgraded_marks()
             self.marks, _, _ = model.seed(self._marks(), scores(base.world), vw.TARGET)
-            self.stamp = base.run.metric
+            self.stamp = self.scoped
 
     def prune(self):
         base = self._baseline()
@@ -497,7 +532,7 @@ class History(RuleBasedStateMachine):
         assert result.code == (1 if base is None else 0), result.stdout + result.stderr
         if base is not None:
             self._read_upgraded_marks()
-            self.stamp = model.stamp_after("prune", self._recorded(), self.running)
+            self.stamp = model.stamp_after("prune", self._recorded(), self.scoped)
             self.marks = model.prune(self._marks(), set(scores(base.world)))
 
     def upgrade(self):
@@ -505,8 +540,7 @@ class History(RuleBasedStateMachine):
         if self.marks is None:
             return self.seed()
         path = self.sc.root / "crapkit-ratchet.tsv"
-        lines = path.read_bytes().decode("utf-8").split("\n")
-        path.write_bytes("\n".join([f"# {OLD_METRIC}", *lines[1:]]).encode("utf-8"))
+        path.write_bytes(single_number(path.read_bytes().decode("utf-8"), OLD_METRIC).encode("utf-8"))
         self.stamp = OLD_METRIC
 
     # --- retention ---------------------------------------------------------------------------
@@ -814,21 +848,21 @@ def test_the_prune_report_names_each_moved_field_and_the_tree(repo_templates, tm
 
 def _verified(code: int, **fields) -> vw.drive.Result:
     """A verify answer, as the two sides of the record check print one."""
-    payload = {"gate_violations": [], "ratchet_regressions": [], "new_failures": [],
-               "forgiven_failures": [], "baseline_run": 4, "run_id": 9, **fields}
+    payload = {"findings": [], "forgiven_failures": [], "baseline_run": 4, "run_id": 9, **fields}
     return vw.drive.Result(("verify",), code, json.dumps(payload), "")
 
 
-GATE = [{"path": "src/app.py", "key_name": "a3( x )", "long_name": "a3( x )"}]
+GATE = [{"kind": "gate_violation", "path": "src/app.py", "key_name": "a3( x )", "long_name": "a3( x )"}]
+NEW = [{"kind": "new_failure", "test": "t::known"}]
 ONE_VERDICT = {
     "only the run ids differ": (_verified(0), _verified(0, baseline_run=None, run_id=1), True),
-    "a gate finding differs": (_verified(6, gate_violations=GATE), _verified(0), False),
+    "a gate finding differs": (_verified(6, findings=GATE), _verified(0), False),
     "the exit differs": (_verified(0), _verified(6), False),
     "both forgive the baseline's failure": (_verified(0, forgiven_failures=["t::known"]),
                                             _verified(0, forgiven_failures=["t::known"],
                                                       baseline_run=None, run_id=1), True),
     "the record counts the forgiven failure as new (V8)": (
-        _verified(0, forgiven_failures=["t::known"]), _verified(8, new_failures=["t::known"]),
+        _verified(0, forgiven_failures=["t::known"]), _verified(8, findings=NEW),
         False),
     "both refuse alike": (vw.drive.Result(("verify",), 5, "", "a"), vw.drive.Result(("verify",), 5, "", "b"), True),
     "one refuses": (_verified(0), vw.drive.Result(("verify",), 5, "", ""), False),
@@ -884,8 +918,7 @@ def _failed_verify(scenario: vw.Scenario) -> None:
 
 
 def _metric(scenario: vw.Scenario, run: int = -1) -> str:
-    versions = json.loads(scenario.runs()[run]["tool_versions"])
-    return f"crapkit-analysis={versions['analysis_version']} lizard={versions['lizard']}"
+    return model.run_stamp(json.loads(scenario.runs()[run]["tool_versions"]))
 
 
 @pytest.mark.nightly
@@ -984,22 +1017,32 @@ def test_bouncing_measurement_holds_marks(make_repo):
 
 def _age_runs(scenario: vw.Scenario, analysis: int) -> str:
     """Relabel every stored run as measured under an older analysis version,
-    as the store an upgrade finds holds them. Returns that metric."""
+    each scope's stamp included, so seed signs those numbers. Returns that metric.
+    A crapkit before 0.9.0 records no scope stamps, and a retro replay runs one."""
     import sqlite3
     connection = sqlite3.connect(scenario.root / ".crapkit" / "crap.sqlite")
     with connection:
         for run_id, text in connection.execute("SELECT id, tool_versions FROM runs").fetchall():
             versions = {**json.loads(text), "analysis_version": analysis}
+            if "scope_stamps" in versions:
+                versions["scope_stamps"] = {name: {**stamp, "analysis": dict.fromkeys(stamp["analysis"], analysis)}
+                                            for name, stamp in versions["scope_stamps"].items()}
             connection.execute("UPDATE runs SET tool_versions = ? WHERE id = ?",
                                (json.dumps(versions), run_id))
     connection.close()
     return _metric(scenario)
 
 
+def single_number(text: str, stamp: str) -> str:
+    """A seeded marks file restamped by hand in the single-number form: its
+    per-scope first line and `#scope` lines give way to one `stamp` line."""
+    lines = [line for line in text.split("\n")[1:] if not line.startswith("#scope\t")]
+    return "\n".join([f"# {stamp}", *lines])
+
+
 def _stamp_marks(scenario: vw.Scenario, stamp: str) -> None:
     path = scenario.root / "crapkit-ratchet.tsv"
-    lines = path.read_bytes().decode("utf-8").split("\n")
-    path.write_bytes("\n".join([f"# {stamp}", *lines[1:]]).encode("utf-8"))
+    path.write_bytes(single_number(path.read_bytes().decode("utf-8"), stamp).encode("utf-8"))
 
 
 def _stamp(scenario: vw.Scenario) -> str | None:
@@ -1038,9 +1081,9 @@ def test_a_write_that_adds_no_number_keeps_the_recorded_stamp(make_repo, write):
 @pytest.mark.nightly
 @pytest.mark.process
 def test_prune_creates_a_file_under_the_running_metric(make_repo):
-    """A marks file prune creates holds no mark and takes the running metric,
-    even when the run it read was measured under an older one; verify then
-    has nothing to refuse."""
+    """A marks file prune creates holds no mark and takes the running per-scope
+    stamp, even when the run it read was measured under an older one; verify
+    then has nothing to refuse."""
     scenario = _measured(make_repo)
     running = _metric(scenario)
     _age_runs(scenario, 7)

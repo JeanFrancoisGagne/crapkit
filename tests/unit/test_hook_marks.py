@@ -1,14 +1,21 @@
-"""Two mark rules, on purpose, and the line between them.
+"""One mark rule, read over the CRAP range each gate knows.
+
+The gate module's pardon holds a function's CRAP range against its mark: the
+whole range at or under the mark pardons it, a low end above the mark is a
+marked rise, and a range across the mark is unproven. What differs between
+the gates is the range they can know.
 
 The commit gate judges staged blobs. A blob has no coverage, so a staged
-violation has no CRAP — only a ccn. `hook-precommit` therefore exempts on the
-EXISTENCE of a (path, long_name) mark: the repo signed for this function, and a
-commit is not the moment to reopen that.
+function's range runs from its ccn to its untested CRAP. `hook-precommit`
+passes a marked breach while its ccn sits at or under the mark, with one count
+line: the CRAP may still sit under the mark, and only coverage can say. A ccn
+above the mark puts the CRAP above it at any coverage, so the hook refuses
+that marked rise. claude-hook reads the same range off the working tree.
 
-`rescore --gate` and `verify` both hold a scored row, so they keep the numeric
-rule: at or under the recorded mark it is carried debt, past it the mark rose
-and the verdict fails. Those two are `_unmarked_breaches`, and this file pins
-that the new hook rule did not leak into them.
+`rescore --gate` and `verify` both hold a scored row, an exact value, so the
+same rule reads as the numeric one: at or under the recorded mark it is carried
+debt, past it the mark rose and the verdict fails. This file pins that the
+hook's range did not leak into rescore's exact value.
 """
 import json
 
@@ -18,11 +25,15 @@ from cli_inproc_repo import (add_knotty, commit_all, git, repo,  # noqa: F401
                              seed_artifacts, template_repo)
 
 from crapkit.cli import main
-from crapkit.cli.scoring import _ceiling_breaches, _unmarked_breaches
-from crapkit.cli.verifying import _split_marked
+from crapkit.cli.scoring import _gate_breaches, _gate_changes
+from crapkit.gate import judge
 from crapkit.hook import Violation
+from crapkit.keys import MarkIndex
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
+
+from test_gate_cases import changed
+from test_gate_hook_mapping import COUNT_LINE, Hooked, hook_refused, record, staged_function
 
 MARK = RatchetEntry("src/mod.py", "legacy( n )", 63.6)
 
@@ -36,75 +47,87 @@ def scored(path: str, name: str, ccn: int, crap: float) -> ScoredRow:
                      0.4, "measured", crap, "decompose")
 
 
-# --- the hook: existence ------------------------------------------------------
+# --- the hook: ccn against the mark ---------------------------------------------
 
-def test_a_marked_function_leaves_the_gated_list():
-    gated, exempt = _split_marked([staged("src/mod.py", "legacy( n )")], [MARK])
+def test_a_marked_function_at_or_under_its_mark_leaves_the_gated_list():
+    split = hook_refused([staged("src/mod.py", "legacy( n )")], [MARK])
 
-    assert gated == []
-    assert [v.long_name for v in exempt] == ["legacy( n )"]
+    assert (split.violations, split.rises, split.carried) == ([], [], 1)
 
 
 def test_an_unmarked_function_stays_gated():
-    gated, exempt = _split_marked([staged("src/mod.py", "fresh( n )")], [MARK])
+    split = hook_refused([staged("src/mod.py", "fresh( n )")], [MARK])
 
-    assert [v.long_name for v in gated] == ["fresh( n )"]
-    assert exempt == []
+    assert [v.long_name for v in split.violations] == ["fresh( n )"]
+    assert (split.rises, split.carried) == ([], 0)
 
 
 def test_the_same_name_in_another_file_is_another_function():
-    gated, exempt = _split_marked([staged("src/other.py", "legacy( n )")], [MARK])
+    split = hook_refused([staged("src/other.py", "legacy( n )")], [MARK])
 
-    assert [v.path for v in gated] == ["src/other.py"]
-    assert exempt == []
+    assert [v.path for v in split.violations] == ["src/other.py"]
+    assert split.carried == 0
 
 
 def test_no_marks_file_gates_everything():
-    violations = [staged("src/mod.py", "legacy( n )")]
+    split = hook_refused([staged("src/mod.py", "legacy( n )")], [])
 
-    assert _split_marked(violations, []) == (violations, [])
+    assert [(v.path, v.long_name, v.ccn) for v in split.violations] == [("src/mod.py", "legacy( n )", 8)]
+    assert split.carried == 0
 
 
 def test_the_gated_order_survives_the_split():
     """The gate prints worst ccn first. Filtering must not reshuffle it."""
-    order = [staged("src/mod.py", "worst( n )", ccn=20),
-             staged("src/mod.py", "legacy( n )", ccn=12),
-             staged("src/mod.py", "mild( n )", ccn=7)]
+    order = [staged("src/mod.py", "worst( n )", ccn=20, start=1),
+             staged("src/mod.py", "legacy( n )", ccn=12, start=20),
+             staged("src/mod.py", "mild( n )", ccn=7, start=40)]
 
-    gated, exempt = _split_marked(order, [MARK])
+    split = hook_refused(order, [MARK])
 
-    assert [v.long_name for v in gated] == ["worst( n )", "mild( n )"]
-    assert [v.long_name for v in exempt] == ["legacy( n )"]
-
-
-@pytest.mark.parametrize("ccn", [7, 12, 40])
-def test_how_far_over_the_ceiling_it_sits_changes_nothing(ccn: int):
-    """Existence is the whole rule here: there is no CRAP on a staged blob to
-    compare, so ccn cannot be smuggled in as a stand-in for one."""
-    gated, exempt = _split_marked([staged("src/mod.py", "legacy( n )", ccn=ccn)], [MARK])
-
-    assert (gated, len(exempt)) == ([], 1)
+    assert [v.long_name for v in split.violations] == ["worst( n )", "mild( n )"]
+    assert split.carried == 1
 
 
-# --- rescore and verify: still the numeric rule -------------------------------
+@pytest.mark.parametrize("ccn", [7, 12, 40, 63])
+def test_a_ccn_at_or_under_the_mark_passes_however_far_over_the_ceiling(ccn: int):
+    """Under a mark of 63.6, ccn 7 is pardoned (its untested CRAP, 56, sits
+    under the mark), ccn 12, 40 and 63 straddle it (unproven), and all four
+    pass: coverage could still hold each at or under the mark."""
+    split = hook_refused([staged("src/mod.py", "legacy( n )", ccn=ccn)], [MARK])
+
+    assert (split.violations, split.rises, split.carried) == ([], [], 1)
+
+
+@pytest.mark.parametrize("ccn", [64, 90])
+def test_a_ccn_above_the_mark_is_a_refused_rise(ccn: int):
+    """ccn 64 against 63.6: CRAP is never under ccn, so the mark rose."""
+    split = hook_refused([staged("src/mod.py", "legacy( n )", ccn=ccn)], [MARK])
+
+    assert [(b.key_name, b.mark, b.function.record.ccn) for b in split.rises] == [("legacy( n )", 63.6, ccn)]
+    assert (split.violations, split.carried) == ([], 0)
+
+
+# --- rescore and verify: the same rule over an exact value ---------------------
+
+def rescore_breaches(rows: list) -> list:
+    """The breaches rescore --gate fails on, each file taken whole, under MARK."""
+    changes = _gate_changes(rows, {}, {r.path for r in rows}, {})
+    return _gate_breaches(judge(changes, lambda scope: 6, lambda: MarkIndex([MARK])), rows)
+
 
 def test_a_scored_breach_past_its_mark_is_still_kept():
-    breaches = _ceiling_breaches([scored("src/mod.py", "legacy( n )", 15, 70.0)],
-                                 {"src/mod.py": 6})
+    breaches = rescore_breaches([scored("src/mod.py", "legacy( n )", 15, 70.0)])
 
-    assert [b.crap for b in _unmarked_breaches(breaches, [MARK])] == [70.0]
+    assert [b.crap for b in breaches] == [70.0]
 
 
 def test_a_scored_breach_at_its_mark_is_still_carried_debt():
-    breaches = _ceiling_breaches([scored("src/mod.py", "legacy( n )", 15, 63.6)],
-                                 {"src/mod.py": 6})
-
-    assert _unmarked_breaches(breaches, [MARK]) == []
+    assert rescore_breaches([scored("src/mod.py", "legacy( n )", 15, 63.6)]) == []
 
 
 # --- the marks file deleted in the commit under gate ----------------------------
 #
-# Both rules pardon through the marks file, so a commit that deletes it takes
+# Every gate pardons through the marks file, so a commit that deletes it takes
 # every pardon with it. Each gate then judges every changed function, the strict
 # direction: a gone file never reads as "this function was signed for".
 
@@ -137,6 +160,63 @@ def marked(repo, capsys):
                    encoding="utf-8", newline="\n")
     capsys.readouterr()
     return repo
+
+
+# --- a carried mark on the commit gate -------------------------------------------
+#
+# The probe in a cc-only scope, where a staged function's CRAP is its ccn:
+# `classify( a , b )` was marked 7.0000 and a signature edit renamed it.
+
+OLD, NEW = "classify( a , b )", "classify( a , b , c = None )"
+CC = "cc/grade.py"
+PROBE_MARK = {(CC, OLD): 7.0}
+
+
+def probe(ccn: int, *names: str):
+    """The staged probe file: each of NAMES at CCN, ten lines apart."""
+    return changed(CC, *(staged_function(record(name, 1 + 10 * at, ccn, CC), "cc")
+                         for at, name in enumerate(names)))
+
+
+@pytest.fixture()
+def hooked(tmp_path, monkeypatch, capsys) -> Hooked:
+    return Hooked(tmp_path, monkeypatch, capsys)
+
+
+def test_a_carried_function_prints_the_carried_line_and_counts_as_pardoned(hooked):
+    code, out, err = hooked(probe(7, NEW), marks=PROBE_MARK, reason=False)
+
+    carried, count = err.splitlines()
+    assert (code, out) == (0, "")
+    assert carried.startswith(f"crapkit gate: {CC} {NEW} carries the mark 7.0000 recorded for {OLD}; ")
+    assert carried.endswith(f' ratchet move --function {CC} "{OLD}" "{NEW}"')
+    assert count + "\n" == COUNT_LINE.format(n=1)
+
+
+def test_a_marked_rise_on_a_carried_function_names_the_key_its_mark_sits_under(hooked):
+    code, out, err = hooked(probe(8, NEW), marks=PROBE_MARK, reason=False)
+
+    assert code == 6
+    assert f"  ccn   8  {CC}:1  {NEW}  mark 7.0000 (carried from {OLD})\n" in out
+    assert " carries the mark " not in err
+
+
+def test_an_ambiguous_carry_refuses_with_keys_sentence_under_each_row(hooked):
+    from crapkit.keys import resolve
+
+    code, out, _ = hooked(probe(7, NEW, NEW), marks=PROBE_MARK, reason=False)
+
+    sentence = resolve((CC, NEW), {(CC, NEW), (CC, f"{NEW}#2")}, PROBE_MARK).text
+    assert code == 6
+    assert f"  ccn   7  {CC}:1  {NEW}\n    {sentence}\n  ccn   7  {CC}:11  {NEW}\n    {sentence}\n" in out
+    assert "twins never carry a mark" in sentence and f'"{NEW}#2"' in sentence
+
+
+def test_the_grant_on_a_carried_rise_names_the_key_its_mark_was_recorded_under(hooked):
+    code, _, _ = hooked(probe(8, NEW), marks=PROBE_MARK)
+
+    (granted,) = hooked.grants
+    assert (code, [(v.path, v.long_name, v.key_name) for v in granted]) == (0, [(CC, NEW, OLD)])
 
 
 @pytest.mark.parametrize("consumer", list(_GATE_ARGV))

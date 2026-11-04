@@ -16,7 +16,8 @@ from cli_inproc_repo import (add_knotty, commit_all, git, istanbul, repo,  # noq
                              seed_artifacts, template_repo)
 
 from crapkit.cli import main
-from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import RatchetEntry
+from stamps import marks_in
 
 
 def run(repo: Path, capsys, *argv: str) -> tuple[int, str, str]:
@@ -36,7 +37,7 @@ def committed_breach(repo: Path, monkeypatch) -> Path:
 
 def mark_all(repo: Path, *names: str) -> None:
     entries = [RatchetEntry("src/app.ts", name, 99.0) for name in names]
-    (repo / "crapkit-ratchet.tsv").write_text(dump_ratchet(entries, stamp=metric_version()),
+    (repo / "crapkit-ratchet.tsv").write_text(marks_in(repo, entries),
                                               encoding="utf-8", newline="\n")
     commit_all(repo, "marks")
 
@@ -46,7 +47,8 @@ def test_outside_a_commit_a_committed_breach_fails(committed_breach, capsys):
 
     assert code == 6, out + err
     assert "nothing is staged and no commit is running" in err, err
-    assert "tracked function(s) exceed the complexity ceiling of 6:" in out, out
+    assert ("tracked function(s) exceed the CRAP ceiling of 6 "
+            "(with no coverage known, CRAP is at least ccn):") in out, out
     assert "ccn   8  src/app.ts:20  knotty ( n )" in out, out
     assert "decompose them and commit the split" in out, out
 

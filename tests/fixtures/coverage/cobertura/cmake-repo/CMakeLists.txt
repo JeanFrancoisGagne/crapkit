@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(shapes CXX)
+enable_testing()
+add_library(shapes src/shapes.cpp)
+target_include_directories(shapes PUBLIC src)
+add_executable(test_shapes tests/test_shapes.cpp)
+target_link_libraries(test_shapes shapes)
+add_test(NAME shapes COMMAND test_shapes)

@@ -305,7 +305,7 @@ def test_lane_order_swap_keeps_scores(tmp_path):
 
 # --- self-diff: the start-line index against the scan ---------------------------------------------
 
-FN = under_test.crapkit("coverage_istanbul").FnCoverage
+FN = under_test.crapkit("score").FnCoverage
 
 
 @st.composite

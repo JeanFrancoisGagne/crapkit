@@ -150,17 +150,21 @@ def pip_install(python: str, requirement: str, spelled: str | None = None) -> st
     """The command that installs `requirement` into `python`'s environment:
     uv's pip for a venv uv made, which holds no pip, else that python's pip.
     `spelled` is how the command names the interpreter (quoted, or the word a
-    lane wrote), `python` itself when omitted."""
+    lane wrote), `python` itself when omitted.
+
+    pip runs under `-P`, here and in `_pip_line`: a reader pastes the line in a
+    repo root, and without the flag `-m` puts that directory first on sys.path,
+    so a `pip.py` there ran in place of pip."""
     word = spelled or python
     if _uv_made(python):
         return f"uv pip install --python {word} {requirement}"
-    return f"{word} -m pip install {requirement}"
+    return f"{word} -P -m pip install {requirement}"
 
 
 def _pip_line(python: str | None, quote, action: str) -> str:
     requirement = f"{_PIP_FLAG[action]} crapkit"
     if python is None:
-        return f"python -m pip install {requirement}"
+        return f"python -P -m pip install {requirement}"
     return pip_install(python, requirement, quote(python))
 
 

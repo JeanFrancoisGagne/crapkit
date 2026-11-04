@@ -1,14 +1,15 @@
 """The root Dockerfile as its header says to use it, on a Docker host.
 
-The header (and docs/agent-json.md#docker) gives two lines: build the image
-from a checkout, then `docker run -i --rm -v "$PWD:/repo" -w /repo crapkit`
-from the repo to serve. The image serves as uid 1000, and a bind mount keeps
-the host's ownership, so the cell scores a repo on the host the way the README
-start does, then serves it three ways: owned by uid 1000, owned by uid 1001 (a
-GitHub runner's user), and owned by 1001 with `--user "$(id -u):$(id -g)"`
-added to the run line. A named volume holding that ownership stands in for
-`$PWD`, so the same cell runs against Docker Desktop's Linux engine, and
-1001:1001 stands in for what `$(id -u):$(id -g)` prints for that owner.
+The header (and docs/agent-json.md#docker) gives three lines: build the image
+from a checkout, `docker run -i --rm -v "$PWD:/repo" -w /repo crapkit` from
+the repo to serve, and that run with `--user "$(id -u):$(id -g)"` for a
+checkout whose owner is not uid 1000. The image serves as uid 1000, and a bind
+mount keeps the host's ownership, so the cell scores a repo on the host the way
+the README start does, then serves it three ways: owned by uid 1000 and owned
+by uid 1001 (a GitHub runner's user) with the run line, and owned by 1001 with
+the --user line. A named volume holding that ownership stands in for `$PWD`,
+so the same cell runs against Docker Desktop's Linux engine, and 1001:1001
+stands in for what `$(id -u):$(id -g)` prints for that owner.
 
 It needs the host's Docker daemon, and the build pulls python:3.12-slim and
 installs from PyPI, so it runs in the nightly host job, never in a kit image.
@@ -31,17 +32,14 @@ PACKET = "deploy-channels"
 HEADER = re.compile(r"^#\s{2,}(docker .+)$", re.M)
 # The header's `-t crapkit`, renamed so a run never replaces a reader's own image.
 TAG = "crapkit-deploy-channels"
-USER_FORM = '--user "$(id -u):$(id -g)"'
-CACHE = "/repo/.crapkit/churn-cache-v2.json"
+# The churn cache by any format version, as the shell globs it: the version is
+# in the file name and moves with the format; who may save it does not.
+CACHE = "/repo/.crapkit/churn-cache-v*.json"
 
 
 def header_lines() -> list[str]:
-    """The build and run lines of the stamped Dockerfile's header comment."""
+    """The build, run and run-as-owner lines of the stamped Dockerfile's header comment."""
     return HEADER.findall((docsnip.root() / "Dockerfile").read_text(encoding="utf-8"))
-
-
-def with_user(run: str) -> str:
-    return run.replace("docker run ", f"docker run {USER_FORM} ", 1)
 
 
 def as_argv(docker: str, line: str, volume: str = "", owner: str = "") -> list[str]:
@@ -128,10 +126,10 @@ def next_path(session: dict) -> str | None:
       use_cases="Docker channel", os="linux", image=None, cadence="nightly", docker_host=True, online=True)
 def test_the_documented_image_serves_a_repo_whoever_owns_it(box, templates, candidate):
     docker = daemon()
-    build, run = header_lines()
+    build, run, run_as_owner = header_lines()
     box.run(as_argv(docker, build), cwd=candidate.staged, expect=0, note="the Dockerfile header's build line")
     repo = measured(box, templates)
-    seen = serve_each(box, docker, repo, [("1000", run), ("1001", run), ("1001", with_user(run))])
+    seen = serve_each(box, docker, repo, [("1000", run), ("1001", run), ("1001", run_as_owner)])
     box.transcript.attach("docker-sessions", seen)
 
     assert docsnip.commands(docsnip.fence("docs/agent-json.md", "Docker")) == [build, run]

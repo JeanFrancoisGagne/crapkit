@@ -62,4 +62,4 @@ def test_verify_counts_one_changed_file_when_another_is_only_touched(tmp_path):
     payload = json.loads(res.stdout)
     assert payload["changed_files"] == 1, payload
     assert [(g["path"], g["long_name"].split("(")[0], g["dirty"])
-            for g in payload["gate_violations"]] == [(REL, "route", False)], payload
+            for g in payload["findings"] if g["kind"] == "gate_violation"] == [(REL, "route", False)], payload

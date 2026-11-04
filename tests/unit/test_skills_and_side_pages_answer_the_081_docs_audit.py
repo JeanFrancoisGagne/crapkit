@@ -22,7 +22,8 @@ from pathlib import Path
 from crapkit.agent_fields import _PACKET_PROPERTIES
 from crapkit.analyze import ANALYSIS_VERSION, analyze_source
 from crapkit.cli.parser import build_parser
-from crapkit.ratchet import stamp_conflict
+from crapkit.ratchet import ScopeStamp, ScopeStamps, stamp_conflict
+from stamps import single_number
 
 ROOT = Path(__file__).resolve().parents[2]
 RECOVER = "plugin/skills/crapkit-recover/SKILL.md"
@@ -56,8 +57,10 @@ def _row(rel: str, key: str) -> str:
 # --- plugin/skills/crapkit-recover/SKILL.md -------------------------------------------
 
 def test_the_recover_skill_quotes_the_upgrade_this_release_makes():
-    recorded, current = "crapkit-analysis=11 lizard=1.24.0", f"crapkit-analysis={ANALYSIS_VERSION} lizard=1.24.0"
-    head = stamp_conflict(recorded, current).split(" - ", 1)[0]
+    """A 0.8.0 file met by this release, in a scope 0.8.1 moved."""
+    running = ScopeStamps("1.24.0", {"web": ScopeStamp({"typescript": ANALYSIS_VERSION}, {"istanbul": 1})})
+    conflict = stamp_conflict(single_number(11), running, frozenset({"web"}))
+    head = conflict.refusal("crapkit-ratchet.tsv").split(" - ", 1)[0]
 
     assert f"`{head}` is the 0.8.1 upgrade" in _prose(RECOVER)
     assert "ccn did not move" not in _doc(RECOVER) and "crapkit-analysis=7" not in _doc(RECOVER)
@@ -180,11 +183,12 @@ def test_the_harness_page_says_install_tests_where_it_said_cells():
 
 
 def test_the_changelog_moves_a_pinned_codex_marketplace_by_hand():
-    unreleased = " ".join(_doc("CHANGELOG.md").split("\n## ", 2)[1].split())
+    """Read by heading: a newer release's section can sit above 0.8.1's."""
+    notes = " ".join(_doc("CHANGELOG.md").split("\n## 0.8.1 ", 1)[1].split("\n## ", 1)[0].split())
 
-    assert "Codex refreshes git marketplaces each time it starts" not in unreleased
-    assert "a marketplace added at a tag stays at that tag" in unreleased
-    assert "`codex plugin marketplace remove crapkit`" in unreleased
+    assert "Codex refreshes git marketplaces each time it starts" not in notes
+    assert "a marketplace added at a tag stays at that tag" in notes
+    assert "`codex plugin marketplace remove crapkit`" in notes
 
 
 # --- docs/comparison.md -------------------------------------------------------------------

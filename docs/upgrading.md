@@ -49,6 +49,321 @@ release's version string until the next release, and pip keeps an installed crap
 whose version matches, so the install line alone leaves the old code in place;
 `--force-reinstall` replaces it and `--no-deps` leaves lizard as it is.
 
+## Upgrading to 0.9.0
+
+<!-- 0.9.0:gate-group -->
+A wrapper that read verify's exit 3 as "no verdict" now gets a verify payload on stdout under
+`--json` when the cause is a file a scope takes whose name is not UTF-8. Read
+`findings[].kind == "unreadable_name"`: one item per such file, with its `path`, `scope` and
+`reason`, and `run_id` null, since no lane ran. The exit code and the stderr line are
+unchanged, and the fix is still `git mv` to a UTF-8 name
+([verify](agent-json.md#a-scoped-file-whose-name-is-not-utf-8)).
+
+Add `-P` by hand to a git hook that ends in `exec python -m crapkit hook-precommit`, in
+`.git/hooks/pre-commit` or a committed hooks directory, and to the merge driver set with
+`git config merge.crapkit-ratchet.driver "python -m crapkit ratchet merge %O %A %B"`:
+upgrading the package rewrites neither. Git runs both from the repository root, and
+`python -m` puts that directory first on `sys.path`, so a `crapkit.py` placed there runs in
+place of crapkit. The lines README now prints are
+`exec python -P -m crapkit hook-precommit` for the hook ([the gate](../README.md#the-gate))
+and `git config merge.crapkit-ratchet.driver "python -P -m crapkit ratchet merge %O %A %B"`
+for the driver ([Development](../README.md#development)); run the driver's line again in
+each clone. A `python` older than 3.11 has no `-P`, so a hook that reaches its `python`
+line stops there with `Unknown option: -P` and exit 2.
+
+The pip lines crapkit prints, the pytest-cov, coverage.py and lizard installs and
+`doctor`'s upgrade and reinstall of the CLI, now read `<python> -P -m pip install`, so a
+`pip.py` at the repository root no longer runs in place of pip when you paste one there. A
+wrapper that matches `python -m pip install` in crapkit's output finds
+`python -P -m pip install` there. The Action installs crapkit with
+`python -P -m pip install -e`, since it runs pip in your checkout. An Action
+`python-version` older than 3.11 still fails at the install step, as it did on 0.8.1,
+where pip said `requires a different Python` and exited 1. The step now prints
+`crapkit needs Python 3.11 or newer, and python-version installed Python 3.10.21: set python-version to 3.11 or newer`
+for a 3.10.21, then Python's `Unknown option: -P`, and exits 2.
+
+### verify --json drops the 0.8.1 per-kind keys
+
+`verify --json` no longer prints the eight keys 0.8.1 listed its findings and their
+counts under. Every value they held is in `findings`, one item per finding, or in
+`counts` ([The findings list](agent-json.md#the-findings-list)). A wrapper reads each
+old key's value from the place on its row:
+
+| 0.8.1 key | Where its value is in 0.9.0 |
+|---|---|
+| `gate_violations` | `findings` items of kind `gate_violation` |
+| `ratchet_regressions` | `findings` items of kind `ratchet_regression` |
+| `overridden` | `findings` items of kind `overridden`, with `fails` false and `exit_code` null |
+| `new_failures` | `findings` items of kind `new_failure`, each test id in field `test` |
+| `diff_uncovered` | `findings` items of kind `diff_uncovered`, at most 50 |
+| `unread_files` | `findings` items of kind `unread_file`; a file a scope takes whose name is not UTF-8 is an item of kind `unreadable_name`, where 0.8.1 printed an error object whose `unread_files` listed it |
+| `diff_uncovered_count` | `counts.diff_uncovered_count` |
+| `diff_uncovered_max` | `counts.diff_uncovered_max` |
+
+Each item carries the entry's own fields and its `dirty` flag, as the old list's entry
+did. `rescore --gate --json` and the `check_gate` tool keep `gate.breaches` and
+`gate.unread_files`, and the `--json` error object keeps its `unread_files`.
+<!-- /0.9.0:gate-group -->
+
+<!-- 0.9.0:m1-foundations -->
+### Runner refusals and hints follow the runner the command names
+
+0.9.0 reads a lane's runner from what it runs, not from its `parser`
+([How crapkit reads a lane's runner](lanes.md#how-crapkit-reads-a-lanes-runner)), and each
+refusal and hint below now needs that runner written where it reads. A lane that runs
+its suite through a package.json script or a recipe loses the refusal and keeps running:
+a config 0.8.1 refused at load, such as an istanbul lane running
+`npm run test -- --coverage src/a.test.ts`, loads under 0.9.0.
+
+| Check | Fires on | To keep it |
+|---|---|---|
+| vitest file-filter refusal (exit 3 at load) | a command segment that names vitest, whatever the `parser` | `npx vitest run --coverage` in place of `npm run test -- --coverage` |
+| pytest narrowing refusal (exit 3 at load) | a command segment that names pytest, when `full_suite` is true | `python -m pytest` in place of `make cov` |
+| container refusal (exit 5 at coverage) and doctor's container WARN | a command that names pytest, without `container_ok = true` | `python -m pytest` in place of `make cov` |
+| doctor's pytest-cov probe | pytest with `--cov`, named in the command or in the package.json script it runs | `python -m pytest --cov` in the command or that script |
+| doctor's `results_artifact` hint | the named runner's junit flags; a lane that names no runner gets one generic line | name the runner in the command or that script |
+
+The three refusals read the command alone, because config load reads crapkit.toml and
+nothing else. A runner named only in package.json devDependencies turns on none of
+them. The narrowing refusal now also reads a pytest that an istanbul lane runs, so a
+positional there is refused unless the lane sets `full_suite = false`.
+
+A runner counts as named only when it heads its step or follows a wrapper that
+[step 1](lanes.md#how-crapkit-reads-a-lanes-runner) reads through (`npx`, `pnpm exec`,
+`uv run`, `python -m`, `env` and the rest of that list). Behind any other wrapper it loses
+the refusals as well, even when the command already writes `python -m pytest`: 0.8.1
+refused these at load and 0.9.0 loads them, and the pytest ones lose the container
+refusal too.
+
+| 0.8.1 refused | To keep the refusals |
+|---|---|
+| `timeout 600 python -m pytest tests/unit --cov` | drop `timeout`, set the lane's `timeout_seconds = 600` |
+| `timeout 600 npx vitest run --coverage src/a.ts` | drop `timeout`, set the lane's `timeout_seconds = 600` |
+| `nice -n 5 pytest tests/unit --cov` | drop `nice` so `pytest` heads the step |
+| `pipx run pytest tests/unit --cov` | install pytest where the suite runs and write `python -m pytest` |
+| `dotenv run pytest tests/unit --cov` | move the variables into the lane's `env` table |
+| `xvfb-run pytest tests/unit --cov` | none while `xvfb-run` stays; start the display outside the lane, or keep the wrapper and lose the refusals |
+<!-- /0.9.0:m1-foundations -->
+
+<!-- 0.9.0:mission-3 -->
+`hook-precommit` exits 6 on a marked function whose staged ccn passed its mark, where
+0.8.1 passed any marked function. A staged blob has no coverage, but CRAP is never under
+ccn, so such a mark rose at any coverage, and `verify` would fail it later. A CI step that
+runs `hook-precommit --base` now exits 6 on that commit, sooner than `verify` did. The
+refusal names the function, its ccn and its mark:
+
+```
+crapkit gate: 1 staged function(s) rose past their ratchet mark:
+  ccn   8  calc/parse.py:16  read_row( line , cols )  mark 7.3333
+```
+
+Decompose the function until its ccn sits at or under the mark, or pass the commit with
+`CRAPKIT_OVERRIDE_REASON` set, which records the override and leaves the mark as it was
+([the commit gate](ratchet.md#the-commit-gate-skips-marked-functions)). A marked function
+whose ccn sits at or under its mark passes as before, counted on the stderr line.
+
+`claude-hook` now exits 2 on a marked function whose ccn passed its mark or rose, where
+0.8.1 stayed silent on any marked function, so an agent sees advisories on debt the repo
+marked. A ccn past the mark draws the marked block, which the commit gate will refuse; a
+ccn that rose since HEAD while the CRAP range straddles the mark draws the warn block,
+which the commit gate passes with a warn. Each block has its own closing line
+([claude-hook](agent-json.md#claude-hook)). The advisory for an unmarked breach prints the
+same lines as before, and a comment edit inside a marked function stays silent.
+<!-- /0.9.0:mission-3 -->
+
+<!-- 0.9.0:metric-stamp -->
+### What each upgrade source does to the marks file
+
+0.9.0 writes one stamp per scope and reads the single-number line older releases wrote.
+
+- **From 0.8.1** (analysis 13): nothing to reseed. The first `crapkit verify` warns once,
+  naming the scopes whose coverage mode it inferred, and the first passing verify or seed
+  converts the file. A scope whose lanes use only a parser 0.8.x never read (lcov,
+  Cobertura, JaCoCo or a Go coverprofile, once crapkit reads them) reads as the move from
+  cc-only to measured: follow
+  [Turning a cc-only scope into a measured one](#turning-a-cc-only-scope-into-a-measured-one).
+- **From 0.8.0 or older** (analysis 11 or below): the first `crapkit verify` names every
+  scope that holds marks, once. Run `crapkit coverage`, `crapkit ratchet prune`, then
+  `crapkit ratchet seed --scope NAME` for each scope it names, or one plain
+  `crapkit ratchet seed`. A mark whose CRAP rose keeps its value: an analysis move keeps
+  marks only falling, and each rise goes through `crapkit verify --override`, as
+  [Analysis version 13](#analysis-version-13) says. Only a scope that also moves from
+  cc-only to measured takes the run's values on its scoped seed.
+
+### Marks a newer lizard stamped take one reseed
+
+crapkit 0.8.1 and earlier accept any lizard below 1.25, and 0.9.0 pins `lizard==1.24.0`.
+PyPI has served lizard 1.24.1 since 2026-10-05, so a crapkit 0.8.1 installed on or after
+that day seeds its marks under a lizard newer than 1.24.0: 1.24.1 to 1.24.3 as of
+2026-10-26. If you seeded or re-seeded on such an install, the first line of your marks
+file names that lizard, as in `# crapkit-analysis=13 lizard=1.24.3`.
+
+0.9.0 reads those marks as it reads older ones: `crapkit verify` exits 3 and names the
+reseed, and `crapkit doctor` lists them as a WARN and exits 0. Run `crapkit coverage`,
+`crapkit ratchet prune` and `crapkit ratchet seed` once after you upgrade to 0.9.0, then
+commit the marks file.
+
+Every teammate upgrades crapkit as well, the Action's `uses:` pin and the pre-commit `rev`
+included. A teammate still on 0.8.1 measures under the newer lizard, so their verify asks
+for a reseed too, and each reseed they run moves the marks back.
+
+### verify names the scopes whose rules moved
+
+0.9.0 checks the marks scope by scope. A marks file 0.8.1 seeded holds one analysis
+number, 13, and no coverage mode. Its first `crapkit verify` under 0.9.0 compares that
+number with each language of each scope that holds marks, infers each scope's coverage
+mode from its lanes, and prints one warning naming the scopes it inferred, on stderr
+below its `verify OK` line:
+
+```
+warning: crapkit-ratchet.tsv records one analysis number and no coverage mode, so verify read scope(s) api, web as measured by the coverage readers 0.8.x read for their lanes; nothing to do: the next seed or passing verify records each scope's mode
+```
+
+Nothing to do. A scope whose lanes use only a parser 0.8.x never read was cc-only when
+0.8.x seeded it, so verify refuses it as the move to measured and names its
+`crapkit ratchet seed --scope NAME`.
+
+From a release older than 0.8.1, such as 0.7.6 at analysis 11, the first `crapkit verify`
+refuses before any lane runs. It names every scope that holds marks, each language old
+number to new, and a seed for each:
+
+```
+crapkit: ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 2 scope(s): api (python analysis 11 to 13), web (typescript analysis 11 to 13) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope api`, then `crapkit ratchet seed --scope web`
+```
+
+[The metric stamp](ratchet.md#the-metric-stamp) lists each kind of move a refusal names.
+
+### The first seed writes one stamp per scope
+
+The first `crapkit ratchet seed` under 0.9.0 rewrites the marks file with one stamp line per
+scope, from the stamps the run it reads recorded. A run 0.8.x measured recorded none, so run
+`crapkit coverage` under 0.9.0 first; seed refuses such a run and names `crapkit coverage`.
+To repair one scope that verify names, run `crapkit ratchet seed --scope NAME`: it rewrites
+that scope's marks and line and leaves the others as they are. The file records one lizard
+version for every scope, and a scoped seed keeps it, so for a lizard move verify names the
+plain `crapkit ratchet seed` instead, and `--scope` refuses the file and names that seed.
+
+From that seed on, crapkit 0.8.x refuses the file once, by name, and changes nothing. 0.8.0's
+`crapkit verify` prints:
+
+```
+crapkit: ratchet marks were recorded under [crapkit-stamp=2 lizard=1.24.0: crapkit-ratchet.tsv holds one stamp per scope, which crapkit 0.9.0 or later reads] but this run measures [crapkit-analysis=11 lizard=1.24.0] — CRAP scores are not comparable across metric versions; run `crapkit coverage`, then re-baseline with `crapkit ratchet seed`
+```
+
+That line's seed does not help on 0.8.x: 0.8.x reads each `#scope` line as a mark it
+cannot parse, so its seed, prune, move and merge driver refuse the file too. Upgrade every
+teammate to 0.9.0 before you commit the reseeded file.
+
+To go back to 0.8.x after that seed, check out the `crapkit-ratchet.tsv` you committed
+before it. A repo that 0.9.0 adopted has no such file: remove it, then run the re-seed
+block under [Downgrading](#downgrading), which writes it again under the older release:
+
+```sh
+git rm -q crapkit-ratchet.tsv
+```
+
+### Turning a cc-only scope into a measured one
+
+A cc-only scope scores `crap = ccn`, so each of its marks equals its function's ccn. Once a
+lane measures the scope, the same function scores `ccn^2 x (1 - cov)^3 + ccn`, and every
+marked function that is not fully covered scores above its mark. The marks file records
+the scope as cc-only, so crapkit reads the change from that stamp:
+
+1. Add the `[[lane]]` that measures the scope and remove the scope's
+   `coverage_optional = true`, in one commit. Keep the scope's name: a scope renamed in
+   the same commit has no recorded stamp, so it reads as `unstamped`, not as this change.
+   Rename in one commit and add the lane in the next.
+2. Run `crapkit doctor`. Its report holds one WARN for the scope, and doctor still exits 0:
+
+   ```
+   WARN `crapkit verify` refuses crapkit-ratchet.tsv at exit 3: ratchet marks were recorded under [crapkit-stamp=2 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 1 scope(s): py (coverage cc-only to coveragepy=1) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope py`; py was cc-only and is now measured by its coveragepy lane(s), so its marks hold no coverage yet: follow docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one
+   ```
+
+   `crapkit verify` refuses the same way, at exit 3, before any lane runs.
+3. Run `crapkit coverage --export export.tsv` to measure the scope and write each
+   function's ccn, coverage and CRAP.
+4. Compare the export with the scope's marks in `crapkit-ratchet.tsv`. Each marked
+   function whose exported `crap` is above its mark is one that is not fully covered.
+5. Run `crapkit ratchet seed --scope NAME` for the scope the WARN names. On this move the
+   seed replaces the scope's marks with the run's values, rises included, and counts the
+   rises. Every other scope keeps its stamp line and its marks.
+6. Review the diff: `git diff crapkit-ratchet.tsv` shows the scope's stamp line and each
+   mark that moved.
+7. Commit the marks file.
+8. Run `crapkit verify`. It passes.
+
+For example, a function at ccn 8 carries the cc-only mark 8.0000. At 0% coverage it scores
+8^2 x 1 + 8 = 72, so the scoped seed raises its mark from 8 to 72 and its line counts the
+rise: `scope py: added 0, tightened 0, raised 1 (first py/calc.py check( a ) 8.0000 -> 72.0000)`.
+Had the same commit also renamed the scope, the scope would read as `unstamped`: the seed
+keeps the mark at 8, and `crapkit verify` names the function at exit 7.
+
+### The first passing verify converts the marks file
+
+From 0.8.1, you need no reseed. The first `crapkit verify` under 0.9.0 that passes
+rewrites the marks file with one stamp line per scope, even when no mark moves; then its OK
+line ends `ratchet: restamped -> git add crapkit-ratchet.tsv`. The conversion needs
+the file's one analysis number to be the one 0.9.0 runs; an older number refuses before any
+lane runs, as above. `verify --override` converts the file the same way when it grants.
+
+After that verify, crapkit 0.8.x refuses the file, as it refuses a reseeded one. Upgrade
+every checkout and CI job that runs crapkit first, or pass `--no-tighten` to every 0.9.0
+verify until they are: `verify --no-tighten` leaves the marks file byte-identical, so 0.8.x
+still reads it.
+<!-- /0.9.0:metric-stamp -->
+
+<!-- 0.9.0:mission-4 -->
+### A signature edit keeps its mark
+
+0.9.0's gates pass a function whose signature changed while exactly one mark in its file
+shares its bare name and its CRAP stays at or under that mark: `rescore --gate`,
+`check_gate` and `verify` print one `crapkit gate: ... carries the mark ...` line for it.
+A teammate on 0.8.x still refuses that function, since 0.8.x reads a mark only under the
+function's exact key, until the marks file holds the mark under the new key and is
+committed: by a passing verify that writes it there, or by the
+`crapkit ratchet move --function` command the line prints.
+
+The next passing `crapkit verify` re-keys such a mark: it writes the mark under the
+function's new key at its value, or lower when the function improved, and its OK line ends
+`ratchet: 0 dropped, 0 tightened, 1 re-keyed -> git add crapkit-ratchet.tsv`. Commit that
+file as you commit any tighten. `verify --json` gains `ratchet_changes.rekeyed`, and a
+`ratchet_regression` item gains `carried_from`. A teammate on 0.8.x reads the re-keyed file
+as it reads any mark.
+<!-- /0.9.0:mission-4 -->
+
+<!-- 0.9.0:m1-readers -->
+<!-- /0.9.0:m1-readers -->
+
+<!-- 0.9.0:m5-comment-fixture -->
+<!-- /0.9.0:m5-comment-fixture -->
+
+<!-- 0.9.0:mission-9 -->
+<!-- /0.9.0:mission-9 -->
+
+<!-- 0.9.0:mission-2 -->
+<!-- /0.9.0:mission-2 -->
+
+<!-- 0.9.0:lanes-visible -->
+<!-- /0.9.0:lanes-visible -->
+
+<!-- 0.9.0:schema-2 -->
+<!-- /0.9.0:schema-2 -->
+
+<!-- 0.9.0:criterion -->
+<!-- /0.9.0:criterion -->
+
+<!-- 0.9.0:m6-step-coverage -->
+<!-- /0.9.0:m6-step-coverage -->
+
+<!-- 0.9.0:release-bytes -->
+<!-- /0.9.0:release-bytes -->
+
+<!-- 0.9.0:protocol-2-step -->
+<!-- /0.9.0:protocol-2-step -->
+
+<!-- 0.9.0:hash-cost -->
+<!-- /0.9.0:hash-cost -->
+
 ## 0.8.0 to 0.8.1, in order
 
 Each step links the section that explains it.
@@ -1630,7 +1945,7 @@ today:
 
 ```
 $ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 1 scope(s): calc (python analysis 7 to 8) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope calc`
 ```
 
 That transition changed cognitive complexity, not `ccn` or the CRAP formula. Later

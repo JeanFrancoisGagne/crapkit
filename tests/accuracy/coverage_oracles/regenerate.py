@@ -20,7 +20,15 @@ not run here (node_modules not installed, no `uv`, no network for a venv).
 The committed recordings were made in the accuracy image (Linux, node 22.23.3,
 CPython 3.12.14): node producers read CRAPKIT_ACCURACY_NODE_ROOT, or
 tools/accuracy/node; Python producers each get a venv built by `uv` under
-CRAPKIT_ACCURACY_PRODUCERS (default ~/.cache/crapkit-accuracy/producers).
+CRAPKIT_ACCURACY_PRODUCERS (default ~/.cache/crapkit-accuracy/producers). The two
+lcov recordings were made in debian:trixie-slim with Debian's clang and llvm
+19.1.7, rustc 1.99.1 and cargo-llvm-cov 0.9.1 on PATH; gcovr-7.2's Cobertura
+and lcov, in the same image with Debian's g++ 14.2.0 and gcovr 7.2. The two
+JaCoCo 0.8.12 recordings of the Java probe were made in gradle:8.10.2-jdk21
+(OpenJDK 21.0.5) and maven:3.9.9-eclipse-temurin-21 (OpenJDK 21.0.7). The
+three Go coverprofiles were made in golang:1.26.8-bookworm (go1.26.8), and
+recorded/gocover-cobertura-1.5.0 holds gocover-cobertura 1.5.0's conversion of
+the set run there, its <source> made relative (go) by hand.
 """
 from __future__ import annotations
 
@@ -52,14 +60,17 @@ class ProducerMissing(RuntimeError):
 class Producer:
     """One coverage tool. `steps` are argv templates run from the probe root:
     {py} the producer's interpreter, {node} node, {out} the scenario's output
-    directory, {s} the scenario. `files` maps a recorded suffix to the file a run
-    leaves under {out}."""
+    directory, {s} the scenario; a step ending `>`, path writes its stdout there.
+    `files` maps a recorded suffix to the file a run leaves under {out}, the
+    first one the artifact `check` compares. A native producer (kind `native`)
+    runs only where each `versions` argv prints its pinned text."""
     name: str
     kind: str
     steps: tuple
     files: dict
     packages: tuple = ()
     env: dict = field(default_factory=dict)
+    versions: tuple = ()
 
 
 _COVERAGE_RUN = ("{py}", "-m", "coverage", "run", "--rcfile=py/coveragerc",
@@ -120,17 +131,83 @@ _NYC = Producer("nyc-18.0.0", "node", (("{node}", "node_modules/nyc/bin/nyc.js",
                                          "--include=js/shapes.js", "{node}",
                                          "harness/run-node.cjs", "{s}"),),
                 {".json": "coverage-final.json"})
+# c8 writes istanbul JSON and lcov from one run, so accuracy check 3 compares the
+# two readings of the same counts.
 _C8 = Producer("c8-12.0.0", "node", (("{node}", "node_modules/c8/bin/c8.js", "--reporter=json",
-                                       "--report-dir={out}", "--temp-directory={out}/.c8",
-                                       "--include=mjs/shapes.mjs", "{node}",
-                                       "harness/run-node.mjs", "{s}"),),
-               {".json": "coverage-final.json"})
+                                       "--reporter=lcovonly", "--report-dir={out}",
+                                       "--temp-directory={out}/.c8", "--include=mjs/shapes.mjs",
+                                       "{node}", "harness/run-node.mjs", "{s}"),),
+               {".json": "coverage-final.json", ".lcov": "lcov.info"})
+
+# The lcov producers: cargo-llvm-cov over the Rust probe on stable rustc (line
+# coverage only: branch coverage needs nightly), and clang's source-based
+# coverage over the C++ probe, exported by llvm-cov.
+CARGO_LLVM_COV = "0.9.1"
+RUSTC = "1.99.1"
+LLVM = "19.1.7"
+_CARGO = Producer(f"cargo-llvm-cov-{CARGO_LLVM_COV}", "native",
+                  (("cargo", "llvm-cov", "run", "--manifest-path", "rust/Cargo.toml", "--lcov",
+                    "--output-path", "{out}/artifact.lcov", "--", "{s}"),),
+                  {".lcov": "artifact.lcov"},
+                  versions=((("cargo", "llvm-cov", "--version"), f"cargo-llvm-cov {CARGO_LLVM_COV}"),
+                            (("rustc", "--version"), f"rustc {RUSTC}")))
+_LLVM_COV = Producer(f"llvm-cov-{LLVM}", "native", (
+    ("clang++", "-fprofile-instr-generate", "-fcoverage-mapping", "-O0", "-o", "{out}/drive",
+     "cpp/drive.cpp", "cpp/shapes.cpp"),
+    ("{out}/drive", "{s}"),
+    ("llvm-profdata", "merge", "-sparse", "{out}/drive.profraw", "-o", "{out}/drive.profdata"),
+    ("llvm-cov", "export", "-format=lcov", "-instr-profile={out}/drive.profdata", "{out}/drive",
+     "cpp/shapes.cpp", ">", "{out}/artifact.lcov")),
+    {".lcov": "artifact.lcov"}, env={"LLVM_PROFILE_FILE": "{out}/drive.profraw"},
+    versions=((("clang++", "--version"), f"clang version {LLVM}"),
+              (("llvm-cov", "--version"), f"LLVM version {LLVM}")))
+
+# gcc's gcov counters over the C++ probe, written by gcovr as Cobertura and as
+# lcov from one run: the gcno and gcda files land in {out}, so gcovr searches it.
+GCOVR = "7.2"
+GCC = "14.2.0"
+_GCOVR = Producer(f"gcovr-{GCOVR}", "native", (
+    ("g++", "--coverage", "-O0", "-o", "{out}/drive", "cpp/drive.cpp", "cpp/shapes.cpp"),
+    ("{out}/drive", "{s}"),
+    ("gcovr", "--root", ".", "--filter", "cpp/shapes.cpp", "--cobertura", "{out}/artifact.xml",
+     "--lcov", "{out}/artifact.lcov", "{out}")),
+    {".xml": "artifact.xml", ".lcov": "artifact.lcov"},
+    versions=((("gcovr", "--version"), f"gcovr {GCOVR}"), (("g++", "--version"), f") {GCC}")))
+
+# JaCoCo over the Java probe through Gradle and through Maven, XML and CSV from
+# one run. Each scenario builds into {out}, since a build directory kept from
+# the call run would hold its test results and its JaCoCo data.
+JACOCO = "0.8.12"
+_JACOCO_GOAL = f"org.jacoco:jacoco-maven-plugin:{JACOCO}"
+_GRADLE = Producer(f"jacoco-{JACOCO}-gradle-8.10.2", "native", (
+    ("gradle", "--no-daemon", "-q", "-p", "java", "-PprobeOut={out}/build", "test",
+     "jacocoTestReport"),),
+    {".xml": "build/reports/jacoco/test/jacocoTestReport.xml",
+     ".csv": "build/reports/jacoco/test/jacocoTestReport.csv"},
+    versions=((("gradle", "--version"), "Gradle 8.10.2"), (("java", "-version"), '"21.0.5"')))
+_MAVEN = Producer(f"jacoco-{JACOCO}-maven-3.9.9", "native", (
+    ("mvn", "-q", "-B", "-f", "java/pom.xml", "-DprobeOut={out}/target",
+     f"{_JACOCO_GOAL}:prepare-agent", "test", f"{_JACOCO_GOAL}:report"),),
+    {".xml": "target/site/jacoco/jacoco.xml", ".csv": "target/site/jacoco/jacoco.csv"},
+    versions=((("mvn", "--version"), "Apache Maven 3.9.9"), (("java", "-version"), '"21.0.7"')))
+
+# go test over the Go probe in each cover mode; -C runs it in the probe's module.
+GO = "1.26.8"
+
+
+def _go(mode: str) -> Producer:
+    return Producer(f"go-{GO}-{mode}", "native", (
+        ("go", "-C", "go", "test", f"-covermode={mode}", "-coverprofile={out}/artifact.out",
+         "./..."),),
+        {".out": "artifact.out"}, versions=((("go", "version"), f"go{GO} "),))
+
 
 PRODUCERS = {producer.name: producer for producer in (
     _coveragepy("7.16.1"), _coveragepy("7.13.0"), _coveragepy("7.10.6"), _coverage_reports(),
     _pytest_cov("5.0.0", "8.3.5"), _pytest_cov("7.1.0", "9.1.1"),
     _pytest_cov("7.1.0", "9.1.1", ("--cov-context=test",), "-contexts", "py/coveragerc-contexts"),
-    _vitest("v8"), _vitest("istanbul"), _jest("babel"), _jest("v8"), _NYC, _C8)}
+    _vitest("v8"), _vitest("istanbul"), _jest("babel"), _jest("v8"), _NYC, _C8, _CARGO,
+    _LLVM_COV, _GCOVR, _GRADLE, _MAVEN, _go("set"), _go("count"), _go("atomic"))}
 
 
 # --- where the tools come from ----------------------------------------------------------------
@@ -200,10 +277,43 @@ def _argv(step: tuple, values: dict) -> list[str]:
     return [part.format(**values) for part in step]
 
 
+def _native(producer: Producer) -> str:
+    """A native producer runs only at its pinned versions: another clang or rustc
+    maps other lines, so its artifact would not be this recording's rerun."""
+    for argv, pinned in producer.versions:
+        if shutil.which(argv[0]) is None:
+            raise ProducerMissing(f"{argv[0]} is not on PATH; {producer.name} records with it")
+        done = subprocess.run(list(argv), capture_output=True, text=True)
+        if pinned not in done.stdout + done.stderr:
+            raise ProducerMissing(f"{' '.join(argv)} does not print {pinned!r}; "
+                                  f"{producer.name} records with it")
+    return ""
+
+
+TOOLS = {"node": lambda producer: shutil.which("node") or "node",
+         "python": lambda producer: str(python_for(producer)), "native": _native}
+
+
 def _tool(producer: Producer) -> str:
-    if producer.kind == "node":
-        return shutil.which("node") or "node"
-    return str(python_for(producer))
+    return TOOLS[producer.kind](producer)
+
+
+def _redirect(argv: list[str]) -> tuple[list[str], Path | None]:
+    """(argv, the file its stdout goes to) for a step ending `>`, path."""
+    if argv[-2:-1] == [">"]:
+        return argv[:-2], Path(argv[-1])
+    return argv, None
+
+
+def _step(producer: Producer, scenario: str, argv: list[str], root: Path, env: dict) -> None:
+    argv, stdout = _redirect(argv)
+    done = subprocess.run(argv, cwd=root, env=env, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
+    if done.returncode != 0:
+        raise RuntimeError(f"{producer.name} {scenario}: {' '.join(argv)} exited "
+                           f"{done.returncode}:\n{done.stdout[-2000:]}\n{done.stderr[-2000:]}")
+    if stdout:
+        stdout.write_text(done.stdout, encoding="utf-8")
 
 
 def run(producer: Producer, root: Path, scenario: str, out: Path) -> Path:
@@ -211,13 +321,10 @@ def run(producer: Producer, root: Path, scenario: str, out: Path) -> Path:
     out.mkdir(parents=True, exist_ok=True)
     tool = _tool(producer)
     values = {"py": tool, "node": tool, "out": out.as_posix(), "s": scenario}
-    env = {**os.environ, **producer.env, "PROBE_SCENARIO": scenario, "PROBE_OUT": out.as_posix()}
+    env = {**os.environ, **{key: value.format(**values) for key, value in producer.env.items()},
+           "PROBE_SCENARIO": scenario, "PROBE_OUT": out.as_posix()}
     for step in producer.steps:
-        done = subprocess.run(_argv(step, values), cwd=root, env=env, capture_output=True,
-                              text=True, encoding="utf-8", errors="replace")
-        if done.returncode != 0:
-            raise RuntimeError(f"{producer.name} {scenario}: {' '.join(step)} exited "
-                               f"{done.returncode}:\n{done.stdout[-2000:]}\n{done.stderr[-2000:]}")
+        _step(producer, scenario, _argv(step, values), root, env)
     return out
 
 
@@ -243,12 +350,15 @@ def canonical(artifact: dict, root: str) -> dict:
 
 
 _VOLATILE_ATTRIBUTES = re.compile(r'\b(timestamp|time|hostname)="[^"]*"')
+# JaCoCo's session: the host name and a random id, the start and dump times.
+_SESSIONINFO = re.compile(r"<sessioninfo [^>]*/>")
 
 
 def canonical_text(text: str, root: str) -> str:
     """lcov, xml and JUnit: the root marked, times and the host name fixed."""
     posix = root.replace("\\", "/").rstrip("/")
     marked = text.replace(root, ROOT_MARK).replace(posix, ROOT_MARK).replace("\r\n", "\n")
+    marked = _SESSIONINFO.sub('<sessioninfo id="0" start="0" dump="0"/>', marked)
     return _VOLATILE_ATTRIBUTES.sub(lambda match: f'{match.group(1)}="0"', marked)
 
 
@@ -256,7 +366,10 @@ def _recorded_bytes(suffix: str, produced: Path, root: Path) -> bytes:
     if suffix == ".json":
         artifact = canonical(json.loads(produced.read_bytes()), str(root))
         return (json.dumps(artifact, sort_keys=True, indent=1) + "\n").encode()
-    return canonical_text(produced.read_bytes().decode("utf-8"), str(root)).encode()
+    text = canonical_text(produced.read_bytes().decode("utf-8"), str(root))
+    # cargo-llvm-cov and llvm-cov key each SF by its absolute path: kept
+    # relative to the probe root, as coverage.py and vitest write theirs.
+    return text.replace(f"SF:{ROOT_MARK}/", "SF:").encode()
 
 
 def record_one(producer: Producer, root: Path, scenario: str, out: Path, dest: Path) -> None:
@@ -270,6 +383,16 @@ def record_one(producer: Producer, root: Path, scenario: str, out: Path, dest: P
 
 def _counts(path: Path) -> list:
     import counts_table
+    if _text_reader(path) == "jacoco":
+        return counts_table.jacoco_sourcefiles(path.read_bytes())
+    if path.suffix == ".xml":
+        return list(counts_table.cobertura_classes(path.read_bytes()))
+    if path.suffix == ".out":
+        return sorted(counts_table.coverprofile_lines(path.read_text(encoding="utf-8")).items())
+    if path.suffix == ".lcov":
+        text = path.read_text(encoding="utf-8")
+        return [sorted(counts_table.lcov_lines(text).items()),
+                sorted(counts_table.lcov_files(text).items())]
     artifact = json.loads(path.read_bytes())
     if "files" in artifact:
         return sorted(counts_table.coveragepy_rows(artifact), key=repr)
@@ -290,8 +413,28 @@ def _fn_coverage(path: Path, kind: str) -> dict | str:
         return str(refused).replace(str(path), "<artifact>")
 
 
+# A coverprofile read here has no go.mod beside it, so crapkit's reading of
+# either run is the same refusal; counts_table's lines carry that check.
+TEXT_READERS = {".lcov": "lcov", ".xml": "cobertura", ".out": "coverprofile"}
+# JaCoCo writes this DOCTYPE at the head of every XML report; Cobertura never does.
+JACOCO_DOCTYPE = b"-//JACOCO//DTD Report"
+
+
+def _text_reader(path: Path) -> str | None:
+    """The crapkit reader of a text recording, None for JSON."""
+    if path.suffix == ".xml" and JACOCO_DOCTYPE in path.read_bytes()[:256]:
+        return "jacoco"
+    return TEXT_READERS.get(path.suffix)
+
+
 def _parse(path: Path, kind: str) -> dict:
     import importlib
+    parser = _text_reader(path)
+    if parser:
+        lane = importlib.import_module("crapkit.config").Lane(
+            name=parser, command="x", artifact=path.name, parser=parser, scopes=("probes",))
+        reader = importlib.import_module("crapkit.coverage_format").lane_format(lane)
+        return reader.read(lane, path.parent, path)[1]
     if kind == "python":
         reader = importlib.import_module("crapkit.coverage_py")
         return reader.parse_coveragepy_both_file(path, path_prefix="")[0]
@@ -308,17 +451,22 @@ def differences(producer: Producer, fresh: Path, committed: Path) -> list[str]:
         found.append(f"{committed.name}: per-function counts differ")
     if _fn_coverage(fresh, producer.kind) != _fn_coverage(committed, producer.kind):
         found.append(f"{committed.name}: crapkit's parsed FnCoverage differs")
-    if json.loads(fresh.read_bytes()) != json.loads(committed.read_bytes()):
+    if _canonical_form(fresh) != _canonical_form(committed):
         found.append(f"{committed.name}: the canonical artifact differs")
     return found
+
+
+def _canonical_form(path: Path):
+    """A JSON artifact as its value, a text one (lcov) as its bytes."""
+    return json.loads(path.read_bytes()) if path.suffix == ".json" else path.read_bytes()
 
 
 def check_one(producer: Producer, root: Path, scenario: str, out: Path) -> list[str]:
     fresh = out / "canonical"
     record_one(producer, root, scenario, out, fresh)
-    committed = RECORDED / producer.name / f"{scenario}.json"
+    name = scenario + next(iter(producer.files))
     return [f"{producer.name}: {line}"
-            for line in differences(producer, fresh / f"{scenario}.json", committed)]
+            for line in differences(producer, fresh / name, RECORDED / producer.name / name)]
 
 
 def _each(names: list[str], act) -> list[str]:

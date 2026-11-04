@@ -112,7 +112,11 @@ HOLDER = textwrap.dedent("""
     time.sleep(600)
 """)
 
+# On Windows a miss ends the child's whole tree, so no grandchild outlives the kill to hold the pipes.
+POSIX_DESCENDANTS = pytest.mark.skipif(os.name == "nt", reason="a miss on Windows ends the grandchild too")
 
+
+@POSIX_DESCENDANTS
 def test_a_descendant_holding_the_pipes_cannot_stall_the_report(tmp_path, run_out, monkeypatch):
     marker = tmp_path / "grandchild-pid"
     child = subprocess.Popen([*PYTHON, "-c", HOLDER, str(marker)],
@@ -128,6 +132,7 @@ def test_a_descendant_holding_the_pipes_cannot_stall_the_report(tmp_path, run_ou
         child.communicate()
 
 
+@POSIX_DESCENDANTS
 def test_on_miss_frees_the_pipes_before_a_missed_communicate_reads_them(tmp_path, run_out):
     marker = tmp_path / "grandchild-pid"
     child = subprocess.Popen([*PYTHON, "-c", HOLDER, str(marker)],
@@ -149,6 +154,47 @@ def test_on_miss_frees_the_pipes_before_a_missed_communicate_reads_them(tmp_path
             release()
         child.kill()
         child.communicate()
+
+
+# The child starts `-c <code> <args>` as its own child, then sleeps.
+SPAWNER = "import subprocess, sys, time; subprocess.Popen([sys.executable, '-S', '-c', *sys.argv[1:]]); time.sleep(600)"
+OPENER = textwrap.dedent("""
+    import os, sys, time
+    from pathlib import Path
+    held = open(sys.argv[1], "w")
+    marker = Path(sys.argv[2])
+    partial = marker.with_suffix(".part")
+    partial.write_text(str(os.getpid()))
+    partial.replace(marker)  # the marker exists only once the file is open
+    time.sleep(600)
+""")
+
+
+def _deleted(path) -> bool:
+    try:
+        path.unlink()
+    except PermissionError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(os.name != "nt", reason="POSIX kills the child alone: a live descendant there blocks no delete")
+def test_a_miss_on_windows_ends_the_grandchild_and_frees_the_file_it_held(tmp_path, run_out, monkeypatch):
+    """A grandchild that outlived the killed child kept its files open, and the
+    next cleanup failed on them (WinError 32)."""
+    held, marker = tmp_path / "held", tmp_path / "grandchild-pid"
+    child = subprocess.Popen([*PYTHON, "-c", SPAWNER, OPENER, str(held), str(marker)])
+    try:
+        wait_for(marker, child)
+        run_out()
+        with pytest.raises(AssertionError, match="was killed"):
+            exited(child)
+        monkeypatch.setattr(hang_guard, "HANG_SECONDS", HANG_SECONDS)
+
+        wait_until(lambda: _deleted(held), what=f"{held} deleted (WinError 32 while a live process holds it)")
+    finally:
+        if held.exists() and marker.exists():
+            os.kill(int(marker.read_text()), signal.SIGTERM)
 
 
 def test_a_miss_whose_log_was_never_written_still_reports_the_miss(tmp_path, run_out):

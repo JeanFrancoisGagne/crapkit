@@ -184,7 +184,7 @@ def test_solo_mid_feature_hears_the_advisory_then_the_gate(box, templates):
     assert [_generic(line) for line in said(spoke).splitlines()] == _advisory_lines(EXAMPLE)
     assert "refresh_token" in said(seen["rescore"])
     assert said(seen["brief"]).startswith("calc/session.py:1  refresh_token( req , store )")
-    assert "crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6" in said(seen["refused"])
+    assert "crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6" in said(seen["refused"])
     assert "crapkit gate" not in said(seen["landed"])
 
 
@@ -399,6 +399,12 @@ def _rows(text: str) -> list[str]:
     return [_generic(line) for line in text.splitlines() if line.strip().startswith("risk")]
 
 
+def _in_page_terms(text: str, repo: Path) -> str:
+    """A printed line by shape, with the repo's own path written as the page
+    writes it: inventory ends with the store's path, and the page's repo is /repo."""
+    return shape(text.replace(str(repo), "/repo"))
+
+
 @cell("lin-handbook-polyglot", channel="pip venv", harness="none",
       scenario="fresh: handbook workflow 3 on Python, TypeScript, Rust and shell: init's lines as printed, the "
                "cc-only scopes, inventory and the worklist rows the page shows",
@@ -413,7 +419,7 @@ def test_day_one_on_a_polyglot_repo_prints_the_pages_init_and_rows(box):
     assert said(init[0]).splitlines() == init[1].splitlines()
     assert config.count("coverage_optional = true") == 2
     assert (doctor[0].exit, said(doctor[0]).splitlines()[-1]) == (0, doctor[1].splitlines()[-1])
-    assert shape(said(inventory[0])).startswith(shape(inventory[1]))
+    assert _in_page_terms(said(inventory[0]), repo).startswith(shape(inventory[1]))
     assert _rows(said(worklist[0])) == _rows(html.unescape(worklist[1]))
 
 
@@ -672,7 +678,7 @@ def test_below_the_git_top_the_enforcement_block_arms_a_working_hook(box, templa
     refused = box.run(["git", "commit", "-q", "-m", "breach"], cwd=root, env=box.commit_env(), expect=1)
 
     assert armed
-    assert "crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6" in said(refused)
+    assert "crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6" in said(refused)
 
 
 def enforce_where_it_can(box, root: Path) -> bool:

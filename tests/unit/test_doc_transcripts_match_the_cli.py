@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from cli_inproc_repo import repo, template_repo  # noqa: F401
+from cli_inproc_repo import commit_all, git, repo, template_repo  # noqa: F401
 
 from crapkit.cli import main
 from crapkit.cli.verifying import _ratchet_suffix
@@ -22,10 +22,21 @@ from crapkit.errors import ToolError
 
 ROOT = Path(__file__).resolve().parents[2]
 MARKS = "crapkit-ratchet.tsv"
+HANDBOOK = "docs/handbook.html"
 
 
 def _page(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
+
+
+def _page_text(rel: str) -> str:
+    """The page as a reader sees it. The handbook is HTML: each <pre> block
+    becomes a fence, tags go, and `&gt;` reads as `>` again."""
+    text = _page(rel)
+    if rel.endswith(".html"):
+        text = re.sub(r"</?pre\b[^>]*>", "\n```\n", text)
+        text = html.unescape(re.sub(r"<[^>]+>", "", text))
+    return text
 
 
 def _output_under(lines: list[str]) -> list[str]:
@@ -88,10 +99,181 @@ def test_each_doctor_report_closes_on_the_verdict_its_findings_print(page):
         assert report[-1] == _verdict_of(report), (page, report[-2:])
 
 
+# --- the runner line doctor prints for each lane ---------------------------------
+#
+# doctor names each lane's runner on a line of its own. The two checks above
+# read a report's first line and its verdict only, so a page could drop every
+# runner line and stay green.
+
+RUNNER_LINE = re.compile(r"(ok  |note) lane '[^']*': (runs |runner unknown)")
+_TOML_BLOCK = re.compile(r"^```toml\n(.*?)^```", re.M | re.S)
+
+
+def _printed(findings, capsys) -> list[str]:
+    """The lines doctor prints for these findings, less the closing verdict."""
+    from crapkit.cli.admin import _print_findings
+
+    _print_findings(findings)
+    return capsys.readouterr().out.splitlines()[:-1]
+
+
+def _lane_reports(lines: list[str]) -> list[tuple[int, list[str]]]:
+    """(line index, output) for each `$ crapkit doctor` report that names a lane."""
+    found = [(i, _output_under(lines[i + 1:])) for i, line in enumerate(lines)
+             if line.strip() == "$ crapkit doctor"]
+    return [(i, report) for i, report in found
+            if any(line.startswith(FINDINGS) and (" lane '" in line or "lane(s) declared" in line)
+                   for line in report)]
+
+
+def _config_above(lines: list[str], at: int):
+    """The last toml block above line `at` that declares a lane, the config the
+    report under it reads, loaded with a scope for each name its lanes claim
+    and it does not declare: the lanes page opens on a lone [[lane]]."""
+    import tomllib
+
+    from crapkit.config import load_config_text
+
+    *_, body = [block for block in _TOML_BLOCK.findall("\n".join(lines[:at]) + "\n")
+                if re.search(r"^\[\[lane\]\]$", block, re.M)]
+    raw = tomllib.loads(body)
+    declared = {scope["name"] for scope in raw.get("scope", ())}
+    missing = sorted({name for lane in raw["lane"] for name in lane["scopes"]} - declared)
+    scopes = "".join(f'[[scope]]\nname = "{name}"\npaths = ["{name}"]\nlanguages = ["python"]\n'
+                     for name in missing)
+    return load_config_text(scopes + body)
+
+
+def test_every_doctor_report_that_lists_lanes_prints_each_lane_s_runner_line(capsys):
+    """README's quickstart and the lanes page show doctor over the lane the
+    page declares above the report. Each report carries the runner lines doctor
+    prints for that config, no more and no fewer."""
+    from crapkit.cli.admin import NO_PACKAGES, _doctor_runners
+
+    checked = []
+    for page in DOCTOR_PAGES:
+        lines = _page(page).splitlines()
+        for at, report in _lane_reports(lines):
+            expected = _printed(_doctor_runners(_config_above(lines, at), NO_PACKAGES), capsys)
+            checked.append((f"{page}:{at + 1}", [line for line in report if RUNNER_LINE.match(line)],
+                            expected))
+
+    assert len(checked) >= 3, "the reports stopped being found, so nothing is checked"
+    assert [row for row in checked if row[1] != row[2]] == []
+
+
+def test_the_runner_section_shows_the_line_doctor_prints_for_each_place_it_reads(capsys):
+    """One lane per place a runner is read from: the command, the package.json
+    script it runs, devDependencies, and nowhere; then a lane naming two."""
+    from crapkit.cli.admin import PackageMap, _doctor_runners
+    from crapkit.config import Config
+    from crapkit.scaffold import npm_package
+
+    shapes = [("py", "python -m pytest --cov", None),
+              ("js", "npm run test -- --coverage", {"scripts": {"test": "vitest run"}}),
+              ("js", "make cov", {"devDependencies": {"vitest": "^2.0.0"}}),
+              ("js", "npm run cov", None),
+              ("both", "python -m pytest --cov && npx vitest run --coverage", None)]
+    text = _page("docs/lanes.md")
+    section = text[text.index("## How crapkit reads a lane's runner"):]
+    block = section[section.index("```\n") + 4:]
+    printed = [line for name, command, package in shapes
+               for line in _printed(_doctor_runners(
+                   Config(lanes=(Lane(name, command, "cov.json", "istanbul", ("src",)),)),
+                   PackageMap({"": npm_package(package)} if package else {}, {})), capsys)]
+
+    assert block[:block.index("```")].splitlines() == printed
+
+
+# --- the refusals a lane's runner word turns on ----------------------------------
+#
+# The narrowing, file-filter and container refusals fire on the runner a
+# command spells. The checks above skip a refusal block, which has no finding
+# line and no verdict, so a reworded refusal left these transcripts stale.
+
+def _one_lane(name: str, command: str, parser: str) -> str:
+    return ('[[scope]]\nname = "calc"\npaths = ["calc"]\nlanguages = ["python"]\n'
+            f'[[lane]]\nname = "{name}"\ncommand = {json.dumps(command)}\n'
+            f'artifact = ".crapkit/cov/{name}.json"\nparser = "{parser}"\nscopes = ["calc"]\n')
+
+
+def _refusal_transcripts(page: str) -> list[tuple[str, str, str, list[str]]]:
+    """(page:line, lane, command, output) for each `$ crapkit doctor` whose
+    output is a lane refusal, the command read off the `command = "..."` line
+    above it and the lane off the refusal."""
+    import tomllib
+
+    lines = _page_text(page).splitlines()
+    found = []
+    for i, line in enumerate(lines):
+        output = _output_under(lines[i + 1:]) if line.strip() == "$ crapkit doctor" else []
+        named = re.match(r"crapkit: lane '([^']+)'", output[0]) if output else None
+        if not named:
+            continue
+        written = next(above for above in reversed(lines[:i]) if re.match(r"(# )?command = ", above))
+        command = tomllib.loads(written.removeprefix("# "))["command"]
+        found.append((f"{page}:{i + 1}", named.group(1), command, output))
+    return found
+
+
+def test_every_narrowing_transcript_prints_what_doctor_prints_under_cmd_exe(monkeypatch, repo,
+                                                                            capsys):
+    """README, the lanes page and the handbook show doctor refusing a lane that
+    narrows a full-suite run. The single quotes and the `;` are cmd.exe cases,
+    so each is read as cmd.exe reads it; the `&&` ones read the same under
+    either shell."""
+    from crapkit import config
+
+    monkeypatch.setattr(config, "SHELL_IS_CMD", True)
+    checked = []
+    for page in ("README.md", "docs/lanes.md", HANDBOOK):
+        for where, name, command, output in _refusal_transcripts(page):
+            (repo / "crapkit.toml").write_text(_one_lane(name, command, "coveragepy"), encoding="utf-8")
+            code = main(["doctor", "--repo", str(repo)])
+            printed = capsys.readouterr().err.splitlines()
+            exit_line = [f"EXIT={code}"] if output[len(printed):] else []
+            checked.append((where, output, printed + exit_line))
+
+    assert len(checked) >= 6, "the transcripts stopped being found, so nothing is checked"
+    assert [row for row in checked if row[1] != row[2]] == []
+
+
+def test_the_lanes_page_quotes_the_file_filter_refusal_a_vitest_lane_draws():
+    from crapkit.config import load_config_text
+    from crapkit.errors import ConfigError
+
+    with pytest.raises(ConfigError) as raised:
+        load_config_text(_one_lane("js", "npx vitest run --coverage src/grade.ts", "istanbul"))
+
+    assert f"crapkit: {raised.value}" in _page("docs/lanes.md").splitlines()
+
+
+def test_the_lanes_page_quotes_the_container_refusal_a_pytest_lane_draws(monkeypatch):
+    from crapkit import lanes
+
+    monkeypatch.setenv("CRAPKIT_INSIDE_CONTAINER", "1")
+    lane = Lane("py", "python -m pytest --cov", ".crapkit/cov/py.json", "coveragepy", ("calc",))
+    with pytest.raises(ToolError) as raised:
+        lanes._refuse_container_python(lane)
+
+    assert f"crapkit: lane 'py' FAILED: {raised.value}" in _page("docs/lanes.md").splitlines()
+
+
+def test_the_lanes_page_quotes_the_container_warn_doctor_prints_before_that_refusal(capsys):
+    """The WARN called every lane it reached a coverage.py suite after the rule
+    moved to the command, and nothing held the page to the line doctor prints."""
+    from crapkit.doctor import container_lane_findings
+
+    lane = Lane("py", "python -m pytest --cov", ".crapkit/cov/py.json", "coveragepy", ("calc",))
+    printed = _printed(container_lane_findings([lane], "/.dockerenv exists"), capsys)
+
+    assert printed and printed[0] in _page("docs/lanes.md").splitlines(), printed
+
+
 def test_the_quickstarts_verify_ok_lines_carry_the_ratchet_tail_their_steps_write():
     """Step 6 (Python) and step 7 (TypeScript) repay the one seeded mark, so
     the tighten drops it and the OK line asks for the `git add`."""
-    tail = _ratchet_suffix({"dropped": 1, "tightened": 0}, [], MARKS)
+    tail = _ratchet_suffix({"dropped": 1, "tightened": 0, "rekeyed": 0}, [], MARKS)
     ok_lines = [line for block in _blocks(_page("README.md"), "crapkit verify")
                 for line in block if line.startswith("verify OK")]
 
@@ -100,7 +282,7 @@ def test_the_quickstarts_verify_ok_lines_carry_the_ratchet_tail_their_steps_writ
 
 
 def test_the_restamp_transcript_carries_the_tail_the_restamp_prints():
-    tail = _ratchet_suffix({"dropped": 0, "tightened": 0}, [], MARKS)
+    tail = _ratchet_suffix({"dropped": 0, "tightened": 0, "rekeyed": 0}, [], MARKS)
     text = _page("docs/ratchet.md")
     block = text[text.index("warning: crapkit-ratchet.tsv carries no metric stamp"):]
     ok = next(line for line in block.splitlines() if line.startswith("verify OK"))
@@ -214,7 +396,6 @@ def test_the_lanes_page_quotes_the_held_line_tune_prints_for_its_testpath_lanes(
 
 # --- the next step worklist and seed end with -----------------------------------
 
-HANDBOOK = "docs/handbook.html"
 TRANSCRIPT_PAGES = ("README.md", HANDBOOK,
                     *sorted(str(p.relative_to(ROOT)).replace("\\", "/")
                             for p in (ROOT / "docs").glob("*.md")))
@@ -225,16 +406,6 @@ def _as_typed(lines: list[str]) -> list[str]:
     from crapkit.invocation import _self
 
     return [line.replace(_self(), "crapkit") for line in lines]
-
-
-def _page_text(rel: str) -> str:
-    """The page as a reader sees it. The handbook is HTML: each <pre> block
-    becomes a fence, tags go, and `&gt;` reads as `>` again."""
-    text = _page(rel)
-    if rel.endswith(".html"):
-        text = re.sub(r"</?pre\b[^>]*>", "\n```\n", text)
-        text = html.unescape(re.sub(r"<[^>]+>", "", text))
-    return text
 
 
 def _outputs(page: str, prefix: str) -> list[tuple[str, list[str]]]:
@@ -287,13 +458,150 @@ def test_every_worklist_transcript_ends_with_the_step_worklist_prints(tmp_path):
             if not _ends_as_printed(tmp_path, block)] == []
 
 
+FLIP_SECTION = "### Turning a cc-only scope into a measured one"
+_CC_ONLY_PY = '[[scope]]\nname = "py"\npaths = ["py"]\nlanguages = ["python"]\ncoverage_optional = true\n'
+_MEASURED_PY = ('[[scope]]\nname = "py"\npaths = ["py"]\nlanguages = ["python"]\n\n[[lane]]\nname = "py"\n'
+                'command = "python -m pytest --cov"\nartifact = ".crapkit/cov/py.json"\nparser = "coveragepy"\n'
+                'scopes = ["py"]\n')
+
+
+def _flip_section() -> list[str]:
+    """The upgrade guide's flip procedure, each line without its list indent."""
+    text = _page("docs/upgrading.md")
+    section = text[text.index(FLIP_SECTION):text.index("<!-- /0.9.0:metric-stamp -->")]
+    return [line.strip() for line in section.splitlines()]
+
+
+def test_the_flip_procedure_quotes_the_warn_doctor_prints_for_the_flipped_scope(tmp_path, capsys):
+    """The procedure's py scope was seeded cc-only, and a coveragepy lane measures it now."""
+    from crapkit.cli.admin import _doctor_marks_stamp
+    from crapkit.config import load_config_text
+    from crapkit.ratchet import RatchetEntry, dump_ratchet, running_stamp
+
+    stamp = running_stamp(load_config_text(_CC_ONLY_PY, root=tmp_path))
+    (tmp_path / MARKS).write_text(dump_ratchet([RatchetEntry("py/calc.py", "check( a )", 8.0)],
+                                               stamp=stamp, key_version=1, file_name=MARKS), encoding="utf-8")
+    findings = _doctor_marks_stamp(tmp_path, load_config_text(_MEASURED_PY, root=tmp_path))
+    [warn] = _as_typed(_printed(findings, capsys))
+
+    assert warn.startswith("WARN ") and warn in _flip_section(), warn
+
+
+def test_the_flip_procedure_runs_its_steps_in_order_and_quotes_the_seed_s_rise():
+    from crapkit.cli.ratchet_cmds import _raised_note
+    from crapkit.ratchet import RatchetEntry
+
+    text = "\n".join(_flip_section())
+    steps = ["`crapkit doctor`", "`crapkit coverage --export export.tsv`", "`crapkit ratchet seed --scope NAME`",
+             "`git diff crapkit-ratchet.tsv`", "Commit the marks file", "`crapkit verify`"]
+    raised = _raised_note([(RatchetEntry("py/calc.py", "check( a )", 72.0), 8.0)])
+
+    at = 0
+    for step in steps:
+        assert step in text[at:], (step, "missing, or before the step it follows")
+        at = text.index(step, at) + len(step)
+    assert f"`scope py: added 0, tightened 0{raised}`" in " ".join(text.split()), raised
+
+
+MOVE_SECTION = "### Moving marks by hand"
+_GRADE_SCOPE = '[[scope]]\nname = "calc"\npaths = ["calc"]\nlanguages = ["python"]\n'
+_SIGNED_GRADE = "def classify(a, b, c=None):\n    return a\n"
+
+
+def _move_section() -> list[str]:
+    text = _page("docs/ratchet.md")
+    start = text.index(MOVE_SECTION)
+    return text[start:text.index("\n---\n", start)].splitlines()
+
+
+def _signature_edit_repo(root: Path, mark: str) -> Path:
+    """The section's story: calc/grade.py gained `c=None`, and MARK, the row the
+    page shows before the move, still keys the old signature."""
+    root.mkdir()
+    (root / "crapkit.toml").write_text(_GRADE_SCOPE, encoding="utf-8")
+    (root / "calc").mkdir()
+    (root / "calc" / "grade.py").write_text(_SIGNED_GRADE, encoding="utf-8")
+    (root / MARKS).write_text(f"path\tlong_name\tcrap\n{mark}\n", encoding="utf-8")
+    return root
+
+
+def test_each_function_move_transcript_prints_what_the_command_prints(tmp_path, capsys):
+    """Each `$ crapkit ratchet move --function` block in "Moving marks by hand"
+    runs as typed against that story, and prints its lines, its EXIT included;
+    the success leaves the row the page shows after it."""
+    import shlex
+
+    lines = _move_section()
+    before, after = (line for line in lines if line.startswith("calc/grade.py\tclassify( a , b"))
+    runs = [(at, line[2:]) for at, line in enumerate(lines)
+            if line.startswith("$ crapkit ratchet move --function ")]
+    assert len(runs) >= 2, runs
+    for n, (at, command) in enumerate(runs):
+        root = _signature_edit_repo(tmp_path / str(n), before)
+        code = main([*shlex.split(command)[1:], "--repo", str(root)])
+        out = capsys.readouterr()
+        printed = (out.out + out.err).splitlines() + ([f"EXIT={code}"] if code else [])
+        assert printed == _output_under(lines[at + 1:]), command
+        marks = (root / MARKS).read_text(encoding="utf-8").splitlines()[1:]
+        assert marks == [before if code else after], command
+
+
+CARRY_SECTION = "## A signature change keeps its mark"
+_PROBE_TOML = ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "calc"\npaths = ["calc"]\n'
+               'languages = ["python"]\ncoverage_optional = true\n')
+_COMMIT_ID = re.compile(r"\b[0-9a-f]{11}\b")
+
+
+def _classify(params: str) -> str:
+    """calc/grade.py with classify at ccn 7, under the signature PARAMS."""
+    branches = "".join(f"    if a == {n}:\n        return {n}\n" for n in range(6))
+    return f"def classify({params}):\n{branches}    return b\n"
+
+
+def _carry_probe(root: Path) -> Path:
+    """The section's story: seed marked classify( a , b ) at 7.0000, the marks
+    were committed, and the edit changed only the signature."""
+    (root / "calc").mkdir(parents=True)
+    (root / "crapkit.toml").write_text(_PROBE_TOML, encoding="utf-8")
+    (root / ".gitignore").write_text(".crapkit/\n", encoding="utf-8")
+    (root / "calc" / "grade.py").write_text(_classify("a, b"), encoding="utf-8")
+    git(root, "init", "-q")
+    commit_all(root, "base")
+    assert main(["coverage", "--repo", str(root)]) == 0
+    assert main(["ratchet", "seed", "--repo", str(root)]) == 0
+    commit_all(root, "seed")
+    (root / "calc" / "grade.py").write_text(_classify("a, b, c=None"), encoding="utf-8")
+    return root
+
+
+def test_the_signature_carry_transcripts_print_what_rescore_gate_and_verify_print(tmp_path, capsys):
+    """Each block in "A signature change keeps its mark" runs as typed over the
+    probe, exits 0, and prints its carried line and its verdict lines as the
+    page shows them, stderr first, commit ids aside."""
+    import shlex
+
+    text = _page("docs/ratchet.md")
+    start = text.index(CARRY_SECTION)
+    section = text[start:text.index("\n---\n", start)]
+    root = _carry_probe(tmp_path / "probe")
+    capsys.readouterr()
+    for command in ("crapkit rescore calc/grade.py --gate", "crapkit verify"):
+        [block] = _blocks(section, command)
+        code = main([*shlex.split(command)[1:], "--repo", str(root)])
+        out = capsys.readouterr()
+        printed = _as_typed(out.err.splitlines() + out.out.splitlines())
+        assert code == 0, printed
+        assert [_COMMIT_ID.sub("<id>", line) for line in printed] == [
+            _COMMIT_ID.sub("<id>", line) for line in block], command
+
+
 def test_every_seed_transcript_under_the_running_metric_ends_with_commit_then_verify(capsys):
     from crapkit.cli.ratchet_cmds import _print_seed_next
 
     _print_seed_next("seed", MARKS, "")
     [after] = _as_typed(capsys.readouterr().out.splitlines())
     seeds = [(page, block) for page, block in _printed_blocks("crapkit ratchet seed", f"{MARKS}: added")
-             if "was measured under" not in block[0]]
+             if "was measured under" not in block[0] and " measured scope " not in block[0]]
 
     assert len(seeds) >= 6, seeds
     assert [(page, block[-1]) for page, block in seeds if block[-1] != after] == []

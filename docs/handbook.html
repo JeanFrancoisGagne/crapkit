@@ -324,22 +324,22 @@
   <tr><td class="mono">tsx</td><td class="mono">.tsx</td><td><code>istanbul</code></td></tr>
   <tr><td class="mono">javascript</td><td class="mono">.js .jsx .mjs .cjs</td><td><code>istanbul</code></td></tr>
   <tr><td class="mono">vue</td><td class="mono">.vue</td><td><code>istanbul</code>, when your own vitest run reports on <code>.vue</code> files</td></tr>
-  <tr><td class="mono">go</td><td class="mono">.go</td><td>cc-only</td></tr>
-  <tr><td class="mono">rust</td><td class="mono">.rs</td><td>cc-only</td></tr>
+  <tr><td class="mono">go</td><td class="mono">.go</td><td>coverprofile, once a lane is declared; cc-only until then</td></tr>
+  <tr><td class="mono">rust</td><td class="mono">.rs</td><td>lcov, once a lane is declared; cc-only until then</td></tr>
   <tr><td class="mono">shell</td><td class="mono">.sh .bash</td><td>cc-only</td></tr>
   <tr><td class="mono">powershell</td><td class="mono">.ps1 .psm1</td><td>cc-only</td></tr>
-  <tr><td class="mono">swift</td><td class="mono">.swift</td><td>cc-only</td></tr>
-  <tr><td class="mono">cpp</td><td class="mono">.c .cc .cpp .cxx .h .hpp</td><td>cc-only</td></tr>
-  <tr><td class="mono">objectivec</td><td class="mono">.m .mm</td><td>cc-only</td></tr>
-  <tr><td class="mono">java</td><td class="mono">.java</td><td>cc-only</td></tr>
+  <tr><td class="mono">swift</td><td class="mono">.swift</td><td>lcov, once a lane is declared; cc-only until then</td></tr>
+  <tr><td class="mono">cpp</td><td class="mono">.c .cc .cpp .cxx .h .hpp</td><td>lcov or Cobertura, once a lane is declared; cc-only until then</td></tr>
+  <tr><td class="mono">objectivec</td><td class="mono">.m .mm</td><td>lcov, once a lane is declared; cc-only until then</td></tr>
+  <tr><td class="mono">java</td><td class="mono">.java</td><td>jacoco, once a lane is declared; cc-only until then</td></tr>
   <tr><td class="mono">zig</td><td class="mono">.zig</td><td>cc-only</td></tr>
   <tr><td class="mono">kotlin</td><td class="mono">.kt .kts</td><td><strong>not admitted</strong>, blocked upstream</td></tr>
 </table></div>
 
 <h3>cc-only is a real answer, not a gap</h3>
-<p>crapkit ships two artifact parsers and no more, so most of that table scores <code>crap = ccn</code> under <code>coverage_optional = true</code>, with no lane to run. That costs less than it sounds, because <strong>the ceiling is a ccn ceiling</strong> (<a href="#score">§02</a>). Coverage cannot rescue a function above target in any language. What a cc-only scope loses is the ability to <em>earn</em> a pass below the ceiling with tests, and the dark-lines detail in the packet. What it keeps is the whole gate: a ccn-9 function still fails, still ranks, still gets a packet.</p>
-<p><code>crapkit init</code> writes <code>coverage_optional = true</code> on every scope whose languages all sit in that cc-only half, and leaves it off any scope one parser can still reach. A repo made entirely of those scopes therefore declares no <code>[[lane]]</code> at all, and <code>crapkit coverage</code> runs it anyway: the scored run it writes is the baseline <code>worklist</code>, <code>next-item</code>, <code>rescore</code>, <code>ratchet seed</code> and <code>verify</code> all read. Exit 3 survives for the case it was written for, a scope with neither a lane nor the key, and the message names that scope.</p>
-<p>Write a coverage lane the day the language gets one. Nothing else in the config changes.</p>
+<p>crapkit reads six artifact formats, <code>coveragepy</code>, <code>istanbul</code>, <code>lcov</code>, <code>cobertura</code>, <code>jacoco</code> and <code>coverprofile</code>, and a scope no lane measures scores <code>crap = ccn</code> under <code>coverage_optional = true</code>, with no lane to run. That costs less than it sounds, because <strong>the CRAP ceiling caps ccn too</strong> (<a href="#score">§02</a>). Coverage cannot rescue a function above target in any language. What a cc-only scope loses is the ability to <em>earn</em> a pass below the ceiling with tests, and the dark-lines detail in the packet. What it keeps is the whole gate: a ccn-9 function still fails, still ranks, still gets a packet.</p>
+<p><code>crapkit init</code> writes live lanes for pytest, Vitest and Jest only, so it writes <code>coverage_optional = true</code> on every scope it writes no live lane for, and leaves it off any scope one of those lanes can still reach. When a repo-root file shows cargo llvm-cov (<code>Cargo.toml</code>), Bun or Deno, init also leaves that toolchain's lane commented in <code>crapkit.toml</code>, the scope stays cc-only, and <code>doctor</code> notes that a reader can measure it (<a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one">docs/upgrading.md</a>). A repo made entirely of those scopes therefore declares no <code>[[lane]]</code> at all, and <code>crapkit coverage</code> runs it anyway: the scored run it writes is the baseline <code>worklist</code>, <code>next-item</code>, <code>rescore</code>, <code>ratchet seed</code> and <code>verify</code> all read. Exit 3 survives for the case it was written for, a scope with neither a lane nor the key, and the message names that scope.</p>
+<p>To measure a cc-only scope, declare a lane whose runner writes one of those formats, delete the scope's <code>coverage_optional</code>, and run <code>crapkit ratchet seed --scope NAME</code> once <code>verify</code> names the flip.</p>
 
 <h3>Reader corrections and extensions</h3>
 <ul>
@@ -416,7 +416,7 @@
 <h2 id="dials"><span class="sn">05</span>The dials</h2>
 <p class="lede">Every threshold in this handbook is a default, not a constant. These are the keys people change first.</p>
 <pre><code>[crapkit]
-target = 6                  # THE dial: the CRAP ceiling, and with it the ccn ceiling
+target = 6                  # THE dial: the CRAP ceiling, which also caps ccn
 churn_window_months = 12    # how far back "hot" looks
 worklist_floor = 5          # admission floor for the risk map (never hides over-ceiling debt)
 worklist_top = 50           # rows the worklist prints, and rows the report page renders
@@ -439,7 +439,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <!-- ============================ 06 TWO GATES ============================ -->
 <h2 id="twogates"><span class="sn">06</span>The two gates</h2>
 <p class="lede">Two hooks fire on their own. Only one of them can stop you, and knowing which is the difference between reading a note and losing a commit.</p>
-<p>The <strong>advisory</strong> runs after every edit and annotates. The <strong>commit gate</strong> runs at <code>git commit</code> and blocks. They read the same ceiling map and subtract the same ratchet marks, so they cannot disagree about a function.</p>
+<p>The <strong>advisory</strong> runs after every edit and annotates. The <strong>commit gate</strong> runs at <code>git commit</code> and blocks. They read the same ceiling map and hold a function to its ratchet mark by the same rule, so they cannot disagree about a function.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 900 410" role="img" aria-label="The per-edit advisory and the commit gate across one editing session">
@@ -449,7 +449,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   <text x="40" y="60" class="sm">fires on Edit and Write in every repo on the machine, and on Bash where you register that matcher</text>
   <text x="40" y="78" class="sm">the plugin ships <tspan class="mono">Edit|Write</tspan> only · the Bash half is a second entry in your own settings, <tspan class="mono">*.py</tspan> only</text>
   <text x="40" y="96" class="sm">reads the file plus <tspan class="mono">git diff HEAD</tspan> for that path · never opens the store · writes only under .git</text>
-  <text x="40" y="114" class="sm">a breach, or an edit it could not judge: three lines on stderr and exit 2 · the model reads them</text>
+  <text x="40" y="114" class="sm">a breach, a marked ccn past or risen across its mark, an unjudged edit: stderr, exit 2 · the model reads it</text>
   <text x="40" y="132" class="sm">no crapkit.toml · file in no scope · mid-rebase · bad input · any internal error → exit 0, silent</text>
 
   <text x="140" y="164" text-anchor="middle" class="sm">silent</text>
@@ -480,7 +480,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
   <text x="860" y="294" text-anchor="end" class="lbl" font-weight="700" fill="var(--accent)">this one blocks</text>
   <text x="40" y="318" class="sm">reads the staged blobs in one <tspan class="mono">git cat-file --batch</tspan> · cc-only, no store, no coverage, no network</text>
   <text x="40" y="336" class="sm">a breach: the hook exits 6, git reports 1, the commit does not happen · decompose, or sign for the debt</text>
-  <text x="40" y="354" class="sm">pardoned: any function the working-tree marks file marks, counted in one stderr line</text>
+  <text x="40" y="354" class="sm">pardoned: a marked function whose ccn sits at or under its working-tree mark, counted in one stderr line</text>
   <text x="40" y="372" class="sm">costs the size of the commit, not the size of the repo</text>
   <text x="860" y="372" text-anchor="end" class="sm"><tspan class="mono">crapkit verify</tspan> fails a mark that rises</text>
 </svg>
@@ -492,8 +492,8 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <p>Silence everywhere else is the other half of the design. This hook is installed once per user and then fires on every edit that user makes, anywhere. 47.5% of the edits it was measured against land in repos with no <code>crapkit.toml</code>. A hook that spoke there would be unbearable within a day, so an unmeasured repo costs one <code>stat</code> and an exit 0.</p>
 
 <h3>The commit gate pardons marked functions</h3>
-<p>Before 0.4.0 the two disagreed. The advisory pardoned ratchet-marked functions and the commit gate did not, so touching signed debt produced a wall: green advisories all session, then a refused commit. <strong>The commit gate pardons marked functions too</strong>, on mark existence, and prints one line saying how many. <code>crapkit verify</code> keeps the numeric check and is what fails a mark that actually rises.</p>
-<p class="xanno">Existence, not the numeric rule, because the gate judges staged blobs. A blob carries no coverage, so there is no CRAP to compare against a mark. The only question the gate can answer is the one it asks: did the repo already sign for this function?</p>
+<p>Before 0.4.0 the two disagreed. The advisory pardoned ratchet-marked functions and the commit gate did not, so touching signed debt produced a wall: green advisories all session, then a refused commit. <strong>The commit gate pardons marked functions too</strong>, while their ccn sits at or under the mark, and prints one line saying how many. A ccn past the mark is refused, and a ccn that rose across it passes with a warn. Since 0.9.0 the advisory holds the edited file to the same rule and speaks on both, each in a block of its own. <code>crapkit verify</code> keeps the numeric check and is what fails a mark that actually rises.</p>
+<p class="xanno">The range rule, the one every gate applies, read over what a hook can know. A blob or a working-tree file carries no coverage, so its CRAP is a range: at least its ccn, every branch run, at most its untested CRAP. The whole range at or under the mark is pardoned. A ccn above the mark is past it at any coverage. A range across the mark is left to the coverage <code>verify</code> reads, with a warn when the ccn rose.</p>
 
 <h3>verify pardons a function at or under its mark</h3>
 <p>Since 0.4.5 the third reader agrees with them. <code>crapkit verify</code> reads a mark the way <code>rescore --gate</code> always did: a touched function whose fresh CRAP sits <em>at or under</em> its mark is pardoned, not a gate violation. Before this, an edit inside signed debt passed the advisory, passed the commit gate, and then met exit 6 at merge, which was the last place the three readers could still disagree about one function.</p>
@@ -518,7 +518,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <div class="tw" role="region" aria-label="Gate and advisory commands" tabindex="0"><table>
   <tr><th scope="col">Where</th><th scope="col">Command</th><th scope="col">Blocks?</th><th scope="col">Sees coverage?</th><th scope="col">What it is for</th></tr>
   <tr><td>after every edit</td><td class="mono">crapkit claude-hook</td><td>no</td><td>no</td><td>Automatic, via the plugin. Names a function the edit pushed over its ceiling.</td></tr>
-  <tr><td>on demand, mid-edit</td><td class="mono">rescore FILE --gate</td><td>no</td><td>the newest run's</td><td>A stricter preview of the commit gate, before you stage anything: a ratchet mark pardons a function only while its CRAP is at or under the mark, where the hook pardons any marked function. It reads the newest run's coverage, so it needs one: exit 1 until the first <code>coverage</code>.</td></tr>
+  <tr><td>on demand, mid-edit</td><td class="mono">rescore FILE --gate</td><td>no</td><td>the newest run's</td><td>A stricter preview of the commit gate, before you stage anything: a ratchet mark pardons a function only while its CRAP is at or under the mark. The hook sees no coverage, so it refuses a marked function only once its staged ccn passes the mark. It reads the newest run's coverage, so it needs one: exit 1 until the first <code>coverage</code>.</td></tr>
   <tr><td>at <code>git commit</code></td><td class="mono">crapkit hook-precommit</td><td class="mono">exit 6, git says 1</td><td>no</td><td>The enforcement point. Staged blobs, in memory, no store needed.</td></tr>
   <tr><td>before merge</td><td class="mono">crapkit verify --base REF</td><td class="mono">6 7 8 9</td><td>yes</td><td>The full verdict: gate, ratchet, new test failures, dark diff lines.</td></tr>
   <tr><td>in CI</td><td class="mono">crapkit verify --baseline-tsv FILE</td><td class="mono">6 7 8 9</td><td>yes</td><td>A fresh clone judged against a committed baseline. Add <code>--sarif PATH</code> or <code>--github</code>.</td></tr>
@@ -544,7 +544,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <!-- ============================ 08 RATCHET ============================ -->
 <h2 id="ratchet"><span class="sn">08</span>The ratchet</h2>
 <p class="lede">How a brownfield repo turns the gate on today instead of after the cleanup.</p>
-<p><code>crapkit ratchet seed</code> writes every standing over-target score into <code>crapkit-ratchet.tsv</code>, a committed, human-readable file of pardons. A mark pardons debt <em>at or under</em> its recorded score. The function may stay bad; it may not get <em>worse</em>. Improve it and the mark tightens at the next green verify. Debt can only shrink. That is the ratchet.</p>
+<p><code>crapkit ratchet seed</code> writes every standing over-target score into <code>crapkit-ratchet.tsv</code>, a committed, human-readable file of pardons. A mark pardons debt <em>at or under</em> its recorded score. The function may stay bad; it may not get <em>worse</em>. Improve it and the mark tightens at the next green verify. Debt can only shrink. That is the ratchet. A mark follows its function through a signature edit: when the old key has left the file and exactly one mark that left shares the function's bare name, that carried mark judges the function, and the gates print one line naming both keys. Twins never carry a mark; <code>crapkit ratchet move --function</code> moves one by hand.</p>
 
 <figure class="panel">
 <svg viewBox="0 0 900 240" role="img" aria-label="Ratchet mark lifecycle">
@@ -575,7 +575,7 @@ retries = 1                 # and how often a flaky lane gets another shot</code
 <h3>Analysis version 8 was one of those bumps</h3>
 <p>In 0.4.5 shell cognitive complexity started to nest: <code>fi</code>, <code>done</code> and <code>esac</code> close the level <code>if</code>, a loop keyword or <code>case</code> opened, so a 4-deep shell <code>if</code> reads 10 like every other language instead of 4. That is analysis version 8, so the first command you run after the upgrade refuses the marks the old version signed:</p>
 <pre><code>$ crapkit verify
-crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] but this run measures [crapkit-analysis=8 lizard=1.24.0] - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed`</code></pre>
+crapkit: ratchet marks were recorded under [crapkit-analysis=7 lizard=1.24.0] in crapkit-ratchet.tsv, and the rules have moved since in 1 scope(s): calc (python analysis 7 to 8) - CRAP scores are not comparable across metric versions; run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline with `crapkit ratchet seed --scope calc`</code></pre>
 <p>Do what it says: a fresh coverage run, a prune, then the seed. Re-seeding brought the same marks back: that bump moved only shell's cognitive column, ccn did not move in any language, and no mark, gate or CRAP score reads the cognitive column at all (<a href="#score">§02</a>).</p>
 
 <h3>Analysis version 13, in 0.8.1, is another</h3>
@@ -637,6 +637,7 @@ scopes           = ["src"]</code></pre>
   <li><strong>The results file:</strong> <code>results_artifact</code> names the JUnit XML written by the lane command. It supplies the failed test IDs for verify's no-new-failures check (exit 8). Measurement also refuses reported worker crashes, collection or session errors, and declared test counts that do not match the reported cases. Without this file, those checks cannot run; <code>doctor</code> warns, and <code>init</code> writes the reporter flag and key together for supported runners.</li>
   <li><strong>Resilience:</strong> per-lane <code>timeout_seconds</code>, <code>no_progress_seconds</code> and <code>retries</code> bound the run. The progress deadline measures how long the lane log has stopped growing. A configured <code>retest_command</code> reruns newly failing tests; only an explicit pass in fresh JUnit evidence clears a failure. Lanes run in parallel up to <code>max_parallel_lanes</code>, longest first. Each command owns its descendants through a Windows Job or a POSIX process group. Completion, timeout, interruption and caller death stop the owned processes before releasing their resources. POSIX commands must keep their inherited group; a daemon that explicitly calls <code>setsid</code> leaves that ownership. An untimed command has no deadline. Logs stream during execution, and a refusal reports the cause from the final attempt.</li>
   <li><strong>Honest failure:</strong> a lane that produces no artifact marks its scopes <code>no-lane</code> and the run <code>partial</code>. Its declared files sit under <code>.crapkit/aside/</code> while it runs, so a file at a declared path afterwards is one the attempt wrote, and the previous run's file that a failed attempt leaves behind stays refused while it holds the same bytes: a <code>touch</code> does not lift the refusal, new bytes do. The queue counts what it cannot see instead of pretending. The seven classic causes are triaged in <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">docs/lanes.md</a>. An artifact that parses and still reaches none of its scopes is a different refusal, below.</li>
+  <li><strong>What init writes:</strong> a live lane for pytest, Vitest and Jest, read from the repo's own files, and <code>coverage_optional = true</code> on every scope none of them measures. A toolchain whose marker sits at the repo root (cargo llvm-cov, Bun, Deno, gcovr for a root <code>CMakeLists.txt</code>, Gradle for a root <code>build.gradle</code> or <code>build.gradle.kts</code>, Maven for a root <code>pom.xml</code>, go test for a root <code>go.mod</code>) gets its lane commented, with its parser (<code>lcov</code>, <code>cobertura</code> for gcovr, <code>jacoco</code> for Gradle and Maven, <code>coverprofile</code> for go test) and its scopes: uncommenting it and deleting <code>coverage_optional</code> makes the scope measured, and the next <code>ratchet seed --scope NAME</code> re-marks it.</li>
   <li><strong>The test template:</strong> a <code>[crapkit.scoped_tests]</code> entry per scope says how to run that scope's tests in isolation. It is what <code>crapkit test-scoped</code> executes, what the packet's <code>commands.scoped_tests</code> carries, and what <code>doctor</code> warns about when a laned scope has none.</li>
   <li><strong>Housekeeping:</strong> managed run state and logs live under <code>.crapkit/</code>; lane commands write to their configured destinations. <code>doctor</code> warns about artifacts in the repo root, unclaimed files, and scopes with no test template, and fails a lane whose runner does not resolve on PATH or will not start.</li>
   <li><strong>Where the root sits:</strong> <code>crapkit.toml</code> can sit below the Git root. <code>crapkit coverage --repo packages/api</code> scores that package; running <code>crapkit coverage</code> inside it finds the same config by walking up. Scoring, changed files, lane reuse, mutation targets and ratchet renames use paths relative to the project root. Git paths retain their literal whitespace and Unicode. See <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">docs/lanes.md</a> for nested projects.</li>
@@ -662,12 +663,12 @@ scopes           = ["src"]</code></pre>
 <pre><code>command = "python -m pytest -m 'not slow' --cov=app --cov-report=json:.crapkit/cov/slow/coverage.json"
 
 $ crapkit doctor
-crapkit: lane 'slow': positional argument 'slow'' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes)</code></pre>
+crapkit: lane 'slow': positional argument 'slow'' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately (cmd.exe does not treat ' as a quote: write the value in double quotes); a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact</code></pre>
 <p>A chained command is read one argv per <code>&amp;&amp;</code>, <code>||</code>, <code>&amp;</code> or <code>|</code>, blank beside the operator or not, and every segment that runs the runner is checked. A second, narrower run after the operator is still a narrowed coverage run:</p>
 <pre><code>command = "python -m pytest --cov=app --cov-report=json:.crapkit/cov/slow/coverage.json --junitxml=.crapkit/cov/slow/junit.xml &amp;&amp; python -m pytest tests/smoke --cov=app --cov-report=json:.crapkit/cov/slow/coverage.json"
 
 $ crapkit doctor
-crapkit: lane 'slow': positional argument 'tests/smoke' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately</code></pre>
+crapkit: lane 'slow': positional argument 'tests/smoke' narrows a full-suite coverage run; drop it, attach it to the flag it belongs to (-n8, --numprocesses=8), or set full_suite = false deliberately; a suite whose testpaths cannot be collected in one process needs one lane per testpath, each with full_suite = false and its own artifact</code></pre>
 <p>Redirections (<code>&gt; nul</code>, <code>2&gt;&amp;1</code>) belong to the shell and are never positionals, an empty quoted argument stays empty instead of shifting the next path onto the flag, and words break on space, tab and line endings only, so a non-breaking space pasted out of a wiki no longer splits a value. <code>doctor</code> reads a lane the same way, which is how it knows a quoted interpreter path is one word and that the runner after <code>&amp;&amp;</code> is a runner. It also probes each distinct runner once instead of once per lane, and FAILs a lane whose first word will not start rather than calling the repo clean.</p>
 <p>The results-file WARN reads like this, hint included:</p>
 <pre><code>$ crapkit doctor
@@ -763,7 +764,7 @@ WARN lane 'unit' declares no results_artifact: the crashed-worker check and the 
   <text x="450" y="262" text-anchor="middle" class="sm mono">notes.repo · notes.scope: the written-down traps</text>
   <text x="450" y="280" text-anchor="middle" class="sm mono">attempts · regrowth: has someone tried this before, did it hold</text>
   <path class="arrow" d="M450 206 V 216"/>
-  <text x="450" y="330" text-anchor="middle" class="sm">32 top-level fields (additive-only, so this number only grows) · schema pinned at 1 · full reference in docs/agent-json.md</text>
+  <text x="450" y="330" text-anchor="middle" class="sm">33 top-level fields (additive-only, so this number only grows) · schema pinned at 1 · full reference in docs/agent-json.md</text>
 </svg>
 <figcaption>The packet, grouped by the question each field answers. Nothing here requires opening the file.</figcaption>
 </figure>
@@ -856,7 +857,7 @@ cd your-repo
 crapkit init        # sniffs tracked source into scopes, writes live lanes it can prove
 crapkit doctor      # config against reality: unknown keys, unclaimed files, lane runners that will not start
 crapkit coverage    # runs the lanes, joins coverage, writes the first scored run and its grade</code></pre>
-<p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). On an older Python pip stops with <code>No matching distribution found for crapkit</code>, and <code>uvx crapkit</code> runs crapkit on a Python 3.11 or newer that uv finds or downloads. <code>pip install crapkit</code> installs the latest release from PyPI. <code>python -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
+<p>Python 3.11 or newer, one runtime dependency (<code>lizard</code>). On an older Python pip stops with <code>No matching distribution found for crapkit</code>, and <code>uvx crapkit</code> runs crapkit on a Python 3.11 or newer that uv finds or downloads. <code>pip install crapkit</code> installs the latest release from PyPI. <code>python -P -m crapkit</code> is identical to the console script and is what to use from a source checkout.</p>
 <p>Debian 12, Ubuntu 23.04 and later, Homebrew and uv's own Pythons refuse the base line with <code>error: externally-managed-environment</code>. Give crapkit an environment of its own with <code>pipx install crapkit</code> or <code>uv tool install crapkit</code>, or install it into the repo's venv; <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#when-pip-refuses">README: When pip refuses</a> has each route. The <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md">upgrade table</a> gives the upgrade line for every route, pipx, uvx and the git URL included.</p>
 <p>Read the <code>doctor</code> line narrowly. It resolves the first word of every command segment on PATH (the pieces <code>&amp;&amp;</code>, <code>||</code>, <code>&amp;</code> and <code>|</code> cut the line into) and starts the command's own first word. That is the whole of what it knows about a lane. A lane spelled <code>npm run test</code> is checked as far as <code>npm</code>, never the script behind it. So <code>doctor</code> can print <code>doctor: no problems found</code> and the next line of the block, <code>crapkit coverage</code>, can still exit 5 on that same lane. The reading rules in full are in <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md">docs/lanes.md</a>.</p>
 
@@ -904,7 +905,7 @@ codex plugin list --marketplace crapkit --json</code></pre>
 <pre><code>crapkit ratchet seed        # pardons standing debt into crapkit-ratchet.tsv
 git add crapkit.toml .gitignore crapkit-ratchet.tsv &amp;&amp; git commit -m "adopt crapkit"
 
-printf '#!/bin/sh\ncommand -v crapkit &gt;/dev/null 2&gt;&amp;1 &amp;&amp; exec crapkit hook-precommit\ncommand -v uvx &gt;/dev/null 2&gt;&amp;1 &amp;&amp; exec uvx crapkit hook-precommit\nexec python -m crapkit hook-precommit\n' &gt; "$(git rev-parse --git-common-dir)/hooks/pre-commit"
+printf '#!/bin/sh\ncommand -v crapkit &gt;/dev/null 2&gt;&amp;1 &amp;&amp; exec crapkit hook-precommit\ncommand -v uvx &gt;/dev/null 2&gt;&amp;1 &amp;&amp; exec uvx crapkit hook-precommit\nexec python -P -m crapkit hook-precommit\n' &gt; "$(git rev-parse --git-common-dir)/hooks/pre-commit"
 chmod +x "$(git rev-parse --git-common-dir)/hooks/pre-commit"</code></pre>
 <p>From PowerShell, which has no <code>printf</code> or <code>chmod</code>, and whose 5.1 edition cannot parse <code>&amp;&amp;</code> and writes a byte-order mark git cannot spawn from <code>&gt;</code>:</p>
 <pre><code>crapkit ratchet seed
@@ -914,7 +915,7 @@ git commit -m "adopt crapkit"
 $crapkit = (Get-Command crapkit -ErrorAction Stop).Source -replace '\\', '/'
 Set-Content -Path "$(git rev-parse --git-common-dir)/hooks/pre-commit" -Encoding ascii -NoNewline -Value "#!/bin/sh`nexec '$crapkit' hook-precommit`n"</code></pre>
 <p>From here every commit is judged, new debt only. Seed <em>before</em> arming, or the first commit on a brownfield repo refuses everything. Commit the config and the ignore rules with the marks: CI runs on a fresh clone (<a href="#uses">workflow 4</a>), and a clone with no <code>crapkit.toml</code> stops at <code>no crapkit.toml</code> before any verdict. The plugin is optional and the hook is not: the advisory annotates, this blocks.</p>
-<div class="callout info"><p>Two things bite here. The hook runs the <code>crapkit</code> on the PATH git hands it, then <code>uvx crapkit</code> where uv is installed, then <code>python -m crapkit</code>, so a pipx, uv tool or uvx install works on a machine with only <code>python3</code>. A commit from an IDE or GUI client you did not start from your venv's terminal runs the hook without that venv on its PATH. When nothing else there runs crapkit, git refuses the commit, with <code>exec: python: not found</code> where there is no python and <code>No module named crapkit</code> from a python that lacks it. Write the absolute path there (<code>exec /path/to/venv/bin/crapkit hook-precommit</code>). The uvx line also keeps the gate running after <code>pip uninstall crapkit</code> wherever uv is installed, so take the hook out before the package. And a hook in <code>.git/hooks/</code> is not committed, so teammates get nothing. The README's gate section has the committed-hooks-directory route, the PowerShell forms, what to do when <code>core.hooksPath</code> is already set, the pre-commit-framework route, and CI.</p></div>
+<div class="callout info"><p>Two things bite here. The hook runs the <code>crapkit</code> on the PATH git hands it, then <code>uvx crapkit</code> where uv is installed, then <code>python -P -m crapkit</code>, so a pipx, uv tool or uvx install works on a machine with only <code>python3</code>. A commit from an IDE or GUI client you did not start from your venv's terminal runs the hook without that venv on its PATH. When nothing else there runs crapkit, git refuses the commit, with <code>exec: python: not found</code> where there is no python and <code>No module named crapkit</code> from a python that lacks it, and <code>Unknown option: -P</code> from a python older than 3.11. Write the absolute path there (<code>exec /path/to/venv/bin/crapkit hook-precommit</code>). The uvx line also keeps the gate running after <code>pip uninstall crapkit</code> wherever uv is installed, so take the hook out before the package. And a hook in <code>.git/hooks/</code> is not committed, so teammates get nothing. The README's gate section has the committed-hooks-directory route, the PowerShell forms, what to do when <code>core.hooksPath</code> is already set, the pre-commit-framework route, and CI.</p></div>
 
 <h3>Removing crapkit</h3>
 <p>Take the commit hook and the merge driver out before the package: both call crapkit. After <code>pip uninstall crapkit</code> alone, the sh hook above keeps judging every commit through <code>uvx crapkit</code> on a machine with uv, with whichever crapkit release uv has cached or can download, and on a machine without uv stops every commit on <code>No module named crapkit</code>, or on <code>exec: python: not found</code> where there is no <code>python</code> at all, as on a Debian, Ubuntu or macOS that has only <code>python3</code>. The PowerShell hook above names the launcher that <code>pip uninstall crapkit</code> deletes, so it stops every commit on <code>No such file or directory</code>, with uv or without it. Every merge that touches <code>crapkit-ratchet.tsv</code> conflicts after the driver's <code>crapkit: not found</code>. <a href="https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#removing-crapkit">Removing crapkit</a> lists each piece, in a repo and on the machine.</p>
@@ -965,6 +966,8 @@ $ crapkit doctor
 ok   scope 'infra': 1 file
 ok   scope 'ops': 1 file
 …
+note scope 'infra' is cc-only, and a reader can measure rust through parser = "lcov" from cargo llvm-cov; adding that lane and deleting coverage_optional measures it (docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one)
+…
 WARN scope 'ui' has a lane but no [crapkit.scoped_tests] template - `crapkit test-scoped` exits 3 on its files, so whoever edits them is handed no command to run their tests; add ui = "&lt;test command&gt;" under [crapkit.scoped_tests]
 doctor: no problems found, 1 warning above
 
@@ -979,7 +982,7 @@ worklist @ 8da79a04d51 (run 1, floor ccn&gt;=5, churn 12mo) - 4 of 4 active (wor
   risk      5.0  ccn   5  crap       -  cov    -    1c/1a  ops/deploy.sh:1  release()
 run 1 is an inventory run (no coverage was measured) and cannot serve as a baseline for next-item, ratchet seed or verify
 -&gt; next: crapkit coverage</code></pre>
-<p>Neither scope FAILs. <code>infra</code> and <code>ops</code> hold Rust and shell, which no coverage parser reads, so <code>init</code> writes <code>coverage_optional = true</code> on both, and they score cc-only: <code>crap = ccn</code>, the ceiling still binds, and the gate still refuses a function over it. A scope you add later with no lane and no such key is the one <code>doctor</code> FAILs (<code>scope 'infra' is in no lane's scopes list</code>). Read that FAIL as a fork, not an error: declare a lane for the scope, or set <code>coverage_optional = true</code> and accept cc-only. Both are correct answers; leaving it undecided is not, because <code>no-lane</code> debt is unreachable debt.</p>
+<p>Neither scope FAILs. <code>infra</code> and <code>ops</code> hold Rust and shell, and <code>init</code> writes no live lane for either, so it writes <code>coverage_optional = true</code> on both, and they score cc-only (Rust has a reader, so <code>doctor</code> notes that <code>parser = "lcov"</code> can measure <code>infra</code>): <code>crap = ccn</code>, the ceiling still binds, and the gate still refuses a function over it. A scope you add later with no lane and no such key is the one <code>doctor</code> FAILs (<code>scope 'infra' is in no lane's scopes list</code>). Read that FAIL as a fork, not an error: declare a lane for the scope, or set <code>coverage_optional = true</code> and accept cc-only. Both are correct answers; leaving it undecided is not, because <code>no-lane</code> debt is unreachable debt.</p>
 <p>The one <code>WARN</code> is <code>ui</code>'s. <code>init</code> writes its vitest line under <code>[crapkit.scoped_tests]</code> commented out, as <code># ui = "npx vitest related --run {files}"</code>, so <code>crapkit test-scoped</code> has no command for <code>ui</code> until you uncomment it. <code>doctor</code> still exits 0, and its closing line counts the warning.</p>
 <p>The worklist's last two lines are the handoff. An inventory run ranks by complexity alone, so <code>next-item</code>, <code>ratchet seed</code> and <code>verify</code> will not measure against it, and worklist names <code>coverage</code> as the next step. After a coverage run the same line names <code>ratchet seed</code>, and once <code>crapkit-ratchet.tsv</code> exists, <code>next-item</code>.</p>
 <p class="xanno">Note the Rust row. Stock lizard scores that five-arm <code>match</code> ccn 2, which is under the ceiling and invisible. crapkit's corrected reader scores it 5 (<a href="#languages">§03</a>).</p>
@@ -1013,7 +1016,7 @@ $ crapkit verify --baseline-tsv crapkit-baseline.tsv --github</code></pre>
 <pre><code>$ git add packages/api/app/route.py
 $ cd packages/api
 $ crapkit hook-precommit                    # what the git hook runs
-crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:
+crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 (with no coverage known, CRAP is at least ccn):
   ccn  10  app/route.py:1  route( kind , hot , live , admin )
 decompose before committing (coverage cannot save a function above the target).</code></pre>
 <p>A file staged <em>above</em> the crapkit root is outside that diff by design, and the gate no longer names it. The hook git runs does the <code>cd</code> for you: git starts it at the top, and with no <code>crapkit.toml</code> there the gate runs in each crapkit root below that owns a staged file and prints paths from the top, <code>packages/api/app/route.py:1</code>. The Enforcement block above arms it from <code>packages/api</code> as written, and a docs-only commit at the top passes with one note.</p>

@@ -190,7 +190,7 @@ def _results(stdout: str, count: int) -> list[dict]:
 
 
 _TYPES = {
-    "fn_coverage": ("crapkit.coverage_istanbul", "FnCoverage"),
+    "fn_coverage": ("crapkit.score", "FnCoverage"),
     "inventory_row": ("crapkit.snapshot", "InventoryRow"),
     "scored_row": ("crapkit.score", "ScoredRow"),
 }

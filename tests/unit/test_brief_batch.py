@@ -106,7 +106,7 @@ def counted(monkeypatch) -> dict:
     monkeypatch.setattr(crapkit.coupling_cache, "load_coupling", counter("coupling", []))
     monkeypatch.setattr(crapkit.dup, "twins_in", counter("twins", []))
     monkeypatch.setattr(crapkit.dup, "function_index", counter("twin_index", []))
-    monkeypatch.setattr(crapkit.marks_history, "file_log", counter("mark_history", []))
+    monkeypatch.setattr(crapkit.marks_history, "file_revisions", counter("mark_history", []))
     return seen
 
 

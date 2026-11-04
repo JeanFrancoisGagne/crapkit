@@ -10,6 +10,7 @@ import pytest
 from crapkit import ratchet
 from crapkit.ratchet import RatchetEntry
 from crapkit.score import ScoredRow
+from stamps import single_number
 
 KEY = ("src/a.py", "f( )")
 
@@ -105,15 +106,15 @@ def test_marks_read_before_reader_10_name_every_file_whose_callbacks_moved():
                RatchetEntry("src/a.ts", "(anonymous)", 9.0), RatchetEntry("src/c.py", "f( )", 9.0)]
 
     with pytest.raises(ValueError) as refused:
-        ratchet.check_reader_version(entries, 9)
+        ratchet.check_reader_version(entries, single_number(9))
 
     assert str(refused.value) == (
         "expression reader 10 changed anonymous function ordinals in src/a.ts, src/b.js; refresh "
         "coverage and reconcile any saved marks with their original functions before reseeding")
-    assert ratchet.check_reader_version(entries, 10) is None
+    assert ratchet.check_reader_version(entries, single_number(10)) is None
 
 
-STAMP = "crapkit-analysis=12 lizard=1.24.0"
+STAMP = single_number(12)
 
 
 def test_an_old_mark_named_by_its_exact_twin_key_proves_the_new_identity():
@@ -140,7 +141,8 @@ def test_an_unknown_record_encoding_is_named_in_the_line_s_complaint():
     ("crapkit_analysis=12 lizard=1.24.0", True),     # another spelling proves nothing
 ])
 def test_only_crapkit_s_own_stamp_proves_the_expression_reader(stamp, refused):
-    text = ratchet.dump_ratchet([RatchetEntry("src/a.ts", "(anonymous)", 9.0)], stamp=stamp)
+    text = ratchet.dump_ratchet([RatchetEntry("src/a.ts", "(anonymous)", 9.0)],
+                                stamp=ratchet.MetricStamp.parse(stamp))
 
     try:
         ratchet.check_reader_keys(text)
@@ -155,7 +157,7 @@ TWICE = [RatchetEntry("src/a.py", "f( )", 9.0), RatchetEntry("src/a.py", "f( )",
 
 def test_a_key_listed_twice_keeps_its_lines_in_the_order_they_came():
     """Only keys are sorted: a reader that takes a key's last line reads what the file said."""
-    written = ratchet.dump_ratchet(TWICE, stamp="")
+    written = ratchet.dump_ratchet(TWICE, stamp=ratchet.MetricStamp.NONE)
 
     assert [line.rsplit("\t", 1)[1] for line in written.splitlines()[1:]] == ["9.0000", "5.0000"]
     assert ratchet.update_ratchet(TWICE, [], target=6) == TWICE

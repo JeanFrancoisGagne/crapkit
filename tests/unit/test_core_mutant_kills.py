@@ -27,7 +27,8 @@ from crapkit.keys import respelled_nested
 from crapkit.ratchet import upgrade_remedy
 from crapkit.score import ScoredRow, overlay_stale_coverage
 from crapkit.snapshot import InventoryRow
-from crapkit.verify import UnreadFile, Verdict, baseline_tsv_lines, dirty_failure_ids, with_unread
+from crapkit.gate import Unread
+from crapkit.verify import Verdict, baseline_tsv_lines, dirty_failure_ids, evaluate
 from crapkit.worklist import closable_claims
 
 
@@ -212,16 +213,10 @@ def test_a_branch_start_with_no_column_opens_its_line_ahead_of_a_function_at_col
 
 # --- ratchet ------------------------------------------------------------------------------------
 
-def test_the_upgrade_remedy_names_one_newer_tool_and_says_it():
-    assert upgrade_remedy(["lizard"]) == (
-        "the marks come from a newer lizard than this install; "
-        "upgrade it to the version that wrote them")
-
-
-def test_the_upgrade_remedy_names_both_newer_tools_and_every_crapkit_pin():
-    assert upgrade_remedy(["crapkit", "lizard"]) == (
-        "the marks come from a newer crapkit and a newer lizard than this install; "
-        "upgrade both to the version that wrote them (the CLI, the Action's `uses:` pin "
+def test_the_upgrade_remedy_names_a_newer_crapkit_and_every_pin_it_runs_from():
+    assert upgrade_remedy(["crapkit"]) == (
+        "the marks come from a newer crapkit than this install; "
+        "upgrade it to the version that wrote them (the CLI, the Action's `uses:` pin "
         "and the pre-commit `rev` alike)")
 
 
@@ -245,8 +240,9 @@ def test_a_junit_id_a_runner_wrote_with_a_leading_dot_slash_names_the_git_path()
 def test_a_read_that_finds_no_changed_unread_file_hands_the_verdict_back_as_it_was():
     """The verdict already fails on an unread file; a later read that finds none
     in the change neither drops it nor passes the gate."""
-    unread = (UnreadFile("a.py", "not UTF-8", False),)
+    unread = (Unread("a.py", "not UTF-8", False),)
     verdict = Verdict(ok=False, gate_violations=[], ratchet_regressions=[], new_failures=[],
                       dirty_failures=[], unread_files=unread)
 
-    assert with_unread(verdict, {"b.py": "not UTF-8"}, {"a.py"}, set()) == verdict
+    assert evaluate(fresh=[], changed_ranges={"a.py": []}, ratchet=[], baseline_failures=set(), fresh_failures=set(),
+                    target=6, unread={"a.py": "not UTF-8", "b.py": "not UTF-8"}) == verdict

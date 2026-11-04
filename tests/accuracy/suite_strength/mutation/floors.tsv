@@ -3,3 +3,4 @@ core	src/crapkit/score.py,src/crapkit/digest.py,src/crapkit/worklist.py,src/crap
 readers	src/crapkit/lizard*.py	85	accuracy plan, mutation section: 85 percent for readers
 kit-exact	tests/accuracy/kit/exact.py	100	accuracy plan, mutation section: kit/exact.py at a 100 percent floor
 accuracy-tools	tools/accuracy/change_control.py,tools/accuracy/wheel_diff.py,tools/accuracy/retro.py,tools/accuracy/mutation.py,tools/accuracy/run.py	90	accuracy plan, mutation section: tools/accuracy at 90 percent
+gate	src/crapkit/gate.py	95	accuracy plan, mutation section: 95 percent after equivalents for verify, whose touch, ceiling and pardon rules 0.9.0 moved to gate.py, which every gate now judges through

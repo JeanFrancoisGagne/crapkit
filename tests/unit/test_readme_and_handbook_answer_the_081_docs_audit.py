@@ -152,7 +152,8 @@ def test_the_skipped_step_transcript_is_what_verify_prints_over_an_uncommitted_e
     run_1 = re.search(r"^run 1 @ ([0-9a-f]{11}):", _section("### 3. Score the repo"), re.M)[1]
     block = _fences(_section("### 6. Cover the new pieces"))[-1]
     demote = SimpleNamespace(crap=17.8, ccn=5, cov=0.2, path="src/grade.ts", start=38,
-                             long_name="demote ( letter , row Row )", remedy="add-tests", dirty=True)
+                             long_name="demote ( letter , row Row )", remedy="add-tests", dirty=True,
+                             mark_ambiguity=None)
 
     assert f"vs baseline {run_1} (6 changed files)" in block
     assert _shared._gate_line(demote) in block.splitlines()

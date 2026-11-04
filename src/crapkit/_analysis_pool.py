@@ -7,6 +7,7 @@ from contextlib import ExitStack, contextmanager
 import multiprocessing
 from multiprocessing.connection import wait
 import os
+from os import environ
 from pathlib import Path
 import queue
 import sys
@@ -107,6 +108,27 @@ def _refuse_gate(gate):
 
 
 _STOP_POLL_SECONDS = 0.05
+_SAFE_PATH = "PYTHONSAFEPATH"
+
+
+@contextmanager
+def _safe_path_starts():
+    """PYTHONSAFEPATH=1 while the pool starts processes, then the caller's
+    value back. multiprocessing starts each spawn worker, the forkserver and
+    the POSIX resource tracker as `python -c`, which puts the working
+    directory first on sys.path, and it passes them only this process's own
+    flags: a `multiprocessing.py` at a repo's root ran in every worker. Lane
+    commands keep the environment the user gave them, so the variable never
+    outlives the start."""
+    prior = environ.get(_SAFE_PATH)
+    environ[_SAFE_PATH] = "1"
+    try:
+        yield
+    finally:
+        if prior is None:
+            environ.pop(_SAFE_PATH, None)
+        else:
+            environ[_SAFE_PATH] = prior
 
 
 def _register_workers(owner, registrations, stopping, errors: list) -> None:
@@ -127,12 +149,14 @@ class _OwnedPool:
     def __init__(self, owner, paths):
         context = multiprocessing.get_context()
         self.start_before_submit = context.get_start_method() != "fork"
-        self.registrations = context.Queue()
         # Windows spawn writes this descriptor through a bounded bootstrap pipe.
         packed = (str(Path(paths[0]).parent), tuple(Path(path).name for path in paths))
-        self.executor = ProcessPoolExecutor(max_workers=len(paths), mp_context=context,
-                                           initializer=_worker_start,
-                                           initargs=(self.registrations, packed))
+        # A queue's first lock starts the POSIX resource tracker.
+        with _safe_path_starts():
+            self.registrations = context.Queue()
+            self.executor = ProcessPoolExecutor(max_workers=len(paths), mp_context=context,
+                                               initializer=_worker_start,
+                                               initargs=(self.registrations, packed))
         self.errors = []
         self.stopping = threading.Event()
         self.registrar = threading.Thread(target=_register_workers,
@@ -145,7 +169,9 @@ class _OwnedPool:
         if self.start_before_submit:
             self._start_registrar()
         try:
-            results = self.executor.map(function, jobs, chunksize=chunksize)
+            # Every worker, and the forkserver, starts inside the submits map makes.
+            with _safe_path_starts():
+                results = self.executor.map(function, jobs, chunksize=chunksize)
         finally:
             self._start_registrar()
         try:

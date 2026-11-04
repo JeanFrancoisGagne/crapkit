@@ -90,6 +90,14 @@ def test_save_cache_writes_whenever_the_entry_map_moved(tmp_path):
     assert load_cache(path) == grown
 
 
-def test_analysis_version_is_part_of_the_fingerprint():
-    from crapkit.analyze import ANALYSIS_VERSION, fingerprint
-    assert f"analysis={ANALYSIS_VERSION}" in fingerprint()
+def test_the_fingerprint_names_crapkit_and_lizard_and_no_analysis_number():
+    """Each entry's key carries its language's analysis number, so the
+    fingerprint names none: a raise of one number re-reads one language. A new
+    crapkit version still drops every record. cache=10 is 0.8.1's cache=9 plus
+    the move of that number into the key."""
+    import lizard
+
+    from crapkit import __version__
+    from crapkit.analyze import fingerprint
+    assert fingerprint().split(";") == [f"crapkit={__version__}", f"lizard={lizard.version}",
+                                        "cache=10"]

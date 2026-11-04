@@ -432,6 +432,18 @@ def diverge(box, repo: Path) -> dict[str, float]:
     return {key: min(value, feature[key]) for key, value in marks(repo).items()}
 
 
+def three_way(base: dict, ours: dict, theirs: dict) -> dict[str, float]:
+    """The marks docs/ratchet.md's driver keeps: per key the side that changed
+    wins over the side that did not, and the lower value when both changed."""
+    merged = {}
+    for key in base.keys() | ours.keys() | theirs.keys():
+        b, o, t = base.get(key), ours.get(key), theirs.get(key)
+        kept = t if o == b else o if t == b else min((v for v in (o, t) if v is not None), default=None)
+        if kept is not None:
+            merged[key] = kept
+    return merged
+
+
 def assert_driver_merged(step, repo: Path, expected: dict[str, float]) -> None:
     """The driver's line, git's clean merge, and the lower mark per key."""
     said = step.stdout + step.stderr
@@ -445,31 +457,13 @@ def committed_marks(box, repo: Path, ref: str = "HEAD") -> str:
     return "\n".join("  ".join(line.split("\t")) for line in text.splitlines())
 
 
-UNSTAMPED = "[unstamped]"
-
-
-def _analysis(stamp: str) -> int:
-    return int(re.search(r"crapkit-analysis=(\d+)", stamp)[1])
-
-
-def _newer_side(ours: str, theirs: str) -> tuple[str, str]:
-    """("ours" or "theirs", its stamp): the side whose analysis version is higher."""
-    return ("ours", ours) if _analysis(ours) > _analysis(theirs) else ("theirs", theirs)
-
-
 def expected_refusal(ours: str, theirs: str) -> list[str]:
-    """docs/ratchet.md's refusal for a merge of these two stamps, filled in: the
-    example that asks to re-seed either side when one carries no stamp, else the
-    one that names the newer side and the metric to re-seed under."""
-    uncompared = UNSTAMPED in (ours, theirs)
-    fence = docsnip.fence(RATCHET_DOC, DRIVER, contains="re-baseline one side" if uncompared else "is newer")
+    """docs/ratchet.md's refusal of two stamps that do not compare, such as an
+    unstamped side, filled in with this merge's two stamps."""
+    fence = docsnip.fence(RATCHET_DOC, DRIVER, contains="do not compare")
     lines = docsnip.outputs(fence)[0][1].splitlines()
-    first = re.sub(r"ours is \[[^]]*\] and theirs is \[[^]]*\]",
-                   lambda _: f"ours is {ours} and theirs is {theirs}", lines[0])
-    if not uncompared:
-        side, stamp = _newer_side(ours, theirs)
-        first = re.sub(r"(ours|theirs) is newer, so with a crapkit that measures \[[^]]*\]",
-                       lambda _: f"{side} is newer, so with a crapkit that measures {stamp}", first)
+    first = re.sub(r"OURS records \[[^]]*\] and THEIRS records \[[^]]*\]",
+                   lambda _: f"OURS records {ours} and THEIRS records {theirs}", lines[0])
     return [first, *lines[1:]]
 
 
@@ -481,7 +475,17 @@ def assert_driver_refused(step, ours: str, theirs: str) -> None:
     assert [line for line in expected_refusal(ours, theirs) if line not in said] == [], said
 
 
+PER_SCOPE_HEAD = re.compile(r"crapkit-stamp=2 lizard=([^\s:]+): ")
+
+
 def stamp(repo: Path) -> str:
-    """The marks file's metric stamp, bracketed the way the merge driver names it."""
-    first = (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8").splitlines()[0]
-    return "[" + first.lstrip("# ").strip() + "]"
+    """The marks file's metric stamp, bracketed the way the merge driver names
+    it. A per-scope file's stamp is its lizard version and each `#scope` line's
+    scope and stamp, sorted by scope, as the driver renders them."""
+    lines = (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8").splitlines()
+    first = lines[0].lstrip("# ").strip()
+    head = PER_SCOPE_HEAD.match(first)
+    if head is None:
+        return f"[{first}]"
+    scopes = dict(sorted(tuple(line.split("\t")[1:3]) for line in lines if line.startswith("#scope\t")))
+    return f"[crapkit-stamp=2 lizard={head[1]} {json.dumps(scopes, ensure_ascii=False)}]"

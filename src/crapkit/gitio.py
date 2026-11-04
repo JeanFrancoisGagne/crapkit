@@ -1,4 +1,9 @@
-"""Git shell layer: the tracked-file universe and the current commit."""
+"""Git shell layer: the tracked-file universe and the current commit.
+
+The bytes a path held at a revision come from one read, `blobs_at`: one
+`git cat-file --batch` for any number of paths, None where the revision
+holds no blob there. `blob_at` answers one path through it.
+"""
 from __future__ import annotations
 
 import os
@@ -9,19 +14,19 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from itertools import chain
 from pathlib import Path
 from typing import NamedTuple
 
 from .diffparse import changed_ranges, rendered_ranges, text_line_ranges, utf16_line_spans
 from .errors import GitError, ToolError
 from .gitpaths import nul_paths, readable, split_record
-from .records import record_lines
-from .repotext import escaped, lenient, lenient_lines, marks_text, utf16_marked
+from .programs import require
+from .repotext import escaped, lenient, lenient_lines, utf16_marked
 
 _OBJECT_NAME = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _LOG_HEADER = re.compile(rb"^\0(-?\d+) ([0-9a-f]+)\n", re.MULTILINE)
-_INDEX_LINE = re.compile(rb"^index ([0-9a-f]+)\.\.([0-9a-f]+)", re.MULTILINE)
+_RAW_LINE = re.compile(rb"^(:+)([^\t\n]*)\t", re.MULTILINE)
+_UNSHOWN = ""  # the after side of a commit `git log --raw` lists with no line
 _NO_FILE = {"0" * 40, "0" * 64}  # the side of a commit that added or deleted the file
 _LINE_LOG_HEADER = re.compile(rb"^\0([0-9a-f]{40}|[0-9a-f]{64})$", re.MULTILINE)
 _MESSAGE_FORMAT = "--format=%h%x00%ad%x00%s%x00%b"
@@ -123,6 +128,12 @@ def _git_unflagged(root: Path, *args: str) -> str:
     return _run(root, args, args)
 
 
+# Every git process here starts the file programs.require finds on PATH's
+# absolute entries, never a `git.exe` the working directory holds, which Windows
+# searches first for a bare name. subprocess takes it as `executable`, so argv[0]
+# stays `git`; run_owned takes it as argv[0], since its POSIX launcher execs
+# argv[0] itself. No git on any absolute entry raises FileNotFoundError, which
+# each start names `git executable not found`, as it named a missing bare `git`.
 def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False,
            pinned: tuple[tuple[str, str], ...] = ()) -> subprocess.CompletedProcess:
     """One git process run to completion, whatever it exits with.
@@ -135,8 +146,8 @@ def _spawn(root: Path, argv: tuple[str, ...], *, binary: bool = False,
     an OS path, so a directory named in Latin-1 on Linux still opens. stderr is
     only ever quoted in a message, so it reads through repotext.lenient."""
     try:
-        res = subprocess.run(["git", *argv], cwd=root, env=_environment(*pinned),
-                             capture_output=True)
+        res = subprocess.run(["git", *argv], executable=require("git"), cwd=root,
+                             env=_environment(*pinned), capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     if binary:
@@ -238,8 +249,8 @@ def _git_lines(root: Path, *args: str) -> Iterator[str]:
     ended one at a CR inside an author name, which cut the header off its dates.
     """
     try:
-        proc = subprocess.Popen(["git", *_RELATIVE, *args], cwd=root, env=_environment(), stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE)
+        proc = subprocess.Popen(["git", *_RELATIVE, *args], executable=require("git"), cwd=root,
+                                env=_environment(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     with proc:
@@ -780,25 +791,102 @@ def shallow_checkout(root: Path) -> bool:
 def blob_at(root: Path, commit: str, rel_path: str) -> bytes | None:
     """The bytes `rel_path` (relative to `root`) held at `commit`, or None when
     that commit holds no such file. A commit this clone does not hold, or any
-    other git failure, raises GitError: it is not a commit without the file."""
-    listed = _git_paths(root, "--literal-pathspecs", "ls-tree", "-z", commit, "--", rel_path)
-    if not listed:
-        return None
-    blob = ("cat-file", "blob", listed[0].split(None, 3)[2])
-    return _run(root, blob, blob, binary=True)
+    other git failure, raises GitError: it is not a commit without the file.
+    One path's answer from `blobs_at`."""
+    return blobs_at(root, commit, [rel_path])[rel_path]
 
 
-def commits_touching(root: Path, rev_range: str, rel_path: str) -> list[str]:
-    """The commits in `rev_range` that changed `rel_path`, newest first. A range
-    this clone does not hold raises GitError: it is not a range with no commits."""
-    return _git(root, "--literal-pathspecs", "log", "--format=%H", rev_range, "--",
-                rel_path).split()
+def blobs_at(root: Path, revision: str, paths) -> dict[str, bytes | None]:
+    """path -> the bytes each root-relative path held at `revision`, or None
+    where the revision holds no blob there: the path is absent, a tree or a
+    submodule. `HEAD` on an unborn branch answers None for every path.
+
+    One `git cat-file --batch` process asks for the revision's own commit
+    first and then each `<revision>:./<path>`, so "missing" for a path never
+    stands for a missing revision: a revision the clone does not hold (an
+    unknown name, a commit a shallow clone cut off) raises GitError, and so
+    does a failed spawn. The `./` spelling reads each name from the cwd, which
+    a nested crapkit root needs. A name holding a line break cannot ride the
+    line-framed stdin and costs one `cat-file blob` of its own. No paths start
+    no process."""
+    paths = list(paths)
+    if not paths:
+        return {}
+    blobs = _framed_at(root, revision, paths)
+    return {path: blobs[path] if path in blobs else _blob_alone(root, revision, path)
+            for path in paths}
+
+
+# One `cat-file --batch` answer header: `<oid> <type> <size>`. Anything else on
+# the line (`<request> missing`, `<request> ambiguous`) is a request git found
+# no object for, and no body follows it.
+_BATCH_HEADER = re.compile(rb"(?:[0-9a-f]{40}|[0-9a-f]{64}) ([a-z]+) ([0-9]+)")
+
+
+def _framed_at(root: Path, revision: str, paths: list[str]) -> dict[str, bytes | None]:
+    """The answers for every name that rides the batch's stdin, after the
+    revision's own presence; every path's None at an unborn HEAD."""
+    framed = [path for path in paths if not _line_paths([path])]
+    stream = _batch_stream(root, _revision_requests(revision, framed))
+    kind, _, pos = _batch_record(stream, 0)
+    if kind is None:
+        return _without_revision(root, revision, paths)
+    return _blob_records(stream, pos, framed)
+
+
+def _revision_requests(revision: str, paths: list[str]) -> bytes:
+    """The revision's commit, then `<revision>:./<path>` per path, one per
+    line. A name that is not UTF-8 goes out as its own bytes."""
+    lines = [f"{revision}^{{commit}}", *(f"{revision}:./{path}" for path in paths)]
+    return "".join(f"{line}\n" for line in lines).encode("utf-8", "surrogateescape")
+
+
+def _batch_record(stream: bytes, pos: int) -> tuple[bytes | None, bytes, int]:
+    """(object type, body, next position) for the record at `pos`, sliced by
+    its declared size; (None, b"", next) for a request git found nothing for."""
+    end = stream.index(b"\n", pos)
+    found = _BATCH_HEADER.fullmatch(stream, pos, end)
+    if found is None:
+        return None, b"", end + 1
+    body_at, size = end + 1, int(found[2])
+    return found[1], stream[body_at:body_at + size], body_at + size + 1
+
+
+def _blob_records(stream: bytes, pos: int, paths: list[str]) -> dict[str, bytes | None]:
+    """One answer per path from `pos` on: the bytes of a blob, else None."""
+    blobs: dict[str, bytes | None] = {}
+    for path in paths:
+        kind, body, pos = _batch_record(stream, pos)
+        blobs[path] = body if kind == b"blob" else None
+    return blobs
+
+
+def _without_revision(root: Path, revision: str, paths: list[str]) -> dict[str, None]:
+    """A revision the batch found no commit for: None for every path at an
+    unborn HEAD, else GitError."""
+    if revision == "HEAD" and _unborn(root):
+        return dict.fromkeys(paths)
+    raise GitError(f"git cat-file --batch: {revision} names no commit this clone holds in {root}")
+
+
+def _unborn(root: Path) -> bool:
+    """Whether HEAD names a branch with no commit yet: `rev-parse --verify
+    --quiet` exits 1 for a HEAD that resolves to nothing, 128 when git fails."""
+    probe = _spawn(root, ("rev-parse", "--verify", "--quiet", "HEAD"), binary=True)
+    return probe.returncode == 1
+
+
+def _blob_alone(root: Path, revision: str, path: str) -> bytes | None:
+    """One line-bearing name's bytes, or None. The batch already proved the
+    revision held, so a failed read is a path that holds no blob there."""
+    read = _spawn(root, ("cat-file", "blob", f"{revision}:./{path}"), binary=True)
+    return read.stdout if read.returncode == 0 else None
 
 
 def _batch_stream(root: Path, requests: bytes) -> bytes:
     try:
-        res = subprocess.run(["git", "cat-file", "--batch"], cwd=root, env=_environment(),
-                             input=requests, capture_output=True)
+        res = subprocess.run(["git", "cat-file", "--batch"], executable=require("git"), cwd=root,
+                             env=_environment(), input=requests, capture_output=True)
     except FileNotFoundError as exc:
         raise GitError("git executable not found") from exc
     if res.returncode != 0:
@@ -877,7 +965,7 @@ class _Started:
         self.stderr = ""
         try:
             self._proc = subprocess.Popen(
-                ["git", *_RELATIVE, *args], cwd=root, env=_environment(*pinned),
+                ["git", *_RELATIVE, *args], executable=require("git"), cwd=root, env=_environment(*pinned),
                 stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except FileNotFoundError as exc:
@@ -1042,7 +1130,10 @@ class _StartedReads:
 
     def __init__(self, root: Path, base: str | None = None) -> None:
         self._root = root
-        basis = (merge_base(root, base),) if base is not None else ()
+        # The revision the staged diff is taken against, which the gate reads
+        # each function's base ccn at (blobs_at).
+        self.basis = merge_base(root, base) if base is not None else "HEAD"
+        basis = (self.basis,) if base is not None else ()
         self._diff = SourcePatch(root, "--cached", *basis)
         self._batch = _Started(root, ("cat-file", "--batch"), stdin=True)
 
@@ -1081,42 +1172,182 @@ def staged_reads(root: Path, base: str | None = None):
         reads.close()
 
 
-class LogEntry(NamedTuple):
-    """One commit that touched a file: when, which, and its -U0 patch."""
-    timestamp: int
+class PatchRows(NamedTuple):
+    """The rows one commit's -U0 patch took out of a file (`gone`) and put in
+    (`came`), in patch order, each as its bytes without the LF. `old_top`
+    says `gone` opens with the old file's line 1, `new_top` that `came`
+    opens with the new file's."""
+    gone: tuple[bytes, ...]
+    came: tuple[bytes, ...]
+    old_top: bool
+    new_top: bool
+
+
+class FileRevision(NamedTuple):
+    """One commit that touched a file, as `file_revisions` reads it.
+
+    `blob` names the blob the commit left, None where it deleted the file.
+    `base` names the blob it changed, None where it created the file and for
+    a merge: git shows a merge's change against no one parent. `rows` is the
+    commit's patch, None where git printed no rows to carry a revision
+    through: a merge, a created or deleted file, a binary patch, a patch
+    with a NUL (a UTF-16 revision printed as text). `data` and
+    `before` are the bytes of `blob` and `base` where they were read whole,
+    else None.
+    """
     commit: str
-    patch: str
+    time: int
+    data: bytes | None
+    before: bytes | None
+    merge: bool
+    blob: str | None
+    base: str | None
+    rows: PatchRows | None
 
 
-def file_log(root: Path, rel_path: str, rev: str | None = None) -> list[LogEntry]:
-    """Each commit touching one file, oldest first, with its patch; the
-    commits `rev` reaches when one is given, else HEAD's.
+def file_revisions(root: Path, rel_path: str, rev_range: str | None = None) -> list[FileRevision]:
+    """Each commit in `rev_range` that touched one file, oldest first, with
+    its patch rows and object ids; all of HEAD's history when `rev_range` is
+    None. The time is the author date.
 
-    -U0: the readers look at +/- lines alone, so context lines are pipe traffic
-    that grows with the file.
+    One `git log -p -U0 --raw` stream names each commit's ids and prints its
+    patch. One `git cat-file --batch` reads whole only the blobs the rows
+    cannot stand for: each revision with no rows, and the base of a revision
+    whose base is not the blob the revision listed before it left (the first
+    of a range, a commit on a second branch). On Windows a batch of every
+    blob cost 1.2 to 1.6 s per `ratchet report` on 40,303 marks in 200
+    revisions in pipe transport alone. Bytes are handed out as stored: the
+    caller decides how a revision reads.
+
     No --follow: rename detection cost 0.6s of a 1.14s `ratchet report` on a
     72k-commit history and found nothing. The cost is real, since --follow also
     gives up the commit-graph path filtering the plain log gets (measured on a
     30k-commit synthetic: 0.436s vs 0.257s, same events either way). So the log
-    of a renamed file starts at the rename, and its first patch adds every line;
+    of a renamed file starts at the rename, where the file reads as created;
     `commit_renames` names the old path, and `marks_history` goes on from there.
 
-    A patch reads as text, each byte that is not UTF-8 as U+FFFD, unless it
-    holds a NUL. That one may come from a UTF-16 revision, which PowerShell
-    5.1's bare Out-File saves: git splits its lines at every 0A byte, one byte
-    into the next line's first character, and only the first line carries the
-    byte-order mark. Such a commit reads from its two whole revisions instead,
-    each through repotext.marks_text, the rule every reader of the marks file
-    uses, as the lines one revision holds and the other does not.
+    A failed read raises GitError, and in a shallow clone it names the fetch
+    that brings the rest in: a commit the clone does not hold is not a history
+    that never touched the file.
     """
-    # A path may hold U+0001, the old separator. Body NULs have +/- prefixes;
-    # only a physical header line starts with the NUL timestamp marker. Raw LF
-    # framing prevents CR in a legacy field from manufacturing a header line.
+    try:
+        listed = _revision_sides(root, rel_path, rev_range)
+        wanted = _whole_reads(listed)
+        blobs = object_blobs(root, sorted({oid for pair in wanted for oid in pair if oid}))
+    except GitError as exc:
+        raise GitError(f"{exc}{shallow_fix(root)}") from exc
+    return [revision._replace(before=blobs.get(base), data=blobs.get(blob))
+            for revision, (base, blob) in zip(listed, wanted)]
+
+
+def _whole_reads(listed: list[FileRevision]) -> list[tuple[str | None, str | None]]:
+    """(base, blob) to read whole per revision, None for a side its rows or
+    the revision before it answer."""
+    wanted, previous = [], None
+    for revision in listed:
+        base = None if revision.merge or revision.base == previous else revision.base
+        wanted.append((base, revision.blob if revision.rows is None else None))
+        previous = revision.blob
+    return wanted
+
+
+def _revision_sides(root: Path, rel_path: str, rev_range: str | None) -> list[FileRevision]:
+    """Each commit's ids and rows, oldest first, no bytes read yet. A commit
+    with no --raw line keeps the blob the commit before it left.
+
+    A path may hold U+0001, the old separator, so each record opens with a
+    NUL: only a physical header line starts with the NUL timestamp marker, and
+    raw LF framing keeps a CR in a legacy field from making one. Every patch
+    line opens with its indicator, so no row starts with that NUL either."""
     out = _git_bytes(root, "--literal-pathspecs", "log", "--reverse", "--format=%x00%at %H",
-                     "-p", *_PATCH, "--full-index", "--text", *([rev] if rev else []), "--", rel_path)
-    entries = _log_entries(out)
-    revisions = _revisions(root, [patch for *_, patch in entries if b"\0" in patch])
-    return [LogEntry(stamp, commit, _patch_text(patch, revisions)) for stamp, commit, patch in entries]
+                     "-p", "--raw", "--cc", "--no-abbrev", *_PATCH,
+                     *([rev_range] if rev_range else []), "--", rel_path)
+    revisions, previous = [], None
+    for stamp, commit, body in _log_entries(out):
+        base, blob, merge = _raw_sides(body)
+        blob = previous if blob == _UNSHOWN else blob
+        rows = None if merge or None in (base, blob) else _patch_rows(body)
+        revisions.append(FileRevision(commit, stamp, None, None, merge, blob, base, rows))
+        previous = blob
+    return revisions
+
+
+_HUNK = re.compile(rb"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
+_BINARY = re.compile(rb"^Binary files .* differ$", re.MULTILINE)
+
+
+def _patch_rows(body: bytes) -> PatchRows | None:
+    """One commit's rows off its -U0 patch, None for a binary patch or one
+    with a NUL: a bare `diff` attribute prints a UTF-16 revision as text,
+    and its rows, split at each 0x0A byte, do not decode one by one.
+
+    Rows are counted off each hunk header, never told apart by their first
+    character alone: a row `-- a/x` prints as `--- a/x`, which a header also
+    starts with. A `\\ No newline at end of file` line belongs to the row
+    before it."""
+    if b"\0" in body or _BINARY.search(body):
+        return None
+    gone: list[bytes] = []
+    came: list[bytes] = []
+    lines = iter(body.split(b"\n"))
+    for line in lines:
+        hunk = _HUNK.match(line)
+        if hunk:
+            _take_hunk(lines, hunk, gone, came)
+    return PatchRows(tuple(gone), tuple(came), *_tops(_HUNK.search(body)))
+
+
+def _take_hunk(lines, hunk: re.Match, gone: list[bytes], came: list[bytes]) -> None:
+    """The hunk's rows onto `gone` and `came`."""
+    old, new = _count(hunk[2]), _count(hunk[4])
+    while old or new:
+        line = next(lines)
+        if line[:1] == b"-":
+            gone.append(line[1:])
+            old -= 1
+        elif line[:1] == b"+":
+            came.append(line[1:])
+            new -= 1
+
+
+def _tops(first: re.Match | None) -> tuple[bool, bool]:
+    """Whether the first hunk takes out the old line 1 and puts in the new
+    one. Only the first hunk can: hunks come in file order. `-0,0` and
+    `+0,0` name the line an insertion or a deletion follows, not a row."""
+    if first is None:
+        return False, False
+    return (first[1] == b"1" and _count(first[2]) > 0,
+            first[3] == b"1" and _count(first[4]) > 0)
+
+
+def _count(spelled: bytes | None) -> int:
+    """A hunk side's line count: git leaves out `,1`."""
+    return 1 if spelled is None else int(spelled)
+
+
+def _raw_sides(body: bytes) -> tuple[str | None, str | None, bool]:
+    """(before id, after id, merge) off one commit's --raw line. A merge's
+    combined line opens with one colon per parent and names each parent's id,
+    then its own. An all-zero id is a side without the file (None). A commit
+    the log lists with no line changed nothing git shows (after _UNSHOWN)."""
+    line = _RAW_LINE.search(body)
+    if line is None:
+        return None, _UNSHOWN, True
+    ids = [_present(token.decode()) for token in line[2].split() if len(token) in (40, 64)]
+    merge = len(line[1]) > 1
+    return (None if merge else ids[0]), ids[-1], merge
+
+
+def _present(oid: str) -> str | None:
+    return None if oid in _NO_FILE else oid
+
+
+def object_blobs(root: Path, ids: list[str]) -> dict[str, bytes]:
+    """Each object id's bytes, all from one `git cat-file --batch`; {} for
+    none. Blobs named by object id; blobs_at reads them by path."""
+    if not ids:
+        return {}
+    return _framed_blobs(_batch_stream(root, "".join(f"{oid}\n" for oid in ids).encode()), ids)
 
 
 def commit_renames(root: Path, commit: str) -> dict[str, str]:
@@ -1128,14 +1359,6 @@ def commit_renames(root: Path, commit: str) -> dict[str, str]:
     fields = _git_paths(root, "diff-tree", "-r", "-M", "--relative", "--name-status",
                         "--no-commit-id", "-z", commit)
     return _rename_pairs(fields)
-
-
-def _patch_sides(patch: bytes) -> tuple[str, ...]:
-    """The object ids of the file before and after one commit, from the
-    `index` line `--full-index` writes (an absent side is all zeros); () when
-    the patch has no such line."""
-    found = _INDEX_LINE.search(patch)
-    return (found[1].decode(), found[2].decode()) if found else ()
 
 
 def line_commits(root: Path, rel_path: str, start: int, end: int, limit: int) -> list[str]:
@@ -1167,35 +1390,6 @@ def commit_messages(root: Path, names: list[str]) -> list[tuple[str, ...]]:
                      _MESSAGE_FORMAT, *names, "--")
     fields = [lenient(field) for field in out.split(b"\0")]
     return [tuple(fields[i:i + 4]) for i in range(0, len(fields) - 1, 4)]
-
-
-def _revisions(root: Path, patches: list[bytes]) -> dict[str, bytes]:
-    """Each side those patches name, read whole from one `cat-file --batch`."""
-    ids = sorted(set(chain.from_iterable(map(_patch_sides, patches))) - _NO_FILE)
-    if not ids:
-        return {}
-    return _framed_blobs(_batch_stream(root, "".join(f"{oid}\n" for oid in ids).encode()), ids)
-
-
-def _patch_text(patch: bytes, revisions: dict[str, bytes]) -> str:
-    """One commit's patch as the +/- lines ratchet_report reads."""
-    sides = _patch_sides(patch) if b"\0" in patch else ()
-    if not sides:
-        return lenient(patch)
-    return revisions_patch(*(revisions.get(side, b"") for side in sides))
-
-
-def revisions_patch(before: bytes, after: bytes) -> str:
-    """Two whole revisions of the marks file as the +/- lines ratchet_report
-    reads: the lines one holds and the other does not, each revision read by
-    repotext.marks_text, the rule every reader of the marks file uses."""
-    old, new = (list(record_lines(marks_text(side))) for side in (before, after))
-    return "\n".join(_only_in(old, new, "-") + _only_in(new, old, "+"))
-
-
-def _only_in(lines: list[str], other: list[str], sign: str) -> list[str]:
-    held = set(other)
-    return [sign + line for line in lines if line not in held]
 
 
 def _log_entries(out: bytes) -> list[tuple[int, str, bytes]]:
@@ -1233,7 +1427,7 @@ def _worktree_git(root: Path, *args: str, owner=None) -> str:
         return _git(root, *args)
     from .procs import run_owned
     try:
-        result = run_owned(["git", *_RELATIVE, *args], cwd=root, env=_environment(),
+        result = run_owned([require("git"), *_RELATIVE, *args], cwd=root, env=_environment(),
                            capture_output=True, owner=owner)
     except FileNotFoundError as error:
         raise GitError("git executable not found") from error
@@ -1456,6 +1650,16 @@ class GitFacts:
         self._diffs: dict[str, tuple[str, ...]] = {}
         self._ancestry: dict[tuple[str, str], bool | None] = {}
         self._shallow: bool | None = None
+        self._tracked: tuple[str, ...] | None = None
+
+    def tracked_files(self) -> tuple[str, ...]:
+        """`ls_files`, asked once: verify's claimed-name scan and the
+        inventory both read the tracked files, and one git start costs about
+        15 ms on Windows."""
+        with self._lock:
+            if self._tracked is None:
+                self._tracked = tuple(ls_files(self.root))
+            return self._tracked
 
     def head_commit(self) -> str:
         with self._lock:

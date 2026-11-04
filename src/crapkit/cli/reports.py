@@ -15,8 +15,8 @@ from ..invocation import _self
 from ..store import SnapshotStore
 from ..uncovered import MissingLines, load_uncovered
 from ._shared import (_command_root, _load_repo_config, _not_a_directory, _open_store,
-                      _print_json, _stand, _ratchet_entries, _repo_out_path, _repo_relative,
-                      behind_head)
+                      _print_json, _stand, _ratchet_entries, _ratchet_key_version, _repo_out_path,
+                      _repo_relative, behind_head)
 
 
 def _digest_pair(store):
@@ -323,6 +323,8 @@ class _ExplainCtx(NamedTuple):
     uncovered: MissingLines
     ratchet: list | None
     contexts: dict
+    rows: list  # the selector run's rows of the file: what a carried mark is asked against
+    proved: bool  # the marks file proves its key identity, so a mark may carry
 
 
 def cmd_explain(args: argparse.Namespace) -> int:
@@ -395,9 +397,11 @@ def _explain_ctx(root: Path, cfg, store: SnapshotStore, args, runs: list[dict],
 
     run_id = _newest_id(runs, is_rowful)
     rows = store.read_positions(selector, args.path) if selector is not None else []
-    return _ExplainCtx(root, args.path, run_id,
-                       load_uncovered(root, cfg), _ratchet_entries(root, cfg, rows, store),
-                       _contexts_for_path(root, cfg, args.path) if args.tests else {})
+    entries = _ratchet_entries(root, cfg)
+    proved = _ratchet_key_version(root, cfg, rows, store, entries) != 0
+    return _ExplainCtx(root, args.path, run_id, load_uncovered(root, cfg), entries,
+                       _contexts_for_path(root, cfg, args.path) if args.tests else {},
+                       rows, proved)
 
 
 def _explain_payload(ctx: _ExplainCtx, store: SnapshotStore, args, long_name: str,
@@ -407,7 +411,7 @@ def _explain_payload(ctx: _ExplainCtx, store: SnapshotStore, args, long_name: st
     span = _latest_place(store, ctx.run_id, ctx.path, key)
     out = {"long_name": long_name,
            "history": store.function_history(ctx.path, key),
-           **_mark_fields(ctx.ratchet, ctx.path, key),
+           **_mark_fields(ctx, key),
            **_dark_fields(ctx.uncovered, ctx.path, span)}
     if args.history:
         out.update(_commits_fields(ctx.root, ctx.path, span))
@@ -440,18 +444,20 @@ def _latest_place(store: SnapshotStore, run_id: int | None, path: str, long_name
     return None if run_id is None else store.function_place(run_id, path, long_name)
 
 
-def _mark_fields(ratchet: list | None, path: str, long_name: str) -> dict:
-    """null and a note when the repo carries no marks file: an unmarked function
-    and a repo with no ratchet both read as null, and they want different moves.
+def _mark_fields(ctx: _ExplainCtx, key: str) -> dict:
+    """The mark brief reads for the function under KEY, and the key a signature
+    edit carried it from. null and a note when the repo carries no marks file:
+    an unmarked function and a repo with no ratchet both read as null, and they
+    want different moves.
 
-    `long_name` arrives as the KEY name, so `explain path f#2` reads the second
-    twin's mark and a bare `f` reads the worst twin's, as `brief` does.
+    KEY is the key name, so `explain path f#2` reads the second twin's mark and
+    a bare `f` reads the worst twin's, as `brief` does.
     """
-    from ..ratchet import mark_for
+    from .queue import _brief_mark
 
-    if ratchet is None:
-        return {"ratchet_mark": None, "ratchet_mark_note": "no ratchet file"}
-    return {"ratchet_mark": mark_for(ratchet, path, long_name)}
+    mark = _brief_mark(ctx.ratchet, (ctx.path, key), ctx.rows, ctx.proved)
+    fields = {"ratchet_mark": mark.value, "carried_from": mark.carried_from}
+    return fields if ctx.ratchet is not None else {**fields, "ratchet_mark_note": "no ratchet file"}
 
 
 def _dark_fields(uncovered: MissingLines, path: str, span) -> dict:
@@ -683,6 +689,8 @@ def _print_history(history: list) -> None:
 def _ratchet_mark(p: dict) -> str:
     if "ratchet_mark_note" in p:
         return p["ratchet_mark_note"]
+    from .queue import carried_text
+
     mark = p["ratchet_mark"]
     return ("none (below target or never marked)" if mark is None
-            else f"{mark:.4f} (committed high-water mark)")
+            else f"{mark:.4f} (committed high-water mark){carried_text(p['carried_from'])}")

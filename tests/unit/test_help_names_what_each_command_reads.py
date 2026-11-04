@@ -159,8 +159,11 @@ def test_the_schema_names_every_placeholder_the_retest_fills():
 # history", and report's open marks are the file's rows, committed or not.
 
 MARKS = "crapkit-ratchet.tsv"
-HOOK_MARKS = ("A function with a mark in the working tree's marks file passes, whether or not "
-              "the mark is staged.")
+# Since 0.9.0 the mark holds the function's ccn, not its existence: a ccn past
+# the mark puts the CRAP past it at any coverage, and the hook exits 6.
+HOOK_MARKS = ("A function over its ceiling with a mark in the working tree's marks file, whether "
+              "or not the mark is staged, passes while its ccn sits at or under that mark, and "
+              "exits 6 once its ccn passes it")
 RATCHET_MANAGES = "ratchet manage the marks file: seed new debt, prune gone code"
 REPORT_READS = ("report: the burn-down: open marks are the file's rows, committed or not, or the "
                 "rows its history last held when it is missing or blank, and ages and repayments "
@@ -168,12 +171,13 @@ REPORT_READS = ("report: the burn-down: open marks are the file's rows, committe
 
 
 def test_a_mark_nobody_staged_pardons_a_staged_function(repo, capsys):  # noqa: F811
-    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+    from crapkit.ratchet import RatchetEntry
+    from stamps import marks_in
 
     add_knotty(repo)
     git(repo, "add", "src/app.ts")
-    (repo / MARKS).write_text(dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 72.0)],
-                                           stamp=metric_version()), encoding="utf-8", newline="\n")
+    (repo / MARKS).write_text(marks_in(repo, [RatchetEntry("src/app.ts", "knotty ( n )", 72.0)]),
+                              encoding="utf-8", newline="\n")
 
     assert main(["hook-precommit", "--repo", str(repo)]) == 0
     assert "1 staged function(s) carry a ratchet mark" in capsys.readouterr().err

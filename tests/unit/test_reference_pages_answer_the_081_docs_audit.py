@@ -19,8 +19,8 @@ import pytest
 
 from crapkit import config_contract, invocation, keys
 from crapkit.analyze import ANALYSIS_VERSION
-from crapkit.cli import ratchet_cmds
-from crapkit.ratchet import stamp_conflict
+from crapkit.ratchet import merge_stamps, stamp_conflict
+from stamps import lane, running, scope, shifted, single_number
 
 ROOT = Path(__file__).resolve().parents[2]
 AGENT = "docs/agent-json.md"
@@ -179,8 +179,10 @@ def console_script(monkeypatch):
 
 
 def test_the_newer_marks_example_quotes_a_stamp_pair_a_release_prints(console_script):
-    printed = stamp_conflict(f"crapkit-analysis={ANALYSIS_VERSION + 1} lizard=1.24.0",
-                             f"crapkit-analysis={ANALYSIS_VERSION} lizard=1.24.0")
+    """The example is this release meeting per-scope marks a newer one stamped
+    one Python number higher in the api scope."""
+    now = running([scope("api", "python")], [lane("py", "coveragepy", "api")])
+    printed = stamp_conflict(shifted(now, 1), now, frozenset({"api"})).refusal("crapkit-ratchet.tsv")
 
     assert f"crapkit: {printed}" in _doc("docs/ratchet.md")
     assert "[crapkit-analysis=12 " not in _doc("docs/ratchet.md")
@@ -188,15 +190,14 @@ def test_the_newer_marks_example_quotes_a_stamp_pair_a_release_prints(console_sc
 
 
 def test_the_merge_refusal_example_is_what_the_driver_prints(console_script):
-    with pytest.raises(Exception) as refused:
-        ratchet_cmds._merge_stamp(["", "# crapkit-analysis=11 lizard=1.24.0\n",
-                                   f"# crapkit-analysis={ANALYSIS_VERSION} lizard=1.24.0\n"])
+    with pytest.raises(ValueError) as refused:
+        merge_stamps(single_number(10), single_number(11), single_number(13))
 
     assert f"crapkit: {refused.value}" in _doc("docs/ratchet.md")
 
 
 def test_the_live_merge_shows_the_file_a_current_merge_writes():
-    merged = f"# crapkit-analysis={ANALYSIS_VERSION} lizard=1.24.0\n# crapkit-keys=1\npath\tlong_name\tcrap\n"
+    merged = "# crapkit-analysis=13 lizard=1.24.0\n# crapkit-keys=1\npath\tlong_name\tcrap\n"
 
     assert merged in _doc("docs/ratchet.md")
     assert "# crapkit-analysis=8 lizard=1.24.0\npath" not in _doc("docs/ratchet.md")

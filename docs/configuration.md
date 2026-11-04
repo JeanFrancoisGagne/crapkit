@@ -10,7 +10,7 @@ leave alone:
 
 | Dial | Key | Decides |
 |---|---|---|
-| the ceiling | `[crapkit] target` | what counts as too complex, repo-wide or per scope |
+| the CRAP ceiling | `[crapkit] target` | the highest CRAP a function may score, repo-wide or per scope |
 | the floor | `[crapkit] worklist_floor` | how small a function has to be before the queue ignores it |
 | what is scored at all | `[exclude] globs` | which files leave the corpus for good |
 | what is measured | `[[lane]]` | which command produces coverage, and for which scopes |
@@ -199,7 +199,7 @@ says how.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `target` | int >= 1 | `6` | The repo-wide CRAP ceiling. A `[[scope]]` may override it. Drives the gate, the `remedy` column, the ratchet drop threshold and every over-target count. |
+| `target` | int >= 1 | `6` | The repo-wide CRAP ceiling: the highest CRAP a function may score. At 6 it also caps ccn at 6, because coverage can at best bring CRAP down to ccn; the commit hook, which has no coverage, refuses a function whose ccn alone exceeds it. A `[[scope]]` may override it. Drives the gate, the `remedy` column, the ratchet drop threshold and every over-target count. |
 | `churn_window_months` | int >= 1 | `12` | How far back `git log` is read for churn weighting, coupling and the worklist rank, counted back from HEAD's commit date, never from today. The months are counted on the UTC calendar, whatever `TZ` says, so a CI runner and a laptop cut the same window; a day the earlier month lacks rolls into the next, as git rolls it (6 months before Aug 31 is Mar 3). A commit counts when its commit date is at or after that instant. |
 | `worklist_floor` | int >= 1 | `5` | Minimum ccn for queue admission, in `worklist` and `next-item` alike. Printed in the worklist header as `floor ccn>=5`. It has no CLI flag. Two rules reach under it: files whose churn weight is in the top 10% are promoted down to ccn 3, and a function scoring over its ceiling is admitted whatever its ccn. |
 | `worklist_top` | int >= 1 | `50` | Cap on the worklist active list. `worklist --top N` overrides it per call. |
@@ -274,14 +274,14 @@ still apply.
 | `name` | string | yes | | The scope's id. Lanes reference it, `--scope` filters on it (exact, not substring; a name no scope declares is a configuration error, exit 3, naming the declared scopes). |
 | `paths` | array of string, min 1 | yes | | Repo-relative path prefixes the scope claims. A bare path also matches that exact file, so `paths = ["core/hot.py"]` claims one file and editing it marks that scope's lane changed. The **deepest** declared path wins when two claim the same file; see [Scope matching](#scope-matching). Written the way git writes one: a leading `./`, a leading or trailing `/` and a `\` separator are all normalized away, so `./src`, `src\` and `src` are one path. A path holding `..` or a drive letter is refused, because no tracked file can match it. |
 | `languages` | array, min 1 | yes | | One or more of `typescript`, `tsx`, `javascript`, `python`, `swift`, `go`, `rust`, `shell`, `powershell`, `cpp`, `objectivec`, `vue`, `java`, `zig`. A file joins the scope only when both its path prefix and its extension match. |
-| `target` | int >= 1 | no | the repo `target` | This scope's ceiling. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
-| `coverage_optional` | bool | no | `false` | Code no test can reach, or code no parser can measure. See below. |
+| `target` | int >= 1 | no | the repo `target` | This scope's CRAP ceiling, with the same rule as the repo `target`. One repo, different ceilings: strict on new code, tolerant on a legacy tree. |
+| `coverage_optional` | bool | no | `false` | Code no test can reach, or a scope init writes no live lane for. See below. |
 | `notes` | array of string | no | `[]` | House rules for this scope alone. They follow the repo-wide `[crapkit] notes` into every packet `brief` builds for a function this scope owns. |
 
-Fourteen languages, two coverage parsers. A lane's `parser` is `coveragepy` or `istanbul` and
-nothing else, so a lane can measure a scope only when its runner writes coverage.py's JSON
-report or istanbul's `coverage-final.json`. In practice that means Python and the
-JavaScript/TypeScript family. A scope whose runner writes neither scores complexity alone and
+Fourteen languages, five coverage parsers. A lane's `parser` is `coveragepy`, `istanbul`,
+`lcov`, `cobertura`, `jacoco` or `coverprofile`, so a lane can measure a scope only when its runner writes coverage.py's JSON
+report, istanbul's `coverage-final.json`, an lcov tracefile, a Cobertura XML report or a JaCoCo XML report. That means Python, the
+JavaScript/TypeScript family, Rust, C, C++, Swift, Objective-C and Java. A scope whose runner writes none scores complexity alone and
 declares `coverage_optional = true`. See
 [lanes.md](lanes.md#which-languages-a-lane-can-measure).
 
@@ -486,11 +486,14 @@ per-scope file lists before measuring them.
 ### `coverage_optional = true`
 
 Two reasons to set it. Either no test can reach the code (entry points, deploy scripts,
-generated shims), or nothing produces a coverage artifact crapkit reads for it (Go, Rust,
-Swift, C and the rest).
+generated shims), or no lane measures it yet (Go, Rust, Swift, C and the rest).
 
-`crapkit init` writes the key for the second reason on its own: a scope whose languages
-all lack a parser gets it, a scope holding one language a parser reads does not. The first
+`crapkit init` writes the key for the second reason on its own: a scope init writes no live
+lane for gets it (init writes live lanes for pytest, Vitest and Jest), a scope holding one
+language such a lane measures does not. When a repo-root file shows a toolchain whose report
+crapkit reads (`Cargo.toml` for cargo llvm-cov, Bun, Deno), init also leaves that
+toolchain's lane commented; uncommenting it and deleting this key measures the scope
+([upgrading.md](upgrading.md#turning-a-cc-only-scope-into-a-measured-one)). The first
 reason is yours to declare, because only you know a test cannot reach the code.
 
 Four effects:
@@ -511,20 +514,23 @@ $ crapkit rescore scripts/deploy.py --json
 ## `[[lane]]`
 
 An array of tables. One lane per coverage command. Full recipes in [lanes.md](lanes.md).
+No key names the lane's runner: crapkit reads it from the command, the package.json
+script the command runs, or devDependencies, and `doctor` prints it per lane
+([How crapkit reads a lane's runner](lanes.md#how-crapkit-reads-a-lanes-runner)).
 
 | Key | Type | Required | Default | What it does |
 |---|---|---|---|---|
 | `name` | string | yes | | The lane's id. Names its log at `.crapkit/lane-<name>.log` and `coverage --lane`. Since the log is a file, the loader refuses on every OS, exit 3, a name Windows cannot use as a file name: one holding `<`, `>`, `:`, `"`, `/`, `\`, `\|`, `?`, `*` or a control character, a device name (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`, or `COM` or `LPT` and a digit, 0 to 9, `¹`, `²` or `³`, with or without an extension, such as `nul.txt`), a name that ends in a dot or a space, and an empty name. Two lanes whose names differ only in case are refused too, since Windows and macOS give them one log file. |
 | `command` | string | yes | | Run through the shell, cwd at the repo root unless `cwd` says otherwise. Its exit code is recorded, not enforced: a suite with known failures still writes a valid artifact. crapkit reads it with the shell that will run it, sh on POSIX and cmd.exe on Windows, and so does `doctor`. That reading covers quoting, carets, backslashes, `&&` segments, blocks, redirections, `;`, line breaks and comments: [How a lane command is read](lanes.md#how-a-lane-command-is-read). A `{python}` or `{python:DIR}` token names the interpreter so one committed line runs on every OS: [The launcher token](#the-launcher-token). |
 | `artifact` | string | yes | | Repo-relative path to the coverage file the command writes. Its absence after the command (and its retries) is the failure. Two lanes may not share an artifact path. Point it under `.crapkit/cov/`, which `init` already gitignores; `doctor` warns about a lane writing at the repo root. `\` separates directories on every OS and a leading `./` is dropped, here and in `results_artifact`. See [Where artifacts live](lanes.md#where-artifacts-live). |
-| `parser` | `istanbul` \| `coveragepy` | yes | | How to read the artifact. |
+| `parser` | `istanbul` \| `coveragepy` \| `lcov` \| `cobertura` \| `jacoco` \| `coverprofile` | yes | | How to read the artifact. |
 | `scopes` | array of string | yes | | Which scopes this lane's coverage speaks for. A scope in no lane's list can only score `no-lane`. |
 | `cwd` | string | no | repo root | Repo-relative working directory for the command. `\` separates directories on every OS and a leading `./` is dropped, so `backend\` written on Windows is `backend/` on Linux. `doctor` fails when it does not exist. `coverage` fails such a lane without starting the command, `lane 'py' FAILED: cwd <path> is not a directory, so the command never ran; fix cwd = 'nope' for this lane in crapkit.toml, or create that directory`, and exits 5 when no lane is left. |
-| `path_prefix` | string | no | `""` | Prefix joined onto coverage.py's relative paths, for a suite run from a subdirectory. Read like a scope path: `api\`, `./api/`, `.\api\` and `/api/` all read `api/`, `.` reads as no prefix, and on a disk that ignores case `API/` takes the case the directory lists. A coveragepy key: the istanbul reader never reads it. It only ever prepends, so it cannot rebase a path the runner wrote absolutely, which is the runner's own switch instead ([The same tree, spelled absolutely](lanes.md#the-same-tree-spelled-absolutely)). |
+| `path_prefix` | string | no | `""` | Prefix joined onto the relative keys of coverage.py and lcov artifacts, and onto the relative `<source>` roots of a Cobertura report, for a suite run from a subdirectory. JaCoCo reads it as the source root its package paths sit under (`src/main/java`), since a JaCoCo report records none. Read like a scope path: `api\`, `./api/`, `.\api\` and `/api/` all read `api/`, `.` reads as no prefix, and on a disk that ignores case `API/` takes the case the directory lists. The coveragepy, lcov, cobertura and jacoco readers read it; the istanbul reader never does, and neither does the coverprofile reader: a Go coverprofile's keys are import paths, which the go.mod at the lane's `cwd` places. It only ever prepends, so it cannot rebase a path the runner wrote absolutely, which is the runner's own switch instead ([The same tree, spelled absolutely](lanes.md#the-same-tree-spelled-absolutely)). |
 | `env` | table of string | no | `{}` | Extra environment for the command, merged over the inherited environment. Use it to cap a runner that sizes its own worker pool from free memory, and to hand a junit reporter its output path when the reporter reads no path off the command line (`jest-junit` is one). Every lane gets it, so raising `max_parallel_lanes` without one lets N lanes each claim the whole box. crapkit adds `PYTHONIOENCODING=utf-8` unless this table sets it ([why](lanes.md#a-python-child-writes-its-log-in-utf-8)). A `PATH` here **replaces** the inherited one for that lane, and `doctor` looks for the lane's runner on it, so a lane that ships its own toolchain is checked the way it runs. |
 | `inputs` | array of string | no | `[]` | Root-relative paths the command reads: its source, tests, fixtures and runner config. With them, `--reuse-unchanged` reuses the lane while this clone holds the commit its artifact was built at, no committed, staged, unstaged or untracked change touches these paths between that commit's tree and the working tree (a lane's declared `artifact` or `results_artifact`, and an untracked file the lane's own run wrote, are not such changes), the artifact bytes still match, this lane's own table, `env` included, is the one it was measured with, and so is the crapkit version. The check compares trees, so a message-only amend or a rebase that leaves these paths as they were reruns nothing. Gitignored files under these paths, other `crapkit.toml` settings and environment variables the lane does not set are outside that proof, and the line that reuses the lane says so. Without `inputs` a lane is reused only at the same clean HEAD. Entries are literal paths, no globs: an entry holding `*` or `?`, or one that is absolute or climbs out of the root, is a config error. An entry that matches no tracked file, and no untracked file outside `.gitignore`, such as a misspelled directory, still loads, but reuse can see no change through it, so `doctor` fails on it. A file the command reads that the list leaves out is never checked, so an edit to it reuses a stale artifact. See [Reusing artifacts](lanes.md#reusing-artifacts). |
 | `full_suite` | bool | no | `true` | `false` permits a positional argument in a pytest coverage command. At `true`, a positional is a config error: subset coverage under a suite with cross-file pollution is run-order dependent. A flag's value is not a positional (`-n 8`, `-o timeout=300`, `-p no:randomly` all pass), and the command is read by the shell that will run it, one argv per `&&`, `\|\|`, `&` or `\|` segment, blank beside the operator or not, with every segment that runs pytest checked. On cmd.exe a `;` starts nothing, so `pytest --cov; echo done` hands pytest `echo` and is refused; write the second command after `&&`. Use double quotes for values, since cmd.exe does not treat `'` as a quote. A positional that names a testpaths entry in another letter case, on a disk that ignores case, names that entry. Set it false deliberately for a genuinely scoped suite. |
-| `container_ok` | bool | no | `false` | Lets a `coveragepy` lane run inside a container. Without it such a lane refuses with exit 5 whenever `/.dockerenv` exists or `CRAPKIT_INSIDE_CONTAINER=1`. |
+| `container_ok` | bool | no | `false` | Lets a lane whose command names pytest run inside a container, whatever its `parser`. Without it such a lane refuses with exit 5 whenever `/.dockerenv` exists or `CRAPKIT_INSIDE_CONTAINER=1`. The guard reads the command alone, never a package.json script, so `make cov` and `npm test` run ([Containers](lanes.md#containers)). |
 | `results_artifact` | string | no | `""` | A JUnit XML report, under `.crapkit/cov/` for the same reason as `artifact`. Two checks read it and neither runs without it: no-new-failures (`verify` exit 8) and the crashed-worker trust check, plus the suite-shrink warning. `doctor` WARNs on a `coveragepy` or `istanbul` lane that declares none, naming both, and `crapkit init` writes it on the lanes it detects. Declared but missing is exit 5, so the check can never pass vacuously, and so is a report saying the run never finished ([a crashed xdist worker or a session error](lanes.md#a-junit-that-says-the-run-did-not-finish)). Under `--reuse-artifacts` both of those are one warning instead, and the lane records no test counts: there the operator is reading a report off disk, which can be the junit of a run whose coverage was salvaged by hand. |
 | `timeout_seconds` | int >= 0 | no | `0` | crapkit kills the command past this. The kill takes the whole process tree, not just the shell, and crapkit waits for it, so no orphan suite keeps running after the lane fails. `0` means no crapkit-owned timeout. |
 | `no_progress_seconds` | int >= 0 | no | `0` | crapkit kills the command when its log has not grown for this many seconds. `timeout_seconds` has to be longer than your slowest honest run, so it cannot cut a suite that hangs early without cutting the slow ones too; this one measures output instead. Set it above the longest quiet stretch the runner has, since a silent build step before the tests looks the same as a hang. `0` means no progress watch. See [lanes.md](lanes.md#a-suite-that-stops-making-progress). |

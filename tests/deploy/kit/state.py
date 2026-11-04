@@ -38,7 +38,8 @@ docs/upgrading.md, read from the stamped tree, never retyped:
 and the walk that runs its steps in page order against a repo: measure
 (doctor, then a coverage export), reseed (coverage, prune, seed) with the
 review the guide asks for, commit, verify, and the checks a user makes after:
-runs, claims and overrides kept, and a fresh MCP session on the new code.
+runs, claims and overrides kept, a fresh MCP session on the new code, and,
+after an upgrade from N-1, verify --json's findings payload on a breach.
 """
 from __future__ import annotations
 
@@ -585,8 +586,13 @@ def metric(analysis: int, lizard: str | None = None) -> str:
 
 
 def stamp_refusal(old: int, new: int, *, old_lizard: str | None = None, new_lizard: str | None = None) -> str:
-    """The part of verify's refusal that names both metric stamps."""
-    return f"[{metric(old, old_lizard)}] but this run measures [{metric(new, new_lizard)}]"
+    """The part of the candidate's verify refusal that names what moved: each
+    marked scope's analysis number, else the lizard version. An older release
+    never prints this: it reads the candidate's marks and quotes their
+    per-scope first line as the stamp it cannot compare."""
+    if old != new:
+        return f"analysis {old} to {new}"
+    return f"lizard {old_lizard or lizard_version()} to {new_lizard or lizard_version()}"
 
 
 def upgrade_to(box, repo: Path, candidate, line: str) -> None:
@@ -599,7 +605,7 @@ def upgrade_to(box, repo: Path, candidate, line: str) -> None:
 
 
 def refused_until_reseed(box, repo: Path, candidate) -> None:
-    """Not a guide step: a verify before the reseed names both stamps."""
+    """Not a guide step: a verify before the reseed names each marked scope's old and new number."""
     old, new = analysis_of(stamp_of(repo)), analysis_version(candidate)
     if old == new:
         return
@@ -611,7 +617,9 @@ def reseed_and_verify(box, repo: Path, candidate, reconcile=None, lizard: str | 
     """The guide's reseed fence, the review, a commit, then verify."""
     done = reseed(box, repo, reconcile)
     review(box, repo, done, export_path(repo))
-    assert stamp_of(repo) == f"# {metric(analysis_version(candidate), lizard)}", done.diff
+    # The candidate's seed writes one stamp per scope: the per-scope first line, then `#scope` lines.
+    assert stamp_of(repo).startswith(f"# crapkit-stamp=2 lizard={lizard or lizard_version()}: "), done.diff
+    assert "\n#scope\t" in (repo / "crapkit-ratchet.tsv").read_text(encoding="utf-8"), done.diff
     commit(box, repo, "reseed the marks under the candidate")
     verify(box, repo)
     return done
@@ -761,7 +769,8 @@ def claim_holds(box, repo: Path, source: Source) -> None:
 
 def kept(box, repo: Path, source: Source, launcher: tuple[str, ...] = ("crapkit",)) -> None:
     """Runs, open claims and overrides the old CLI listed, listed again by the
-    CLI the user runs now (`launcher`, the one on PATH by default)."""
+    CLI the user runs now (`launcher`, the one on PATH by default). After an
+    upgrade from N-1, that CLI's verify --json reads the findings payload."""
     listed = {name: crapkit_json(box, repo, name, launcher=launcher) for name in ("runs", "claims", "overrides")}
     ids = [run["id"] for run in listed["runs"]["runs"]]
     claims = {(claim["path"], claim["long_name"]) for claim in listed["claims"]["claims"]}
@@ -769,6 +778,56 @@ def kept(box, repo: Path, source: Source, launcher: tuple[str, ...] = ("crapkit"
     assert not set(source.run_ids) - set(ids), f"runs {source.run_ids} before, {ids} after"
     assert not set(source.claims) - claims, f"claims {source.claims} before, {sorted(claims)} after"
     assert not set(source.overrides) - overrides, f"overrides {source.overrides} before, {sorted(overrides)} after"
+    # Only after an upgrade from N-1: the downgrade cell calls kept with 0.7.6
+    # on PATH, which still prints the per-kind keys.
+    if source.version == wheels.n_minus_1():
+        reads_the_findings_payload(box, repo, launcher)
+
+
+# The keys 0.8.1's verify --json listed findings and their counts under, and
+# the kinds a `findings` item names in their place (docs/upgrading.md maps each).
+OLD_VERIFY_KEYS = ("gate_violations", "ratchet_regressions", "overridden", "new_failures", "diff_uncovered",
+                   "unread_files", "diff_uncovered_count", "diff_uncovered_max")
+FINDING_KINDS = ("unreadable_name", "gate_violation", "unread_file", "ratchet_regression", "new_failure",
+                 "diff_uncovered", "overridden")
+# An untested branch in grade, which a source's seed marks: its ccn and CRAP
+# rise past the ceiling and the mark, and the new lines run under no test.
+GRADE_BREACH = ('    return "D"\n', '    if attempts > 5 and bonus:\n        return "E"\n    return "D"\n')
+BREACH_KINDS = {"gate_violation", "ratchet_regression", "diff_uncovered"}
+
+
+def suite_python(box, repo: Path) -> None:
+    """The lane's `{python}` written as the venv the cell put on PATH, left
+    uncommitted: uvx puts its own interpreter first on the PATH a lane
+    inherits, and that one holds no pytest (README, A repo that is not Python)."""
+    venv = Path(shutil.which("python", path=box.env["PATH"])).parent.parent
+    token = "{python:" + Path(os.path.relpath(venv, repo)).as_posix() + "}"
+    rewrite(repo / "crapkit.toml", lambda text: text.replace("{python}", token))
+    box.transcript.note(f"not a guide step: the lane's {{python}} written as {token}")
+
+
+def breach_payload(box, repo: Path, launcher: tuple[str, ...]) -> dict:
+    """verify --json on a copy of `repo` with GRADE_BREACH committed; the
+    cell's own repo stays as the guide left it."""
+    copy = repo_templates.copy_of(repo, repo.parent / f"{repo.name}-breach")
+    rewrite(copy / "calc" / "grade.py", lambda text: text.replace(*GRADE_BREACH, 1))
+    commit(box, copy, "calc: an untested branch in grade")
+    suite_python(box, copy)
+    step = box.run([*launcher, "verify", "--json"], cwd=copy, expect=None,
+                   note="not a guide step: verify --json on a breach, in a copy of the repo")
+    return json.loads(step.stdout)
+
+
+def reads_the_findings_payload(box, repo: Path, launcher: tuple[str, ...]) -> None:
+    """The breach's verdict as `findings` items and `counts`, with none of the
+    keys 0.8.1 printed."""
+    payload = breach_payload(box, repo, launcher)
+    kinds = [item["kind"] for item in payload.get("findings", [])]
+    assert "findings" in payload and "counts" in payload, sorted(payload)
+    assert not set(OLD_VERIFY_KEYS) & set(payload), f"0.8.1 keys: {sorted(set(OLD_VERIFY_KEYS) & set(payload))}"
+    assert set(kinds) <= set(FINDING_KINDS), f"unknown kinds: {sorted(set(kinds) - set(FINDING_KINDS))}"
+    assert BREACH_KINDS <= set(kinds), f"the breach yielded {sorted(set(kinds))}:\n{box.transcript.text()}"
+    assert payload["counts"]["diff_uncovered_count"] == kinds.count("diff_uncovered"), payload["counts"]
 
 
 def server_info(box, repo: Path, argv: list[str] | None = None) -> dict:
