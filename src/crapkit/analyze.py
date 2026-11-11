@@ -324,6 +324,15 @@ class _DefSignatures:
     charges the rest of a top-level def's cut-off signature to the file's
     global pseudo function, which is no def and never becomes the owner: the
     def it cut off is listed already, and the net names that one.
+
+    `bodied` holds each def current at a body colon. A reader that never ends
+    one leaves it off lizard's list, with no row for `_unread_defs` to judge:
+    the stock reader does it to a def whose body sits on its colon line, and
+    crapkit's reader did it to every def from a bracketed default on under
+    lizard 1.24.2 (lizardpython, "Defaults that open a bracket"). `ended`
+    holds each function lizard ended, listed or not: a `#lizard forgive`
+    comment has lizard end a def and leave it off the list, which is lizard's
+    call and no reader's failure.
     """
 
     def __init__(self, context):
@@ -332,6 +341,9 @@ class _DefSignatures:
         self.colon_owner = None
         self.colon_line = 0
         self.signature_owner = None
+        self.bodied = []
+        self.ended = []
+        _note_ends(context, self.ended)
 
     def step(self, token: str) -> None:
         fn = self.context.current_function
@@ -343,10 +355,30 @@ class _DefSignatures:
             self.depth, self.signature_owner = 0, None
 
     def finish(self) -> None:
-        """List the def the file ended inside of its signature, if lizard did not."""
+        """List each def lizard did not, unread: the one the file ended inside
+        of its signature, else each one past its body colon that lizard never ended.
+
+        In a file that ends inside a signature, lizard's end-of-file pops end
+        that pending def in its parent's place, so the parent is never ended
+        although it was read; the def the file ended in already refuses the file.
+        """
         listed = self.context.fileinfo.function_list
-        if self.depth is not None and self.signature_owner is not None and self.signature_owner not in listed:
-            listed.append(self.signature_owner)
+        if self.depth is not None:
+            if self.signature_owner is not None and self.signature_owner not in listed:
+                listed.append(self.signature_owner)
+            return
+        for fn in self._never_ended(listed):
+            fn.crapkit_body = False
+            listed.append(fn)
+
+    def _never_ended(self, listed: list) -> list:
+        """The defs in `bodied` lizard neither ended nor listed, each once, in file order."""
+        seen = {id(fn) for fn in [*self.ended, *listed, self.context.global_pseudo_function]}
+        stranded = {}
+        for fn in self.bodied:
+            if id(fn) not in seen:
+                stranded[id(fn)] = fn
+        return list(stranded.values())
 
     def _settle_colon(self, fn, token: str) -> None:
         if fn is self.colon_owner:
@@ -363,8 +395,24 @@ class _DefSignatures:
         if token == ":" and self.depth == 0:
             self.colon_owner, self.depth = fn, None
             self.colon_line = self.context.current_line
+            self.bodied.append(fn)
         else:
             self.depth += _DEPTH_CHANGE.get(token, 0)
+
+
+def _note_ends(context, ended: list) -> None:
+    """Append each function lizard ends to `ended`, whether lizard lists it or not.
+
+    lizard's FileInfoBuilder ends a function only in `end_of_function`, which
+    it calls on itself, so a wrapper bound to this one file's builder sees each end.
+    """
+    end = context.end_of_function
+
+    def end_of_function():
+        ended.append(context.current_function)
+        end()
+
+    context.end_of_function = end_of_function
 
 
 class _PythonBodies:
