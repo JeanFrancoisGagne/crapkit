@@ -356,10 +356,17 @@ class _DefSignatures:
 
     def finish(self) -> None:
         """List each def lizard did not, unread: the one the file ended inside
-        of its signature, and each one past its body colon that lizard never ended."""
+        of its signature, else each one past its body colon that lizard never ended.
+
+        In a file that ends inside a signature, lizard's end-of-file pops end
+        that pending def in its parent's place, so the parent is never ended
+        although it was read; the def the file ended in already refuses the file.
+        """
         listed = self.context.fileinfo.function_list
-        if self.depth is not None and self.signature_owner is not None and self.signature_owner not in listed:
-            listed.append(self.signature_owner)
+        if self.depth is not None:
+            if self.signature_owner is not None and self.signature_owner not in listed:
+                listed.append(self.signature_owner)
+            return
         for fn in self._never_ended(listed):
             fn.crapkit_body = False
             listed.append(fn)
