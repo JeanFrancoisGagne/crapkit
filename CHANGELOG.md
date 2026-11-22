@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.2 — unreleased
+
+- Python: crapkit lists every def again under lizard 1.24.2 and later. Through 0.8.1, a
+  def whose parameter default opens with `(`, `{` or `lambda`, such as `a=()`, `b={}` or
+  `field(default_factory=list)`, went unscored with every def after it in its file and no
+  `UNREAD` line, so `hook-precommit`, `rescore --gate` and `verify` passed those functions
+  at any ccn. A gate may now fail a function 0.8.1 skipped: run `crapkit hook-precommit`
+  with nothing staged, then record each function it names with `crapkit coverage` and
+  `crapkit ratchet seed`, or decompose it. Under any lizard, a Python file holding a def
+  that lizard reads to its body colon and never ends is now refused with an `UNREAD` line
+  naming that def, where 0.8.1 scored the file without it.
+
 ## 0.8.1 — 2026-10-01
 
 0.8.1 fixes what two new test suites found in 0.8.0: one installs crapkit the way the
