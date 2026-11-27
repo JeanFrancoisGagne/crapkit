@@ -23,7 +23,8 @@ from crapkit import mcp_server
 from crapkit.agent_fields import (ADDED, ERROR_OBJECT, FIELDS, MCP_TOOLS, PAYLOADS, VERSION,
                                   AgentField, added_field)
 from crapkit.cli import main
-from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import KEY_VERSION, RatchetEntry
+from stamps import marks_in
 from name_bytes import NOT_UTF8_NAMES
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -109,8 +110,7 @@ def _verify(repo: Path, capsys, *flags: str) -> dict:
 
 def _write_marks(repo: Path) -> None:
     """A mark above knotty's score, so the verify over it tightens the mark."""
-    marks = dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 80.0)],
-                         stamp=metric_version(), key_version=KEY_VERSION)
+    marks = marks_in(repo, [RatchetEntry("src/app.ts", "knotty ( n )", 80.0)], KEY_VERSION)
     (repo / MARKS).write_text(marks, encoding="utf-8", newline="\n")
 
 
@@ -188,10 +188,16 @@ def _version_payloads(capsys, monkeypatch, where: Path) -> list[dict]:
 
 def _doctor_payloads(repo: Path, capsys) -> list[dict]:
     """doctor over the seeded artifacts, then with the stamp file unreadable,
-    so each lane's `refusal` prints its null once and its sentence once."""
+    so each lane's `refusal` prints its null once and its sentence once. The
+    first runs with the unit lane spelling pytest, so its `toolchain` prints a
+    name and a source beside the ui lane's nulls."""
     stamps = repo / ".crapkit" / "artifacts.json"
     kept = stamps.read_bytes() if stamps.is_file() else None
+    config = (repo / "crapkit.toml").read_bytes()
+    unit = b'command = "python -c pass"'  # the unit lane's, the first one the file holds
+    (repo / "crapkit.toml").write_bytes(config.replace(unit, b'command = "python -m pytest"', 1))
     clean = run_json(repo, capsys, "doctor", "--json")
+    (repo / "crapkit.toml").write_bytes(config)
     stamps.write_text("not json", encoding="utf-8")
     refused = run_json(repo, capsys, "doctor", "--json")
     stamps.unlink()
@@ -244,6 +250,88 @@ def _verifies(out: dict, repo: Path, capsys) -> None:
     out["verify --json"] = verify
 
 
+def _verify_stop(out: dict, repo: Path, capsys) -> None:
+    """verify --json at the claimed-name stop: a file a scope takes whose name
+    is not UTF-8 in the index and nowhere on disk, which every OS can hold. The
+    payload is a verify payload with run_id null; the name leaves the index after."""
+    import subprocess
+
+    name = UNREADABLE.encode("utf-8", "surrogateescape")
+    blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=repo, input=ARROW.encode(),
+                          capture_output=True, check=True).stdout.strip()
+    subprocess.run(["git", "update-index", "--add", "-z", "--index-info"], cwd=repo,
+                   input=b"100644 " + blob + b"\t" + name + b"\0", capture_output=True, check=True)
+    out["verify --json"].append(_verify(repo, capsys))
+    subprocess.run(["git", "update-index", "--force-remove", "-z", "--stdin"], cwd=repo, input=name + b"\0",
+                   capture_output=True, check=True)
+
+
+def _every_kind_payload(capsys) -> dict:
+    """verify --json's verdict part holding one finding of every kind, past a
+    diff-coverage ceiling, so each kind's findings item and the ceiling's
+    integer print: a run over one repo reaches a few kinds at a time."""
+    from crapkit.cli._shared import _print_json
+    from crapkit.cli.verifying import _verify_result
+    from crapkit.gate import Unread, UnreadableName
+    from crapkit.verify import (Carried, GateViolation, RatchetRegression, Verdict, settle_verdict,
+                                with_diff_coverage)
+
+    gate = GateViolation("src/app.ts", "knotty ( n )", 21, 8, 0.25, 34.75, "decompose", True, "knotty ( n )")
+    refused = gate._replace(start=40, mark_ambiguity=TWIN_REFUSAL)
+    verdict = settle_verdict(Verdict.passing()._replace(
+        claimed_names=(UnreadableName(UNREADABLE, "src", True),), gate_violations=[gate],
+        unread_files=(Unread("src/b.ts", "src/b.ts:1: arrow refused", True),),
+        ratchet_regressions=[RatchetRegression("src/app.ts", "dispatch ( kind )", 9.0, 12.5)],
+        new_failures=["tests/t.py::test_a"], overridden=(refused,),
+        carried=(Carried("src/app.ts", "knotty ( n , m )", "knotty ( n , m )", "knotty ( n )", 34.75,
+                         True),)))
+    lines = [("src/app.ts", 22)]
+    verdict = with_diff_coverage(verdict, lines, 0, {"src/app.ts"})
+    _print_json(_verify_result(verdict, 7, {"id": 1, "commit": "a" * 40}, "a" * 40, {"src/app.ts": [(21, 30)]},
+                               lines, 0, 0, {"src/app.ts"}))
+    return json.loads(capsys.readouterr().out)
+
+
+TWIN_REFUSAL = ('src/twin.py: no mark carries to "rank( x , y = 1 )", "rank( x , y = 1 )#2" under '
+                'the name rank: twins never carry a mark')
+
+
+def _carried_gate_payload(capsys) -> dict:
+    """rescore --gate --json's gate block over a mark carried through a signature
+    edit and over twins the carry refuses: a run over one repo prints neither."""
+    from crapkit.cli._shared import _print_json
+    from crapkit.cli.scoring import _gate_breaches, _gate_changes, gate_block
+    from crapkit.gate import judge
+    from crapkit.keys import MarkIndex
+    from crapkit.score import ScoredRow
+
+    def row(path: str, name: str, start: int) -> ScoredRow:
+        return ScoredRow("src", path, name, start, start + 5, 7, 7, 7, 12, 2, 1, 1.0, "measured", 7.0,
+                         "decompose")
+
+    rows = [row("src/calc.py", "classify( a , b , c = None )", 10),
+            row("src/twin.py", "rank( x , y = 1 )", 10), row("src/twin.py", "rank( x , y = 1 )", 40)]
+    marks = MarkIndex([RatchetEntry("src/calc.py", "classify( a , b )", 7.0),
+                       RatchetEntry("src/twin.py", "rank( x )", 7.0)])
+    changes = _gate_changes(rows, {}, {r.path for r in rows}, {})
+    result = judge(changes, lambda scope: 6, lambda: marks)
+    ceilings = {r.path: 6 for r in rows}
+    _print_json({"gate": gate_block(result, ceilings, _gate_breaches(result, rows))})
+    return json.loads(capsys.readouterr().out)
+
+
+def _carried(out: dict, repo: Path, capsys) -> None:
+    """brief and explain over a mark whose key `knotty ( m )` left src/app.ts,
+    which keys.resolve carries to `knotty ( n )`, so carried_from prints a key;
+    the marks file is gone after."""
+    marks = marks_in(repo, [RatchetEntry("src/app.ts", "knotty ( m )", 80.0)], KEY_VERSION)
+    (repo / MARKS).write_text(marks, encoding="utf-8", newline="\n")
+    _print_all(out, repo, capsys, (("brief --json", ("brief", "src/app.ts", "knotty", "--json")),
+                                   ("explain --json", ("explain", "src/app.ts", "knotty", "--json")),
+                                   ("worklist --json", ("worklist", "--json"))))
+    (repo / MARKS).unlink()
+
+
 def _override(out: dict, repo: Path, capsys) -> None:
     with open(repo / "src" / "app.ts", "a", encoding="utf-8", newline="\n") as fh:
         fh.write(KNOTTY.replace("knotty", "knottier"))
@@ -267,12 +355,16 @@ def payloads(repo, capsys, monkeypatch, tmp_path_factory) -> dict[str, list]:
     seed_artifacts(repo)
     out: dict[str, list] = {}
     _print_all(out, repo, capsys, _READS)
+    _carried(out, repo, capsys)
     out["doctor --json"] = _doctor_payloads(repo, capsys)
     _print_all(out, repo, capsys, _CLAIMS)
     _forget_content(repo)
     _print_all(out, repo, capsys, _RANKED.items())
     _gate_and_errors(out, repo, capsys)
     _verifies(out, repo, capsys)
+    _verify_stop(out, repo, capsys)
+    out["verify --json"].append(_every_kind_payload(capsys))
+    out["rescore --gate --json"].append(_carried_gate_payload(capsys))
     _override(out, repo, capsys)
     _print(out, repo, capsys, "clean --json", "clean", "--dry-run", "--json")
     _empty_scope(out, repo, capsys)
@@ -359,6 +451,19 @@ def test_each_added_field_is_printed(payloads):
 
 
 @NOT_UTF8_NAMES
+def test_doctors_lane_toolchain_prints_a_runner_and_both_nulls(payloads):
+    """`lanes[].toolchain` is {name, source}: a named runner and where it was
+    read, or two nulls; three declarations, one per field."""
+    printed = [lane["toolchain"] for payload in payloads["doctor --json"]
+               for lane in payload["lanes"]]
+
+    assert {"name": "pytest", "source": "command"} in printed
+    assert {"name": None, "source": None} in printed
+    assert {f.key for f in ADDED if f.key.startswith("lanes[].toolchain")} == {
+        "lanes[].toolchain", "lanes[].toolchain.name", "lanes[].toolchain.source"}
+
+
+@NOT_UTF8_NAMES
 def test_doctors_lane_refusal_is_declared_as_a_sentence_or_null(payloads):
     """0.8.1 gives each doctor --json lane a `refusal`; the declaration left it
     out, so no check caught a type or a null the key does not allow."""
@@ -386,11 +491,94 @@ def _null_forms(payloads: dict, field: AgentField) -> set[bool]:
 
 @NOT_UTF8_NAMES
 def test_the_unread_finding_has_one_shape_in_every_payload(payloads):
+    """verify lists an unread file as an unread_file item in `findings`, so
+    the gate block and the error object are the two lists left."""
     shapes = {f.payload: f.key for f in ADDED if f.key.endswith("unread_files")}
     keys = {payload: _entry_keys(payloads[payload][0], key) for payload, key in shapes.items()}
 
-    assert set(shapes.values()) == {"gate.unread_files", "unread_files", "error.unread_files"}
+    assert set(shapes.values()) == {"gate.unread_files", "error.unread_files"}
     assert keys == {payload: [["dirty", "path", "reason"]] for payload in shapes}
+
+
+FINDING_KINDS = ("unreadable_name", "gate_violation", "unread_file", "ratchet_regression", "new_failure",
+                 "diff_uncovered", "overridden", "carried")
+
+
+@NOT_UTF8_NAMES
+def test_the_gate_block_lists_a_carry_and_names_a_refused_one(payloads):
+    """A carried function is a gate.carried item, never a breach; a twin the
+    carry refuses is a breach whose mark_ambiguity is keys' sentence."""
+    (gate,) = [payload["gate"] for payload in payloads["rescore --gate --json"]
+               if payload["gate"]["carried"]]
+
+    assert gate["carried"] == [{"path": "src/calc.py", "long_name": "classify( a , b , c = None )",
+                                "key_name": "classify( a , b , c = None )",
+                                "carried_from": "classify( a , b )", "mark": 7.0}]
+    assert [b["path"] for b in gate["breaches"]] == ["src/twin.py", "src/twin.py"]
+    assert all("twins never carry a mark" in b["mark_ambiguity"] for b in gate["breaches"])
+    assert "carried_marks" not in json.dumps(payloads)
+
+
+@NOT_UTF8_NAMES
+def test_brief_and_explain_name_the_key_a_carried_mark_was_recorded_under(payloads):
+    """The carried run prints the old key beside the carried value; every
+    other run prints null, the read before any mark carried."""
+    briefs = {(p["ratchet_mark"], p["carried_from"]) for p in payloads["brief --json"]}
+    explained = {(f["ratchet_mark"], f["carried_from"]) for p in payloads["explain --json"]
+                 for f in p["functions"]}
+
+    assert (80.0, "knotty ( m )") in briefs and (80.0, "knotty ( m )") in explained
+    assert {carried for _, carried in briefs | explained} == {None, "knotty ( m )"}
+
+
+def test_the_worklist_and_the_text_brief_show_a_carried_mark_only_under_a_proved_identity(repo, capsys):
+    """A keyed marks file carries `knotty ( m )`'s mark to `knotty ( n )`; the
+    same mark in a file with no key line proves nothing, so nothing carries."""
+    add_knotty(repo)
+    commit_all(repo, "knotty")
+    seed_artifacts(repo)
+    run_json(repo, capsys, "coverage", "--reuse-artifacts", "--json")
+    marks, shown, told = [RatchetEntry("src/app.ts", "knotty ( m )", 80.0)], [], []
+    for version in (KEY_VERSION, 0):
+        (repo / MARKS).write_text(marks_in(repo, marks, version), encoding="utf-8", newline="\n")
+        rows = run_json(repo, capsys, "worklist", "--json")["active"]
+        shown += [row["ratchet_mark"] for row in rows if row["function"] == "knotty ( n )"]
+        main(["brief", "src/app.ts", "knotty", "--repo", str(repo)])
+        told += [line for line in capsys.readouterr().out.splitlines() if line.startswith("  mark ")]
+
+    assert shown == [80.0, None]
+    assert [line.split("  churn ")[0] for line in told] == [
+        "  mark 80.0000 (carried from knotty ( m ))", "  mark none"]
+
+
+def test_get_function_brief_declares_carried_from_as_brief_does():
+    served = _served("brief --json")["properties"]["carried_from"]
+
+    assert served == PAYLOADS["brief --json"]["carried_from"] == added_field(
+        "brief --json", "carried_from").schema()
+    assert served["type"] == ("string", "null")
+
+
+@NOT_UTF8_NAMES
+def test_verify_prints_a_findings_item_of_every_kind_against_the_declaration(payloads):
+    """The union item: each kind's item carries the six common fields and its
+    own, each declared; the type checks above hold them to the declared types."""
+    declared = {f.key.removeprefix("findings[].") for f in FIELDS
+                if f.payload == "verify --json" and f.key.startswith("findings[].")}
+    printed = [item for payload in payloads["verify --json"] for item in payload.get("findings", [])]
+
+    assert sorted({item["kind"] for item in printed}) == sorted(FINDING_KINDS)
+    assert sorted({key for item in printed for key in item} - declared) == []
+
+
+@NOT_UTF8_NAMES
+def test_verify_at_the_claimed_name_stop_prints_a_declared_verify_payload(payloads):
+    (stop,) = [payload for payload in payloads["verify --json"] if payload["run_id"] is None]
+    (item,) = stop["findings"]
+
+    assert (item["kind"], item["exit_code"], stop["ok"]) == ("unreadable_name", 3, False)
+    assert _undeclared("verify --json", [stop]) == [] and _mistyped("verify --json", [stop]) == []
+    assert sorted(stop) == sorted(payloads["verify --json"][0])
 
 
 @pytest.mark.parametrize("page", ["AGENTS.md", "docs/agent-json.md"])

@@ -16,7 +16,6 @@ from cli_inproc_repo import repo, template_repo  # noqa: F401
 from pinned_store import MARKS, write_run
 
 from crapkit.cli import main
-from crapkit.ratchet import stamp_text
 from crapkit.score import ScoredRow
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,7 +36,7 @@ def upgrade_store(repo: Path) -> int:
     write_run(repo, [over_ceiling("old( x )")], kind="verify", ok=False)
     fresh = write_run(repo, [over_ceiling("new( x )")])
     (repo / MARKS).write_text(
-        f"# {stamp_text(10, lizard.version)}\n# crapkit-keys=1\npath\tlong_name\tcrap\n"
+        f"# crapkit-analysis=10 lizard={lizard.version}\n# crapkit-keys=1\npath\tlong_name\tcrap\n"
         "src/app.ts\told( x )\t90.0\n", encoding="utf-8", newline="\n")
     return fresh
 

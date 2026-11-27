@@ -68,7 +68,7 @@ def _container_warn_then_refusal(box, templates, env: dict | None, marker: str, 
     refused = crapkit(box, repo, "coverage", expect=5, env=env)
 
     (warn,) = container_lines(output(doctor))
-    assert f"lane 'py' runs a coverage.py suite and this is a container ({marker})" in warn
+    assert f"lane 'py' runs pytest and this is a container ({marker})" in warn
     assert "set container_ok = true on the lane (docs/lanes.md#containers)" in warn
     assert REFUSAL in output(refused)
 

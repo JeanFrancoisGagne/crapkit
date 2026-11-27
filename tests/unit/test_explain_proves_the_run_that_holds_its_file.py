@@ -12,7 +12,7 @@ import subprocess
 from contextlib import closing
 
 from crapkit.cli import main
-from crapkit.ratchet import metric_version
+from stamps import running_in, stamp_lines
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
@@ -40,7 +40,7 @@ def _repo(root):
     for name in ("a.ts", "b.ts", "c.ts"):
         (root / "src" / name).write_text(SOURCE, encoding="utf-8")
     (root / "crapkit-ratchet.tsv").write_text(
-        f"# {metric_version()}\npath\tlong_name\tcrap\n"
+        f"{stamp_lines(running_in(root))}path\tlong_name\tcrap\n"
         "src/a.ts\t(anonymous)#2\t99.0000\nsrc/c.ts\t(anonymous)#2\t50.0000\n", encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "fixture")

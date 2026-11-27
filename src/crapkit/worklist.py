@@ -25,7 +25,7 @@ from typing import NamedTuple
 from .churn import FileChurn
 from .invariants import check_worklist
 from .snapshot import InventoryRow
-from .keys import claim_in_run, claim_key, key_names, key_of, lookup, position
+from .keys import MarkIndex, claim_in_run, claim_key, key_names, key_of, lookup, position
 from .score import over_ceiling
 
 
@@ -160,9 +160,11 @@ class RatchetMarks(NamedTuple):
     `name#N` for the Nth twin. `twin_keys` holds the key name of every twin by
     full location, `SnapshotStore.twin_key_names`; a row absent
     from it keys under its bare long_name. Read under the bare name, twin #2
-    shows twin #1's mark, which is the mistake `brief` keys around too.
+    shows twin #1's mark, which is the mistake `brief` keys around too. The
+    worklist reads `keys.MarkIndex`, so a key the file lists twice answers its
+    first mark, as in `brief` and `explain`.
     """
-    marks: Mapping[tuple[str, str], float]
+    marks: MarkIndex | Mapping[tuple[str, str], float]
     twin_keys: Mapping[tuple, str]
 
     def of(self, r: InventoryRow) -> float | None:
@@ -170,7 +172,7 @@ class RatchetMarks(NamedTuple):
         return self.marks.get((r.path, name))
 
 
-NO_RATCHET = RatchetMarks(MappingProxyType({}), MappingProxyType({}))
+NO_RATCHET = RatchetMarks(MarkIndex(()), MappingProxyType({}))
 
 
 class Worklist(NamedTuple):

@@ -26,6 +26,7 @@ from crapkit import churn_cache
 from crapkit.cli.reports import _function_commits
 from crapkit.marks_history import marks_history
 from crapkit.ratchet_report import mark_events, report_from_events
+from test_marks_history import _same_events_both_ways
 
 DAY = 86400
 BASE = int(time.time()) - 10 * DAY  # inside any churn window of a month or more
@@ -102,8 +103,16 @@ def cold_churn(repo: Path) -> dict:
     return churn_cache.load_churn(repo, 12)
 
 
+def history(repo: Path) -> list:
+    """The ratchet file's revisions, once Check 3 holds on the history: the
+    frozen 0.8.1 read of the same commits, which pinned the same three
+    settings, gives the same events and the same report."""
+    _same_events_both_ways(repo, RATCHET)
+    return marks_history(repo, RATCHET)
+
+
 def ratchet_report(repo: Path) -> dict:
-    return report_from_events(mark_events(marks_history(repo, RATCHET)))
+    return report_from_events(mark_events(history(repo)))
 
 
 @pytest.fixture(params=[True, False], ids=["verifiable", "unverifiable"])
@@ -135,11 +144,11 @@ def test_churn_counts_the_paths_a_signed_commit_changed_and_nothing_else(signed)
 
 
 def test_a_signed_commit_s_ratchet_patch_holds_its_patch_alone(signed):
-    seen = under(signed, "log.showSignature", "true", lambda repo: marks_history(repo, RATCHET))
+    seen = under(signed, "log.showSignature", "true", history)
 
-    assert seen == marks_history(signed, RATCHET)
-    assert [patch.splitlines()[-1] for _, patch in seen] == ["+src/e.py\tf( )\t31.0000",
-                                                            "+src/e.py\tg( )\t31.0000"]
+    assert seen == history(signed)
+    assert [set(r.marks) - set(r.before or {}) for r in seen] == [{("src/e.py", "f( )")},
+                                                                 {("src/e.py", "g( )")}]
 
 
 def test_the_ratchet_history_starts_at_its_rename_under_log_follow(tmp_path):

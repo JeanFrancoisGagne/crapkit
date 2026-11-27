@@ -16,14 +16,18 @@ from contextlib import closing
 import pytest
 
 from crapkit.cli import main
-from crapkit.ratchet import metric_version
+import lizard
+
+from crapkit.analyze import ANALYSIS_VERSION
+from stamps import running_in, stamp_lines
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
 CFG = ('[crapkit]\ntarget = 6\n[[scope]]\nname = "web"\npaths = ["src"]\n'
        'languages = ["typescript"]\ncoverage_optional = true\n')
 SOURCE = "".join(f"// {n}\n" for n in range(1, 12))
-VERSIONS = {"analysis_version": "10"}
+# The runs carry the running metric, so prune's reader check reads their stamp.
+VERSIONS = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version}
 
 
 def _row(path, start, occurrence, crap=12.0, name="(anonymous)"):
@@ -45,7 +49,7 @@ def _repo(root, files, marks):
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(SOURCE, encoding="utf-8", newline="\n")
     (root / "crapkit-ratchet.tsv").write_text(
-        f"# {metric_version()}\npath\tlong_name\tcrap\n{marks}", encoding="utf-8", newline="\n")
+        f"{stamp_lines(running_in(root))}path\tlong_name\tcrap\n{marks}", encoding="utf-8", newline="\n")
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "fixture")
     (root / ".crapkit").mkdir()

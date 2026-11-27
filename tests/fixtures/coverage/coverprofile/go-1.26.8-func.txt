@@ -1,0 +1,8 @@
+example.com/shapes/internal/calc/calc.go:6:	Mul		0.0%
+example.com/shapes/internal/calc/calc.go:14:	Div		66.7%
+example.com/shapes/shapes.go:8:			Classify	80.0%
+example.com/shapes/shapes.go:19:		SumPositive	100.0%
+example.com/shapes/shapes.go:30:		Scaled		87.5%
+example.com/shapes/shapes.go:45:		Area		100.0%
+example.com/shapes/shapes.go:50:		Unused		0.0%
+total:						(statements)	67.9%

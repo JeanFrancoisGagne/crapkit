@@ -24,7 +24,7 @@ import pytest
 
 from crapkit import invariants as inv
 from crapkit.churn import FileChurn
-from crapkit.coverage_istanbul import FnCoverage
+from crapkit.score import FnCoverage
 from crapkit.errors import InternalCheckError, ToolError
 from crapkit.merge import FunctionRecord
 from crapkit.ratchet import RatchetEntry
@@ -282,20 +282,20 @@ def test_a_hand_typed_mark_reads_at_the_four_decimals_the_file_holds(typed, read
     """docs/ratchet.md#what-a-mark-is: CRAP to four decimals. A mark typed with more
     reads as what the next write gives it, so a move or a prune of such a file
     passes the dump check instead of stopping as an internal bug."""
-    from crapkit.ratchet import dump_ratchet, load_ratchet
+    from crapkit.ratchet import MetricStamp, dump_ratchet, load_ratchet
 
     (entry,) = load_ratchet(f"path\tlong_name\tcrap\nsrc/a.py\tf( x )\t{typed}\n")
 
     assert entry.crap == read
-    assert dump_ratchet([entry], stamp="").endswith(f"\t{read:.4f}\n")
+    assert dump_ratchet([entry], stamp=MetricStamp.NONE).endswith(f"\t{read:.4f}\n")
 
 
 def test_an_unstamped_file_still_dumps():
     """docs/ratchet.md "The metric stamp": prune, move and the merge driver keep
     the recorded stamp, and a file written before stamping has none."""
-    from crapkit.ratchet import dump_ratchet
+    from crapkit.ratchet import MetricStamp, dump_ratchet
 
-    assert dump_ratchet([mark(8.0)], stamp="") == "path\tlong_name\tcrap\nsrc/a.py\tf( x )\t8.0000\n"
+    assert dump_ratchet([mark(8.0)], stamp=MetricStamp.NONE) == "path\tlong_name\tcrap\nsrc/a.py\tf( x )\t8.0000\n"
 
 
 # --- the worklist ------------------------------------------------------------------------
@@ -549,7 +549,7 @@ def _crapkit_imports(path: Path) -> set[str]:
 def test_the_checks_import_nothing_that_calculates_what_they_guard():
     """A bound computed by the code it guards agrees with that code's bugs."""
     imported = _crapkit_imports(SRC / "invariants.py")
-    assert imported == {"errors"}
+    assert imported == {"errors", "keys"}
     assert not imported & {"score", "worklist", "digest", "verify", "churn"}
 
 
@@ -600,7 +600,7 @@ _SITES = [
     ("digest.py", "scope_rollup", "check_rollup"),
     ("packet.py", "rejudged", "check_rejudged"),
     ("packet.py", "budget", "check_budget"),
-    ("hook.py", "_touched_over_ceiling", "check_violations"),
+    ("cli/verifying.py", "_refused_violations", "check_violations"),
     ("cli/verifying.py", "cmd_verify", "check_verdict"),
     ("cli/verifying.py", "_settle_verify", "check_verdict"),
     ("cli/scoring.py", "_gate_verdict", "check_gate"),

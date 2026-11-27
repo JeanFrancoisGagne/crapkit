@@ -124,15 +124,23 @@ def test_a_container_run_comes_after_the_buildx_and_runtime_steps():
         assert buildx < runtime < cells
 
 
-def test_deploy_yml_has_one_pull_request_trigger_with_no_path_filter_and_the_other_cadences():
+def test_deploy_yml_runs_on_its_schedule_and_on_a_dispatch_and_never_on_a_pull_request():
     on = triggers(DEPLOY)
 
-    assert on["pull_request"] == {"types": ["opened", "synchronize", "reopened", "labeled"]}
     assert [entry["cron"] for entry in on["schedule"]] == list(MAP["scope"]["schedules"])
     assert on["workflow_dispatch"]["inputs"]["cadence"]["options"] == ["nightly", "weekly", "release", "published"]
     # No tag-push trigger: the surfaces stage dispatches the published cadence once
     # every surface holds the version (tests/unit/test_release_published_reuse.py).
-    assert set(on) == {"pull_request", "schedule", "workflow_dispatch"}
+    # No pull request trigger: a pull request runs the copy in its merge commit, so
+    # each push of a long-lived branch with an open pull request ran the nightly set.
+    assert set(on) == {"schedule", "workflow_dispatch"}
+
+
+def test_no_deploy_yml_step_reads_the_pull_request_event():
+    readers = [f"{job}: {item.get('name') or item.get('uses')}" for job, item in steps(DEPLOY)
+               if "github.event.pull_request" in json.dumps(item)]
+
+    assert readers == []
 
 
 def test_the_scope_job_comes_first_and_every_other_job_gates_on_its_output():
@@ -177,7 +185,7 @@ def test_every_function_the_workflow_scripts_define_stays_at_ccn_5(script):
 
 def _clean_env(extra):
     keep = {key: value for key, value in os.environ.items() if key.upper() not in {
-        "EVENT_NAME", "ACTION", "LABEL", "LABELS", "BASE_SHA", "SCHEDULE", "CADENCE_INPUT"}}
+        "EVENT_NAME", "SCHEDULE", "CADENCE_INPUT"}}
     return {**keep, **extra}
 
 
@@ -192,8 +200,8 @@ def run_script(script, cwd, tmp_path, env):
     return done, written
 
 
-def scope(tmp_path, cwd=ROOT, **env):
-    done, written = run_script(SCOPE_SCRIPT, cwd, tmp_path, env)
+def scope(tmp_path, **env):
+    done, written = run_script(SCOPE_SCRIPT, ROOT, tmp_path, env)
     assert done.returncode == 0, done.stderr
     outputs = dict(line.split("=", 1) for line in written["GITHUB_OUTPUT"].splitlines())
     return {key: value if key == "cadence" else json.loads(value) for key, value in outputs.items()}
@@ -244,55 +252,6 @@ def test_a_published_dispatch_runs_only_the_published_smoke(tmp_path):
 
     assert plan["cadence"] == "published"
     assert set(plan["jobs"]) == scheduled("published") == {"published-online", "published-action-tag"}
-
-
-def _git(repo, *args):
-    identity = ["-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "core.hooksPath=.no-hooks"]
-    subprocess.run(["git", *identity, *args], cwd=repo, check=True, capture_output=True, timeout=HANG_SECONDS)
-
-
-def pull_request_repo(tmp_path, changed):
-    """A repo holding the map, a base commit and one commit that touches `changed`."""
-    repo = tmp_path / "repo"
-    (repo / "tests" / "deploy").mkdir(parents=True)
-    (repo / "tests" / "deploy" / "MAP.toml").write_bytes((ROOT / "tests" / "deploy" / "MAP.toml").read_bytes())
-    _git(repo, "init", "-q")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "base")
-    base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True,
-                          timeout=HANG_SECONDS).stdout.strip()
-    (repo / changed).parent.mkdir(parents=True, exist_ok=True)
-    (repo / changed).write_text("changed\n", encoding="utf-8")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "change")
-    return repo, base
-
-
-@pytest.mark.parametrize("changed, cadence", [
-    ("README.md", "nightly"),
-    ("plugin/hooks/hooks.json", "nightly"),
-    ("src/crapkit/cli/admin.py", "nightly"),
-    ("docs/é.md", "nightly"),
-    ("tests/unit/test_config.py", "none"),
-    ("src/crapkit/score.py", "none"),
-])
-def test_a_pull_request_runs_the_nightly_set_only_when_it_changes_an_install_surface(tmp_path, changed, cadence):
-    repo, base = pull_request_repo(tmp_path, changed)
-    plan = scope(tmp_path, cwd=repo, EVENT_NAME="pull_request", ACTION="synchronize", BASE_SHA=base, LABELS="[]")
-
-    assert plan["cadence"] == cadence
-    assert (plan["jobs"] == []) is (cadence == "none")
-
-
-@pytest.mark.parametrize("env, cadence", [
-    ({"ACTION": "labeled", "LABEL": "deploy-full", "LABELS": '["deploy-full"]'}, "release"),
-    ({"ACTION": "labeled", "LABEL": "documentation", "LABELS": '["documentation"]'}, "none"),
-    ({"ACTION": "synchronize", "LABELS": '["deploy-full", "documentation"]'}, "release"),
-])
-def test_the_deploy_full_label_runs_the_release_set_and_another_label_runs_nothing(tmp_path, env, cadence):
-    repo, base = pull_request_repo(tmp_path, "tests/unit/test_config.py")
-
-    assert scope(tmp_path, cwd=repo, EVENT_NAME="pull_request", BASE_SHA=base, **env)["cadence"] == cadence
 
 
 def test_the_scope_summary_names_the_cadence_and_why(tmp_path):

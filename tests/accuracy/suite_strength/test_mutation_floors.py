@@ -4,8 +4,10 @@ The floors come from the accuracy plan's mutation section, written out below
 before any run: 95 percent after equivalents for score, digest, worklist,
 ratchet, verify, keys and coverage_istanbul; 85 percent for the lizard
 readers; 100 percent for tests/accuracy/kit/exact.py; 90 percent for the
-tools under tools/accuracy. A rate is kills over mutants once proven
-equivalents are set aside, and a timeout is not a kill.
+tools under tools/accuracy. gate.py takes verify's 95 percent in a group of
+its own: 0.9.0 moved verify's touch, ceiling and pardon rules there. A rate is
+kills over mutants once proven equivalents are set aside, and a timeout is not
+a kill.
 
 The canary is score.crap. A weekly shard whose score.crap mutants do not all
 die is void, so the killer suite has to kill a hand-made one: each mutant below
@@ -45,6 +47,7 @@ PLAN_FLOORS = {
     "accuracy-tools": (90.0, {"tools/accuracy/change_control.py", "tools/accuracy/wheel_diff.py",
                               "tools/accuracy/retro.py", "tools/accuracy/mutation.py",
                               "tools/accuracy/run.py"}),
+    "gate": (95.0, {"src/crapkit/gate.py"}),
 }
 # Floor paths another packet's tools fill, each until its file is here. Empty since
 # change_control.py and wheel_diff.py landed with their packets.

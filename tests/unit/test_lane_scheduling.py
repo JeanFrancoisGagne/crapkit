@@ -113,15 +113,18 @@ def test_an_unreadable_junit_report_leaves_its_lane_unmeasured(tmp_path):
 
 
 def _outcome(marker: str) -> LaneOutcome:
-    return LaneOutcome({"src/a.ts": [marker]}, {"scopes": ["src"]}, {})
+    """A lane's outcome whose records and evidence each name the lane."""
+    return LaneOutcome({"src/a.ts": [marker]}, {"scopes": ["src"]}, {}, {"src/a.ts": marker})
 
 
 def test_results_merge_in_declaration_order_whatever_order_they_finished(tmp_path):
     unit, ui, py = LANES
     finished_last_first = {py: (_outcome("py"), ""), ui: (_outcome("ui"), ""),
                            unit: (_outcome("unit"), "")}
-    coverage, provenance, errors, succeeded = _collect_lanes(tmp_path, LANES, finished_last_first)
+    coverage, provenance, errors, succeeded, evidence = _collect_lanes(tmp_path, LANES,
+                                                                       finished_last_first)
     assert coverage["src/a.ts"] == ["unit", "ui", "py"]
+    assert evidence == {"src/a.ts": ["unit", "ui", "py"]}, "one entry per lane, never merged"
     assert list(provenance) == ["unit", "ui", "py"]
     assert [l.name for l in succeeded] == ["unit", "ui", "py"]
     assert errors == {}
@@ -131,8 +134,9 @@ def test_a_failed_lane_is_recorded_and_skipped_not_fatal(tmp_path, capsys):
     unit, ui, py = LANES
     outcomes = {unit: (_outcome("unit"), ""), ui: (None, "no artifact"),
                 py: (_outcome("py"), "")}
-    coverage, provenance, errors, succeeded = _collect_lanes(tmp_path, LANES, outcomes)
+    coverage, provenance, errors, succeeded, evidence = _collect_lanes(tmp_path, LANES, outcomes)
     assert coverage["src/a.ts"] == ["unit", "py"]
+    assert evidence == {"src/a.ts": ["unit", "py"]}
     assert errors == {"ui": "no artifact"}
     assert "lane 'ui' FAILED" in capsys.readouterr().err
 
@@ -143,7 +147,7 @@ def test_two_lanes_sharing_a_name_are_still_two_lanes(tmp_path):
     twins = [Lane(name="unit", command="", artifact=f"{side}.json", parser="istanbul",
                   scopes=("src",)) for side in ("a", "b")]
     outcomes = {twins[0]: (_outcome("a"), ""), twins[1]: (_outcome("b"), "")}
-    coverage, _, _, succeeded = _collect_lanes(tmp_path, twins, outcomes)
+    coverage, _, _, succeeded, _ = _collect_lanes(tmp_path, twins, outcomes)
     assert coverage["src/a.ts"] == ["a", "b"]
     assert len(succeeded) == 2
 

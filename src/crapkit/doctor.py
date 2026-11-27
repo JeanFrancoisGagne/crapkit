@@ -1,15 +1,16 @@
 """`crapkit doctor` checks: does crapkit.toml still describe THIS repo? Pure."""
 from __future__ import annotations
 
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 import os
 import re
 from pathlib import PurePath
 from typing import NamedTuple
 
+from .coverage_format import lane_format
 from .lane_command import command_steps
 from .named import first_few
+from .toolchain import command_spells
 from .universe import LANGUAGE_EXTENSIONS, exclude_matcher, scopes_with_tests
 
 from .config_contract import known_keys
@@ -142,38 +143,11 @@ def unreadable_payloads(lanes) -> tuple[Finding, ...]:
                  for lane in lanes for step in command_steps(lane.command).unreadable)
 
 
-def _flag_values(words: tuple[str, ...], flag: str) -> Iterator[str]:
-    """Every value `flag` takes in one argv: `--flag=value` or `--flag value`."""
-    for at, word in enumerate(words):
-        if word.startswith(flag + "="):
-            yield word[len(flag) + 1:]
-        elif word == flag and at + 1 < len(words):
-            yield words[at + 1]
-
-
-def _data_file_flag(command: str) -> str:
-    """The first `--data-file` a step of the command hands coverage, "" when
-    none does. Read as the shell reads the line, a `bash -c` payload included: a
-    regex stopped at the first space or quote, so `"cov a/.coverage"` and
-    `"cov b/.coverage"` both read as `cov`."""
-    values = (value for step in command_steps(command).steps
-              for value in _flag_values(step.words, "--data-file"))
-    return next(values, "")
-
-
-def _coverage_data_file(lane) -> str:
-    """Where a coveragepy lane's data file lands, as far as the config says.
-
-    The command's own `--data-file`, else COVERAGE_FILE from the lane's env,
-    else coverage.py's default, in the directory the lane starts in."""
-    name = (_data_file_flag(lane.command) or dict(lane.env).get("COVERAGE_FILE")
-            or ".coverage")
-    return os.path.normcase(os.path.normpath(os.path.join(lane.cwd or ".", name)))
-
-
 def _coverage_data_files(lanes) -> dict[str, str]:
-    """Each coveragepy lane's data file, by lane name."""
-    return {lane.name: _coverage_data_file(lane) for lane in lanes if lane.parser == "coveragepy"}
+    """Each lane's coverage data file, by lane name, for the lanes whose
+    format's producer writes one (coverage_format's `data_file`)."""
+    files = {lane.name: lane_format(lane).data_file(lane) for lane in lanes}
+    return {name: path for name, path in files.items() if path is not None}
 
 
 def _lanes_taken_in(base: str, files: dict[str, str]) -> tuple[str, ...]:
@@ -841,7 +815,7 @@ def stale_copy(*, where: str, version: str | None, source: str, source_version: 
 
 def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_where: str,
                      protocols: tuple[str, ...] | None, supported: str, harness: str = "claude",
-                     cli_upgrade: str = "python -m pip install --upgrade crapkit",
+                     cli_upgrade: str = "python -P -m pip install --upgrade crapkit",
                      scopes: tuple[InstallScope, ...] = USER_SCOPE,
                      in_place: InPlace | None = None,
                      manifest_fault: str = "missing") -> list[str]:
@@ -876,7 +850,7 @@ def plugin_handshake(*, where: str, version: str | None, cli_version: str, cli_w
 # environment and the files.
 
 _CONTAINER_LANE = (
-    "lane {name!r} runs a coverage.py suite and this is a container ({marker}): "
+    "lane {name!r} runs pytest and this is a container ({marker}): "
     "`crapkit coverage` refuses it with exit 5; if the container is sized for the suite, "
     "set container_ok = true on the lane (docs/lanes.md#containers)"
 )
@@ -892,13 +866,15 @@ def container_marker(environ, dockerenv: bool) -> str | None:
 
 
 def refused_in_container(lane) -> bool:
-    """A lane the runner refuses inside a container: a coverage.py suite that
-    does not say container_ok = true."""
-    return lane.parser == "coveragepy" and not lane.container_ok
+    """A lane the runner refuses inside a container: one whose command spells
+    pytest and that does not say container_ok = true. The command alone is
+    read (toolchain.command_spells), whatever the lane's parser: a lane running
+    `make cov` names no pytest and runs."""
+    return not lane.container_ok and command_spells(lane.command, "pytest")
 
 
 def container_lane_findings(lanes, marker: str | None) -> tuple[Finding, ...]:
-    """The coverage.py lanes `crapkit coverage` will refuse here, one WARN each.
+    """The pytest lanes `crapkit coverage` will refuse here, one WARN each.
 
     A devcontainer, Codespaces, Codex cloud or a CI job in a container passed
     doctor and then refused its first coverage run; the refusal is right, and

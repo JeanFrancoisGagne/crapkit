@@ -6,8 +6,7 @@ scores both as uncovered and advises split-lines. The preview joined each by
 name to its old measured number instead and called both ok, so verify then
 failed functions the gate had passed.
 """
-from crapkit.coverage_istanbul import FnCoverage
-from crapkit.score import ScoredRow, overlay_stale_coverage, score_rows
+from crapkit.score import FnCoverage, ScoredRow, overlay_stale_coverage, score_rows
 from crapkit.snapshot import InventoryRow
 
 APP = "src/app.js"

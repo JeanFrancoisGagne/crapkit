@@ -57,6 +57,29 @@ def test_a_cc_only_row_names_its_own_scopes_setting():
                     "can name uncovered lines for tools/helper.py")
 
 
+def test_a_cc_only_rust_function_names_the_reader_and_its_recipe():
+    """Rust has a reader now: the note names the setting, the parser and the
+    lanes.md recipe, so the move it suggests is a lane the owner can add."""
+    note = MEASURED.note_for("core/src/lib.rs", "cc-only", "core")
+
+    assert note.startswith("scope 'core' sets coverage_optional = true, so no artifact "
+                           "can name uncovered lines for core/src/lib.rs")
+    assert 'parser = "lcov"' in note and "docs/lanes.md#lcov" in note
+
+
+def test_the_recipe_the_rust_note_links_is_a_lanes_md_heading():
+    lanes = (ROOT / "docs" / "lanes.md").read_text(encoding="utf-8")
+
+    assert "lcov" in re.findall(r"^## (.+)$", lanes, re.M)
+
+
+def test_a_cc_only_file_in_a_language_with_no_reader_keeps_the_bare_note():
+    note = MEASURED.note_for("cmd/main.go", "cc-only", "cmd")
+
+    assert note == ("scope 'cmd' sets coverage_optional = true, so no artifact "
+                    "can name uncovered lines for cmd/main.go")
+
+
 def test_the_cc_only_note_outranks_a_measuring_artifact_too():
     """A lane may still write about the file. The flag says the number is not a
     coverage verdict, so line numbers must not read as one either."""

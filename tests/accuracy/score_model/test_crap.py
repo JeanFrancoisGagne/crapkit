@@ -77,6 +77,23 @@ def test_savoia_coverage_needed_table(given_, expected):
     assert _min_percent(*_ints(given_, "ccn", "threshold")) == expected["min_percent"]
 
 
+FLAGGED_ROWS = [row for row in cases.hand("CRAP score") if "flagged_crap" in row[2]]
+
+
+@pytest.mark.parametrize("given_,expected", [row[1:] for row in FLAGGED_ROWS],
+                         ids=[row[0] for row in FLAGGED_ROWS])
+def test_flagged_hand_rows(given_, expected):
+    """score.flagged_crap, the CRAP a row scores under its flag: the formula
+    where coverage can exist, ccn alone in a cc-only scope. hook-precommit takes
+    the high end of a staged function's CRAP bound from it at coverage 0."""
+    ccn, covered, total = _ints(given_, "ccn", "covered", "total")
+    want = cases.fraction(expected["flagged_crap"])
+    got = production.load("score:flagged_crap")(ccn, covered / total, given_["flag"])
+
+    assert within_ulps(got, want), (got, want)
+    assert f"{got:.4f}" == exact.fixed(want, 4)
+
+
 # --- the exact grid ----------------------------------------------------------------------
 
 def exact_parts(ccn: int, covered: int, total: int) -> tuple[int, int]:

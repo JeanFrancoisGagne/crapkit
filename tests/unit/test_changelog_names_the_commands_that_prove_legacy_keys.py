@@ -15,7 +15,8 @@ from cli_inproc_repo import repo, seed_artifacts, template_repo  # noqa: F401
 
 from crapkit import ratchet
 from crapkit.cli import main
-from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import RatchetEntry
+from stamps import marks_in
 
 ROOT = Path(__file__).resolve().parents[2]
 ANCHOR = "The legacy ratchet key check builds its group union once"
@@ -47,8 +48,7 @@ def measured(repo, capsys):
 def legacy_marks(repo: Path) -> None:
     """One mark under the start-only keys an older crapkit wrote (no keys stamp)."""
     (repo / "crapkit-ratchet.tsv").write_text(
-        dump_ratchet([RatchetEntry("src/app.ts", "dispatch ( kind )", 90.0)],
-                     stamp=metric_version(), key_version=0),
+        marks_in(repo, [RatchetEntry("src/app.ts", "dispatch ( kind )", 90.0)], key_version=0),
         encoding="utf-8", newline="\n")
 
 

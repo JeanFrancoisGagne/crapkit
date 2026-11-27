@@ -188,13 +188,17 @@ def replay(tmp_path: Path, *, fork_declares: bool, pr_junit: str) -> tuple[Runne
     return runner, printed
 
 
+def _new_failures(verdict: dict) -> list[str]:
+    return [item["test"] for item in verdict["findings"] if item["kind"] == "new_failure"]
+
+
 def test_a_fork_point_that_recorded_no_failures_blames_the_failure_and_says_it_may_predate(
         tmp_path):
     runner, printed = replay(tmp_path, fork_declares=False, pr_junit=FINISHED)
 
     verdict = json.loads(runner.read("crapkit-verify.json"))
     assert runner.read("crapkit-verify.exit").strip() == "8"
-    assert (verdict["new_failures"], verdict["lanes_without_baseline_results"]) == (["t::c0"], ["py"])
+    assert (_new_failures(verdict), verdict["lanes_without_baseline_results"]) == (["t::c0"], ["py"])
     assert ("warning: lane 'py': no trusted run at or behind the baseline recorded which of its "
             "tests failed, so its 1 new failure may predate this change") in printed["the verdict"].stderr
     comment = runner.read("crapkit-comment.md")
@@ -209,7 +213,7 @@ def test_a_fork_point_that_recorded_the_failure_forgives_it(tmp_path):
 
     verdict = json.loads(runner.read("crapkit-verify.json"))
     assert runner.read("crapkit-verify.exit").strip() == "0"
-    assert (verdict["new_failures"], verdict["forgiven_failures"]) == ([], ["t::c0"])
+    assert (_new_failures(verdict), verdict["forgiven_failures"]) == ([], ["t::c0"])
     assert "**verify passed.**" in runner.read("crapkit-comment.md")
     assert printed["the exit code"].returncode == 0, printed["the exit code"].stdout
 

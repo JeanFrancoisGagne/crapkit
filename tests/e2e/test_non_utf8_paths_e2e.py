@@ -22,15 +22,18 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 
 from conftest import cli_runner
 from hang_guard import HANG_SECONDS
-from name_bytes import NOT_UTF8_NAMES
+from name_bytes import NOT_UTF8_NAMES, STORES_ANY_BYTE
 
 run_cli = cli_runner(timeout=180, encoding="utf-8", errors="replace")
 
@@ -215,7 +218,178 @@ def test_a_scoped_name_staged_is_refused_and_the_gate_never_passes_it(tmp_path, 
     repo = _repo(tmp_path)
     _stage(repo, {name: TANGLED.encode()})
 
-    _refused(run_cli(repo, command), name)
+    result = run_cli(repo, command)
+
+    _refused(result, name)
+    assert (result.stdout, len(result.stderr.splitlines())) == ("", 1), result.stdout + result.stderr
+
+
+# hook-precommit judges a staged claimed name through the gate module, which
+# refuses it before it judges anything: the hook exits 3 on the 0.8.1 line
+# (probed at bug-utf8-author a0f9c6f6) before any other line and any override
+# side effect.
+MARKS = "crapkit-ratchet.tsv"
+CLAIMED_STOP = ("is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every path "
+                "as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename it "
+                "(git mv) to a UTF-8 name")
+# A TypeScript arrow body the reader refuses, so the staged file is unread.
+REFUSED_ARROW = b"export const old = {\n  pick: ({ x }) => new Set<string>([x]).has(x),\n};\n"
+TS_CONFIG = CONFIG.replace('languages = ["python"]', 'languages = ["python", "typescript"]')
+
+
+def _index(repo: Path) -> bytes:
+    return _git(repo, "ls-files", "-s", "-z")
+
+
+@pytest.mark.parametrize("name", [row[1] for row in STAGED_CLAIMED], ids=[row[0] for row in STAGED_CLAIMED])
+def test_an_override_reason_grants_nothing_on_a_staged_claimed_name(tmp_path, name):
+    """CRAPKIT_OVERRIDE_REASON changes nothing: exit 3 on the same line, no
+    marks file written or staged, and the index as it was."""
+    repo = _repo(tmp_path)
+    _stage(repo, {name: TANGLED.encode()})
+    index = _index(repo)
+
+    result = run_cli(repo, "hook-precommit", env_extra={"CRAPKIT_OVERRIDE_REASON": "hotfix, ticket 7"})
+
+    _refused(result, name)
+    assert (result.stdout, len(result.stderr.splitlines())) == ("", 1), result.stdout + result.stderr
+    assert not (repo / MARKS).exists()
+    assert _index(repo) == index
+    assert MARKS not in _git(repo, "diff", "--cached", "--name-only").decode()
+
+
+@pytest.mark.parametrize("claimed", [True, False], ids=["claimed", "control"])
+def test_a_claimed_name_beside_an_unread_file_and_a_breach_prints_only_its_line(tmp_path, claimed):
+    """The control, with no claimed name, shows the unread file and the
+    breach each refuse the commit; beside a claimed name only its line shows."""
+    repo = _repo(tmp_path, TS_CONFIG)
+    files = {b"src/old.ts": REFUSED_ARROW, b"src/tangled.py": TANGLED.encode()}
+    _stage(repo, {**files, **({b"src/caf\xe9.py": SOURCE} if claimed else {})})
+
+    result = run_cli(repo, "hook-precommit")
+
+    if claimed:
+        _refused(result, b"src/caf\xe9.py")
+        assert (result.stdout, len(result.stderr.splitlines())) == ("", 1), result.stdout + result.stderr
+    else:
+        assert result.returncode == 6, result.stdout + result.stderr
+        assert "src/old.ts" in result.stdout and "tangled( a , b , c , d )" in result.stdout, result.stdout
+
+
+def test_two_staged_claimed_names_print_one_line_naming_the_first(tmp_path):
+    repo = _repo(tmp_path)
+    _stage(repo, {b"src/o\x92brien.py": SOURCE, b"src/caf\xe9.py": TANGLED.encode()})
+
+    result = run_cli(repo, "hook-precommit")
+
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert (result.stdout, result.stderr) == ("", f"crapkit: src/caf\\xe9.py (and 1 more) {CLAIMED_STOP}\n")
+
+
+# verify judges a claimed name through the gate module, which refuses it before
+# it judges anything: verify stops before any lane runs, stores no run, and gives
+# the stop as a verdict. The exit stays 3 and stderr the line the 0.8.1 tree
+# printed (probed at bug-utf8-author a0f9c6f6); --json prints a verify payload
+# whose findings hold one unreadable_name item per name, --sarif writes a result
+# and --github an annotation for each, and an override grants nothing.
+VERIFY_STOP = ("{shown} is in scope 'src', but git names it in bytes that are not UTF-8 and crapkit reads every "
+               "path as UTF-8; a file a scope takes is refused, not left out, so no gate passes it unread: rename "
+               "it (git mv) to a UTF-8 name")
+VERIFY_FLAGS = {"plain": (), "json": ("--json",), "override": ("--override", "reason"),
+                "sarif": ("--sarif", "out.sarif"), "github": ("--github",)}
+# An override with no alert_command is refused before any other check, so the
+# repo names one; verify stops before it would run.
+ALERTING_LANE_CONFIG = LANE_CONFIG.replace(
+    "[crapkit]\n", "[crapkit]\nalert_command = 'python -c \"import sys; sys.stdin.read()\"'\n", 1)
+
+
+def _stored_runs(repo: Path) -> int:
+    with closing(sqlite3.connect(repo / ".crapkit" / "crap.sqlite")) as db:
+        return db.execute("SELECT count(*) FROM runs").fetchone()[0]
+
+
+def _stop_item(name: bytes) -> dict:
+    """The name's findings item. NTFS and APFS refuse such a name, so the
+    commit leaves no file on disk and git reads it deleted: dirty. ext4 holds
+    the file, and git reads it clean."""
+    return {"kind": "unreadable_name", "fails": True, "exit_code": 3, "overridable": False,
+            "dirty": not STORES_ANY_BYTE, "rule": "unreadable name", "path": _shown(name), "scope": "src",
+            "reason": VERIFY_STOP.format(shown=_shown(name))}
+
+
+def _plain(repo: Path, result, name: bytes) -> None:
+    assert result.stdout == "", result.stdout
+
+
+def _as_json(repo: Path, result, name: bytes) -> None:
+    """A verify payload, not an error object: its one finding is the name's
+    unreadable_name item, and nothing was measured."""
+    printed = json.loads(result.stdout)
+    assert printed["findings"] == [_stop_item(name)], printed["findings"]
+    assert (printed["ok"], printed["run_id"], "error" in printed) == (False, None, False)
+    assert printed["counts"]["diff_uncovered_count"] == 0
+
+
+def _overridden(repo: Path, result, name: bytes) -> None:
+    """Grants nothing: the refusal names the file and the rename."""
+    assert result.stdout == "", result.stdout
+    assert result.stderr.splitlines()[1:] == [
+        f"override refused: 1 unreadable name ({_shown(name)}) never qualifies for an override; {FIX}"]
+
+
+def _sarif(repo: Path, result, name: bytes) -> None:
+    """One result whose uri percent-encodes the name's own bytes."""
+    (found,) = json.loads((repo / "out.sarif").read_text(encoding="utf-8"))["runs"][0]["results"]
+    assert (found["ruleId"], found["level"]) == ("crapkit/unreadable-name", "error")
+    assert found["locations"][0]["physicalLocation"] == {
+        "artifactLocation": {"uri": quote(name, safe="/")}, "region": {"startLine": 1}}
+    assert found["message"]["text"] == VERIFY_STOP.format(shown=_shown(name))
+
+
+def _github(repo: Path, result, name: bytes) -> None:
+    (line,) = result.stdout.splitlines()
+    named = _shown(name).replace("%", "%25").replace(":", "%3A").replace(",", "%2C")
+    assert line.startswith(f"::error file={named},line=1,title=crapkit/unreadable-name::"), line
+
+
+VERIFY_CHECKS = {"plain": _plain, "json": _as_json, "override": _overridden, "sarif": _sarif, "github": _github}
+
+
+@pytest.mark.parametrize("flags", VERIFY_FLAGS, ids=VERIFY_FLAGS.keys())
+@pytest.mark.parametrize("name", [row[1] for row in CLAIMED], ids=[row[0] for row in CLAIMED])
+def test_verify_stops_on_a_claimed_name_before_any_lane_runs(tmp_path, name, flags):
+    """Exit 3 and the 0.8.1 stderr line first, byte for byte, and nothing after
+    it but an override's refusal; the lane's log and the store's runs
+    untouched; each output names the file as its own finding."""
+    repo = _repo(tmp_path, ALERTING_LANE_CONFIG)
+    assert run_cli(repo, "coverage").returncode == 0
+    runs, stored = _runs(repo), _stored_runs(repo)
+    _commit(repo, {name: SOURCE}, "add a Latin-1 name")
+
+    result = run_cli(repo, "verify", *VERIFY_FLAGS[flags])
+
+    stop = f"crapkit: {VERIFY_STOP.format(shown=_shown(name))}\n"
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert result.stderr.startswith(stop), result.stderr
+    assert len(result.stderr.splitlines()) == (2 if flags == "override" else 1), result.stderr
+    assert (_runs(repo), _stored_runs(repo)) == (runs, stored)
+    VERIFY_CHECKS[flags](repo, result, name)
+
+
+def test_verify_names_the_first_of_two_claimed_names_and_counts_the_other(tmp_path):
+    """Two items, under one stderr line naming the first."""
+    repo = _repo(tmp_path, LANE_CONFIG)
+    assert run_cli(repo, "coverage").returncode == 0
+    runs = _runs(repo)
+    _commit(repo, {b"src/o\x92brien.py": SOURCE, b"src/caf\xe9.py": SOURCE}, "add two Latin-1 names")
+
+    result = run_cli(repo, "verify", "--json")
+
+    first = _shown(b"src/caf\xe9.py") + " (and 1 more)"
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert result.stderr == f"crapkit: {VERIFY_STOP.format(shown=first)}\n", result.stderr
+    assert json.loads(result.stdout)["findings"] == [_stop_item(b"src/caf\xe9.py"), _stop_item(b"src/o\x92brien.py")]
+    assert _runs(repo) == runs
 
 
 def test_a_second_coverage_with_a_lane_stamp_refuses_a_scoped_name(tmp_path):
@@ -360,7 +534,9 @@ def test_check_gate_judges_a_name_no_scope_takes_as_any_unscoped_file(tmp_path, 
 def test_a_refused_scoped_name_is_listed_in_the_error_objects_unread_files(tmp_path, command):
     """The scan's refusal names the first file on stderr and counts the rest;
     --json lists each one. Committed as they are on POSIX, both are clean; Git
-    for Windows cannot check either name out, so git reads both deleted."""
+    for Windows cannot check either name out, so git reads both deleted.
+    verify's stop prints its own payload, with one unreadable_name finding
+    per name."""
     repo = _repo(tmp_path)
     assert run_cli(repo, "coverage").returncode == 0
     _commit(repo, {b"src/caf\xe9.py": SOURCE, b"src/o\x92brien.py": SOURCE}, "add two Latin-1 names")
@@ -369,8 +545,14 @@ def test_a_refused_scoped_name_is_listed_in_the_error_objects_unread_files(tmp_p
 
     assert result.returncode == 3, result.stdout + result.stderr
     dirty = sys.platform == "win32"
-    assert json.loads(result.stdout)["error"]["unread_files"] == [
-        {**UNREAD_FILE, "dirty": dirty}, {**UNREAD_FILE, "path": "src/o\\x92brien.py", "dirty": dirty}]
+    printed = json.loads(result.stdout)
+    if command == "verify":
+        names = [item for item in printed["findings"] if item["kind"] == "unreadable_name"]
+        assert [(item["path"], item["dirty"], item["reason"]) for item in names] == [
+            (path, dirty, VERIFY_STOP.format(shown=path)) for path in ("src/caf\\xe9.py", "src/o\\x92brien.py")]
+    else:
+        assert printed["error"]["unread_files"] == [
+            {**UNREAD_FILE, "dirty": dirty}, {**UNREAD_FILE, "path": "src/o\\x92brien.py", "dirty": dirty}]
 
 
 # --- a name no scope takes: left out, one line ---------------------------------------

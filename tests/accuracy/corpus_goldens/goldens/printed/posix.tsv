@@ -1,4 +1,4 @@
-next-step	<python> -m crapkit coverage
+next-step	<python> -P -m crapkit coverage
 report	crapkit explain -- "-top.py" top
 report	crapkit explain 'src/a$b%c!d`e.py' expands
 report	crapkit explain "src/a&b(c)^d.py" operators

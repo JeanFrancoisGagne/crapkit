@@ -122,7 +122,8 @@ def _hook_gated(built: repos.Built, driver: drive.Driver) -> set[tuple[str, str]
 def _verify_gated(driver: drive.Driver) -> set[tuple[str, str]]:
     result = driver.run("verify", "--no-tighten", "--json")
     assert result.code in (0, 6), result.stdout + result.stderr
-    return {(v["path"], v["key_name"].split("(")[0]) for v in result.json()["gate_violations"]}
+    return {(v["path"], v["key_name"].split("(")[0]) for v in result.json()["findings"]
+            if v["kind"] == "gate_violation"}
 
 
 def test_every_gate_reads_the_followed_marks(make_repo):

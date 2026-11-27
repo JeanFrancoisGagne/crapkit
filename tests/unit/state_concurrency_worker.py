@@ -32,7 +32,8 @@ def alert(root: Path) -> None:
 
 def override_writer(root: Path) -> None:
     from crapkit.override import record_override
-    from crapkit.ratchet import metric_version
+    from crapkit.config import load_config_text
+    from crapkit.ratchet import running_stamp
     from crapkit.verify import GateViolation
 
     store = SnapshotStore(root / ".crapkit/crap.sqlite")
@@ -42,7 +43,8 @@ def override_writer(root: Path) -> None:
                     alert_command=command, violations=[GateViolation(
                         "src/app.ts", "f( )", 1, 9, 0, 90, "decompose")],
                     reason="concurrency regression", raise_marks=False, key_version=1,
-                    metric=metric_version())
+                    metric=running_stamp(load_config_text(
+                        (root / "crapkit.toml").read_text(encoding="utf-8"), root=root)))
     store._conn.close()
 
 

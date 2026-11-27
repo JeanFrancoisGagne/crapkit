@@ -5,7 +5,8 @@ from accuracy.kit import exact
 
 import pytest
 
-from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet, metric_version, update_ratchet
+from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet, update_ratchet
+from stamps import FIXED, MARKS
 from crapkit.score import ScoredRow
 
 
@@ -16,8 +17,8 @@ def scored(path, name, ccn, cov, scope="src"):
 
 def test_round_trip_sorted_and_stable():
     entries = [RatchetEntry("src/b.ts", "g( )", 12.5), RatchetEntry("src/a.ts", "f( )", 30.0)]
-    text = dump_ratchet(entries, stamp=metric_version())
-    assert text == dump_ratchet(load_ratchet(text), stamp=metric_version()), "dump-load-dump is a fixed point"
+    text = dump_ratchet(entries, stamp=FIXED, file_name=MARKS)
+    assert text == dump_ratchet(load_ratchet(text), stamp=FIXED, file_name=MARKS), "dump-load-dump is a fixed point"
     assert text.index("src/a.ts") < text.index("src/b.ts")
 
 
@@ -76,7 +77,7 @@ def test_write_then_verify_is_a_fixed_point_for_nonterminating_coverage():
     row = ScoredRow("src", "a.py", "f( )", 1, 9, 10, 10, 10, 8, 1, 1, 2 / 3, "measured", c, "decompose")
     marks = load_ratchet(dump_ratchet(update_ratchet(
         [__import__("crapkit.ratchet", fromlist=["RatchetEntry"]).RatchetEntry("a.py", "f( )", 20.0)],
-        [row], target=6), stamp=metric_version()))
+        [row], target=6), stamp=FIXED, file_name=MARKS))
     verdict = evaluate(fresh=[row], changed_ranges={}, ratchet=marks,
                        baseline_failures=set(), fresh_failures=set(), target=6)
     assert verdict.ratchet_regressions == [], \
@@ -93,8 +94,8 @@ def test_marks_survive_functions_missing_from_the_scored_rows():
 
 
 def test_mark_lookup_answers_with_the_recorded_value_or_none():
-    from crapkit.ratchet import mark_for
+    from crapkit.keys import MarkIndex
     entries = [RatchetEntry("src/a.ts", "f( )", 30.0), RatchetEntry("src/b.ts", "f( )", 12.5)]
-    assert mark_for(entries, "src/b.ts", "f( )") == 12.5
-    assert mark_for(entries, "src/a.ts", "g( )") is None, "the name has to match too"
-    assert mark_for([], "src/a.ts", "f( )") is None
+    assert MarkIndex(entries).mark(("src/b.ts", "f( )")) == 12.5
+    assert MarkIndex(entries).mark(("src/a.ts", "g( )")) is None, "the name has to match too"
+    assert MarkIndex([]).mark(("src/a.ts", "f( )")) is None

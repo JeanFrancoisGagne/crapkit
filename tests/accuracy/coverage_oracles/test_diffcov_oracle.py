@@ -88,10 +88,21 @@ def verified(tmp_path_factory):
     return top, driver.run("verify", "--json").json()
 
 
+def _uncovered(payload: dict) -> tuple[list[dict], int]:
+    """verify's diff_uncovered items and its count of uncovered changed lines.
+    A crapkit before 0.9.0, which a retro replay runs, printed no `findings`:
+    it listed the lines under `diff_uncovered` and counted them beside it."""
+    if "findings" not in payload:
+        return payload["diff_uncovered"], payload["diff_uncovered_count"]
+    items = [item for item in payload["findings"] if item["kind"] == "diff_uncovered"]
+    return items, payload["counts"]["diff_uncovered_count"]
+
+
 def _crapkit_lines(payload: dict) -> dict[str, set[int]]:
-    assert payload["diff_uncovered_count"] == len(payload["diff_uncovered"])
+    lines, count = _uncovered(payload)
+    assert count == len(lines)
     found: dict[str, set[int]] = {}
-    for item in payload["diff_uncovered"]:
+    for item in lines:
         found.setdefault(item["path"], set()).add(item["line"])
     return found
 

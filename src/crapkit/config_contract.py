@@ -173,14 +173,25 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                                'description': 'repo-relative coverage '
                                                                               'artifact the command '
                                                                               'writes'},
-                                                  'parser': {'enum': ['istanbul', 'coveragepy']},
+                                                  'parser': {'enum': ['istanbul', 'coveragepy',
+                                                                      'lcov', 'cobertura',
+                                                                      'jacoco', 'coverprofile']},
                                                   'scopes': {'type': 'array',
                                                              'items': {'type': 'string'}},
                                                   'cwd': {'type': 'string'},
                                                   'path_prefix': {'type': 'string',
                                                                   'description': 'prefix joined onto '
-                                                                                 'coverage.py relative '
-                                                                                 'paths'},
+                                                                                 'the relative keys of '
+                                                                                 'coverage.py and lcov '
+                                                                                 'artifacts and the '
+                                                                                 'relative sources of '
+                                                                                 'Cobertura reports, '
+                                                                                 'and the source root '
+                                                                                 'JaCoCo package paths '
+                                                                                 'sit under; a Go '
+                                                                                 'coverprofile does not '
+                                                                                 'read it (go.mod '
+                                                                                 'places its keys)'},
                                                   'env': {'type': 'object',
                                                           'additionalProperties': {'type': 'string'}},
                                                   'inputs': {'type': 'array',
@@ -194,9 +205,14 @@ _SCHEMA = {'$schema': 'http://json-schema.org/draft-07/schema#',
                                                   'full_suite': {'type': 'boolean',
                                                                  'description': 'false permits '
                                                                                 'positional narrowing '
-                                                                                'in a pytest coverage '
-                                                                                'command'},
-                                                  'container_ok': {'type': 'boolean'},
+                                                                                'in a command step '
+                                                                                'that names pytest'},
+                                                  'container_ok': {'type': 'boolean',
+                                                                   'description': 'true lets a lane '
+                                                                                  'whose command '
+                                                                                  'names pytest run '
+                                                                                  'inside a '
+                                                                                  'container'},
                                                   'results_artifact': {'type': 'string',
                                                                        'description': 'junit XML '
                                                                                       'feeding the '

@@ -85,6 +85,23 @@ def plain_eighty_column_environment():
         yield
 
 
+@pytest.fixture(scope="session", autouse=True)
+def private_nested_pytest_temproot(tmp_path_factory):
+    """Every pytest session a test starts (tools/testing/run.py's suites, a
+    lane's `pytest -n 2`) makes its basetemp under this session's own, not in
+    the user-wide pytest-of-<user> root every session of that user shares.
+
+    A session that makes a basetemp (an xdist controller always does) deletes,
+    at its sessionfinish, each unlocked numbered dir in that root three or more
+    behind the newest. A nested session there inherited a finished suite's
+    basetemp, 81,679 files on one Windows runner, and spent past a test's
+    120 s bound deleting it."""
+    root = tmp_path_factory.mktemp("nested-pytest", numbered=False)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("PYTEST_DEBUG_TEMPROOT", str(root))
+        yield
+
+
 HOME_VARIABLES = ("HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH")
 
 

@@ -112,9 +112,9 @@ def redact(text: str, repo: Path) -> str:
     return _DURATION.sub("<duration>", text)
 
 
-# `python -m crapkit` as `invocation._self` prints it: the interpreter's path as
-# one shell word, bare, with quoted segments, or single-quoted on POSIX.
-_MODULE_RUN = re.compile(r"""(?:"[^"\n]*"|'[^'\n]*'|[^\s`"'])+ -m crapkit\b""")
+# `python -P -m crapkit` as `invocation._self` prints it: the interpreter's path
+# as one shell word, bare, with quoted segments, or single-quoted on POSIX.
+_MODULE_RUN = re.compile(r"""(?:"[^"\n]*"|'[^'\n]*'|[^\s`"'])+ -P -m crapkit\b""")
 
 
 def _spellings(repo: Path) -> tuple[str, ...]:

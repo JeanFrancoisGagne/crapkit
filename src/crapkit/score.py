@@ -12,15 +12,195 @@ by-design flags score crap = ccn.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from array import array
+from collections.abc import Iterable, Iterator, Mapping
+import heapq
 import math
+import sys
 from typing import NamedTuple
 
-from .coverage_istanbul import FnCoverage
+from .covstream import REGENERATE
 from .errors import ToolError
 from .keys import require_unambiguous
 from .records import decode_record, encode_record, record_lines
 from .snapshot import InventoryRow
+
+
+class FnCoverage(NamedTuple):
+    """One function's coverage as a producer measured it, the record every
+    coverage reader hands the join."""
+    name: str
+    start: int
+    end: int
+    invoked: bool
+    branches_total: int
+    branches_covered: int
+    statements_total: int = 0
+    statements_covered: int = 0
+    # The producer was told to leave the function out, so no test moves its number.
+    excluded: bool = False
+    # The reader lists every function the producer measured in this file, so a
+    # function missing from the list was left out on purpose.
+    full_listing: bool = False
+
+    @property
+    def coverage(self) -> float:
+        if self.branches_total > 0:
+            return self.branches_covered / self.branches_total
+        if self.statements_total > 0:
+            return self.statements_covered / self.statements_total
+        return 1.0 if self.invoked else 0.0
+
+
+def coverage_count(value: object, field: str) -> int:
+    """Admit a producer's count before attribution or ratio arithmetic."""
+    if type(value) is float and value.is_integer():
+        value = int(value)
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{field} must be a nonnegative integer count, got {value!r}; "
+                         f"{REGENERATE}")
+    return value
+
+
+# --- the innermost-span rule ---------------------------------------------------
+# span_owners reads a span as a list whose [2] is its end line, whose `opens`
+# index holds the (line, column) position it opens at, and whose [SPAN_FINISH]
+# holds the (line, column) position it closes at.
+SPAN_FINISH = 10
+
+
+def _push_started(heap: list, ordered: list[list], nxt: int, point: tuple, opens: int) -> int:
+    while nxt < len(ordered) and ordered[nxt][opens] <= point:
+        span = ordered[nxt]
+        line, column = span[opens]
+        heapq.heappush(heap, (span[2] - line, -line, -column, nxt, span))
+        nxt += 1
+    return nxt
+
+
+def _drop_ended(heap: list, point: tuple) -> None:
+    """Discard spans that closed before this point. Safe to do lazily and only at
+    the top: query points only increase, so anything popped here can never
+    contain a later point either."""
+    while heap and heap[0][-1][SPAN_FINISH] < point:
+        heapq.heappop(heap)
+
+
+def span_owners(fn_spans: list[list], points: set[tuple[int, int]],
+                opens: int) -> dict[tuple[int, int], list | None]:
+    """position -> innermost containing span, each span opening at its `opens`
+    position. A hit inside a nested function belongs to that function, never
+    to its encloser — else the nested one reads through its encloser and the
+    encloser answers for lines it can't fix. A counter that starts on a
+    function's line but ahead of where that function opens is the encloser's.
+
+    Sweeping spans by start into a heap keyed (lines, -start, index) settles
+    that in O((F + Q) log F) instead of a scan per query. The index term is
+    load-bearing: it is the sorted position, so an exact tie on (lines, -start)
+    resolves to the span the old linear scan met first."""
+    ordered = sorted(fn_spans, key=lambda s: s[opens])
+    heap: list[tuple] = []
+    owners: dict[tuple[int, int], list | None] = {}
+    nxt = 0
+    for point in sorted(points):
+        nxt = _push_started(heap, ordered, nxt, point, opens)
+        _drop_ended(heap, point)
+        owners[point] = heap[0][-1] if heap else None
+    return owners
+
+
+# --- the coverage evidence join -------------------------------------------------
+# A coverage format with no function records (lcov DA and BRDA, Go coverprofile
+# blocks, Cobertura and JaCoCo lines) hands per-file line and branch evidence.
+# score gives each line and branch to the innermost inventory span holding it
+# and builds the records the readers that list functions build themselves.
+
+class FileEvidence(NamedTuple):
+    """One file's coverage evidence from one lane.
+
+    hit_lines and missed_lines are compact sorted arrays of line numbers
+    (array("I")), and branches holds (line, total, covered) triples. hit_lines
+    is None when the adapter keeps its own function records (coverage.py,
+    istanbul): the join then builds nothing, and missed_lines still feeds the
+    dead-line fold."""
+    hit_lines: array | None
+    missed_lines: array
+    branches: tuple[tuple[int, int, int], ...] = ()
+
+
+# A joined span keeps FnCoverage's eight counted fields first, as the istanbul
+# adapter's mutable span does, opens at its start line's first column and
+# closes at its end line's last.
+_INVOKED, _B_TOTAL, _B_COV, _S_TOTAL, _S_COV = 3, 4, 5, 6, 7
+_LINE_OPENS = 8
+_COUNTED = slice(0, 8)
+
+
+class _JoinedCoverage(FnCoverage):
+    """A record the join built on one inventory span, which it speaks for
+    alone. A span that owns no evidence has no record and scores untested, so
+    the selection never lends it the record of a span it holds or sits in."""
+    __slots__ = ()
+
+
+def _speaks_for(row, fn: FnCoverage) -> bool:
+    """A producer record joins any row it overlaps; a joined one, only the rows
+    on its own span."""
+    return type(fn) is not _JoinedCoverage or (fn.start, fn.end) == (row.start, row.end)
+
+
+def _evidence_spans(rows) -> list[list]:
+    """One mutable span per distinct (start, end) line span among the rows, in
+    line order, named for the first row on it. Rows on a shared span get one
+    record, which the shared-span floor then refuses for all of them."""
+    spans: dict[tuple[int, int], list] = {}
+    for row in rows:
+        spans.setdefault((row.start, row.end), [
+            row.long_name, row.start, row.end, False, 0, 0, 0, 0,
+            (row.start, 0), None, (row.end, sys.maxsize)])
+    return [spans[key] for key in sorted(spans)]
+
+
+def _evidence_points(evidence: FileEvidence) -> set[tuple[int, int]]:
+    lines = {*evidence.hit_lines, *evidence.missed_lines}
+    lines.update(line for line, _, _ in evidence.branches)
+    return {(line, 0) for line in lines}
+
+
+def _attach_lines(owners: dict, lines, hit: int) -> None:
+    """Count each line as a statement of the span that owns it, run when hit."""
+    for line in lines:
+        span = owners[(line, 0)]
+        if span is not None:
+            span[_S_TOTAL] += 1
+            span[_S_COV] += hit
+            span[_INVOKED] = span[_INVOKED] or hit == 1
+
+
+def _attach_triples(owners: dict, branches) -> None:
+    for line, total, covered in branches:
+        span = owners[(line, 0)]
+        if span is not None:
+            span[_B_TOTAL] += total
+            span[_B_COV] += covered
+
+
+def join_evidence(rows, evidence: FileEvidence) -> list[FnCoverage]:
+    """One FnCoverage per inventory span of this file's rows that owns at least
+    one evidence line or branch, each line and branch given to its innermost
+    span by span_owners. Branch counts come from the owned triples, statement
+    counts from the owned hit and missed lines, and the span was invoked when
+    any owned line was hit. A line outside every span is dropped. An adapter
+    that keeps its own records (hit_lines None) joins nothing."""
+    if evidence.hit_lines is None:
+        return []
+    spans = _evidence_spans(rows)
+    owners = span_owners(spans, _evidence_points(evidence), _LINE_OPENS)
+    _attach_lines(owners, evidence.hit_lines, 1)
+    _attach_lines(owners, evidence.missed_lines, 0)
+    _attach_triples(owners, evidence.branches)
+    return [_JoinedCoverage(*span[_COUNTED]) for span in spans
+            if span[_S_TOTAL] or span[_B_TOTAL]]
 
 
 # A ratchet mark holds a CRAP score at this many decimal places, and a
@@ -171,7 +351,7 @@ def _best_match(row: InventoryRow, candidates: list[FnCoverage]) -> FnCoverage |
     best, best_key = None, None
     for fn in candidates:
         o = _overlap(row.start, row.end, fn.start, fn.end)
-        if o <= 0:
+        if o <= 0 or not _speaks_for(row, fn):
             continue
         key = (fn.start == row.start, o, -(fn.end - fn.start), fn.coverage)
         if best_key is None or key > best_key:
@@ -333,7 +513,7 @@ def _best_exact(row, bucket) -> FnCoverage | None:
     best, best_key = None, None
     for fn in bucket:
         o = min(row.end, fn.end) - row.start + 1
-        if o <= 0:
+        if o <= 0 or not _speaks_for(row, fn):
             continue
         key = (o, -(fn.end - fn.start), fn.coverage)
         if best_key is None or key > best_key:
@@ -547,6 +727,33 @@ def _on_shared_span(row, verdict, shared: dict) -> bool:
                                 or (row.path, row.start, row.end) in shared)
 
 
+def _rows_by_path(rows, paths) -> dict[str, list[InventoryRow]]:
+    by_path: dict[str, list[InventoryRow]] = {}
+    for row in rows:
+        if row.path in paths:
+            by_path.setdefault(row.path, []).append(row)
+    return by_path
+
+
+def _with_evidence(rows, coverage_by_path: dict, evidence_by_path: Mapping | None) -> dict:
+    """The candidates with each lane's joined records after the producer
+    records on that path. Every lane joins on its own: hits are never unioned,
+    and on identical spans the selection keeps the better record."""
+    if not evidence_by_path:
+        return coverage_by_path
+    by_path = _rows_by_path(rows, evidence_by_path)
+    merged = dict(coverage_by_path)
+    for path, lanes in evidence_by_path.items():
+        joined = _joined_records(by_path.get(path, ()), lanes)
+        if joined:
+            merged[path] = [*merged.get(path, ()), *joined]
+    return merged
+
+
+def _joined_records(rows_of_path, lanes) -> list[FnCoverage]:
+    return [fn for evidence in lanes for fn in join_evidence(rows_of_path, evidence)]
+
+
 def score_rows(
     rows: list[InventoryRow],
     coverage_by_path: dict[str, list[FnCoverage]],
@@ -556,7 +763,12 @@ def score_rows(
     scope_targets: dict[str, int] | None = None,
     cc_only_scopes: frozenset[str] = frozenset(),
     shared_spans: SharedSpanFold | None = None,
+    evidence_by_path: Mapping[str, list[FileEvidence]] | None = None,
 ) -> list[ScoredRow]:
+    """evidence_by_path maps a path to one FileEvidence per lane. Each lane's
+    joined records join that path's candidates before the selection runs, so a
+    joined record and a producer record are judged by one rule."""
+    coverage_by_path = _with_evidence(rows, coverage_by_path, evidence_by_path)
     start_index = _start_index(coverage_by_path)
     shared = _shared_source_spans(rows, lane_scopes, cc_only_scopes)
     ambiguous = _ambiguous_spans(shared, coverage_by_path, start_index)

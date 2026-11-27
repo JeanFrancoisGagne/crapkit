@@ -204,7 +204,7 @@ def test_a_failure_a_passing_verify_retried_is_new_when_it_fails_its_retry(
     assert res.returncode == 8, res.stdout + res.stderr
     payload = json.loads(res.stdout)
     assert payload["baseline_run"] == baseline["id"]
-    assert (payload["new_failures"], payload["forgiven_failures"]) == (["t::c0"], [])
+    assert ([f["test"] for f in payload["findings"] if f["kind"] == "new_failure"], payload["forgiven_failures"]) == (["t::c0"], [])
 
 
 @OLD_RETEST_STOP
@@ -260,7 +260,7 @@ def test_a_failure_behind_a_0_8_0_verify_over_a_deleted_junit_is_still_forgiven(
 
     assert res.returncode == 0, res.stdout + res.stderr
     payload = json.loads(res.stdout)
-    assert (payload["baseline_run"], payload["new_failures"]) == (baseline["id"], [])
+    assert (payload["baseline_run"], [f["test"] for f in payload["findings"] if f["kind"] == "new_failure"]) == (baseline["id"], [])
     assert payload["forgiven_failures"] == ["t::c0"]
 
 

@@ -11,7 +11,8 @@ from cli_inproc_repo import repo, template_repo  # noqa: F401
 from pinned_store import MARKS, pinned, stale_marks
 
 from crapkit.cli import main
-from crapkit.ratchet import metric_version, read_stamp
+from crapkit.config import load_config_text
+from crapkit.ratchet import read_stamp, running_stamp
 
 
 def run(argv: list[str], repo, capsys) -> tuple[int, str, str]:
@@ -31,6 +32,11 @@ def test_the_store_starts_in_the_deadlock_the_issue_reported(repo, capsys):
     assert "were recorded under" in err, err
 
 
+def running(repo):
+    """The stamp a seed from a run this crapkit measured on the repo signs."""
+    return running_stamp(load_config_text((repo / "crapkit.toml").read_text(encoding="utf-8"), root=repo))
+
+
 def test_seeding_the_named_newer_run_restamps_the_marks_and_the_next_verify_runs(repo, capsys):
     _, _, fresh = pinned(repo)
     stale_marks(repo)
@@ -40,7 +46,7 @@ def test_seeding_the_named_newer_run_restamps_the_marks_and_the_next_verify_runs
 
     assert code == 0, err
     assert f"vs run {fresh} (" in out, out
-    assert read_stamp((repo / MARKS).read_text(encoding="utf-8")) == metric_version()
+    assert read_stamp((repo / MARKS).read_text(encoding="utf-8")) == running(repo)
     code, out, err = run(["verify", "--reuse-artifacts"], repo, capsys)
     assert code == 0, out + err
     assert out.startswith("verify OK"), out

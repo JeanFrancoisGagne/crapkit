@@ -127,3 +127,86 @@ def test_prune_still_drops_a_mark_whose_code_really_left(repo: Path):
     res = run_cli(repo, "ratchet", "prune")
     assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
     assert marks(repo) == {}, "deleted code still forfeits its mark"
+
+
+# --- a rename plus a signature edit: the mark follows, then re-keys -----------------------
+
+PY_TOML = ('[crapkit]\ntarget = 6\n\n[[scope]]\nname = "calc"\npaths = ["calc"]\n'
+           'languages = ["python"]\ncoverage_optional = true\n')
+BODY = "".join(f"    if a == {n}:\n        return {n}\n" for n in range(6)) + "    return b\n"
+SEEDED, SIGNED = "def classify(a, b):\n" + BODY, "def classify(a, b, c=None):\n" + BODY
+OLD, NEW = "classify( a , b )", "classify( a , b , c = None )"
+
+
+@pytest.fixture()
+def graded(tmp_path: Path) -> Path:
+    """calc/grade.py's `classify( a , b )` seeded at 7.0000 in a cc-only scope, committed."""
+    (tmp_path / "calc").mkdir()
+    (tmp_path / "calc" / "grade.py").write_text(SEEDED, encoding="utf-8")
+    (tmp_path / "crapkit.toml").write_text(PY_TOML, encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".crapkit/\n", encoding="utf-8")
+    git(tmp_path, "init", "-q", "-b", "main")
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-q", "-m", "init")
+    assert run_cli(tmp_path, "coverage", "--json").returncode == 0
+    assert run_cli(tmp_path, "ratchet", "seed").returncode == 0
+    assert marks(tmp_path) == {"calc/grade.py": (OLD, "7.0000")}
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-q", "-m", "seed")
+    return tmp_path
+
+
+def pruned_after(repo: Path, message: str):
+    """Commit the tree, measure it, then prune."""
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", message)
+    assert run_cli(repo, "coverage", "--json").returncode == 0
+    res = run_cli(repo, "ratchet", "prune")
+    assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
+    return res
+
+
+def test_prune_follows_a_rename_plus_a_signature_edit_and_re_keys_the_mark(graded: Path):
+    git(graded, "mv", "calc/grade.py", "calc/grading.py")
+    (graded / "calc" / "grading.py").write_text(SIGNED, encoding="utf-8")
+
+    res = pruned_after(graded, "rename and sign")
+
+    assert "pruned 0, followed 1 rename(s), re-keyed 1" in res.stdout, res.stdout
+    assert marks(graded) == {"calc/grading.py": (NEW, "7.0000")}
+
+
+def test_an_unproved_marks_file_follows_no_rename_plus_a_signature_edit(graded: Path):
+    """A marks file with no key stamp proves no carry, so prune drops the
+    mark and follows no rename, as 0.8.1 did."""
+    path = graded / RATCHET
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    path.write_text("".join(line for line in lines if not line.startswith("# crapkit-keys=")),
+                    encoding="utf-8", newline="")
+    git(graded, "mv", "calc/grade.py", "calc/grading.py")
+    (graded / "calc" / "grading.py").write_text(SIGNED, encoding="utf-8")
+
+    res = pruned_after(graded, "unproved, rename and sign")
+
+    assert "pruned 1, followed 0 rename(s) - 0 mark(s)" in res.stdout, res.stdout
+    assert marks(graded) == {}
+
+
+def test_a_copy_plus_a_signature_edit_moves_no_mark(graded: Path):
+    (graded / "calc" / "grading.py").write_text(SIGNED, encoding="utf-8")
+
+    res = pruned_after(graded, "copy and sign")
+
+    assert "pruned 0, followed 0 rename(s) - 1 mark(s)" in res.stdout, res.stdout
+    assert marks(graded) == {"calc/grade.py": (OLD, "7.0000")}
+
+
+def test_a_heavy_edit_git_no_longer_calls_a_rename_still_drops_the_mark(graded: Path):
+    git(graded, "mv", "calc/grade.py", "calc/grading.py")
+    (graded / "calc" / "grading.py").write_text("def classify(a, b, c=None):\n    return [a, b, c]\n",
+                                                 encoding="utf-8")
+
+    res = pruned_after(graded, "rewrite")
+
+    assert "pruned 1, followed 0 rename(s) - 0 mark(s)" in res.stdout, res.stdout
+    assert marks(graded) == {}

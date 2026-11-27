@@ -1,7 +1,8 @@
 """Portable records preserve repository identities, including delimiters."""
 import pytest
 
-from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet, read_key_version, read_ratchet, read_stamp
+from crapkit.ratchet import (MetricStamp, RatchetEntry, dump_ratchet, load_ratchet, read_key_version,
+                             read_ratchet, read_stamp)
 from crapkit.score import parse_scored_tsv, scored_tsv_lines
 from crapkit.snapshot import INVENTORY_COLUMNS, InventoryRow, tsv_lines
 from crapkit.verify import baseline_tsv_lines, parse_baseline_tsv
@@ -24,7 +25,7 @@ def test_scored_and_portable_records_roundtrip_exact_fields(path):
 @pytest.mark.parametrize("path", PATHS)
 def test_ratchet_roundtrip_preserves_stamps_and_identity(path):
     entries = [RatchetEntry(path, "f( a\tb\nc )", 12.5)]
-    text = dump_ratchet(entries, stamp="crapkit-analysis=10 lizard=1.24.0", key_version=1)
+    text = dump_ratchet(entries, stamp=MetricStamp.parse("crapkit-analysis=10 lizard=1.24.0"), key_version=1)
     assert load_ratchet(text) == entries
     assert read_key_version(text) == 1
     assert read_stamp(text) == "crapkit-analysis=10 lizard=1.24.0"
@@ -39,7 +40,7 @@ def test_legacy_raw_identity_is_not_a_comment_or_a_physical_line(path):
 
 def test_stamped_encoded_row_can_be_read_alone_in_a_git_patch():
     entry = RatchetEntry("#a\nb.py", "f( )", 12.5)
-    row = dump_ratchet([entry], stamp="").split("\n")[1]
+    row = dump_ratchet([entry], stamp=MetricStamp.NONE).split("\n")[1]
     assert load_ratchet(row) == [entry]
 
 

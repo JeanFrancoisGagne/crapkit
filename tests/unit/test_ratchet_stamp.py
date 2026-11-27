@@ -3,17 +3,86 @@
 Pure seam. Without it a scoring change leaves 40k marks in place and every later
 verify silently compares new scores against numbers the old rules produced.
 """
+import argparse
+import ast
+import codecs
+import copy
+from pathlib import Path
+import pickle
+import re
+import subprocess
+import sys
+
 import pytest
 
-from crapkit.ratchet import (RatchetEntry, dump_ratchet, load_ratchet, read_stamp,
-                             stamp_conflict, stamp_text)
+from accuracy.kit import source_tree
+from stamps import lane, running, scope, single_number
 
-STAMP = "crapkit-analysis=9 lizard=0.1.2"
+from crapkit import ratchet
+from crapkit.cli.ratchet_cmds import cmd_ratchet
+from crapkit.errors import ConfigError
+from crapkit.ratchet import (MetricStamp, RatchetEntry, ScopeStamp, ScopeStamps, SingleNumberStamp,
+                             UnreadableStamp, dump_ratchet, load_ratchet,
+                             read_key_version, read_ratchet, read_stamp, run_stamp, stamp_conflict)
+from crapkit.ratchetfile import RatchetFile
+from crapkit.score import ScoredRow
+from crapkit.store import SnapshotStore
+
+STAMP = single_number(9, "0.1.2")
 LEGACY = "path\tlong_name\tcrap\nsrc/a.ts\tf( )\t30.0000\n"
+SRC = running([scope("src", "python", "typescript")], [lane("py", "coveragepy", "src")])
 
 
-def test_stamp_text_is_the_committed_wire_format():
-    assert stamp_text(3, "1.24.0") == "crapkit-analysis=3 lizard=1.24.0"
+def test_a_parsed_single_number_stamp_renders_the_committed_wire_format():
+    assert read_stamp("# crapkit-analysis=3 lizard=1.24.0\n").render() == "crapkit-analysis=3 lizard=1.24.0"
+
+
+def _builds_a_single_number_stamp(node: ast.AST) -> bool:
+    """A call of SingleNumberStamp or of one of its methods."""
+    return any(isinstance(call, ast.Call) and "SingleNumberStamp" in ast.unparse(call.func).split(".")
+               for call in ast.walk(node))
+
+
+def _single_number_builders() -> list[str]:
+    """`file:def` for each def that calls SingleNumberStamp, over crapkit's
+    source tree as written: kit.source_tree names it, since in the calc
+    mutation stage the imported package is mutmut's copy, which holds every
+    mutant's body beside the original."""
+    found = set()
+    for path in source_tree.root().rglob("*.py"):
+        tree = ast.parse(path.read_bytes())
+        found |= {f"{path.name}:{node.name}" for node in ast.walk(tree)
+                  if isinstance(node, ast.FunctionDef) and _builds_a_single_number_stamp(node)}
+    return sorted(found)
+
+
+def test_no_code_can_build_a_single_number_stamp():
+    """With the config-free running metric in the tree, a new writer could sign
+    `crapkit-analysis=13` over per-scope marks and undo the per-scope check. It
+    is gone, and the only code that builds a single-number stamp is the parser
+    that reads one from a 0.8.x file or run: a call of the class refuses."""
+    assert not hasattr(ratchet, "metric_version") and not hasattr(ratchet, "stamp_text")
+    assert _single_number_builders() == ["ratchet.py:parse"]
+    with pytest.raises(TypeError) as refused:
+        SingleNumberStamp(13, "1.24.0")
+    assert str(refused.value) == ("a single-number stamp is only ever read: "
+                                  "MetricStamp.parse reads the line 0.8.x wrote")
+
+
+def test_the_scan_reads_the_tree_the_mutation_stage_names(tmp_path, monkeypatch):
+    (tmp_path / "forged.py").write_text("def forge():\n    return SingleNumberStamp(13, '1.24.0')\n",
+                                        encoding="utf-8")
+    monkeypatch.setenv(source_tree.ENV, str(tmp_path))
+
+    assert _single_number_builders() == ["forged.py:forge"]
+
+
+@pytest.mark.parametrize("stamp", ["", "crapkit-analysis=13 lizard=1.24.0"], ids=["empty", "single-number"])
+def test_dump_refuses_a_plain_str_stamp(stamp):
+    """Written as it came, a str would sign the marks with a line no file or run recorded."""
+    with pytest.raises(TypeError) as refused:
+        dump_ratchet([RatchetEntry("src/a.ts", "f( )", 30.0)], stamp=stamp)
+    assert str(refused.value) == "a marks file's stamp is a MetricStamp, not a str"
 
 
 def test_dump_writes_the_stamp_above_the_header():
@@ -28,11 +97,6 @@ def test_dump_names_no_stamp_by_default():
     marks another metric recorded; the marks file's stamp rules choose it now."""
     with pytest.raises(TypeError):
         dump_ratchet([RatchetEntry("src/a.ts", "f( )", 30.0)])
-
-
-def test_an_empty_stamp_writes_no_comment_line():
-    lines = dump_ratchet([RatchetEntry("src/a.ts", "f( )", 30.0)], stamp="").splitlines()
-    assert lines[0] == "path\tlong_name\tcrap"
 
 
 def test_readers_skip_comment_lines():
@@ -54,24 +118,22 @@ def test_read_stamp_returns_the_version_without_its_comment_marker():
 
 
 def test_an_unstamped_file_never_conflicts():
-    assert stamp_conflict("", "crapkit-analysis=3 lizard=1.24.0") is None
+    assert stamp_conflict(MetricStamp.NONE, single_number(3)) is None
 
 
 def test_matching_stamps_do_not_conflict():
-    assert stamp_conflict("crapkit-analysis=3 lizard=1.24.0",
-                          "crapkit-analysis=3 lizard=1.24.0") is None
+    assert stamp_conflict(single_number(3), single_number(3)) is None
 
 
 def test_a_differing_stamp_names_both_versions_and_the_fix():
-    msg = stamp_conflict("crapkit-analysis=2 lizard=1.17.10", "crapkit-analysis=3 lizard=1.24.0")
+    msg = stamp_conflict(single_number(2, "1.17.10"), single_number(3)).refusal("crapkit-ratchet.tsv")
     assert "crapkit-analysis=2 lizard=1.17.10" in msg
     assert "crapkit-analysis=3 lizard=1.24.0" in msg
     assert "ratchet seed" in msg
 
 
 def test_a_lizard_bump_alone_conflicts():
-    assert stamp_conflict("crapkit-analysis=3 lizard=1.17.10",
-                          "crapkit-analysis=3 lizard=1.24.0") is not None
+    assert stamp_conflict(single_number(3, "1.17.10"), single_number(3)) is not None
 
 
 def test_marks_stamped_by_0_8_0_are_refused_until_one_reseed():
@@ -89,9 +151,914 @@ def test_marks_stamped_by_0_8_0_are_refused_until_one_reseed():
     import lizard
 
     from crapkit.analyze import ANALYSIS_VERSION
-    from crapkit.ratchet import metric_version
 
-    refusal = stamp_conflict(stamp_text(11, lizard.version), metric_version())
+    marked = read_stamp(f"# crapkit-analysis=11 lizard={lizard.version}\n")
+    refusal = stamp_conflict(marked, SRC, frozenset({"src"})).refusal("m.tsv")
 
     assert ANALYSIS_VERSION == 13
     assert refusal is not None and "ratchet seed" in refusal, refusal
+
+
+# --- the typed stamp ------------------------------------------------------------
+
+THIRTEEN = "# crapkit-analysis=13 lizard=1.24.0"
+ROWS = ["path\tlong_name\tcrap", "src/a.py\tf( )\t40.0000", "src/b.ts\tg( x )\t12.5000"]
+
+
+def _spelled(text: str, spelling: str) -> bytes:
+    if spelling == "crlf":
+        return text.replace("\n", "\r\n").encode("utf-8")
+    if spelling == "bom":
+        return codecs.BOM_UTF8 + text.encode("utf-8")
+    if spelling == "utf-16":
+        return codecs.BOM_UTF16_LE + text.encode("utf-16-le")
+    return text.encode("utf-8")
+
+
+@pytest.mark.parametrize("keys", [False, True], ids=["no-key-stamp", "key-stamp"])
+@pytest.mark.parametrize("spelling", ["lf", "bom", "crlf", "utf-16"])
+@pytest.mark.parametrize("stamp", [None, THIRTEEN], ids=["unstamped", "stamped"])
+def test_every_committed_spelling_round_trips_byte_for_byte(tmp_path, stamp, spelling, keys):
+    """A write that adds no number renders the stamp it read back as the same
+    line, so the file on disk keeps every byte, endings and encoding included."""
+    lines = [stamp] * bool(stamp) + ["# crapkit-keys=1"] * keys + ROWS
+    data = _spelled("\n".join(lines) + "\n", spelling)
+    path = tmp_path / "crapkit-ratchet.tsv"
+    path.write_bytes(data)
+    saved = RatchetFile.read(path)
+    text = saved.text.replace("\r\n", "\n")
+
+    read = read_stamp(text)
+    rendered = dump_ratchet(load_ratchet(text), stamp=read, key_version=read_key_version(text))
+
+    assert isinstance(read, MetricStamp)
+    assert read == (single_number(13, "1.24.0") if stamp else MetricStamp.NONE)
+    assert rendered == text
+    assert saved.publish(saved.kept(saved.entries)) is False
+    assert path.read_bytes() == data
+
+
+def test_no_stamp_is_falsy_and_renders_no_line():
+    assert not MetricStamp.NONE
+    assert (MetricStamp.NONE.render(), MetricStamp.NONE.analysis) == ("", None)
+    assert read_stamp(LEGACY) is MetricStamp.NONE
+    assert read_stamp(f"#\n{LEGACY}") is MetricStamp.NONE
+    assert dump_ratchet([], stamp=MetricStamp.NONE) == "path\tlong_name\tcrap\n"
+
+
+@pytest.mark.parametrize("other, equal", [
+    (single_number(13, "1.24.0"), True),
+    (single_number(12, "1.24.0"), False),
+    (single_number(13, "1.17.10"), False),
+    (single_number(130, "1.24.0"), False),
+])
+def test_two_single_number_stamps_are_equal_exactly_when_both_numbers_are(other, equal):
+    stamp = single_number(13, "1.24.0")
+
+    assert (stamp == other, stamp != other) == (equal, not equal)
+    assert (hash(stamp) == hash(other)) is equal
+
+
+def test_a_single_number_stamp_holds_its_two_versions_and_renders_the_wire_text():
+    stamp = read_stamp(f"{THIRTEEN}\n{LEGACY}")
+
+    assert type(stamp) is SingleNumberStamp
+    assert (stamp.analysis, stamp.lizard) == (13, "1.24.0")
+    assert stamp.render() == "crapkit-analysis=13 lizard=1.24.0"
+    assert type(stamp.render()) is str
+
+
+def test_a_0_8_1_run_reads_as_a_typed_single_number_stamp():
+    stored = run_stamp({"analysis_version": "13", "lizard": "1.24.0"})
+    assert (type(stored), stored) == (SingleNumberStamp, single_number(13, "1.24.0"))
+    assert stored.render() == "crapkit-analysis=13 lizard=1.24.0"
+    assert run_stamp({"analysis_version": 13}) is MetricStamp.NONE
+
+
+@pytest.mark.parametrize("line, analysis", [
+    ("lizard 0.0.1 analysis 0", None),
+    ("crapkit-analysis=013 lizard=1.24.0", 13),
+    ("crapkit-analysis=13  lizard=1.24.0", 13),
+    ("crapkit-analysis=12", 12),
+    ("crapkit-analysis=12x lizard=1.24.0", None),
+])
+def test_a_stamp_crapkit_cannot_parse_keeps_its_line_and_the_number_it_opens_with(line, analysis):
+    """It is not unstamped: verify and the merge driver refuse it by quoting it,
+    and a write that adds no number writes it back as it was. The expression
+    reader check still reads the analysis number the line opens with."""
+    stamp = read_stamp(f"# {line}\n{LEGACY}")
+
+    assert type(stamp) is UnreadableStamp and stamp
+    assert (stamp.render(), stamp.analysis) == (line, analysis)
+    assert stamp_conflict(stamp, SRC).refusal("m.tsv").startswith(
+        f"ratchet marks were recorded under [{line}] but this run measures [crapkit-stamp=2 lizard=")
+    assert dump_ratchet([], stamp=stamp).startswith(f"# {line}\n")
+
+
+def test_a_stamp_survives_a_copy_and_a_pickle():
+    stamp = single_number(13, "1.24.0")
+
+    for copied in (copy.deepcopy(stamp), pickle.loads(pickle.dumps(stamp))):
+        assert type(copied) is SingleNumberStamp
+        assert (copied, copied.analysis, copied.lizard) == (stamp, 13, "1.24.0")
+
+
+def test_the_merge_driver_needs_no_analysis_stack(tmp_path, monkeypatch, capsys):
+    """git runs the driver in a temp dir with no crapkit.toml, and the stamps it
+    compares come from the three files, never from the running metric."""
+    stamp = single_number(13, "1.24.0")
+    files = []
+    for side, crap in (("base", 50.0), ("ours", 40.0), ("theirs", 30.0)):
+        path = tmp_path / f"{side}.tsv"
+        path.write_text(dump_ratchet([RatchetEntry("src/a.py", "f( )", crap)], stamp=stamp,
+                                     key_version=1), encoding="utf-8", newline="\n")
+        files.append(str(path))
+    for name in ("lizard", "crapkit.analyze", "crapkit.config"):
+        monkeypatch.setitem(sys.modules, name, None)
+
+    code = cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
+
+    assert (code, capsys.readouterr().out) == (0, "ratchet merge: 1 mark(s)\n")
+    merged = (tmp_path / "ours.tsv").read_text(encoding="utf-8")
+    assert read_stamp(merged) == stamp
+    assert load_ratchet(merged) == [RatchetEntry("src/a.py", "f( )", 30.0)]
+
+
+# --- the per-scope stamp ------------------------------------------------------------
+# The form a 0.9.0 seed writes (metric-stamp-06): line 1 names the marks file and
+# the release that reads it, then one `#scope` line per scope, sorted by name.
+# Every reader takes it beside the single-number line; no command writes it yet.
+
+MARKS = "crapkit-ratchet.tsv"
+SCOPES = ScopeStamps("1.24.0", {
+    "web": ScopeStamp({"typescript": 13, "tsx": 13}, {"istanbul": 1}),
+    "api": ScopeStamp({"python": 13}, {"coveragepy": 1}),
+    "tools": ScopeStamp({"python": 13}, "cc-only"),
+})
+HEAD = ("# crapkit-stamp=2 lizard=1.24.0: crapkit-ratchet.tsv holds one stamp per scope, "
+        "which crapkit 0.9.0 or later reads")
+SCOPE_LINES = ["#scope\tapi\tanalysis python=13; coverage coveragepy=1",
+               "#scope\ttools\tanalysis python=13; coverage cc-only",
+               "#scope\tweb\tanalysis tsx=13 typescript=13; coverage istanbul=1"]
+MARKED = [RatchetEntry("src/a.py", "f( )", 40.0), RatchetEntry("src/b.ts", "g( x )", 12.5)]
+LEGACY_SCOPE_MARK = "#scope\tg( )\t12.0000"
+
+
+def _lines(*lines: str) -> str:
+    return "\n".join(lines) + "\n"
+
+
+@pytest.mark.parametrize("keys", [1, 0])
+def test_a_per_scope_stamp_writes_its_first_line_then_the_key_stamp_then_one_line_per_scope(keys):
+    text = dump_ratchet(MARKED, stamp=SCOPES, key_version=keys, file_name=MARKS)
+
+    assert text == _lines(HEAD, *[f"# crapkit-keys={keys}"] * bool(keys), *SCOPE_LINES, *ROWS)
+
+
+@pytest.mark.parametrize("keys", [False, True], ids=["no-key-stamp", "key-stamp"])
+@pytest.mark.parametrize("spelling", ["lf", "bom", "crlf", "utf-16"])
+def test_a_per_scope_file_round_trips_byte_for_byte(tmp_path, spelling, keys):
+    """A parsed per-scope stamp renders the lines it read, its first line's
+    file name included, so a write that adds no number keeps every byte."""
+    data = _spelled(_lines(HEAD, *["# crapkit-keys=1"] * keys, *SCOPE_LINES, *ROWS), spelling)
+    path = tmp_path / MARKS
+    path.write_bytes(data)
+    saved = RatchetFile.read(path)
+    text = saved.text.replace("\r\n", "\n")
+
+    read = read_stamp(text)
+    rendered = dump_ratchet(load_ratchet(text), stamp=read, key_version=read_key_version(text))
+
+    assert (type(read), read, read.scopes, read.lizard) == (ScopeStamps, SCOPES, SCOPES.scopes, "1.24.0")
+    assert rendered == text
+    assert saved.publish(saved.kept(saved.entries)) is False
+    assert path.read_bytes() == data
+
+
+def test_scope_lines_come_out_sorted_by_name():
+    text = _lines(HEAD, *reversed(SCOPE_LINES), *ROWS)
+
+    assert dump_ratchet(load_ratchet(text), stamp=read_stamp(text)) == _lines(HEAD, *SCOPE_LINES, *ROWS)
+
+
+@pytest.mark.parametrize("name, encoded", [
+    ("café", False), ("#tools", False), ("we\tb", True), ("a b", True),
+], ids=["non-ascii", "opens-with-hash", "tab", "line-separator"])
+@pytest.mark.parametrize("spelling", ["lf", "utf-16"])
+def test_a_scope_name_round_trips_whatever_it_holds(tmp_path, name, encoded, spelling):
+    """A name holding a character records.encode_record escapes takes the
+    record encoding, as a mark's name does, and reads back as itself."""
+    stamp = ScopeStamps("1.24.0", {name: ScopeStamp({"python": 13}, "no-lane"), "api": SCOPES.scopes["api"]})
+    data = _spelled(dump_ratchet(MARKED, stamp=stamp, key_version=1, file_name=MARKS), spelling)
+    path = tmp_path / MARKS
+    path.write_bytes(data)
+    saved = RatchetFile.read(path)
+
+    assert ("@crapkit-record-v1" in saved.text) is encoded
+    assert (saved.metric_stamp, saved.metric_stamp.scopes, saved.entries) == (stamp, stamp.scopes, MARKED)
+    assert saved.publish(saved.kept(saved.entries)) is False
+    assert path.read_bytes() == data
+
+
+@pytest.mark.parametrize("stamp", [single_number(13, "1.24.0"), SCOPES], ids=["single-number", "per-scope"])
+def test_both_stamp_forms_hold_the_same_marks_and_no_scope_line_is_one(stamp):
+    """A legacy raw mark whose path is `#scope` still reads as a mark: its
+    third field is a finite number. A scope stamp line read alone, as a
+    history reader reads a row, holds none."""
+    text = dump_ratchet(MARKED, stamp=stamp, key_version=1, file_name=MARKS) + LEGACY_SCOPE_MARK + "\n"
+    marked = [*MARKED, RatchetEntry("#scope", "g( )", 12.0)]
+
+    assert (load_ratchet(text), read_ratchet(text)) == (marked, (marked, []))
+    assert read_stamp(text) == stamp
+    assert [read_ratchet(row)[0] for row in (LEGACY_SCOPE_MARK, *SCOPE_LINES)] == [marked[-1:], [], [], []]
+
+
+SINGLE_LINE = "# crapkit-analysis=13 lizard=1.24.0"
+TWELVE = "#scope\tapi\tanalysis python=twelve; coverage coveragepy=1"
+ONE_FORM = "a marks file holds one stamp form, single-number or per scope"
+
+
+def _single_after(number: int) -> str:
+    return (f"ratchet line {number} stamps the file [crapkit-analysis=13 lizard=1.24.0], but line 1 "
+            f"stamps it per scope; {ONE_FORM}")
+
+
+def _unreadable(number: int) -> str:
+    return f"ratchet line {number} has an unreadable scope stamp: {TWELVE!r}"
+
+
+@pytest.mark.parametrize("text, refusal", [
+    (_lines(SINGLE_LINE, "# crapkit-keys=1", *SCOPE_LINES, *ROWS),
+     f"ratchet line 3 stamps the file per scope, but line 1 stamps it [crapkit-analysis=13 lizard=1.24.0]; "
+     f"{ONE_FORM}"),
+    (_lines(HEAD, SINGLE_LINE, *SCOPE_LINES, *ROWS), _single_after(2)),
+    (_lines(HEAD, "# crapkit-keys=1", *SCOPE_LINES, SINGLE_LINE, *ROWS), _single_after(6)),
+    (_lines(HEAD, *SCOPE_LINES, *ROWS, SINGLE_LINE), _single_after(8)),
+    (_lines(SINGLE_LINE, HEAD, *ROWS),
+     f"ratchet line 2 stamps the file per scope, but line 1 stamps it [crapkit-analysis=13 lizard=1.24.0]; "
+     f"{ONE_FORM}"),
+    (_lines(HEAD, TWELVE, *SCOPE_LINES[1:], *ROWS), _unreadable(2)),
+    (_lines(SINGLE_LINE, TWELVE, *ROWS), _unreadable(2)),
+    (_lines(TWELVE, *ROWS), _unreadable(1)),
+    (_lines(HEAD, *SCOPE_LINES, SCOPE_LINES[0], *ROWS),
+     "ratchet line 5 stamps scope 'api' a second time"),
+    (_lines(*SCOPE_LINES, *ROWS),
+     f"ratchet line 1 is a scope stamp, but no stamp line opens the file; {ONE_FORM}"),
+], ids=["both-forms-single-first", "both-forms-single-second", "both-forms-single-after-the-scope-lines",
+        "both-forms-single-after-the-header", "both-forms-per-scope-first-line-second",
+        "unreadable-scope-line", "unreadable-scope-line-under-a-single-number",
+        "unreadable-scope-line-unstamped", "scope-twice", "no-first-line"])
+def test_a_file_whose_scope_stamps_cannot_stand_is_refused_by_its_line(tmp_path, text, refusal):
+    """load_ratchet refuses it, naming the line; read_ratchet keeps the marks
+    and makes one complaint; the stamp reads as unreadable, so verify's stamp
+    check refuses before any lane runs. Both forms in one file refuse in any
+    order, naming the later line, since a write would keep only one. An
+    unreadable scope stamp line costs one complaint whatever stamps the file."""
+    path = tmp_path / MARKS
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+    with pytest.raises(ValueError) as refused:
+        load_ratchet(text)
+
+    assert str(refused.value) == refusal
+    assert read_ratchet(text) == (MARKED, [refusal])
+    assert type(read_stamp(text)) is UnreadableStamp
+    assert stamp_conflict(read_stamp(text), SRC) is not None
+    with pytest.raises(ConfigError, match=f"unreadable ratchet file {MARKS}: ratchet line"):
+        RatchetFile.read(path).entries
+
+
+def test_only_a_comment_line_opens_the_per_scope_form():
+    """A mark whose path holds `crapkit-stamp=2` is a mark, and the file keeps its single-number stamp."""
+    marked = RatchetEntry("src/crapkit-stamp=2.py", "h( )", 9.0)
+    text = _lines(SINGLE_LINE, *ROWS, "src/crapkit-stamp=2.py\th( )\t9.0000")
+
+    assert read_stamp(text) == single_number(13, "1.24.0")
+    assert (load_ratchet(text), read_ratchet(text)) == ([*MARKED, marked], ([*MARKED, marked], []))
+
+
+@pytest.mark.parametrize("text", [
+    "analysis typescript=13 python=13; coverage cc-only",
+    "analysis python=013; coverage cc-only",
+    "analysis python=13; coverage",
+    "analysis python=13 python=14; coverage no-lane",
+    "analysis python=13; coverage coveragepy=1 coveragepy=1",
+])
+def test_a_scope_line_that_would_not_render_back_as_itself_is_unreadable(text):
+    assert ScopeStamp.parse(text) is None
+    assert ScopeStamp.parse("analysis python=13; coverage cc-only") == ScopeStamp({"python": 13}, "cc-only")
+
+
+def test_a_per_scope_stamp_names_its_file_or_refuses_to_render():
+    """A stamp built in code names no file until its writer passes one."""
+    with pytest.raises(ValueError, match="names its marks file"):
+        dump_ratchet(MARKED, stamp=SCOPES)
+    assert read_stamp(_lines(HEAD.replace(MARKS, "debt.tsv"), *SCOPE_LINES, *ROWS)) == SCOPES
+
+
+def test_a_per_scope_stamp_survives_a_copy_and_a_pickle():
+    stamp = read_stamp(_lines(HEAD, *SCOPE_LINES, *ROWS))
+
+    for copied in (copy.deepcopy(stamp), pickle.loads(pickle.dumps(stamp))):
+        assert type(copied) is ScopeStamps
+        assert (copied, copied.scopes) == (stamp, stamp.scopes)
+        assert dump_ratchet([], stamp=copied).startswith(f"{HEAD}\n")
+
+
+def test_the_number_a_stamp_gives_a_language():
+    """One number for every language under a single-number stamp; the lowest
+    number any scope records under a per-scope one; None for none recorded."""
+    legacy = ScopeStamps("1.24.0", {**SCOPES.scopes, "old": ScopeStamp({"typescript": 9}, "cc-only")})
+
+    assert [single_number(9, "1.24.0").language_number(name) for name in ("tsx", "python")] == [9, 9]
+    assert [SCOPES.language_number(name) for name in ("typescript", "python", "javascript")] == [13, 13, None]
+    assert legacy.language_number("typescript") == 9
+    assert MetricStamp.NONE.language_number("typescript") is None
+
+
+# --- writers keep a per-scope file's stamp lines -----------------------------------
+
+CONFIG = '[crapkit]\ntarget = 6\n\n[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n'
+SHA = "bb83d64fc19a7e2d4c5b60718293a4b5c6d7e8f9"
+SRC_SCOPE = ScopeStamps("1.24.0", {"src": ScopeStamp({"python": 13}, {"coveragepy": 1})})
+SRC_HEAD = [HEAD, "# crapkit-keys=1", "#scope\tsrc\tanalysis python=13; coverage coveragepy=1"]
+
+
+@pytest.fixture()
+def scoped_repo(tmp_path):
+    """A repo whose marks file holds two marks under a per-scope stamp, and one
+    run, under the running metric, that scored only the first."""
+    import lizard
+
+    from crapkit.analyze import ANALYSIS_VERSION
+
+    (tmp_path / "crapkit.toml").write_text(CONFIG, encoding="utf-8")
+    (tmp_path / ".crapkit").mkdir()
+    marks = [RatchetEntry("src/a.py", "hot( n )", 72.0), RatchetEntry("src/gone.py", "gone( )", 30.0)]
+    (tmp_path / MARKS).write_text(dump_ratchet(marks, stamp=SRC_SCOPE, key_version=1, file_name=MARKS),
+                                  encoding="utf-8", newline="\n")
+    store = SnapshotStore(tmp_path / ".crapkit" / "crap.sqlite")
+    hot = ScoredRow("src", "src/a.py", "hot( n )", 1, 9, 8, 8, 8, 5, 1, 1, 0.0, "measured", 72.0,
+                    "decompose")
+    store.write_run(commit=SHA, tool_versions={"lizard": lizard.version,
+                                               "analysis_version": str(ANALYSIS_VERSION)},
+                    rows=[hot], kind="coverage", lanes={"unit": {}})
+    store._conn.close()
+    return tmp_path
+
+
+@pytest.mark.parametrize("action, files, rows", [
+    ("prune", None, ["src/a.py\thot( n )\t72.0000"]),
+    ("move", ["src/gone.py", "src/kept.py"], ["src/a.py\thot( n )\t72.0000", "src/kept.py\tgone( )\t30.0000"]),
+], ids=["prune", "move"])
+def test_prune_and_move_write_a_per_scope_file_through_kept(scoped_repo, capsys, action, files, rows):
+    """Neither adds a number, so both keep the first line and every scope line verbatim."""
+    args = argparse.Namespace(action=action, files=files, repo=str(scoped_repo), baseline=None)
+
+    assert cmd_ratchet(args) == 0
+
+    written = (scoped_repo / MARKS).read_text(encoding="utf-8").splitlines()
+    assert written == [*SRC_HEAD, "path\tlong_name\tcrap", *rows], capsys.readouterr()
+
+
+# --- the merge driver reads per-scope files with no analysis stack -------------------
+
+def _sides(tmp_path, theirs: MetricStamp) -> list[str]:
+    files = []
+    for side, crap, stamp in (("base", 50.0, SCOPES), ("ours", 40.0, SCOPES), ("theirs", 30.0, theirs)):
+        path = tmp_path / f"{side}.tsv"
+        path.write_text(dump_ratchet([RatchetEntry("src/a.py", "f( )", crap)], stamp=stamp, key_version=1,
+                                     file_name=MARKS), encoding="utf-8", newline="\n")
+        files.append(str(path))
+    return files
+
+
+def _blocked(monkeypatch) -> None:
+    for name in ("lizard", "crapkit.analyze", "crapkit.config"):
+        monkeypatch.setitem(sys.modules, name, None)
+
+
+def test_the_merge_driver_merges_three_per_scope_files_with_no_analysis_stack(tmp_path, monkeypatch, capsys):
+    """OURS is git's temporary file, so the merged first line keeps the name it read."""
+    files = _sides(tmp_path, SCOPES)
+    _blocked(monkeypatch)
+
+    code = cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
+
+    assert (code, capsys.readouterr().out) == (0, "ratchet merge: 1 mark(s)\n")
+    assert (tmp_path / "ours.tsv").read_text(encoding="utf-8") == _lines(
+        HEAD, "# crapkit-keys=1", *SCOPE_LINES, "path\tlong_name\tcrap", "src/a.py\tf( )\t30.0000")
+
+
+def test_a_scope_stamp_only_theirs_raised_wins_the_merge(tmp_path, monkeypatch, capsys):
+    """BASE and OURS keep web at typescript 13 and THEIRS raised it to 14, so
+    THEIRS's web line wins; OURS changed a mark, so the note names web."""
+    raised = ScopeStamps("1.24.0", {**SCOPES.scopes,
+                                    "web": ScopeStamp({"typescript": 14, "tsx": 13}, {"istanbul": 1})})
+    files = _sides(tmp_path, raised)
+    _blocked(monkeypatch)
+
+    code = cmd_ratchet(argparse.Namespace(action="merge", files=files, repo=None, baseline=None))
+
+    output = capsys.readouterr()
+    assert (code, output.out) == (0, "ratchet merge: 1 mark(s)\n"), output.err
+    assert output.err == ("ratchet merge: scope web's stamp came from THEIRS and OURS changed 1 mark(s); "
+                          "if verify names web, run crapkit ratchet seed --scope web\n")
+    web = "#scope\tweb\tanalysis tsx=13 typescript=14; coverage istanbul=1"
+    assert (tmp_path / "ours.tsv").read_text(encoding="utf-8") == _lines(
+        HEAD, "# crapkit-keys=1", *SCOPE_LINES[:2], web, "path\tlong_name\tcrap", "src/a.py\tf( )\t30.0000")
+
+
+# --- crapkit 0.8.x meets a per-scope file --------------------------------------------
+# Deploy cell lin-mixed-0.8.0-reads-0.9.0-marks runs the released 0.8.0 and 0.8.1
+# wheels on a per-scope file at slot close. Every unit run holds the reads its
+# lines rest on: the code below is 0.8.x's marks reader, copied word for word
+# from records.py and ratchet.py, and the first test holds each definition to
+# both tags' source. The two releases share all of it but `_finite_mark`, which
+# 0.8.1 taught to round to four decimals.
+
+ROOT = Path(__file__).resolve().parents[2]
+OLD_RELEASES = ("v0.8.0", "v0.8.1")
+
+_RELEASE_RECORDS = r'''
+_PREFIX = "@crapkit-record-"
+_MARKER = _PREFIX + "v1"
+
+
+def record_lines(text: str):
+    """Only LF and CRLF frame physical rows; Unicode separators are data."""
+    return (line.removesuffix("\r") for line in text.split("\n"))
+
+
+def decode_record(line: str) -> list[str]:
+    """Read ordinary fields or a self-described row; reject unknown encodings."""
+    parts = line.split("\t")
+    if len(parts) != 2 or not parts[0].startswith(_PREFIX):
+        return parts
+    if parts[0] != _MARKER:
+        raise ValueError(f"unsupported portable record encoding {parts[0]!r}")
+    return _string_fields(parts[1])
+
+
+def _string_fields(text: str) -> list[str]:
+    values = json.loads(text)
+    if not isinstance(values, list) or any(type(value) is not str for value in values):
+        raise ValueError("portable record must contain a JSON array of string fields")
+    return values
+'''
+
+_RELEASE_RATCHET = r'''
+_HEADER = "path\tlong_name\tcrap"
+KEY_VERSION = 1
+_KEY_STAMP = "# crapkit-keys="
+
+
+class RatchetEntry(NamedTuple):
+    path: str
+    long_name: str
+    crap: float
+
+
+def read_key_version(text: str) -> int:
+    """Missing means the old start-only identity; an unknown format cannot compare."""
+    stamps = _key_stamps(text)
+    if not stamps:
+        return 0
+    if len(stamps) != 1 or stamps[0] not in ("0", str(KEY_VERSION)):
+        raise ValueError("unreadable or unsupported ratchet key identity version")
+    return int(stamps[0])
+
+
+def _key_stamps(text: str) -> list[str]:
+    return [line[len(_KEY_STAMP):] for line in record_lines(text) if _key_stamp(line)]
+
+
+def comment_line(line: str) -> bool:
+    """A format comment: the metric stamp or the key stamp. A `#` line that holds
+    a tab is a legacy raw mark whose path starts with `#`, not a comment."""
+    return line.startswith("#") and "\t" not in line
+
+
+def _key_stamp(line: str) -> bool:
+    return comment_line(line) and line.startswith(_KEY_STAMP)
+
+
+def _is_skippable(line: str) -> bool:
+    """Blank lines, the header and comment lines (the metric stamp) carry no mark."""
+    return not line.strip() or line == _HEADER or comment_line(line)
+
+
+def _read_mark(line: str, number: int) -> RatchetEntry:
+    try:
+        parts = decode_record(line)
+    except ValueError as exc:
+        raise ValueError(f"ratchet line {number} has an unreadable record: {exc}") from exc
+    if len(parts) != 3:
+        raise ValueError(f"ratchet line {number} has {len(parts)} fields, expected 3: {line!r}")
+    try:
+        return RatchetEntry(parts[0], parts[1], _finite_mark(parts[2]))
+    except ValueError as exc:
+        raise ValueError(f"ratchet line {number} has an unreadable mark: {line!r}") from exc
+
+
+def read_stamp(text: str) -> str:
+    """The metric a marks file was written under; "" for one written before stamping."""
+    for line in record_lines(text):
+        if line.strip() and not _key_stamp(line):
+            return line[1:].strip() if comment_line(line) else ""
+    return ""
+
+
+def read_ratchet(text: str) -> tuple[list[RatchetEntry], list[str]]:
+    """The marks, and one complaint per line that carries none.
+
+    Split out from `load_ratchet` so a READ-ONLY caller can salvage the file. A
+    mark is one optional field of what `explain` and `brief` answer, so a single
+    hand-edited line used to cost the whole answer: a ValueError traceback where
+    a trajectory, a source listing and a churn count were all available. Two
+    shapes reach here, and a hand edit or a botched merge produces both: too few
+    fields, and three fields whose mark is empty or is not a number. Dropping a
+    line can only take a ceiling away from a gate, never raise one, so the read
+    side is safe to salvage. The write side is not, and keeps `load_ratchet`.
+    """
+    entries, complaints = [], []
+    for i, line in enumerate(record_lines(text)):
+        if _is_skippable(line):
+            continue
+        try:
+            entries.append(_read_mark(line, i + 1))
+        except ValueError as exc:
+            complaints.append(str(exc))
+    return entries, complaints
+
+
+def load_ratchet(text: str) -> list[RatchetEntry]:
+    """Every mark, refusing a file that holds a line carrying none. What every
+    caller that REWRITES the file reads with: a line skipped there would delete
+    a mark the repo signed for."""
+    read_key_version(text)
+    entries, complaints = read_ratchet(text)
+    if complaints:
+        raise ValueError(complaints[0])
+    return entries
+'''
+
+_FINITE_MARK = {
+    "v0.8.0": r'''
+def _finite_mark(text: str) -> float:
+    mark = float(text)
+    if not math.isfinite(mark):
+        raise ValueError("ratchet mark must be finite")
+    return mark
+''',
+    "v0.8.1": r'''
+def _finite_mark(text: str) -> float:
+    """The mark as the file holds it, at four decimals: a hand-typed mark with more
+    reads as the number the next write gives it (a tie rounds as round() rounds
+    the double), so every mark in memory is one `dump_ratchet` writes unchanged."""
+    mark = float(text)
+    if not math.isfinite(mark):
+        raise ValueError("ratchet mark must be finite")
+    return float(f"{mark:.4f}")
+''',
+}
+
+# The first rule of both tags' stamp_conflict, which verify and verify
+# --override apply before any lane runs: a stamp that is set and differs from
+# the running metric refuses, and the refusal quotes it.
+_STAMP_RULE = "    if not recorded or recorded == current:\n        return None\n"
+
+
+def _tag_source(tag: str, module: str) -> str:
+    shown = subprocess.run(["git", "-C", str(ROOT), "show", f"{tag}:src/crapkit/{module}"],
+                           capture_output=True)
+    if shown.returncode:
+        pytest.skip(f"the crapkit history at {ROOT} holds no tag {tag} (a shallow or tagless "
+                    "clone), and this test reads that release's source from it")
+    return shown.stdout.decode("utf-8").replace("\r\n", "\n")
+
+
+def _release_reader(tag: str) -> dict:
+    """0.8.x's marks reader as `tag` ran it, in a namespace of its own."""
+    reader: dict = {}
+    exec("import json\nimport math\nfrom typing import NamedTuple\n" + _RELEASE_RECORDS
+         + _RELEASE_RATCHET + _FINITE_MARK[tag], reader)
+    return reader
+
+
+@pytest.mark.parametrize("tag", OLD_RELEASES)
+def test_the_frozen_0_8_x_reader_is_each_releases_own_code(tag):
+    """Each definition stands word for word in the tag's records.py or
+    ratchet.py, and so does the stamp check's first rule."""
+    records, ratchet = _tag_source(tag, "records.py"), _tag_source(tag, "ratchet.py")
+    frozen = {_RELEASE_RECORDS: records, _RELEASE_RATCHET + _FINITE_MARK[tag]: ratchet}
+
+    for code, source in frozen.items():
+        pieces = [ast.get_source_segment(code, node) for node in ast.parse(code).body]
+        assert len(pieces) > 3 and [piece for piece in pieces if piece not in source] == [], tag
+    assert _STAMP_RULE in ratchet
+
+
+TABBED = ScopeStamps("1.24.0", {"we\tb": ScopeStamp({"python": 13}, "no-lane"), "api": SCOPES.scopes["api"]})
+
+
+@pytest.mark.parametrize("stamp", [SCOPES, TABBED], ids=["plain-names", "encoded-name"])
+@pytest.mark.parametrize("tag", OLD_RELEASES)
+def test_crapkit_0_8_x_reads_a_foreign_stamp_and_unparseable_marks_in_a_per_scope_file(tag, stamp):
+    """What each line of the cell rests on, read by 0.8.x's own reader.
+
+    verify and verify --override check the stamp before any lane runs. Line 1
+    reads as a stamp that is set and is no `crapkit-analysis=N lizard=X.Y.Z`,
+    so it differs from every metric 0.8.x runs, and the refusal quotes it,
+    the file's name and 0.9.0 with it. seed, prune and move load the marks
+    strictly before they write, and so does the merge driver on each of git's
+    temporary files: the first scope line reads as a mark whose number does not
+    parse, and RatchetFile's refusal names the file it read
+    (`unreadable ratchet file <name>: ...`), so nothing is written. brief,
+    explain and worklist read leniently: every mark, and one skipped line per
+    scope stamp line, so they answer.
+    """
+    reader = _release_reader(tag)
+    text = dump_ratchet(MARKED, stamp=stamp, key_version=1, file_name=MARKS)
+    lines = text.split("\n")
+    scope_lines = lines[2:2 + len(stamp.scopes)]
+
+    recorded = reader["read_stamp"](text)
+    assert recorded == lines[0][2:] and MARKS in recorded and "0.9.0" in recorded
+    assert recorded and not re.fullmatch(r"crapkit-analysis=[0-9]+ lizard=\S+", recorded)
+    assert reader["read_key_version"](text) == 1
+    with pytest.raises(ValueError) as refused:
+        reader["load_ratchet"](text)
+    assert str(refused.value) == f"ratchet line 3 has an unreadable mark: {scope_lines[0]!r}"
+    entries, complaints = reader["read_ratchet"](text)
+    assert [tuple(entry) for entry in entries] == [tuple(entry) for entry in MARKED]
+    assert complaints == [f"ratchet line {number} has an unreadable mark: {line!r}"
+                          for number, line in enumerate(scope_lines, 3)]
+
+
+# --- which scopes moved -----------------------------------------------------------
+#
+# A stamp is written here as plain data: ("single", N, lizard) for the line 0.8.x
+# wrote, ("scoped", lizard, {scope: ({language: N}, mode)}) for the per-scope
+# form, and the running stamp as (lizard, {scope: ({language: N}, mode)}).
+
+PY13, TS13, TS14, GO13 = {"python": 13}, {"typescript": 13}, {"typescript": 14}, {"go": 13}
+COV1, COV2, IST1 = {"coveragepy": 1}, {"coveragepy": 2}, {"istanbul": 1}
+OLD_LIZARD, LIZARD = "1.23.0", "1.24.0"
+TWO = {"api": (PY13, COV1), "web": (TS13, IST1)}
+
+
+def _as_stamp(data):
+    """The ratchet stamp a plain-data stamp spells."""
+    if data[0] == "single":
+        return single_number(data[1], data[2])
+    lizard, scopes = data[1:] if data[0] == "scoped" else data
+    return ScopeStamps(lizard, {name: ScopeStamp(dict(numbers), mode)
+                                for name, (numbers, mode) in scopes.items()})
+
+
+def _model_moves(recorded, running, marked) -> list[tuple]:
+    """The moved scopes, worked out from the plain data alone: no code shared
+    with ratchet.py. 0.8.x read coveragepy and istanbul at reader number 1."""
+    read_by_0_8 = {"coveragepy": 1, "istanbul": 1}
+    run_lizard, run_scopes = running
+    moves = []
+    for name in sorted(set(marked) & set(run_scopes)):
+        now_numbers, now_mode = run_scopes[name]
+        if recorded[0] == "single":
+            then_lizard, then_numbers = recorded[2], {language: recorded[1] for language in now_numbers}
+            kept = ({parser: read_by_0_8[parser] for parser in now_mode if parser in read_by_0_8}
+                    if isinstance(now_mode, dict) else {})
+            then_mode = kept or "cc-only"
+        elif name not in recorded[2]:
+            moves.append((name, "unstamped", "", None, None))
+            continue
+        else:
+            then_lizard, (then_numbers, then_mode) = recorded[1], recorded[2][name]
+        moves += [(name, "analysis", language, then_numbers[language], number)
+                  for language, number in now_numbers.items()
+                  if language in then_numbers and then_numbers[language] != number]
+        if then_lizard != run_lizard:
+            moves.append((name, "lizard", "", then_lizard, run_lizard))
+        same_parsers = (isinstance(then_mode, dict) and isinstance(now_mode, dict)
+                        and set(then_mode) == set(now_mode))
+        if same_parsers:
+            moves += [(name, "reader", parser, then_mode[parser], number)
+                      for parser, number in now_mode.items() if then_mode[parser] != number]
+        elif then_mode != now_mode:
+            moves.append((name, "coverage", "", then_mode, now_mode))
+    return moves
+
+
+def _ordered(moves) -> list[tuple]:
+    return sorted((tuple(move) for move in moves), key=lambda move: move[:3])
+
+
+def _moved(recorded, running, marked) -> list[tuple]:
+    conflict = stamp_conflict(_as_stamp(recorded), _as_stamp(running), frozenset(marked))
+    return _ordered(conflict.moved if conflict else ())
+
+
+_CASES = {
+    "equal stamps": (("scoped", LIZARD, TWO), (LIZARD, TWO), {"api", "web"}, []),
+    "one language raised": (
+        ("scoped", LIZARD, TWO), (LIZARD, {**TWO, "web": (TS14, IST1)}), {"api", "web"},
+        [("web", "analysis", "typescript", 13, 14)]),
+    "one reader raised": (
+        ("scoped", LIZARD, TWO), (LIZARD, {**TWO, "api": (PY13, COV2)}), {"api", "web"},
+        [("api", "reader", "coveragepy", 1, 2)]),
+    "lizard changed lists every marked scope and no unmarked one": (
+        ("scoped", OLD_LIZARD, TWO), (LIZARD, {**TWO, "docs": (PY13, COV1)}), {"api", "web"},
+        [("api", "lizard", "", OLD_LIZARD, LIZARD), ("web", "lizard", "", OLD_LIZARD, LIZARD)]),
+    "cc-only to coveragepy": (
+        ("scoped", LIZARD, {"api": (PY13, "cc-only")}), (LIZARD, {"api": (PY13, COV1)}), {"api"},
+        [("api", "coverage", "", "cc-only", COV1)]),
+    "coveragepy to cc-only": (
+        ("scoped", LIZARD, {"api": (PY13, COV1)}), (LIZARD, {"api": (PY13, "cc-only")}), {"api"},
+        [("api", "coverage", "", COV1, "cc-only")]),
+    "no-lane to istanbul": (
+        ("scoped", LIZARD, {"web": (TS13, "no-lane")}), (LIZARD, {"web": (TS13, IST1)}), {"web"},
+        [("web", "coverage", "", "no-lane", IST1)]),
+    "a second parser joins the scope's lanes": (
+        ("scoped", LIZARD, {"app": (PY13, COV1)}),
+        (LIZARD, {"app": (PY13, {"coveragepy": 1, "istanbul": 1})}), {"app"},
+        [("app", "coverage", "", COV1, {"coveragepy": 1, "istanbul": 1})]),
+    "a renamed scope": (
+        ("scoped", LIZARD, {"api": (PY13, COV1)}), (LIZARD, {"backend": (PY13, COV1)}), {"backend"},
+        [("backend", "unstamped", "", None, None)]),
+    "a new scope with no marks": (
+        ("scoped", LIZARD, {"api": (PY13, COV1)}), (LIZARD, {"api": (PY13, COV1), "web": (TS14, IST1)}),
+        {"api"}, []),
+    "a scope adds a language": (
+        ("scoped", LIZARD, {"api": (PY13, COV1)}), (LIZARD, {"api": ({**PY13, "javascript": 14}, COV1)}),
+        {"api"}, []),
+    "a scope drops a language": (
+        ("scoped", LIZARD, {"api": ({**PY13, "javascript": 13}, COV1)}), (LIZARD, {"api": (PY13, COV1)}),
+        {"api"}, []),
+    "single number equal with a coveragepy scope": (
+        ("single", 13, LIZARD), (LIZARD, {"api": (PY13, COV1)}), {"api"}, []),
+    "single number equal with a lane of a parser 0.8.x never read": (
+        ("single", 13, LIZARD), (LIZARD, {"svc": (GO13, {"lcov": 1})}), {"svc"},
+        [("svc", "coverage", "", "cc-only", {"lcov": 1})]),
+    "single number equal with a scope that has no lane": (
+        ("single", 13, LIZARD), (LIZARD, {"tools": (GO13, "cc-only")}), {"tools"}, []),
+    "single number below the running numbers": (
+        ("single", 11, LIZARD), (LIZARD, {**TWO, "docs": (PY13, COV1)}), {"api", "web"},
+        [("api", "analysis", "python", 11, 13), ("web", "analysis", "typescript", 11, 13)]),
+}
+
+
+@pytest.mark.parametrize("recorded, running, marked, expected", _CASES.values(), ids=list(_CASES))
+def test_stamp_conflict_names_the_scopes_whose_rules_moved(recorded, running, marked, expected):
+    assert _moved(recorded, running, marked) == _ordered(expected)
+    assert _ordered(_model_moves(recorded, running, marked)) == _ordered(expected)
+
+
+def test_a_renamed_scope_lists_the_old_name_as_gone_and_gone_refuses_nothing():
+    renamed = stamp_conflict(_as_stamp(("scoped", LIZARD, {"api": (PY13, COV1)})),
+                             _as_stamp((LIZARD, {"backend": (PY13, COV1)})), frozenset({"backend"}))
+    old = {"api": (PY13, COV1), "old": (GO13, "cc-only")}
+    gone_only = stamp_conflict(_as_stamp(("scoped", LIZARD, old)),
+                               _as_stamp((LIZARD, {"api": (PY13, COV1)})), frozenset({"api"}))
+
+    assert renamed.gone == ("api",) and renamed.refuses
+    assert "backend (no stamp recorded for this scope)" in renamed.refusal("crapkit-ratchet.tsv")
+    assert gone_only.gone == ("old",) and not gone_only.refuses and not gone_only.moved
+
+
+def test_a_single_number_file_names_the_scopes_whose_mode_it_inferred():
+    """A coveragepy or istanbul scope may have been measured or cc-only under
+    0.8.x, so its mode is a guess the warning names; a lane-less one is not."""
+    running = _as_stamp((LIZARD, {"api": (PY13, COV1), "tools": (GO13, "cc-only")}))
+    conflict = stamp_conflict(single_number(13, LIZARD), running, frozenset({"api", "tools"}))
+
+    assert conflict.inferred == ("api",) and not conflict.refuses
+    assert stamp_conflict(single_number(13, LIZARD), running, frozenset({"tools"})) is None
+    assert stamp_conflict(_as_stamp(("scoped", LIZARD, {"api": (PY13, COV1)})), running,
+                          frozenset({"api"})) is None
+
+
+def test_the_flip_from_a_parser_0_8_x_never_read_comes_from_the_running_tables(monkeypatch):
+    """No reader 0.8.x never read ships yet: a stand-in parser registered in
+    the two tables a config's running stamp reads makes the same flip."""
+    from crapkit import coverage_format
+    from stamps import lane, running, scope
+
+    monkeypatch.setitem(coverage_format._FORMATS, "lcov", coverage_format._FORMATS["coveragepy"])
+    monkeypatch.setitem(coverage_format.READER_VERSIONS, "lcov", 1)
+    now = running([scope("svc", "go")], [lane("go", "lcov", "svc")])
+
+    conflict = stamp_conflict(single_number(13, now.lizard), now, frozenset({"svc"}))
+    assert [tuple(move) for move in conflict.moved] == [("svc", "coverage", "", "cc-only", {"lcov": 1})]
+    assert conflict.inferred == ("svc",)
+
+
+def test_the_model_and_stamp_conflict_agree_over_generated_stamp_pairs():
+    import random
+
+    rng = random.Random(5)
+    modes = ["cc-only", "no-lane", COV1, COV2, IST1, {"coveragepy": 1, "istanbul": 1}, {"lcov": 1}]
+
+    def scopes():
+        names = rng.sample(["api", "web", "svc"], rng.randint(1, 3))
+        return {name: ({language: rng.choice([12, 13, 14])
+                        for language in rng.sample(["python", "typescript", "go"], rng.randint(1, 2))},
+                       rng.choice(modes)) for name in names}
+
+    for _ in range(400):
+        running = (rng.choice([OLD_LIZARD, LIZARD]), scopes())
+        recorded = (("single", rng.choice([12, 13, 14]), rng.choice([OLD_LIZARD, LIZARD]))
+                    if rng.random() < 0.4 else ("scoped", rng.choice([OLD_LIZARD, LIZARD]), scopes()))
+        marked = set(rng.sample(["api", "web", "svc", "nowhere"], rng.randint(0, 4)))
+        assert _moved(recorded, running, marked) == _ordered(_model_moves(recorded, running, marked)), (
+            recorded, running, marked)
+
+
+def test_two_single_number_stamps_compare_as_one_value():
+    conflict = stamp_conflict(single_number(11, LIZARD), single_number(13, LIZARD),
+                              frozenset({"api"}))
+
+    assert conflict.whole and conflict.refuses and conflict.moved == ()
+    assert conflict.refusal("crapkit-ratchet.tsv").startswith(
+        f"ratchet marks were recorded under [crapkit-analysis=11 lizard={LIZARD}] but this run "
+        f"measures [crapkit-analysis=13 lizard={LIZARD}] - CRAP scores are not comparable")
+    assert stamp_conflict(single_number(13, LIZARD), single_number(13, LIZARD)) is None
+
+
+@pytest.mark.parametrize(("line", "refused", "newer"), [
+    ("crapkit-analysis=13 lizard={lizard}", False, False),
+    ("crapkit-analysis=11 lizard={lizard}", True, False),
+    ("crapkit-analysis=13 lizard=0.0.1", True, False),
+    ("crapkit-analysis=14 lizard={lizard}", True, True),
+], ids=["same", "older-analysis", "other-lizard", "newer-analysis"])
+def test_a_single_number_file_with_no_mark_compares_as_one_value(line, refused, newer):
+    """No mark places it in a scope, so its one number and lizard meet every
+    running scope's, and the seed it names is the plain one. The coverage
+    mode it never recorded is no move."""
+    from crapkit.ratchet import as_one_value
+
+    recorded = read_stamp(f"# {line.format(lizard=SRC.lizard)}\n")
+
+    conflict = as_one_value(recorded, SRC)
+
+    assert (conflict is not None, bool(conflict and conflict.newer)) == (refused, newer), conflict
+    if refused:
+        assert conflict.whole and conflict.refuses and "--scope" not in conflict.seeds()
+        assert f"but this run measures [crapkit-stamp=2 lizard={SRC.lizard}]" in conflict.refusal(MARKS)
+    assert as_one_value(MetricStamp.NONE, SRC) is None
+
+
+def test_a_per_scope_file_against_a_single_running_number_compares_as_one_value():
+    """A 0.8.x run's single number, which seed and prune weigh the file
+    against, meets per-scope marks: one value against another, never a
+    per-scope read of a stamp that has no scopes. The merge driver's own
+    `_per_scope` takes this pair per scope."""
+    recorded = _as_stamp(("scoped", LIZARD, TWO))
+
+    conflict = stamp_conflict(recorded, single_number(13, LIZARD), frozenset({"api"}))
+
+    assert conflict.whole and conflict.refuses and conflict.moved == ()
+
+
+def test_the_refusal_names_the_file_each_moved_scope_and_its_seed_in_ascii():
+    conflict = stamp_conflict(_as_stamp(("scoped", LIZARD, TWO)),
+                              _as_stamp((LIZARD, {"api": (PY13, COV2), "web": (TS14, IST1)})),
+                              frozenset({"api", "web"}))
+    refusal = conflict.refusal("crapkit-ratchet.tsv")
+
+    assert refusal.isascii()
+    assert refusal.startswith(f"ratchet marks were recorded under [crapkit-stamp=2 lizard={LIZARD}] in "
+                              "crapkit-ratchet.tsv, and the rules have moved since in 2 scope(s): api (coveragepy reader 1 to 2), web (typescript "
+                              "analysis 13 to 14) - CRAP scores are not comparable")
+    assert refusal.index("ratchet seed --scope api`") < refusal.index("ratchet seed --scope web`")
+    assert conflict.seeds(" --baseline 7").endswith("ratchet seed --scope web --baseline 7`")
+
+
+def test_marks_a_newer_crapkit_stamped_per_scope_ask_for_an_upgrade_not_a_seed():
+    conflict = stamp_conflict(_as_stamp(("scoped", LIZARD, {"web": (TS14, IST1)})),
+                              _as_stamp((LIZARD, {"web": (TS13, IST1)})), frozenset({"web"}))
+
+    assert conflict.newer
+    assert "upgrade it to the version that wrote them" in conflict.refusal("m.tsv")
+    assert "ratchet seed" not in conflict.refusal("m.tsv")
+
+
+def test_a_mark_no_scope_claims_counts_toward_no_scope():
+    running = _as_stamp((LIZARD, {**TWO, "web": (TS14, IST1)}))
+
+    assert stamp_conflict(_as_stamp(("scoped", LIZARD, TWO)), running, frozenset({"nowhere"})) is None
+
+
+@pytest.mark.parametrize("spelling", ["utf-8", "utf-8-sig", "crlf", "utf-16"])
+def test_every_spelling_of_a_marks_file_gives_the_same_moves(tmp_path, spelling):
+    from stamps import scoped
+
+    recorded = scoped(api=(PY13, COV1), web=(TS13, IST1))
+    text = dump_ratchet([RatchetEntry("web/a.ts", "f( )", 30.0)], stamp=recorded, file_name="m.tsv")
+    crlf = text.replace("\n", "\r\n").encode("utf-8")
+    (tmp_path / "m.tsv").write_bytes(crlf if spelling == "crlf" else text.encode(spelling))
+    running = _as_stamp((LIZARD, {"api": (PY13, COV1), "web": (TS14, IST1)}))
+
+    conflict = RatchetFile.read(tmp_path / "m.tsv").stamp_conflict(running, frozenset({"web"}))
+    assert [tuple(move) for move in conflict.moved] == [("web", "analysis", "typescript", 13, 14)]
+

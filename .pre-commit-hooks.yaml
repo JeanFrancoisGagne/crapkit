@@ -6,7 +6,7 @@
 #         - id: crapkit-gate
 - id: crapkit-gate
   name: crapkit complexity gate
-  description: every staged new/edited function must sit at min-CCN <= its scope target
+  description: every staged new/edited function's ccn must sit at or under its scope ceiling, or, for a function the ratchet marks, at or under its mark
   entry: crapkit hook-precommit
   language: python
   pass_filenames: false

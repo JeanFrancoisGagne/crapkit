@@ -2,7 +2,7 @@
 
 Every row is one function the artifact names: its path and start line, its branch
 and statement counts, whether it was called, and the arms and statement lines
-behind the counts. Two readers:
+behind the counts. Three readers:
 
 - coverage.py: one row per entry of a file's "functions" regions (coverage.py
   7.6 and later), split by coverage.py itself. The branch arms are the region's
@@ -25,6 +25,13 @@ behind the counts. Two readers:
       stays outside it. This is what ran inside which body.
   A negative branch count, which @vitest/coverage-v8 derives by subtraction and
   can underflow, reads as not taken.
+- lcov: lcov_rows gives each span the caller names (path, start, end) the DA
+  lines and BRDA arms on the lines it holds and no inner span holds.
+- Cobertura: cobertura_files reads each class's line hits and condition-coverage
+  with ElementTree, and the line-rate and branch-rate the producer wrote.
+- Go coverprofile: coverprofile_rows expands each block holding a statement
+  to every line l0 to l1, hit when any block over the line ran, and gives each
+  span the caller names the lines it holds and no inner span holds.
 
 ratio() is the README's coverage term: branches, else statements, else called.
 table() reads every recorded artifact of a corpus through its crapkit.toml
@@ -37,7 +44,10 @@ from fractions import Fraction
 import json
 import math
 from pathlib import Path
+import re
 import tomllib
+from typing import NamedTuple
+import xml.etree.ElementTree as ET
 
 END = math.inf
 
@@ -276,6 +286,74 @@ def lcov_lines(text: str) -> dict[str, dict[int, int]]:
     return found
 
 
+class LcovFile(NamedTuple):
+    """One SF path's counts as the producer wrote them: its summary lines (LF,
+    LH, BRF, BRH) and, per line, the BRDA arms and the arms taken."""
+    summary: dict[str, int]
+    arms: dict[int, tuple[int, int]]
+
+
+def _arm(rest: str, file: LcovFile) -> None:
+    """BRDA:<line>,<block>,<branch>,<taken>; `-` is a block that never ran."""
+    line, taken = int(rest.split(",")[0]), rest.rsplit(",", 1)[1]
+    total, hit = file.arms.get(line, (0, 0))
+    file.arms[line] = (total + 1, hit + (taken != "-" and int(taken) > 0))
+
+
+def lcov_files(text: str) -> dict[str, LcovFile]:
+    """{SF path: LcovFile} from an lcov tracefile, the last record of a path
+    the one kept (the recordings write each path once)."""
+    found: dict[str, LcovFile] = {}
+    file = None
+    for line in text.splitlines():
+        tag, _, rest = line.partition(":")
+        if tag == "SF":
+            file = found[rest] = LcovFile({}, {})
+        elif tag == "BRDA":
+            _arm(rest, file)
+        elif tag in ("LF", "LH", "BRF", "BRH"):
+            file.summary[tag] = int(rest)
+    return found
+
+
+def lcov_arms(text: str) -> dict[str, list[tuple[str, bool]]]:
+    """{SF path: [(arm, taken)]} in file order. An arm is named `<line>.<k>`,
+    k its order among its line's BRDA records; `-` and 0 are not taken."""
+    found: dict[str, list[tuple[str, bool]]] = {}
+    arms: list = []
+    for line in text.splitlines():
+        tag, _, rest = line.partition(":")
+        if tag == "SF":
+            arms = found.setdefault(rest, [])
+        elif tag == "BRDA":
+            number, taken = rest.split(",")[0], rest.rsplit(",", 1)[1]
+            k = sum(name.startswith(number + ".") for name, _ in arms)
+            arms.append((f"{number}.{k}", taken != "-" and int(taken) > 0))
+    return found
+
+
+def _owner(spans: list[tuple[str, int, int]], path: str, line: int) -> tuple | None:
+    """The innermost span of the path holding the line: the fewest lines."""
+    holders = [span for span in spans if span[0] == path and span[1] <= line <= span[2]]
+    return min(holders, key=lambda span: span[2] - span[1], default=None)
+
+
+def lcov_rows(text: str, spans: list[tuple[str, int, int]]) -> list[Counts]:
+    """One row per (path, start, end) span: the DA lines and BRDA arms on the
+    lines it holds and no inner span holds."""
+    lines, arms = lcov_lines(text), lcov_arms(text)
+    rows = []
+    for span in spans:
+        path = span[0]
+        own = [(n, c) for n, c in sorted(lines.get(path, {}).items()) if _owner(spans, path, n) == span]
+        mine = [(name, taken) for name, taken in arms.get(path, [])
+                if _owner(spans, path, int(name.split(".")[0])) == span]
+        rows.append(Counts(path, "", span[1], span[2], tuple(name for name, _ in mine),
+                           tuple(name for name, taken in mine if taken), tuple(n for n, _ in own),
+                           tuple(n for n, c in own if c > 0), any(c > 0 for _, c in own)))
+    return rows
+
+
 # --- a corpus's recorded artifacts ---------------------------------------------------------
 
 def _copied(command: str) -> dict[str, str]:
@@ -313,3 +391,123 @@ def table(corpus: Path) -> dict[tuple[str, int], list[Counts]]:
         for row in _lane_rows(corpus, lane):
             found.setdefault((row.path, row.start), []).append(row)
     return found
+
+
+class CoberturaClass(NamedTuple):
+    """One <class> as the producer wrote it: each line's hits, each branch
+    line's (total, covered) from its condition-coverage, and the class's own
+    line-rate and branch-rate."""
+    filename: str
+    hits: dict[int, int]
+    conditions: dict[int, tuple[int, int]]
+    line_rate: float
+    branch_rate: float
+
+
+_CONDITION = re.compile(r"[0-9.]+% \(([0-9]+)/([0-9]+)\)")
+
+
+def _conditions(line: ET.Element) -> tuple[int, int] | None:
+    found = _CONDITION.fullmatch(line.get("condition-coverage") or "")
+    if line.get("branch") != "true" or found is None:
+        return None
+    return int(found[2]), int(found[1])
+
+
+def cobertura_classes(data: bytes) -> list[CoberturaClass]:
+    """Every <class> of a Cobertura report, in document order. The lines under
+    <methods> are not read: the class's own <lines> list every line."""
+    found = []
+    for cls in ET.fromstring(data).iter("class"):
+        lines = cls.findall("lines/line")
+        conditions = {int(line.get("number")): _conditions(line) for line in lines}
+        found.append(CoberturaClass(
+            cls.get("filename"), {int(line.get("number")): int(line.get("hits")) for line in lines},
+            {number: pair for number, pair in conditions.items() if pair},
+            float(cls.get("line-rate")), float(cls.get("branch-rate"))))
+    return found
+
+
+class JacocoSourcefile(NamedTuple):
+    """One <sourcefile> as JaCoCo wrote it, keyed by its package path: each
+    <line>'s (mi, ci, mb, cb) and the sourcefile's own LINE and BRANCH
+    <counter>s as (missed, covered)."""
+    key: str
+    lines: dict[int, tuple[int, int, int, int]]
+    counters: dict[str, tuple[int, int]]
+
+
+def jacoco_sourcefiles(data: bytes) -> list[JacocoSourcefile]:
+    """Every <sourcefile> of a JaCoCo report, in document order, through any
+    <group>. The DOCTYPE's report.dtd is never opened: ElementTree reads no
+    external DTD."""
+    found = []
+    for package in ET.fromstring(data).iter("package"):
+        prefix = package.get("name")
+        for source in package.findall("sourcefile"):
+            name = source.get("name")
+            lines = {int(line.get("nr")): tuple(int(line.get(field)) for field in
+                                                ("mi", "ci", "mb", "cb"))
+                     for line in source.findall("line")}
+            counters = {counter.get("type"): (int(counter.get("missed")),
+                                              int(counter.get("covered")))
+                        for counter in source.findall("counter")}
+            found.append(JacocoSourcefile(f"{prefix}/{name}" if prefix else name, lines, counters))
+    return found
+
+
+def jacoco_rows(data: bytes, root: str, spans: list[tuple[str, int, int]]) -> list[Counts]:
+    """One row per (path, start, end) span: the counted lines (mi + ci > 0) of
+    the sourcefile keyed under `root` that the span holds and no inner span
+    holds, and their branches as arms `<line>.<k>`. JaCoCo counts a line's
+    branches and never names them, so the line's first cb arms are the taken ones."""
+    files = {f"{root}/{source.key}": source.lines for source in jacoco_sourcefiles(data)}
+    rows = []
+    for span in spans:
+        path = span[0]
+        own = [(nr, counters) for nr, counters in sorted(files.get(path, {}).items())
+               if _owner(spans, path, nr) == span]
+        counted = [(nr, ci) for nr, (mi, ci, _, _) in own if mi + ci]
+        arms = [(f"{nr}.{k}", k < cb) for nr, (_, _, mb, cb) in own for k in range(mb + cb)]
+        rows.append(Counts(path, "", span[1], span[2], tuple(name for name, _ in arms),
+                           tuple(name for name, taken in arms if taken),
+                           tuple(nr for nr, _ in counted), tuple(nr for nr, ci in counted if ci),
+                           any(ci for _, ci in counted)))
+    return rows
+
+
+_BLOCK = re.compile(r"^(.+):(\d+)\.\d+,(\d+)\.\d+ (\d+) (\d+)$")
+
+
+def coverprofile_lines(text: str) -> dict[str, dict[int, bool]]:
+    """{import path key: {line: hit}} from a Go coverprofile: every line l0 to
+    l1 of a block with numStmt above 0, hit when any block over it counted
+    above 0. A `mode:` line and a block with numStmt 0 give nothing."""
+    files: dict[str, dict[int, bool]] = {}
+    for line in text.splitlines():
+        found = _BLOCK.match(line)
+        if not found or int(found.group(4)) == 0:
+            continue
+        key, first, last, count = found.group(1), int(found.group(2)), int(found.group(3)), int(
+            found.group(5))
+        lines = files.setdefault(key, {})
+        for number in range(first, last + 1):
+            lines[number] = lines.get(number, False) or count > 0
+    return files
+
+
+def coverprofile_rows(text: str, module: str, root: str,
+                      spans: list[tuple[str, int, int]]) -> list[Counts]:
+    """One row per (path, start, end) span: the profile's lines of the file
+    keyed `module/<file>`, read as `root/<file>`, that the span holds and no
+    inner span holds. A coverprofile carries no branches."""
+    files = {f"{root}/{key[len(module) + 1:]}": lines
+             for key, lines in coverprofile_lines(text).items() if key.startswith(module + "/")}
+    rows = []
+    for span in spans:
+        path = span[0]
+        own = [(number, hit) for number, hit in sorted(files.get(path, {}).items())
+               if _owner(spans, path, number) == span]
+        rows.append(Counts(path, "", span[1], span[2], (), (), tuple(number for number, _ in own),
+                           tuple(number for number, hit in own if hit), any(hit for _, hit in own)))
+    return rows

@@ -1,4 +1,5 @@
-"""The retired two-pass analyzer, retained as an independent test oracle."""
+"""Two independent test oracles: the retired two-pass analyzer, and the marks
+file's per-key 3-way merge as docs/ratchet.md states it."""
 from __future__ import annotations
 
 from typing import NamedTuple
@@ -54,3 +55,22 @@ def merge_passes(standard: list[RawFn], modified: list[RawFn]) -> list[FunctionR
             nloc=fn.nloc, params=fn.params, nesting=fn.nesting, cognitive=fn.cognitive,
         ))
     return records
+
+
+def three_way_marks(base: dict, ours: dict, theirs: dict) -> dict:
+    """docs/ratchet.md, "The git merge driver", read without crapkit: per key the
+    side that changed wins over the side that did not, and when both changed the
+    lower value wins. A key a side dropped while the other left it is gone; a
+    key a side dropped while the other lowered it keeps the lowered value."""
+    merged = {}
+    for key in set(base) | set(ours) | set(theirs):
+        b, o, t = base.get(key), ours.get(key), theirs.get(key)
+        if o == b:
+            value = t
+        elif t == b:
+            value = o
+        else:
+            value = min((v for v in (o, t) if v is not None), default=None)
+        if value is not None:
+            merged[key] = value
+    return merged

@@ -25,7 +25,8 @@ from pathlib import Path
 import pytest
 
 from crapkit.marks_history import newest_committed_marks
-from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet
+from stamps import FIXED
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
@@ -64,7 +65,7 @@ def test_verify_stands_in_with_the_marks_the_rename_commit_holds(repo):
     held marks under the new name is the rename itself."""
     base = commit(repo, "base")
     write(repo, MARKS, dump_ratchet([RatchetEntry("src/a.py", "hot( n )", 12.0)],
-                                    stamp=metric_version(), key_version=KEY_VERSION))
+                                    stamp=FIXED, key_version=KEY_VERSION, file_name=MARKS))
     commit(repo, "seed")
     git(repo, "mv", MARKS, "debt.tsv")
     renamed = commit(repo, "rename the marks file")

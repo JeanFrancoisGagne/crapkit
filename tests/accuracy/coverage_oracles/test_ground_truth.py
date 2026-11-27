@@ -5,13 +5,23 @@ model and the driver's calls, never from a producer's output. Three checks:
 
 1. Each committed recording states exactly those arms and statements, read with
    counts_table (json.load, no crapkit). A producer that moved, or a table that
-   is wrong, fails here before it can reach a score.
+   is wrong, fails here before it can reach a score. An lcov recording is read
+   with str.split and its lines go to the table's spans.
 2. On push, this interpreter's coverage.py 7.16.1 run over the Python probe
    states them too, and equals the committed 7.16.1 recording.
 3. crapkit's scored cov and flag for every function equal the README's term
    over those counts, after the README floor for a Python def-line layout.
    Where crapkit and the ground truth part, a rulings row says why. A
    coverage.py recording with no start_line is refused instead (ruling CO-B2).
+   gcovr's Cobertura recordings of the C++ probe are scored here against the
+   C++ table through a `parser = "cobertura"` lane, and JaCoCo's Gradle and
+   Maven recordings of the Java probe through a `parser = "jacoco"` lane that
+   reads them as one aggregate report, a <group> per recording. Go's set,
+   count and atomic coverprofiles of one probe run are scored through one
+   `parser = "coverprofile"` lane that reads them as one concatenated profile.
+
+Cross-format: one c8 run's istanbul JSON and lcov give each probe function the
+same cov, and each function where the two part is a named finding (C8_FINDINGS).
 
 Every producer's recording is replayed on push. In the nightly tier
 regenerate.py reruns each producer over the probes and the fresh artifact must
@@ -33,7 +43,9 @@ from accuracy.coverage_oracles import counts_table, ground_table, mini_repo, pro
 from accuracy.kit import rulings, runlog, tiers
 
 LIVE = "coveragepy-live"
-RECORDED = sorted(name for name in ground_table.FAMILIES if name != LIVE)
+RECORDED = sorted(name for name in {**ground_table.FAMILIES, **ground_table.LCOV_FAMILIES,
+                                    **ground_table.JACOCO_FAMILIES,
+                                    **ground_table.COVERPROFILE_FAMILIES} if name != LIVE)
 PROBES = {**{name: probes for name, (_, probes) in probe_repo.PRODUCERS.items()},
           LIVE: probe_repo.PYTHON}
 # (producer family or name, function, scenario) -> the rulings row that explains
@@ -54,7 +66,7 @@ TYPED = ("ts", "tsx", "vue")
 
 
 def _ruling(producer: str, row: ground_table.Truth) -> str | None:
-    family = ground_table.FAMILIES[producer]
+    family = ground_table.family(producer)
     if (family, row.function) in SPAN_OVERLAP and row.path.split("/")[0] in TYPED:
         return "CO-B5"
     return (KNOWN.get((producer, row.function, row.scenario))
@@ -63,15 +75,25 @@ def _ruling(producer: str, row: ground_table.Truth) -> str | None:
 
 # --- 1 and 2: the recordings state the hand-worked arms ------------------------------------------
 
-def _producer_rows(producer: str, artifact: dict) -> dict:
-    """{(path, function or start): counts} with the producer's own attribution."""
-    if ground_table.FAMILIES[producer] == "coveragepy":
+def _producer_rows(producer: str, artifact, spans: list) -> dict:
+    """{(path, function or start): counts} with the producer's own attribution;
+    an lcov tracefile names no function, so its lines go to the table's spans."""
+    family = ground_table.family(producer)
+    if family == "coveragepy":
         return {(row.path, row.name): row for row in counts_table.coveragepy_rows(artifact)}
+    if family == "llvm":
+        return {(row.path, row.start): row for row in counts_table.lcov_rows(artifact, spans)}
+    if family == "jacoco":
+        return {(row.path, row.start): row
+                for row in counts_table.jacoco_rows(artifact, probe_repo.JAVA_ROOT, spans)}
+    if family == "gocover":
+        return {(row.path, row.start): row for row in
+                counts_table.coverprofile_rows(artifact, probe_repo.GO_MODULE, "go", spans)}
     return {(row.path, row.start): row for row in counts_table.istanbul_rows(artifact, "position")}
 
 
 def _key(producer: str, row: ground_table.Truth):
-    python = ground_table.FAMILIES[producer] == "coveragepy"
+    python = ground_table.family(producer) == "coveragepy"
     return (row.path, row.function if python else row.start)
 
 
@@ -114,15 +136,21 @@ def _checked_rows(producer: str, scenario: str) -> list[ground_table.Truth]:
     return [row for row in rows if row.modelled and _ruling(producer, row) != "CO3"]
 
 
-def _mismatches(producer: str, scenario: str, artifact: dict) -> list[str]:
-    found = _producer_rows(producer, artifact)
-    lines = (_mismatch(producer, row, found) for row in _checked_rows(producer, scenario))
+def _mismatches(producer: str, scenario: str, artifact) -> list[str]:
+    rows = _checked_rows(producer, scenario)
+    found = _producer_rows(producer, artifact, sorted({(row.path, row.start, row.end) for row in rows}))
+    lines = (_mismatch(producer, row, found) for row in rows)
     return [line for line in lines if line]
 
 
-def _recorded(producer: str, scenario: str) -> dict:
-    path = probe_repo.RECORDED / producer / f"{scenario}.json"
-    return json.loads(path.read_bytes())
+def _recorded(producer: str, scenario: str):
+    """A JSON recording as its value, an lcov or coverprofile one as its text,
+    an XML one as its bytes."""
+    path = probe_repo.artifact(producer, scenario)
+    data = path.read_bytes()
+    if path.suffix == ".xml":
+        return data
+    return data.decode("utf-8") if path.suffix in (".lcov", ".out") else json.loads(data)
 
 
 @pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
@@ -155,7 +183,7 @@ def test_the_def_line_layouts_read_the_same_called_or_not():
         assert call["one_line"].stmts_run == idle["one_line"].stmts_run == (85,)
 
 
-PYTHON_RECORDED = [name for name in RECORDED if ground_table.FAMILIES[name] == "coveragepy"]
+PYTHON_RECORDED = [name for name in RECORDED if ground_table.family(name) == "coveragepy"]
 
 
 def _named_rows(producer: str, scenario: str) -> dict:
@@ -174,7 +202,9 @@ def _param(producer: str, row: ground_table.Truth):
 
 
 # The producers crapkit scores: a recording it refuses has no row to compare.
-SCORED = [name for name in [*RECORDED, LIVE] if name not in probe_repo.REFUSED]
+# gcovr's Cobertura joins here alone: gcov states other lines than llvm's model.
+SCORED = [name for name in [*RECORDED, LIVE, *ground_table.COBERTURA_FAMILIES]
+          if name not in probe_repo.REFUSED]
 
 
 def _cases():
@@ -324,6 +354,56 @@ def _truth_covs(truth: dict, functions: tuple) -> dict:
     return {name: float(ground_table.crapkit_expected(truth[name])[0]) for name in functions}
 
 
+# --- cross-format: one c8 run, read as istanbul JSON and as lcov ------------------------------
+#
+# c8 12.0.0 writes both reports from one run of the mjs probe, so the two
+# readings share one set of counts. crapkit's cov agrees on every other
+# function; each function where the two part is a named finding below:
+# (istanbul cov, lcov cov) to 4 places, and why they part.
+C8 = "c8-12.0.0"
+C8_PROBE = "mjs/shapes.mjs"
+_ARMS_BY_LINE = ("c8 writes the callback's function-block arm on line 46, the callback's first line, and lcov's "
+                 "join gives each arm to the innermost span holding its line: withCallback keeps its own block "
+                 "arm on line 45 (1 of 1) and the callback takes line 46's arm and the untaken arm on line 50 "
+                 "(1 of 2). The istanbul reading of the same run gives each 2 of 3")
+_NO_CALL_COUNT = ("an uncalled function: c8 writes no BRDA arm for it, so lcov scores its DA lines, and the line "
+                  "named here runs at import outside the function (the module's binding, the class body); the "
+                  "lcov reader reads no call count (FNDA), and the istanbul reading scores the function 0")
+C8_FINDINGS = {
+    "call": {"withCallback ( values )": ((0.6667, 1.0), _ARMS_BY_LINE),
+             "(anonymous)": ((0.6667, 0.5), _ARMS_BY_LINE)},
+    "idle": {"arrow ( value )": ((0.0, 1.0), f"line 60, {_NO_CALL_COUNT}"),
+             "method ( value )": ((0.0, 0.1667), f"line 86, {_NO_CALL_COUNT}")},
+}
+
+
+def _c8_covs(top: Path, parser: str, recording: Path) -> dict[str, float]:
+    """{function: crapkit's cov} for the mjs probe scored from one recording."""
+    toml = mini_repo.config([mini_repo.scope("s", ["mjs"], ["javascript"])],
+                            [mini_repo.lane("cov", parser, ["s"])])
+    driver = mini_repo.build(top, {"crapkit.toml": toml,
+                                   C8_PROBE: (probe_repo.PROBES / C8_PROBE).read_bytes(),
+                                   "recorded/cov.json": recording.read_bytes()})
+    result = driver.run("coverage", "--export", "scored.tsv")
+    assert result.code == 0, result.stderr
+    text = (driver.root / "scored.tsv").read_bytes().decode("utf-8")
+    return {row.name: row.cov for row in probe_repo.read_scored(text)}
+
+
+@pytest.mark.process
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+def test_one_c8_run_reads_the_same_through_istanbul_and_lcov(tmp_path, scenario):
+    istanbul = _c8_covs(tmp_path / "istanbul", "istanbul",
+                        probe_repo.RECORDED / C8 / f"{scenario}.json")
+    lcov = _c8_covs(tmp_path / "lcov", "lcov", probe_repo.RECORDED / C8 / f"{scenario}.lcov")
+
+    parted = {name: (round(cov, 4), round(lcov[name], 4)) for name, cov in istanbul.items()
+              if lcov[name] != cov}
+
+    assert set(istanbul) == set(lcov)
+    assert parted == {name: covs for name, (covs, _) in C8_FINDINGS[scenario].items()}
+
+
 # --- nightly: the producers rerun ---------------------------------------------------------------
 
 REGENERATE = probe_repo.HERE / "regenerate.py"
@@ -425,3 +505,409 @@ def test_the_probe_root_is_spelled_as_the_producers_report_it(tmp_path, monkeypa
         (root, out)))
 
     assert seen and all(path == path.resolve() for pair in seen for path in pair)
+
+
+# --- lcov: crapkit's evidence is the tracefile's own counts ---------------------------
+#
+# counts_table reads each tracefile with str.split and no crapkit: DA counts per
+# line, BRDA arms per line, and the LF, LH, BRF and BRH lines the producer
+# summed. crapkit's per-file evidence must say the same about every SF path.
+# crapkit reads the file in a child process, as the CLI checks run it, so this
+# file imports nothing of crapkit.
+
+LCOV_RECORDINGS = ["c8-12.0.0", "cargo-llvm-cov-0.9.1", "coveragepy-reports-7.16.1",
+                   "llvm-cov-19.1.7", "vitest-istanbul-5.0.1"]
+_LCOV_READ = """
+import json, sys
+from pathlib import Path
+from crapkit import coverage_lcov
+from crapkit.config import Lane
+path = Path(sys.argv[1])
+lane = Lane(name="lcov", command="x", artifact=path.name, parser="lcov", scopes=("src",))
+evidence = coverage_lcov.read(lane, path.parent, path)[1]
+print(json.dumps({key: [list(e.hit_lines), list(e.missed_lines), [list(b) for b in e.branches]]
+                  for key, e in evidence.items()}))
+"""
+
+
+def _lcov_evidence(path: Path) -> dict:
+    """{key: [hit lines, missed lines, [line, arms, taken] triples]} as crapkit reads it."""
+    child = hang_guard.run([sys.executable, "-c", _LCOV_READ, str(path)], text=True,
+                           encoding="utf-8")
+    assert child.returncode == 0, child.stderr
+    return json.loads(child.stdout)
+
+
+def _split_records(text: str) -> str:
+    """Each SF record written as two records of the same SF, its DA and BRDA
+    lines dealt between them in turn, the way two test runs of one file merge:
+    a reader that keeps the second record instead of merging loses half."""
+    out: list[str] = []
+    halves: tuple[list[str], list[str]] = ([], [])
+    for line in text.splitlines():
+        tag = line.partition(":")[0]
+        if tag == "SF":
+            sf, halves = line, ([], [])
+        elif tag in ("DA", "BRDA"):
+            halves[len(halves[0]) > len(halves[1])].append(line)
+        elif tag == "end_of_record":
+            out += [sf, *halves[0], "end_of_record", sf, *halves[1], "end_of_record"]
+    return "\n".join(out) + "\n"
+
+
+@pytest.mark.parametrize("split", [False, True], ids=["as-recorded", "split-in-two-records"])
+@pytest.mark.parametrize("scenario", ["call", "idle"])
+@pytest.mark.parametrize("name", LCOV_RECORDINGS)
+def test_crapkit_reads_each_lcov_recording_as_its_own_counts(tmp_path, name, scenario, split):
+    path = probe_repo.RECORDED / name / f"{scenario}.lcov"
+    text = path.read_text(encoding="utf-8")
+    lines, files = counts_table.lcov_lines(text), counts_table.lcov_files(text)
+    if split:
+        path = tmp_path / path.name
+        path.write_text(_split_records(text), encoding="utf-8")
+
+    evidence = _lcov_evidence(path)
+
+    assert sorted(evidence) == sorted(sf.removeprefix("./") for sf in lines)
+    for sf, counts in lines.items():
+        (hit, missed, branches), wrote = evidence[sf.removeprefix("./")], files[sf]
+        assert hit == sorted(n for n, count in counts.items() if count > 0)
+        assert missed == sorted(n for n, count in counts.items() if count == 0)
+        assert {line: (total, taken) for line, total, taken in branches} == wrote.arms
+        assert (len(hit) + len(missed), len(hit)) == (wrote.summary["LF"], wrote.summary["LH"])
+        assert (sum(total for _, total, _ in branches), sum(taken for _, _, taken in branches)) == (
+            wrote.summary["BRF"], wrote.summary["BRH"])
+
+
+
+# --- Cobertura: crapkit's evidence is the report's own counts --------------------------
+#
+# counts_table reads each report with ElementTree and no crapkit: each class's
+# line hits and condition-coverage, and the line-rate and branch-rate it wrote.
+# crapkit's per-file evidence must say the same about every filename, and a
+# report whose classes are each split in two must read the same, merged.
+
+COBERTURA_RECORDINGS = ["gcovr-7.2", "coveragepy-reports-7.16.1"]
+_COBERTURA_READ = _LCOV_READ.replace("coverage_lcov", "coverage_cobertura").replace(
+    'parser="lcov"', 'parser="cobertura"')
+
+
+def _cobertura_evidence(path: Path) -> dict:
+    child = hang_guard.run([sys.executable, "-c", _COBERTURA_READ, str(path)], text=True,
+                           encoding="utf-8")
+    assert child.returncode == 0, child.stderr
+    return json.loads(child.stdout)
+
+
+def _split_classes(data: bytes) -> bytes:
+    """Each class written as two classes of the same filename, its lines dealt
+    between them in turn: a reader that keeps the second class loses half."""
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(data)
+    for classes in root.iter("classes"):
+        for cls in list(classes):
+            twin = ET.SubElement(classes, "class", cls.attrib)
+            twin_lines = ET.SubElement(twin, "lines")
+            lines = cls.find("lines")
+            for index, line in enumerate(list(lines)):
+                if index % 2:
+                    lines.remove(line)
+                    twin_lines.append(line)
+    return ET.tostring(root, encoding="utf-8")
+
+
+@pytest.mark.parametrize("split", [False, True], ids=["as-recorded", "split-in-two-classes"])
+@pytest.mark.parametrize("scenario", ["call", "idle"])
+@pytest.mark.parametrize("name", COBERTURA_RECORDINGS)
+def test_crapkit_reads_each_cobertura_recording_as_its_own_counts(tmp_path, name, scenario, split):
+    path = probe_repo.RECORDED / name / f"{scenario}.xml"
+    data = path.read_bytes()
+    classes = counts_table.cobertura_classes(data)
+    if split:
+        path = tmp_path / path.name
+        path.write_bytes(_split_classes(data))
+
+    evidence = _cobertura_evidence(path)
+
+    assert sorted(evidence) == sorted(cls.filename for cls in classes)
+    for cls in classes:
+        hit, missed, branches = evidence[cls.filename]
+        assert hit == sorted(n for n, count in cls.hits.items() if count > 0)
+        assert missed == sorted(n for n, count in cls.hits.items() if count == 0)
+        assert {line: (total, taken) for line, total, taken in branches} == {
+            line: pair for line, pair in cls.conditions.items() if pair[0]}
+        # The rates are the producer's rounding: coverage.py keeps 4 significant digits.
+        assert len(hit) / len(cls.hits) == pytest.approx(cls.line_rate, rel=1e-3)
+        arms = sum(total for _, total, _ in branches)
+        assert (sum(taken for _, _, taken in branches) / arms if arms else 1) == pytest.approx(
+            cls.branch_rate, rel=1e-3)
+
+
+# Accuracy check 3, cross-format: one gcov run written by gcovr as lcov and as
+# Cobertura, and one coverage.py data file reported as lcov and as `coverage
+# xml`, give the same per-file evidence through the two readers.
+@pytest.mark.parametrize("scenario", ["call", "idle"])
+@pytest.mark.parametrize("name", COBERTURA_RECORDINGS)
+def test_one_run_reads_the_same_through_lcov_and_cobertura(name, scenario):
+    lcov = _lcov_evidence(probe_repo.RECORDED / name / f"{scenario}.lcov")
+    cobertura = _cobertura_evidence(probe_repo.RECORDED / name / f"{scenario}.xml")
+
+    assert cobertura == lcov
+
+
+# --- JaCoCo: crapkit's evidence is the report's own counts --------------------------------
+#
+# counts_table reads each recorded report with ElementTree and no crapkit: every
+# sourcefile's line counters and its own LINE and BRANCH counters. crapkit's
+# per-file evidence must say the same about every sourcefile, and Gradle's and
+# Maven's runs of one test must read the same.
+
+JACOCO_FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "coverage" / "jacoco"
+JAVA_REPO = JACOCO_FIXTURES / "java-repo"
+# id -> (report, the tree it measured, path_prefix): the fixtures' Gradle and
+# Maven runs of java-repo's test, then each probe recording of probes/java.
+JACOCO_RECORDINGS = {
+    "fixture-gradle": (JACOCO_FIXTURES / "gradle-8.10.2.xml", JAVA_REPO, "src/main/java"),
+    "fixture-maven": (JACOCO_FIXTURES / "maven-3.9.9.xml", JAVA_REPO, "src/main/java"),
+    **{f"{name}-{scenario}": (probe_repo.artifact(name, scenario), probe_repo.PROBES,
+                              probe_repo.JAVA_ROOT)
+       for name in ground_table.JACOCO_FAMILIES for scenario in probe_repo.SCENARIOS},
+}
+# (Gradle, Maven) runs of one test, each pair from one tree.
+JACOCO_PAIRS = [("fixture-gradle", "fixture-maven"),
+                *((f"{gradle}-{scenario}", f"{maven}-{scenario}")
+                  for gradle, maven in [sorted(ground_table.JACOCO_FAMILIES)]
+                  for scenario in probe_repo.SCENARIOS)]
+_JACOCO_READ = _LCOV_READ.replace("coverage_lcov", "coverage_jacoco").replace(
+    'parser="lcov"', 'parser="jacoco"')
+
+
+def _jacoco_evidence(path: Path) -> dict:
+    child = hang_guard.run([sys.executable, "-c", _JACOCO_READ, str(path)], text=True,
+                           encoding="utf-8")
+    assert child.returncode == 0, child.stderr
+    return json.loads(child.stdout)
+
+
+@pytest.mark.parametrize("name", JACOCO_RECORDINGS)
+def test_crapkit_reads_each_jacoco_recording_as_its_own_counts(name):
+    report = JACOCO_RECORDINGS[name][0]
+    sourcefiles = counts_table.jacoco_sourcefiles(report.read_bytes())
+
+    evidence = _jacoco_evidence(report)
+
+    assert sorted(evidence) == sorted(source.key for source in sourcefiles)
+    for source in sourcefiles:
+        hit, missed, branches = evidence[source.key]
+        counted = {nr: ci for nr, (mi, ci, _, _) in source.lines.items() if mi + ci}
+        assert hit == sorted(nr for nr, ci in counted.items() if ci)
+        assert missed == sorted(nr for nr, ci in counted.items() if not ci)
+        assert {line: (total, taken) for line, total, taken in branches} == {
+            nr: (mb + cb, cb) for nr, (_, _, mb, cb) in source.lines.items() if mb + cb}
+        # JaCoCo's own sourcefile counters, which crapkit never reads.
+        assert (len(missed), len(hit)) == source.counters["LINE"]
+        assert (sum(total - taken for _, total, taken in branches),
+                sum(taken for _, _, taken in branches)) == source.counters["BRANCH"]
+
+
+@pytest.mark.parametrize("gradle, maven", JACOCO_PAIRS)
+def test_gradle_and_maven_runs_of_one_test_read_the_same(gradle, maven):
+    """Accuracy check 3's second half: one test run through Gradle and through
+    Maven gives crapkit the same evidence."""
+    assert (_jacoco_evidence(JACOCO_RECORDINGS[gradle][0])
+            == _jacoco_evidence(JACOCO_RECORDINGS[maven][0]))
+
+
+@pytest.mark.parametrize("producer", sorted(ground_table.JACOCO_FAMILIES))
+def test_a_jacoco_rerun_that_differs_only_in_its_session_matches_its_recording(
+        tmp_path, monkeypatch, producer):
+    """JaCoCo stamps each report with the host, a random id and two times.
+    regenerate's canonical form fixes them, and its check reads the report
+    through counts_table and crapkit's jacoco reader."""
+    from accuracy.coverage_oracles import regenerate
+    monkeypatch.syspath_prepend(str(regenerate.HERE))
+    recording = regenerate.RECORDED / producer / "call.xml"
+    run = tmp_path / "run.xml"
+    run.write_bytes(recording.read_bytes().replace(
+        b'<sessioninfo id="0" start="0" dump="0"/>',
+        b'<sessioninfo id="host-5c5e080c" start="1793715019522" dump="1793715020402"/>'))
+    fresh = tmp_path / "call.xml"
+    fresh.write_bytes(regenerate._recorded_bytes(".xml", run, tmp_path))
+
+    assert regenerate.differences(regenerate.PRODUCERS[producer], fresh, recording) == []
+
+
+# Accuracy checks 2 and 3 over the same recordings. crapkit's side runs in a
+# child: the reader, lizard's spans of the measured sources and score's join.
+# JaCoCo's side is its own METHOD and CSV counters, read here with no crapkit.
+
+_JACOCO_JOIN = """
+import json, sys
+from pathlib import Path
+import lizard
+from crapkit import coverage_jacoco
+from crapkit.config import Lane
+from crapkit.score import join_evidence
+from crapkit.snapshot import InventoryRow
+report, repo, prefix = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+lane = Lane(name="java", command="x", artifact=report.name, parser="jacoco", scopes=("java",),
+            path_prefix=prefix)
+evidence = coverage_jacoco.read(lane, repo, report)[1]
+joined = []
+for path, file in sorted(evidence.items()):
+    rows = [InventoryRow("java", path, fn.long_name, fn.start_line, fn.end_line, 1, 1, 1, 1, 0, 0)
+            for fn in lizard.analyze_file(str(repo / path)).function_list]
+    joined += [[path, fn.start, fn.end, fn.statements_total, fn.statements_covered,
+                fn.branches_total, fn.branches_covered] for fn in join_evidence(rows, file)]
+print(json.dumps(joined))
+"""
+
+
+def _jacoco_joined(name: str) -> list:
+    report, repo, prefix = JACOCO_RECORDINGS[name]
+    child = hang_guard.run([sys.executable, "-c", _JACOCO_JOIN, str(report), str(repo), prefix],
+                           text=True, encoding="utf-8")
+    assert child.returncode == 0, child.stderr
+    return json.loads(child.stdout)
+
+
+def _jacoco_methods(name: str) -> list[tuple[str, str, int, tuple, tuple]]:
+    """(class name, the sourcefile's key, first line, LINE, BRANCH) per <method>,
+    each counter (missed, covered), (0, 0) where JaCoCo writes none."""
+    import xml.etree.ElementTree as ET
+
+    report, _, prefix = JACOCO_RECORDINGS[name]
+    found = []
+    for package in ET.fromstring(report.read_bytes()).iter("package"):
+        for cls in package.findall("class"):
+            key = "/".join(part for part in (prefix, package.get("name"),
+                                             cls.get("sourcefilename")) if part)
+            for method in cls.findall("method"):
+                counters = {c.get("type"): (int(c.get("missed")), int(c.get("covered")))
+                            for c in method.findall("counter")}
+                found.append((cls.get("name"), key, int(method.get("line")),
+                              counters.get("LINE", (0, 0)), counters.get("BRANCH", (0, 0))))
+    return found
+
+
+def _owner(spans: list, key: str, line: int):
+    """The innermost crapkit span of `key` that holds `line`, or None."""
+    holding = [span for span in spans if span[0] == key and span[1] <= line <= span[2]]
+    return min(holding, key=lambda span: span[2] - span[1], default=None)
+
+
+def _counts(span) -> tuple[tuple[int, int], tuple[int, int]]:
+    _, _, _, s_total, s_cov, b_total, b_cov = span
+    return (s_total - s_cov, s_cov), (b_total - b_cov, b_cov)
+
+
+def _add(a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
+    return a[0] + b[0], a[1] + b[1]
+
+
+@pytest.mark.parametrize("name", JACOCO_RECORDINGS)
+def test_jacocos_method_counters_equal_crapkits_counts_for_each_span(name):
+    """Accuracy check 2: each lizard span's LINE and BRANCH counts as crapkit
+    attributes them equal the sum of the METHOD counters of the methods whose
+    first bytecode line falls in it (a lambda is a method of its own to JaCoCo
+    and lives inside its enclosing span here)."""
+    spans = _jacoco_joined(name)
+    summed: dict = {}
+    for _, key, line, lines, branches in _jacoco_methods(name):
+        span = _owner(spans, key, line)
+        if span is not None:
+            had = summed.get(tuple(span[:3]), ((0, 0), (0, 0)))
+            summed[tuple(span[:3])] = (_add(had[0], lines), _add(had[1], branches))
+
+    assert summed == {tuple(span[:3]): _counts(span) for span in spans}
+
+
+@pytest.mark.parametrize("name", JACOCO_RECORDINGS)
+def test_jacocos_csv_per_class_equals_crapkits_sums_per_class(name):
+    """Accuracy check 3: the CSV report of the same run, per class, equals the
+    per-class sum of crapkit's per-span counts, plus the METHOD counters of the
+    methods no lizard span holds (an implicit constructor on the class line)."""
+    import csv
+
+    report = JACOCO_RECORDINGS[name][0]
+    spans = _jacoco_joined(name)
+    per_class: dict = {}
+    seen: set = set()
+    for cls, key, line, lines, branches in _jacoco_methods(name):
+        span = _owner(spans, key, line)
+        if span is None:
+            add = (lines, branches)
+        elif tuple(span[:3]) in seen:
+            continue
+        else:
+            seen.add(tuple(span[:3]))
+            add = _counts(span)
+        had = per_class.get(cls, ((0, 0), (0, 0)))
+        per_class[cls] = (_add(had[0], add[0]), _add(had[1], add[1]))
+    rows = csv.DictReader(report.with_suffix(".csv").read_text(encoding="utf-8").splitlines())
+    wrote = {("" if row["PACKAGE"] == "default" else row["PACKAGE"].replace(".", "/") + "/")
+             + row["CLASS"].replace(".", "$"): (
+                 (int(row["LINE_MISSED"]), int(row["LINE_COVERED"])),
+                 (int(row["BRANCH_MISSED"]), int(row["BRANCH_COVERED"]))) for row in rows}
+
+    assert per_class == wrote
+
+
+# --- Go: one run in three cover modes, and its Cobertura conversion ----------------------------
+#
+# Accuracy check 3: the set, count and atomic profiles of one probe run state the
+# same lines through counts_table, and crapkit scores each against the same table
+# above. gocover-cobertura 1.5.0 converted the set run (its <source> made
+# relative); crapkit's Cobertura reader gives that conversion the evidence its
+# coverprofile reader gives the profile.
+
+GO_MODES = sorted(ground_table.COVERPROFILE_FAMILIES)
+GOCOVER_COBERTURA = probe_repo.RECORDED / "gocover-cobertura-1.5.0"
+_GOCOVER_READ = _LCOV_READ.replace("coverage_lcov", "coverage_gocover").replace(
+    'parser="lcov", scopes=("src",)', 'parser="coverprofile", scopes=("go",), cwd="go"')
+
+
+def _gocover_evidence(path: Path, repo: Path) -> dict:
+    """crapkit's evidence for a profile of the Go probe, read in `repo` beside
+    a copy of the probe's go.mod and source."""
+    for name in ("go.mod", "shapes.go"):
+        (repo / "go").mkdir(exist_ok=True)
+        (repo / "go" / name).write_bytes((probe_repo.PROBES / "go" / name).read_bytes())
+    (repo / path.name).write_bytes(path.read_bytes())
+    child = hang_guard.run([sys.executable, "-c", _GOCOVER_READ.replace(
+        "path.parent, path", "Path(sys.argv[2]), path"), str(repo / path.name), str(repo)],
+        text=True, encoding="utf-8")
+    assert child.returncode == 0, child.stderr
+    return json.loads(child.stdout)
+
+
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+def test_set_count_and_atomic_profiles_of_one_run_state_the_same_lines(scenario):
+    stated = [counts_table.coverprofile_lines(_recorded(name, scenario)) for name in GO_MODES]
+
+    assert stated[0] and all(lines == stated[0] for lines in stated)
+
+
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+@pytest.mark.parametrize("name", GO_MODES)
+def test_crapkit_reads_each_coverprofile_recording_as_its_own_counts(tmp_path, name, scenario):
+    lines = counts_table.coverprofile_lines(_recorded(name, scenario))
+    (key, stated), = lines.items()
+
+    evidence = _gocover_evidence(probe_repo.artifact(name, scenario), tmp_path)
+
+    hit, missed, branches = evidence["go/shapes.go"]
+    assert key == f"{probe_repo.GO_MODULE}/shapes.go" and list(evidence) == ["go/shapes.go"]
+    assert (hit, missed, branches) == (sorted(n for n, ran in stated.items() if ran),
+                                       sorted(n for n, ran in stated.items() if not ran), [])
+
+
+@pytest.mark.parametrize("scenario", probe_repo.SCENARIOS)
+def test_one_go_run_reads_the_same_through_coverprofile_and_its_cobertura_conversion(
+        tmp_path, scenario):
+    profile = _gocover_evidence(probe_repo.artifact("go-1.26.8-set", scenario), tmp_path)
+
+    cobertura = _cobertura_evidence(GOCOVER_COBERTURA / f"{scenario}.xml")
+
+    assert cobertura == profile

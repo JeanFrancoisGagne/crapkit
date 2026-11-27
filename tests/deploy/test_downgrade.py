@@ -6,18 +6,23 @@ as written, so the cell first writes each token back as the launcher
 docs/upgrading.md's Downgrading table gives. Then each command a user reaches
 for first (doctor, coverage, verify, next-item and one MCP call) either works on the store and marks the candidate wrote, or
 refuses in words that name the cause, with an exit code from the README's
-table and no traceback. Where the refusal names a fix, the cell follows it and
-expects verify to pass. Nothing the candidate recorded may be lost.
+table and no traceback. Where the refusal names a fix, the cell removes the
+per-scope marks file as docs/upgrading.md says, follows the fix and expects
+verify to pass. Nothing the candidate recorded may be lost.
 """
 from __future__ import annotations
 
-from kit import state, state_manifest
+from kit import docsnip, state, state_manifest
 from kit.cells import cell
 from kit.mcp_client import McpClient
 from kit.state import output
 
 PACKET = "deploy-upgrade"
 OLD = state.source_version("0.7.6")
+UPGRADE_DOC = "docs/upgrading.md"
+# The candidate's seed wrote one stamp per scope, and 0.7.6's seed reads each
+# `#scope` line as a mark it cannot parse: the guide removes the file first.
+PER_SCOPE = "The first seed writes one stamp per scope"
 # README "Exit codes": the answers a clear refusal may give; 1 is a crash or an
 # overloaded verdict, 2 an argparse usage error.
 CLEAR_EXITS = {0, 3, 4, 5, 6, 7, 8, 9}
@@ -54,6 +59,8 @@ def test_lin_downgrade_0_7_6(box, templates, candidate):
     assert not answer.get("isError"), answer
 
     assert refusal.exit == 3 and "re-baseline with `crapkit ratchet seed`" in output(refusal), box.transcript.text()
+    box.script(docsnip.fence(UPGRADE_DOC, PER_SCOPE, contains="git rm").text, cwd=repo, expect=0,
+               note="the guide removes the per-scope marks file, which 0.7.6's seed refuses")
     box.run(["crapkit", "ratchet", "seed"], cwd=repo, expect=0, note="the fix 0.7.6's refusal names")
     state.commit(box, repo, "marks under 0.7.6 again")
     assert "verify OK" in output(box.run(["crapkit", "verify"], cwd=repo, expect=0))

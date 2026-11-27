@@ -197,6 +197,6 @@ def test_child_input_reads_a_lone_surrogate_as_a_replacement_character():
     assert sent.startswith(b"caf") and "\ufffd" in sent.decode("utf-8")
 
 
-def test_plain_utf8_keeps_a_bom_as_pytest_and_node_do():
-    assert repotext.plain_utf8(codecs.BOM_UTF8 + b"[pytest]\ncaf\xe9\n") == \
-        "\ufeff[pytest]\ncaf\ufffd\n"
+def test_plain_utf8_keeps_a_bom_as_tomllib_and_node_do():
+    assert repotext.plain_utf8(codecs.BOM_UTF8 + b'[tool.pytest.ini_options]\naddopts = "caf\xe9"\n') == \
+        '\ufeff[tool.pytest.ini_options]\naddopts = "caf\ufffd"\n'

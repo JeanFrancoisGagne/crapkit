@@ -6,28 +6,30 @@ from typing import NamedTuple
 
 from .config import PYTEST_CONFIG_FILES, pytest_testpaths_texts as pytest_testpaths  # noqa: F401  init and tests import it from here
 from .config import _as_testpath
+from .coverage_format import lane_format
+from .toolchain import TOOLCHAINS, Stanza, Toolchain, detected, infer
 
 from .universe import (LANGUAGE_EXTENSIONS, exclude_matcher, excluded, is_test_file,
                        scopes_with_tests)
 
 _EXT_LANGUAGE = {ext: lang for lang, exts in LANGUAGE_EXTENSIONS.items() for ext in exts}
 
-# The languages a coverage parser can read: coverage.py reads python, istanbul
-# reads the JavaScript family and the .vue files a vitest run reports on. Every
-# other supported language scores on complexity alone, which is what
-# `coverage_optional = true` declares — so init writes the key for a scope built
-# entirely from the rest, rather than leaving it to score `no-lane` forever
-# against a lane nobody can write.
-COVERABLE_LANGUAGES = frozenset({"python", "javascript", "typescript", "tsx", "vue"})
+# The rows init writes live lanes for: pytest from its config file, vitest and
+# jest from package.json. Every other language scores on complexity alone until
+# its config adds a lane, which is what `coverage_optional = true` declares, so
+# init writes the key for a scope built entirely from the rest rather than
+# leaving it to score `no-lane` against a lane init cannot write.
+LIVE_LANE_LANGUAGES = frozenset(lang for name in ("pytest", "vitest", "jest")
+                                for lang in TOOLCHAINS[name].languages)
 
 
 def cc_only_scope(languages: tuple[str, ...]) -> bool:
-    """True when no coverage parser reads any of this scope's languages.
+    """True when init writes no live lane for any of this scope's languages.
 
-    One coverable language is enough to keep the key off: a lane can still
-    measure that part, and `coverage_optional` would forgive the whole scope.
+    One such language is enough to keep the key off: a lane can still measure
+    that part, and `coverage_optional` would forgive the whole scope.
     """
-    return not any(lang in COVERABLE_LANGUAGES for lang in languages)
+    return not any(lang in LIVE_LANE_LANGUAGES for lang in languages)
 
 DEFAULT_EXCLUDES = (
     # A leading `**/` matches zero or more directories (universe._glob_regex),
@@ -134,7 +136,6 @@ def lockfile_runner(present: frozenset[str]) -> str:
 
 _PY_LANGUAGES = ("python",)
 _JS_LANGUAGES = ("javascript", "tsx", "typescript")
-_JS_RUNNER_COMMAND = {"jest": "npx jest --coverage", "vitest": "npx vitest run --coverage"}
 
 # Every artifact a scaffolded lane writes lands under .crapkit/, which init
 # ignores in the same breath. A 14-lane repo that let each runner default grew
@@ -150,49 +151,21 @@ _JS_ARTIFACT = f"{_JS_COV_DIR}/coverage-final.json"
 _JS_RESULTS = f"{_JS_COV_DIR}/junit.xml"
 _JS_DEFAULT_ARTIFACT = "coverage/coverage-final.json"
 
-# Each runner spells "write the coverage report here" its own way and rejects
-# the other's spelling outright.
-_JS_REPORTS_DIR_FLAG = {"jest": "--coverageDirectory=",
-                        "vitest": "--coverage.reportsDirectory="}
 
-# The junit half. vitest ships its junit reporter, so the flags cost the repo
-# nothing; jest needs the separate `jest-junit` package, and naming a reporter
-# jest cannot resolve turns a working lane into an error — so its flags are
-# written only when package.json already carries it.
-_JS_JUNIT_FLAGS = {"jest": "--reporters=default --reporters=jest-junit",
-                   "vitest": "--reporter=default --reporter=junit "
-                             "--outputFile={cov}/junit.xml"}
-
-# vitest writes no coverage report when a test fails, so one red test turned
-# `crapkit coverage` into exit 5 naming a missing coverage-final.json — a
-# message about a file, for a run that was really about a flag. Per runner, not
-# shared: jest reports on a red run already and exits on a flag it does not
-# know, which is the failure `_js_runner` exists to prevent.
-_JS_EXTRA_FLAGS = {"vitest": " --coverage.reportOnFailure"}
-
-# pytest's half of the same rule. pytest raises Interrupted at the END of
-# collection when any module fails to import, so pytest-cov's session finish
-# never runs and the lane writes no coverage JSON at all: one renamed module or
-# one missing optional extra takes the whole lane down and every scope falls to
-# no-lane, while the junit still lands and makes the run look half finished.
-# With the flag the modules that did collect run and report, and the
-# uncollected file's tests stay in the junit as errors, so nothing is hidden.
-_PY_COLLECT_FLAG = "--continue-on-collection-errors"
-_JS_JUNIT_PACKAGE = {"jest": "jest-junit"}
-# jest-junit takes no path on the command line: package.json, the jest config or
-# these two variables are the whole list, and the first two are the repo's files
-# to own. Without them it drops junit.xml at the repo root, which is the litter
-# `artifact` was routed away from in the first place.
-_JS_JUNIT_ENV = {"jest": (("JEST_JUNIT_OUTPUT_DIR", "{cov}"),
-                          ("JEST_JUNIT_OUTPUT_NAME", "junit.xml"))}
+def _pytest_command(interpreter: str) -> str:
+    """The pytest row's command with both reports routed under .crapkit/ and
+    its collection flag last. `{python}` keeps the placeholder a template
+    carries."""
+    row = TOOLCHAINS["pytest"]
+    return (f"{row.init_command.replace('{python}', interpreter)} "
+            f"{row.reports_dir_flag}{_PY_ARTIFACT} "
+            f"{row.junit_flags.format(cov=_COV_DIR)}{row.extra_flags}")
 
 
 def _pytest_lane(markers: frozenset[str], interpreter: str) -> LaneSpec | None:
     if not markers.intersection(PYTEST_MARKERS):
         return None
-    return LaneSpec("py", f"{interpreter} -m pytest --cov --cov-branch "
-                          f"--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS} "
-                          f"{_PY_COLLECT_FLAG}",
+    return LaneSpec("py", _pytest_command(interpreter),
                     _PY_ARTIFACT, "coveragepy", _PY_LANGUAGES, _PY_RESULTS)
 
 
@@ -207,11 +180,16 @@ def _npm_test_script(scripts: dict) -> str | None:
     return named[0] if named else None
 
 
+def _named_runners(dev_dependencies: frozenset[str]) -> list[str]:
+    """The toolchain rows whose package devDependencies names, sorted by row
+    name so the choice never moves."""
+    return [name for name, row in sorted(TOOLCHAINS.items())
+            if row.dev_dependency in dev_dependencies]
+
+
 def _js_runner_command(dev_dependencies: frozenset[str]) -> str | None:
-    for runner in sorted(_JS_RUNNER_COMMAND):
-        if runner in dev_dependencies:
-            return _JS_RUNNER_COMMAND[runner]
-    return None
+    named = _named_runners(dev_dependencies)
+    return TOOLCHAINS[named[0]].init_command if named else None
 
 
 class NpmPackage(NamedTuple):
@@ -258,21 +236,29 @@ def _dependency_names(value) -> frozenset[str]:
     return frozenset()
 
 
-def _js_runner(dev_dependencies: frozenset[str]) -> str | None:
-    """The runner whose flags this lane may carry, or None when package.json
-    names neither runner or both.
+def _js_runner(package: NpmPackage) -> str | None:
+    """The runner whose flags this package's lane may carry, or None.
 
-    `npm test` can run anything, so devDependencies is the only thing that names
-    the runner — and naming it wrong is worse than the litter: jest exits on
-    vitest's `--coverage.reportsDirectory` and vitest exits on jest's
-    `--coverageDirectory`. Unresolved, the lane keeps the directory its runner
-    already defaults to and doctor says so.
+    Read the way doctor reads the lane (toolchain.infer): the runner the test
+    script runs, and only when that script names none, the one runner
+    devDependencies name. With no test script, devDependencies alone. Naming
+    it wrong is worse than the litter: jest exits on vitest's
+    `--coverage.reportsDirectory`, vitest exits on jest's `--coverageDirectory`,
+    and a script that runs pytest gets neither. A script that runs a runner
+    package.json cannot name, or two runners, keeps the directory its runner
+    already defaults to, and doctor says so.
     """
-    named = [runner for runner in sorted(_JS_REPORTS_DIR_FLAG) if runner in dev_dependencies]
-    return named[0] if len(named) == 1 else None
+    command = _npm_test_command(package.scripts)
+    if command is None:
+        named = _named_runners(package.dev_dependencies)
+        return named[0] if len(named) == 1 else None
+    found = infer(command, cwd_package=package)
+    if found.name is None or TOOLCHAINS[found.name].dev_dependency is None:
+        return None
+    return found.name
 
 
-def _js_junit(runner: str, dev_dependencies: frozenset[str],
+def _js_junit(row: Toolchain, dev_dependencies: frozenset[str],
               cov_dir: str) -> tuple[str, str, tuple]:
     """Flags, results_artifact and env for this runner's junit report, or three
     empty values when the reporter it needs is not installed.
@@ -282,12 +268,11 @@ def _js_junit(runner: str, dev_dependencies: frozenset[str],
     coverage flag does. `results_artifact` stays root-relative either way:
     crapkit reads it from the root, never from the lane's cwd.
     """
-    package = _JS_JUNIT_PACKAGE.get(runner)
+    package = row.junit_package
     if package is not None and package not in dev_dependencies:
         return "", "", ()
-    env = tuple((key, value.format(cov=cov_dir))
-                for key, value in _JS_JUNIT_ENV.get(runner, ()))
-    return f" {_JS_JUNIT_FLAGS[runner].format(cov=cov_dir)}", _JS_RESULTS, env
+    env = tuple((key, value.format(cov=cov_dir)) for key, value in row.junit_env)
+    return f" {row.junit_flags.format(cov=cov_dir)}", _JS_RESULTS, env
 
 
 def _npm_test_command(scripts: dict) -> str | None:
@@ -313,10 +298,16 @@ def _js_routed_lane(package: NpmPackage, command: str, runner: str, cwd: str) ->
     """
     up = "../" * (cwd.count("/") + 1) if cwd else ""
     cov_dir = up + _JS_COV_DIR
-    junit, results, env = _js_junit(runner, package.dev_dependencies, cov_dir)
-    routing = f" {_JS_REPORTS_DIR_FLAG[runner]}{cov_dir}"
-    return LaneSpec("js", command + routing + _JS_EXTRA_FLAGS.get(runner, "") + junit,
+    row = TOOLCHAINS[runner]
+    junit, results, env = _js_junit(row, package.dev_dependencies, cov_dir)
+    return LaneSpec("js", command + _js_routing(row, cov_dir) + junit,
                     _JS_ARTIFACT, "istanbul", _JS_LANGUAGES, results, env, cwd)
+
+
+def _js_routing(row: Toolchain, cov_dir: str) -> str:
+    """The runner's coverage report flag pointed at `cov_dir`, then its extra
+    flags: a JS lane's routing, which the istanbul template carries too."""
+    return f" {row.reports_dir_flag}{cov_dir}{row.extra_flags}"
 
 
 def _js_root_lane(package: NpmPackage) -> LaneSpec | None:
@@ -331,16 +322,17 @@ def _js_root_lane(package: NpmPackage) -> LaneSpec | None:
     command = _js_command(package)
     if command is None:
         return None
-    runner = _js_runner(package.dev_dependencies)
+    runner = _js_runner(package)
     if runner is None:
         return LaneSpec("js", command, _JS_DEFAULT_ARTIFACT, "istanbul", _JS_LANGUAGES)
     return _js_routed_lane(package, command, runner, "")
 
 
 def _runner_workspaces(packages: Packages) -> list[tuple[str, str]]:
-    """The workspace directories whose own devDependencies name one runner,
-    each paired with the runner it named, so no caller asks twice."""
-    named = ((directory, _js_runner(package.dev_dependencies))
+    """The workspace directories whose own package.json names one runner (its
+    test script, else its devDependencies), each paired with the runner it
+    named, so no caller asks twice."""
+    named = ((directory, _js_runner(package))
              for directory, package in packages.items() if directory)
     return sorted((directory, runner) for directory, runner in named if runner)
 
@@ -363,7 +355,7 @@ def _js_workspace_lane(packages: Packages) -> LaneSpec | None:
         return None
     directory, runner = named[0]
     package = packages[directory]
-    command = _npm_test_command(package.scripts) or _JS_RUNNER_COMMAND[runner]
+    command = _npm_test_command(package.scripts) or TOOLCHAINS[runner].init_command
     return _js_routed_lane(package, command, runner, directory)
 
 
@@ -382,13 +374,13 @@ def _packages(package_json: PackageJson) -> Packages:
 def _js_lane(package_json: PackageJson) -> LaneSpec | None:
     """The js lane, from the root package.json and the workspaces beside it.
 
-    The root wins when it names a runner itself. Only a root that names none
-    hands the question to the workspaces, so a repo that already worked keeps
-    the lane it always got.
+    The root wins when it names a JS runner itself (_js_runner). Only a root
+    that names none hands the question to the workspaces, so a repo that
+    already worked keeps the lane it always got.
     """
     packages = _packages(package_json)
     root = packages.get("", NO_PACKAGE)
-    if _js_runner(root.dev_dependencies) is None:
+    if _js_runner(root) is None:
         workspace = _js_workspace_lane(packages)
         if workspace is not None:
             return workspace
@@ -549,18 +541,15 @@ def _live_lanes(lanes: tuple[LaneSpec, ...],
 # the scoped-tests entries carry one: what a reader uncomments has to be the
 # command init would have written live. A repo whose lockfile pins `uv run`
 # read a bare `python` here and got the environment bug one uncomment later.
+_VITEST = TOOLCHAINS["vitest"]
 _TEMPLATES = {
     "coveragepy": ("# [[lane]]", '# name = "py"',
-                   '# command = "{python} -m pytest --cov --cov-branch '
-                   f'--cov-report=json:{_PY_ARTIFACT} --junitxml={_PY_RESULTS} '
-                   f'{_PY_COLLECT_FLAG}"',
+                   f'# command = "{_pytest_command("{python}")}"',
                    f'# artifact = "{_PY_ARTIFACT}"',
                    f'# results_artifact = "{_PY_RESULTS}"', '# parser = "coveragepy"'),
     "istanbul": ("# [[lane]]", '# name = "js"',
-                 '# command = "npx vitest run --coverage '
-                 f'{_JS_REPORTS_DIR_FLAG["vitest"]}{_JS_COV_DIR}'
-                 f'{_JS_EXTRA_FLAGS["vitest"]} '
-                 f'{_JS_JUNIT_FLAGS["vitest"].format(cov=_JS_COV_DIR)}"',
+                 f'# command = "{_VITEST.init_command}{_js_routing(_VITEST, _JS_COV_DIR)} '
+                 f'{_VITEST.junit_flags.format(cov=_JS_COV_DIR)}"',
                  f'# artifact = "{_JS_ARTIFACT}"',
                  f'# results_artifact = "{_JS_RESULTS}"', '# parser = "istanbul"'),
 }
@@ -575,8 +564,6 @@ _TEMPLATES = {
 # 5, and a jest workspace was handed a vitest command.
 _PYTEST_FILES = "{python} -m pytest {files} -q -p no:cacheprovider"
 _PYTEST_SUITE = "{python} -m pytest {positional}-q -p no:cacheprovider"
-_JS_RELATED = {"jest": "npx jest --findRelatedTests {files}",
-               "vitest": "npx vitest related --run {files}"}
 _NPM_WORKSPACE = "npm run {script} -w {directory}"
 _SCOPED_TEST_PLACEHOLDER = "<your test command> {files}"
 _DEFAULT_PYTHON = "python"
@@ -708,9 +695,9 @@ def _js_entry(name: str, facts: _ScopedFacts) -> ScopedEntry:
         return ScopedEntry(_NPM_WORKSPACE.format(script=script, directory=name),
                            f"{name}/ is an npm workspace with its own {script} script, "
                            "run from the root with -w", True)
-    runner = _js_runner(facts.packages.get("", NO_PACKAGE).dev_dependencies)
+    runner = _js_runner(facts.packages.get("", NO_PACKAGE))
     if runner:
-        return ScopedEntry(_JS_RELATED[runner], f"{runner}'s related-tests mode, keyed by "
+        return ScopedEntry(TOOLCHAINS[runner].related_tests, f"{runner}'s related-tests mode, keyed by "
                            "the runner package.json names", False)
     return ScopedEntry(_SCOPED_TEST_PLACEHOLDER,
                        "package.json names no single runner; replace the placeholder", False)
@@ -791,13 +778,74 @@ def _template_stanza(parser: str, launcher: str) -> list[str]:
     return [line.replace("{python}", launcher) for line in _TEMPLATES[parser]]
 
 
+class CommentedLane(NamedTuple):
+    """A detected toolchain's stanza, written commented, and the scopes it
+    would measure: those holding its languages that no live lane measures."""
+    toolchain: str
+    stanza: Stanza
+    scopes: tuple[str, ...]
+
+
+def commented_lanes(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...],
+                    markers: frozenset[str]) -> tuple[CommentedLane, ...]:
+    """One per toolchain whose markers sit at the repo root and whose languages
+    some unmeasured scope holds, in table order. Markers are root files only:
+    a nested Cargo.toml is a crate whose lane the owner declares with `cwd`.
+    Each stanza's command is spelled for the shell lane commands run under."""
+    from . import config
+
+    measured = {name for lane in live_lanes(lanes, scopes) for name in _scopes_for(lane, scopes)}
+    found = ((row, _unmeasured(row, scopes, measured)) for row in detected(markers))
+    return tuple(CommentedLane(row.name, row.stanza.resolved(markers, config.SHELL_IS_CMD), names)
+                 for row, names in found if names)
+
+
+def _unmeasured(row: Toolchain, scopes: dict[str, tuple[str, ...]],
+                measured: set[str]) -> tuple[str, ...]:
+    """The scopes holding one of the row's languages that no live lane measures."""
+    return tuple(name for name, languages in scopes.items()
+                 if name not in measured and set(languages).intersection(row.languages))
+
+
+_TOOLCHAIN_HEADING = ("# Lanes for the toolchains this repo uses: uncomment one and delete "
+                      "coverage_optional from its scopes to measure them "
+                      "(docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one).")
+
+
+def _toolchain_lanes(commented: tuple[CommentedLane, ...]) -> list[str]:
+    """The commented stanzas under their one heading line, or nothing."""
+    lines = [line for lane in commented for line in _toolchain_stanza(lane)]
+    return [_TOOLCHAIN_HEADING, *lines] if lines else []
+
+
+_STANZA_KEYS = ("name", "command", "artifact", "parser", "path_prefix")
+
+
+def _toolchain_stanza(lane: CommentedLane) -> list[str]:
+    """The stanza's notes, each a comment that stays one when the lane is
+    uncommented, then its keys in order (path_prefix only when set), then the
+    scopes it would measure."""
+    stanza = lane.stanza._asdict()
+    notes = [f"# # {note}" for note in lane.stanza.notes]
+    keys = [f'# {key} = "{stanza[key]}"' for key in _STANZA_KEYS if stanza[key] is not None]
+    return [*notes, "# [[lane]]", *keys, f"# scopes = [{_quoted(lane.scopes)}]", ""]
+
+
 def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]],
-                    launcher: str = _DEFAULT_PYTHON) -> list[str]:
+                    launcher: str = _DEFAULT_PYTHON,
+                    commented: tuple[CommentedLane, ...] = ()) -> list[str]:
+    """The parser templates no live lane covers, then one commented stanza per
+    detected toolchain."""
+    return _parser_templates(covered, scopes, launcher) + _toolchain_lanes(commented)
+
+
+def _parser_templates(covered: set[str], scopes: dict[str, tuple[str, ...]],
+                      launcher: str) -> list[str]:
     """Commented lane templates for the parsers no live lane covers.
 
-    None at all when every scope is cc-only. Neither parser reads any language
-    in the repo, so both templates would be a step the reader cannot take, under
-    a heading telling them to take it before running `crapkit coverage`.
+    None at all when every scope is cc-only: no template fits a language init
+    writes no live lane for, and a template would be a step the reader cannot
+    take. A detected toolchain's own stanza is that step.
     """
     if all(cc_only_scope(languages) for languages in scopes.values()):
         return []
@@ -815,7 +863,8 @@ def _template_lines(covered: set[str], scopes: dict[str, tuple[str, ...]],
 def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...] = (),
                  *, interpreter: str = _DEFAULT_PYTHON,
                  testpaths: tuple[str, ...] = (), tracked=(),
-                 package_json: PackageJson = None) -> str:
+                 package_json: PackageJson = None,
+                 markers: frozenset[str] = frozenset()) -> str:
     """The starter crapkit.toml. `interpreter` is the python a committed config
     on this repo can call, the lockfile's manager prefix included; every python
     line the file holds names it, commented templates as much as live lanes.
@@ -828,6 +877,8 @@ def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...]
     `detect_lanes` read; together they decide which scoped-test form each scope
     gets. A caller passing neither gets the whole-suite form for python and
     the placeholder for js, the two forms that cannot collect nothing.
+    `markers` are the repo-root files init read; a toolchain they show gets
+    its lane commented (`commented_lanes`).
     """
     lines = ["[crapkit]", "target = 6", ""]
     for name, languages in scopes.items():
@@ -837,7 +888,8 @@ def starter_toml(scopes: dict[str, tuple[str, ...]], lanes: tuple[LaneSpec, ...]
     live += _testpath_lane_stubs(lanes, scopes, testpaths)
     launcher = python_launcher(lanes, interpreter)
     facts = _scoped_facts(scopes, lanes, launcher, testpaths, tracked, package_json)
-    return "\n".join(lines + live + _template_lines(covered, scopes, launcher)
+    commented = commented_lanes(scopes, lanes, markers)
+    return "\n".join(lines + live + _template_lines(covered, scopes, launcher, commented)
                      + _scoped_tests_stub(scopes, facts))
 
 
@@ -853,9 +905,10 @@ def _artifact_ignore(artifact: str) -> str:
 
 
 def _runner_droppings(lane: LaneSpec) -> list[str]:
-    """What the lane's runner leaves beside the artifact; a pytest lane drops
-    coverage's data file and bytecode caches into the consumer's tree."""
-    return [".coverage", "__pycache__/"] if lane.parser == "coveragepy" else []
+    """What the lane's coverage producer leaves beside the artifact, whatever
+    runner starts it: coverage.py drops its data file and Python's bytecode
+    caches into the consumer's tree (coverage_format's `DROPPINGS`)."""
+    return list(lane_format(lane).DROPPINGS)
 
 
 def gitignore_entries(lanes: tuple[LaneSpec, ...]) -> list[str]:

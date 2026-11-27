@@ -493,25 +493,45 @@ def test_a_row_for_a_language_no_scope_can_name_says_so():
     assert unmarked == []
 
 
+def _cc_only_by_default(rows: dict[str, list[str]]) -> set[str]:
+    """The supported languages whose coverage cell reads `cc-only`, or ends with
+    `cc-only until then`: init writes `coverage_optional` for them."""
+    return {lang for lang, cells in rows.items() if lang in SUPPORTED_LANGUAGES
+            and (cells[1] == "cc-only" or cells[1].endswith("cc-only until then"))}
+
+
+def _unbacked(rows: dict[str, list[str]]) -> list[tuple[str, str]]:
+    """Each cell that names no parser, or a parser crapkit does not have. A cell
+    names its parser as its first word; `cc-only` and `not admitted` cells name
+    none and need none."""
+    claims = [(lang, cells[1]) for lang, cells in rows.items()
+              if cells[1] != "cc-only" and "not admitted" not in cells[1]]
+    return [(lang, claim) for lang, claim in claims
+            if re.match(r"[a-z0-9]*", claim).group() not in SUPPORTED_PARSERS]
+
+
 def test_the_cc_only_rows_are_exactly_the_languages_init_writes_the_key_for():
-    """The table is where a reader learns their language has no parser; the set
-    is what makes `crapkit init` write `coverage_optional` for their scope. Two
-    answers to one question, so they have to be the same answer."""
-    from crapkit.scaffold import COVERABLE_LANGUAGES
+    """The table is where a reader learns init writes no live lane for their
+    language; the set is what makes `crapkit init` write `coverage_optional`
+    for their scope. Two answers to one question, so they have to be the same."""
+    from crapkit.scaffold import LIVE_LANE_LANGUAGES
 
-    marked = {lang for lang, cells in _language_rows().items()
-              if cells[1] == "cc-only" and lang in SUPPORTED_LANGUAGES}
-
-    assert marked == SUPPORTED_LANGUAGES - COVERABLE_LANGUAGES
+    assert _cc_only_by_default(_language_rows()) == SUPPORTED_LANGUAGES - LIVE_LANE_LANGUAGES
 
 
 def test_no_row_claims_a_coverage_parser_crapkit_does_not_have():
-    """`cc-only` is a real answer and the two parsers are the only other ones.
-    A row naming a third would promise a join that nothing in crapkit performs."""
-    claims = [(lang, cells[1]) for lang, cells in _language_rows().items()]
+    """`cc-only` is a real answer and the registered parsers are the only other
+    ones. A row naming another would promise a join nothing in crapkit performs."""
+    assert _unbacked(_language_rows()) == []
 
-    unbacked = [(lang, claim) for lang, claim in claims
-                if "cc-only" not in claim and "not admitted" not in claim
-                and not any(parser in claim for parser in SUPPORTED_PARSERS)]
 
-    assert unbacked == []
+def test_a_planted_cell_breaks_the_rule_it_should():
+    """The two rules catch what they are for: a parser crapkit lacks on rust,
+    and a live-lane language marked cc-only by default."""
+    from crapkit.scaffold import LIVE_LANE_LANGUAGES
+
+    gcov = {**_language_rows(), "rust": [".rs", "gcov"]}
+    python = {**_language_rows(), "python": [".py", "lcov, once a lane is declared; cc-only until then"]}
+
+    assert _unbacked(gcov) == [("rust", "gcov")]
+    assert _cc_only_by_default(python) != SUPPORTED_LANGUAGES - LIVE_LANE_LANGUAGES

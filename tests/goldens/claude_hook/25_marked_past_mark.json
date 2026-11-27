@@ -1,0 +1,28 @@
+{
+  "case": "marked_past_mark",
+  "why": "The scoped_breach edit on a function marked 7.0. CRAP is never under ccn, so ccn 8 puts the function past its mark at any coverage: the commit gate refuses that staged blob with exit 6. The advisory says so while the session can still act, in a block of its own, and its closing line says the commit gate refuses a ccn past its mark and a mark only falls.",
+  "fixture": "marked_past_mark",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "def grade(n):",
+      "new_string": "def sprawl(n):"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {
+    "exit": 2,
+    "stderr": [
+      "crapkit advisory: 1 marked function(s) rose past their ratchet mark in calc/grade.py (the edit landed; nothing was blocked)",
+      "  ccn 8  calc/grade.py:1  sprawl( n )  mark 7.0000",
+      "the commit gate refuses a ccn past its mark, and a mark only falls: bring the ccn back to its mark or under it"
+    ]
+  }
+}

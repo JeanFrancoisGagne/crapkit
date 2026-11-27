@@ -131,12 +131,13 @@ def _fields(line: str) -> list[str]:
 
 
 def _is_comment(line: str) -> bool:
-    return line.startswith("#") and "\t" not in line
+    return line.startswith("#") and ("\t" not in line or line.startswith("#scope\t"))
 
 
 def read_tsv(text: str) -> tuple[list[str], list[dict]]:
     """(comment lines, rows as dicts by the header). Physical rows split at LF,
-    one trailing CR removed; a `#` line without a tab is a comment."""
+    one trailing CR removed; a `#` line without a tab is a comment, and so is
+    a marks file's `#scope` stamp line."""
     lines = _physical_rows(text)
     comments = list(filter(_is_comment, lines))
     body = [_fields(line) for line in lines if not _is_comment(line)]

@@ -163,9 +163,8 @@ def test_the_windows_nightly_cell_replays_the_past_bugs_the_image_cannot():
 
 
 GROUND_TRUTH = "ground truth: every probe function in every recording"
-# The plan step's tier for each mode that starts the Windows cells; a pull
-# request's `accuracy` label runs the nightly tier.
-TIER_OF = {"nightly": "nightly", "label": "nightly", "release": "release"}
+# The plan step's tier for each mode that starts the Windows cells.
+TIER_OF = {"nightly": "nightly", "release": "release"}
 
 
 def _needs_uv(windows: dict, mode: str, row: dict) -> bool:
@@ -320,9 +319,13 @@ def _by_input(value, seconds: str) -> int:
     return json.loads(table)[seconds or default]
 
 
-def _workflow_inputs() -> dict:
+def _triggers() -> dict:
     loaded = yaml.safe_load((ROOT / ".github/workflows/accuracy.yml").read_text(encoding="utf-8"))
-    return loaded[True]["workflow_dispatch"]["inputs"]  # YAML 1.1 reads the key `on` as True
+    return loaded[True]  # YAML 1.1 reads the key `on` as True
+
+
+def _workflow_inputs() -> dict:
+    return _triggers()["workflow_dispatch"]["inputs"]
 
 
 def _in_container_seconds(job: dict, seconds: str) -> int:
@@ -736,3 +739,23 @@ def test_a_step_that_files_an_issue_under_a_label_makes_the_label_first():
 
     assert len(_issue_steps()) == 2
     assert unlabelled == []
+
+
+def test_accuracy_yml_runs_on_its_schedule_and_on_a_dispatch_and_never_on_a_pull_request():
+    """A pull request runs the copy in its merge commit, so each push of a branch
+    with an open pull request started this workflow."""
+    assert set(_triggers()) == {"schedule", "workflow_dispatch"}
+
+
+def test_no_accuracy_yml_job_reads_the_pull_request_event():
+    readers = [name for name, job in _jobs("accuracy.yml").items() if "github.event.pull_request" in json.dumps(job)]
+
+    assert readers == []
+
+
+def test_only_a_run_of_main_s_head_files_its_result_on_an_issue():
+    """A dispatch on a branch, or on main with another ref, tests other code: such
+    a release run's red result went onto the issue that tracks main."""
+    filing = step(_jobs("accuracy.yml")["summary"], "name", "File the result")
+
+    assert filing["if"] == "always() && github.ref == 'refs/heads/main' && !inputs.ref"

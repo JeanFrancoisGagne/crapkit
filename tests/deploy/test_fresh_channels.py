@@ -23,7 +23,7 @@ WINDOWS = os.name == "nt"
 
 # --- uvx on a repo that is not Python ---------------------------------------------------
 
-CC_ONLY = "no coverage parser reads this repo's languages, so every scope is cc-only"
+CC_ONLY = "every scope is cc-only (coverage_optional = true) and needs no lane"
 
 
 def _polyglot(box, templates, name: str, env: dict | None = None) -> dict[str, object]:

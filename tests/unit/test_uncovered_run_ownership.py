@@ -1,11 +1,18 @@
 """One run's parsed artifact facts cannot affect another run or a read command."""
 import os
+from array import array
 from types import SimpleNamespace
 
 import pytest
 
 from crapkit import uncovered
 from crapkit.config import Lane
+from crapkit.score import FileEvidence
+
+
+def _missed(*lines: int) -> FileEvidence:
+    """One file's evidence as a walk hands it to the fold: its dead lines."""
+    return FileEvidence(None, array('I', sorted(lines)))
 
 
 def _artifact(tmp_path):
@@ -18,8 +25,8 @@ def _artifact(tmp_path):
 def test_two_runs_own_independent_missing_line_folds(tmp_path):
     path, cfg = _artifact(tmp_path)
     first, second = uncovered.DeadLineFold(), uncovered.DeadLineFold()
-    first.add(path, {'src/f.py': {3}})
-    second.add(path, {'src/f.py': {5}})
+    first.add(path, {'src/f.py': _missed(3)})
+    second.add(path, {'src/f.py': _missed(5)})
     assert uncovered.missing_by_path(tmp_path, cfg, folded=first) == {'src/f.py': {3}}
     assert uncovered.missing_by_path(tmp_path, cfg, folded=second) == {'src/f.py': {5}}
     assert uncovered.missing_by_path(tmp_path, cfg) == {'src/f.py': {7}}
@@ -28,7 +35,7 @@ def test_two_runs_own_independent_missing_line_folds(tmp_path):
 def test_a_collector_hands_its_owned_map_over_once(tmp_path):
     path, cfg = _artifact(tmp_path)
     folded = uncovered.DeadLineFold()
-    folded.add(path, {'src/f.py': {3}})
+    folded.add(path, {'src/f.py': _missed(3)})
     assert uncovered.missing_by_path(tmp_path, cfg, folded=folded) == {'src/f.py': {3}}
     assert uncovered.missing_by_path(tmp_path, cfg, folded=folded) == {'src/f.py': {7}}
 
@@ -39,8 +46,8 @@ def test_parallel_lanes_intersect_inside_their_run(tmp_path):
     path, cfg = _artifact(tmp_path)
     folded = uncovered.DeadLineFold()
     with ThreadPoolExecutor(max_workers=2) as pool:
-        jobs = [pool.submit(folded.add, path, {'src/f.py': lines})
-                for lines in ({3, 5}, {5, 7})]
+        jobs = [pool.submit(folded.add, path, {'src/f.py': _missed(*lines)})
+                for lines in ((3, 5), (5, 7))]
         for job in jobs:
             job.result()
     assert uncovered.missing_by_path(tmp_path, cfg, folded=folded) == {'src/f.py': {5}}
@@ -73,7 +80,7 @@ def test_a_rewrite_after_the_walk_is_read_off_the_file(name, tmp_path):
     the walk's sha256 now."""
     path, cfg = _artifact(tmp_path)
     folded = uncovered.DeadLineFold()
-    folded.add(path, {'src/f.py': {3}})
+    folded.add(path, {'src/f.py': _missed(3)})
     rewrite, truth = REWRITES[name]
     rewrite(path)
 
@@ -85,6 +92,6 @@ def test_the_walk_s_own_digest_keys_the_fold_without_a_second_read(tmp_path):
 
     path, cfg = _artifact(tmp_path)
     folded = uncovered.DeadLineFold()
-    folded.add(path, {'src/f.py': {3}}, file_sha256(path))
+    folded.add(path, {'src/f.py': _missed(3)}, file_sha256(path))
 
     assert uncovered.missing_by_path(tmp_path, cfg, folded=folded) == {'src/f.py': {3}}

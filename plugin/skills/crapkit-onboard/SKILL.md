@@ -28,7 +28,8 @@ says whether it still describes the repo, `crapkit coverage` produces the first 
 A detected lane comes out with its test-results file already wired, `--junitxml` on the
 command and `results_artifact` on the lane, because without one the crashed-worker check
 and the no-new-failures check (exit 8) cannot run. `doctor` WARNs about a lane that has
-none.
+none. A cc-only scope that later gains a lane takes the steps in
+[docs: turning a cc-only scope into a measured one](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one).
 
 A lockfile at the root decides which python those lines call: `uv.lock` writes
 `uv run python -m pytest ...`, and `poetry.lock`, `pdm.lock` and `Pipfile.lock` write

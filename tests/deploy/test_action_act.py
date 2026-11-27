@@ -30,6 +30,7 @@ import functools
 import importlib.util
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -72,6 +73,9 @@ def _assert_action():
 
 BREACH = tool("consumer").BREACH
 STAMP_REFUSAL = _assert_action().STAMP_REFUSAL
+# The candidate's seed writes one stamp per scope; a refusal of those marks
+# opens with the per-scope first line, which an older release quotes whole.
+PER_SCOPE_REFUSAL = "ratchet marks were recorded under [crapkit-stamp=2 lizard="
 
 
 def consumer_argv(box, candidate, checkout: bool, seed: str | None) -> list[str]:
@@ -292,9 +296,8 @@ def test_an_action_pinned_behind_the_marks_refuses_until_the_pin_moves(box, cand
     behind = act.crapkit_job(runner.release(mirror, OLD), gate="true")
 
     refused = runner.run(root, behind, act.pull_request(built))
-    analysis = state.analysis_version(candidate)
     runner.check(refused, "--event", "pull_request", "--post", "posted", "--gate-code", "3",
-                 "--comment-has", f"`crapkit verify` exited 3 and wrote no verdict: {STAMP_REFUSAL}{analysis} ",
+                 "--comment-has", f"`crapkit verify` exited 3 and wrote no verdict: {PER_SCOPE_REFUSAL}",
                  "--comment-has", "but this run measures [crapkit-analysis=10 ")
 
     mirror.publish(candidate.staged, candidate.version)
@@ -310,22 +313,38 @@ def test_an_action_pinned_behind_the_marks_refuses_until_the_pin_moves(box, cand
 def test_marks_from_a_newer_crapkit_are_named_as_newer(box, candidate):
     runner = act.Runner.make(box)
     root, built = build_consumer(box, candidate, "--container-ok")
-    analysis = int(root.joinpath("crapkit-ratchet.tsv").read_text(encoding="utf-8").split("crapkit-analysis=")[1].split()[0])
-    newer = land_on_main(box, root, lambda: bump_stamp(root / "crapkit-ratchet.tsv", analysis),
+    language, analysis = first_analysis(root / "crapkit-ratchet.tsv")
+    newer = land_on_main(box, root, lambda: bump_stamp(root / "crapkit-ratchet.tsv"),
                          "ratchet: marks from the next release")
     job = act.crapkit_job(published(box, candidate, runner), gate="true")
 
     result = runner.run(root, job, act.pull_request(newer))
 
     runner.check(result, "--event", "pull_request", "--post", "posted", "--gate-code", "3",
-                 "--comment-has", f"{STAMP_REFUSAL}{analysis + 1} ", "--comment-has", "newer")
+                 "--comment-has", PER_SCOPE_REFUSAL,
+                 "--comment-has", f"{language} analysis {analysis + 1} to {analysis}", "--comment-has", "newer")
     assert "re-baseline with `crapkit ratchet seed`" not in logged_comment(result)
 
 
-def bump_stamp(marks: Path, analysis: int) -> None:
+# The candidate's seed writes one stamp per scope: `#scope`, the name, then
+# `analysis LANGUAGE=N ...; coverage MODE`.
+SCOPE_ANALYSIS = re.compile(r"^(#scope\t[^\t]+\tanalysis)([^;]*)", re.M)
+
+
+def first_analysis(marks: Path) -> tuple[str, int]:
+    """The first language and analysis number the marks' first `#scope` line records."""
+    numbers = SCOPE_ANALYSIS.search(marks.read_text(encoding="utf-8"))[2]
+    language, number = numbers.split()[0].split("=")
+    return language, int(number)
+
+
+def bump_stamp(marks: Path) -> None:
+    """Each analysis number of each `#scope` line one higher, as the next release's seed would write it."""
+    def raised(line: re.Match) -> str:
+        return line[1] + re.sub(r"=(\d+)", lambda number: f"={int(number[1]) + 1}", line[2])
+
     text = marks.read_text(encoding="utf-8")
-    marks.write_text(text.replace(f"crapkit-analysis={analysis} ", f"crapkit-analysis={analysis + 1} "),
-                     encoding="utf-8")
+    marks.write_text(SCOPE_ANALYSIS.sub(raised, text), encoding="utf-8")
 
 
 @cell("gha-action-container-job", channel="README job in a container", harness=RUNNER,

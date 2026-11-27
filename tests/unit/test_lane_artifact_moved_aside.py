@@ -290,3 +290,29 @@ def test_a_file_the_killed_attempt_wrote_stays_and_the_copy_it_set_aside_is_name
     assert (tmp_path / "cov.json").read_text(encoding="utf-8") == '{"partial'
     assert f"the previous one is at {copy.relative_to(tmp_path).as_posix()}" in err
     assert "move it back to cov.json to reuse it, or rerun the lane" in err
+
+
+# --- the artifact's directory -----------------------------------------------------
+
+def test_entering_an_attempt_creates_a_missing_artifact_directory(tmp_path):
+    """A runner that does not create its report's directory (`go test
+    -coverprofile`) runs as written in a fresh clone with no .crapkit/cov/."""
+    with owned(tmp_path, "x", (".crapkit/cov/x/y.lcov",)):
+        assert (tmp_path / ".crapkit" / "cov" / "x").is_dir()
+        assert not (tmp_path / ".crapkit" / "cov" / "x" / "y.lcov").exists()
+
+
+def test_a_directory_outside_the_root_is_left_to_the_owner(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    with owned(root, "x", ("../elsewhere/y.lcov",)):
+        assert not (tmp_path / "elsewhere").exists()
+
+
+def test_a_lane_whose_command_writes_into_a_fresh_directory_is_scored(tmp_path):
+    script = "open('.crapkit/cov/x/cov.json', 'w', encoding='utf-8').write(%r)" % ISTANBUL
+    lane = Lane(name="py", command=_script(tmp_path, "attempt.py", script),
+                artifact=".crapkit/cov/x/cov.json", parser="istanbul", scopes=())
+
+    assert run_lane(tmp_path, lane).provenance["exit_code"] == 0

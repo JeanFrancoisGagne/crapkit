@@ -62,7 +62,8 @@ def test_a_breach_staged_below_the_top_is_refused_by_the_root_that_owns_it(mono,
     code, out, err = run(["hook-precommit"], mono, capsys, monkeypatch)
 
     assert code == 6, out + err
-    assert "crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6:" in out, out
+    assert ("crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6 "
+            "(with no coverage known, CRAP is at least ccn):") in out, out
     assert "ccn   8  packages/api/src/app.ts:" in out and "knotty" in out, out
     assert "decompose before committing" in out, out
     assert f"using crapkit.toml at {(mono / 'packages' / 'api').resolve()}" in err, err

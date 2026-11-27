@@ -25,7 +25,8 @@ from pathlib import Path
 from cli_inproc_repo import commit_all, git, repo, template_repo  # noqa: F401
 from crapkit.cli import main
 from crapkit.marks_history import newest_committed_marks
-from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import RatchetEntry
+from stamps import marks_in
 
 MARKS = "crapkit-ratchet.tsv"
 
@@ -40,7 +41,7 @@ def _k(*numbers: int) -> list[str]:
 
 def _write_marks(root: Path, names: list[str]) -> None:
     entries = [RatchetEntry("src/app.ts", name, 20.0) for name in names]
-    (root / MARKS).write_text(dump_ratchet(entries, stamp=metric_version()),
+    (root / MARKS).write_text(marks_in(root, entries),
                               encoding="utf-8", newline="\n")
 
 
@@ -136,7 +137,7 @@ def _dated(monkeypatch, day: int) -> None:
 
 def _write_worth(root: Path, worth: dict[str, float]) -> None:
     entries = [RatchetEntry("src/app.ts", f"{name} ( n )", crap) for name, crap in worth.items()]
-    (root / MARKS).write_text(dump_ratchet(entries, stamp=metric_version()),
+    (root / MARKS).write_text(marks_in(root, entries),
                               encoding="utf-8", newline="\n")
 
 

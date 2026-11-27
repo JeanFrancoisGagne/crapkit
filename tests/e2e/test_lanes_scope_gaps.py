@@ -17,6 +17,7 @@ from crapkit.churn import parse_git_log
 from crapkit.config import load_config_text
 from crapkit.errors import ConfigError
 from crapkit.lanes import lane_reuse_commit, run_lane, write_stamps
+from crapkit.repotext import lenient
 from crapkit.scaffold import sniff_scopes
 
 from conftest import cli_runner
@@ -88,9 +89,9 @@ SCOPE_PATHS = {"src": ("src",)}
 
 
 def _git(repo: Path, *args: str) -> str:
-    res = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True,
+    res = subprocess.run(["git", *args], cwd=repo, capture_output=True,
                          timeout=HANG_SECONDS, check=True)
-    return res.stdout
+    return lenient(res.stdout)
 
 
 def _commit(repo: Path, message: str) -> str:
@@ -318,6 +319,38 @@ def test_paths_that_never_become_scopes(path: str):
 def test_scopes_group_by_top_level_dir_with_every_language_they_hold():
     files = ["src/app.ts", "src/util.py", "pylib/mod.py", "docs/guide.md", "setup.py"]
     assert sniff_scopes(files) == {"pylib": ("python",), "src": ("python", "typescript")}
+
+
+# --- the runner refusals read the spelled runner, through the CLI ------------
+
+
+def _with_command(repo: Path, command: str, parser: str = "istanbul") -> None:
+    toml = repo / "crapkit.toml"
+    text = toml.read_text(encoding="utf-8").replace(f"command = '\"{PY}\" run_counted.py'",
+                                                     f"command = '{command}'")
+    toml.write_text(text.replace('parser = "istanbul"', f'parser = "{parser}"'), encoding="utf-8")
+
+
+def test_a_wrapped_js_command_loads_and_doctor_says_its_runner_is_unknown(repo: Path):
+    """Before 0.9.0 the istanbul parser alone turned the vitest refusal on, and
+    `npm run test -- --coverage src/app.test.ts` was refused at load. The
+    command names no runner, so no runner refusal reads it."""
+    _with_command(repo, "npm run test -- --coverage src/app.test.ts")
+
+    res = _run_cli(repo, "doctor")
+
+    assert res.returncode in (0, 1), res.stdout + res.stderr
+    assert "file filter" not in res.stdout + res.stderr
+    assert "lane 'unit': runner unknown" in res.stdout, res.stdout
+
+
+def test_a_vitest_command_under_the_coveragepy_parser_is_refused_at_load(repo: Path):
+    _with_command(repo, "npx vitest run --coverage src/app.ts", parser="coveragepy")
+
+    res = _run_cli(repo, "doctor")
+
+    assert res.returncode == 3, res.stdout + res.stderr
+    assert "file filter 'src/app.ts' combined with --coverage" in res.stdout + res.stderr
 
 
 # --- coveragepy lane command validation -------------------------------------

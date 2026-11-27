@@ -1,12 +1,14 @@
 """A large member needs at most one bounded prefix decode before completion."""
 import hashlib
 import json
+from array import array
 from unittest.mock import patch
 
 import pytest
 
 from crapkit import coverage_py, covstream
 from crapkit.errors import ToolError
+from crapkit.score import FileEvidence
 
 
 def test_large_coverage_member_has_only_one_bounded_prefix_attempt(tmp_path):
@@ -19,10 +21,11 @@ def test_large_coverage_member_has_only_one_bounded_prefix_attempt(tmp_path):
     path = tmp_path / "coverage.json"
     path.write_bytes(raw)
     with patch.object(covstream, "_DECODER", wraps=covstream._DECODER) as decoder:
-        coverage, missing, digest = coverage_py.parse_coveragepy_both_file(path, path_prefix="", chunk=65536)
+        coverage, evidence, digest = coverage_py.parse_coveragepy_both_file(path, path_prefix="",
+                                                                            chunk=65536)
     # One complete meta decode; one bounded attempt and one final file decode.
     assert decoder.raw_decode.call_count == 3
-    assert missing == {"a.py": {2}}
+    assert evidence == {"a.py": FileEvidence(None, array("I", [2]))}
     assert coverage["a.py"][0].coverage == 0.5
     assert digest == hashlib.sha256(raw).hexdigest()
 

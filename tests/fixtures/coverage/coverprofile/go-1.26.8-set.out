@@ -1,0 +1,27 @@
+mode: set
+example.com/shapes/internal/calc/calc.go:6.24,7.22 1 0
+example.com/shapes/internal/calc/calc.go:7.22,9.3 1 0
+example.com/shapes/internal/calc/calc.go:10.2,10.14 1 0
+example.com/shapes/internal/calc/calc.go:14.32,15.12 1 1
+example.com/shapes/internal/calc/calc.go:15.12,17.3 1 0
+example.com/shapes/internal/calc/calc.go:18.2,18.20 1 1
+example.com/shapes/shapes.go:8.29,9.11 1 1
+example.com/shapes/shapes.go:9.11,11.3 1 1
+example.com/shapes/shapes.go:12.2,12.12 1 1
+example.com/shapes/shapes.go:12.12,14.3 1 0
+example.com/shapes/shapes.go:15.2,15.19 1 1
+example.com/shapes/shapes.go:19.32,21.23 2 1
+example.com/shapes/shapes.go:21.23,22.12 1 1
+example.com/shapes/shapes.go:22.12,24.4 1 1
+example.com/shapes/shapes.go:26.2,26.14 1 1
+example.com/shapes/shapes.go:30.36,31.27 1 1
+example.com/shapes/shapes.go:31.27,32.13 1 1
+example.com/shapes/shapes.go:32.13,34.4 1 0
+example.com/shapes/shapes.go:35.3,35.15 1 1
+example.com/shapes/shapes.go:37.2,38.23 2 1
+example.com/shapes/shapes.go:38.23,40.3 1 1
+example.com/shapes/shapes.go:41.2,41.12 1 1
+example.com/shapes/shapes.go:45.25,47.2 1 1
+example.com/shapes/shapes.go:50.27,51.11 1 0
+example.com/shapes/shapes.go:51.11,53.3 1 0
+example.com/shapes/shapes.go:54.2,54.14 1 0

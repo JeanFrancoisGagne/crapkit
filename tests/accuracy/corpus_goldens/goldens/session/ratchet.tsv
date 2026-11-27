@@ -1,5 +1,11 @@
-# crapkit-analysis=13 lizard=1.24.0
+# crapkit-stamp=2 lizard=1.24.0: crapkit-ratchet.tsv holds one stamp per scope, which crapkit 0.9.0 or later reads
 # crapkit-keys=1
+#scope	legacy	analysis python=13; coverage cc-only
+#scope	native	analysis cpp=13 go=13 java=13 objectivec=13 rust=13 swift=13 zig=13; coverage cc-only
+#scope	py	analysis python=13; coverage coveragepy=1
+#scope	scripts	analysis powershell=13 shell=13; coverage cc-only
+#scope	vendor	analysis cpp=13 go=13 java=13 javascript=13 objectivec=13 powershell=13 python=13 rust=13 shell=13 swift=13 tsx=13 typescript=13 vue=13 zig=13; coverage cc-only
+#scope	web	analysis javascript=13 tsx=13 typescript=13 vue=13; coverage istanbul=1
 path	long_name	crap
 src/native/matcher.rs	weight kind : & str	7.0000
 src/py/bom.py	count_words( text )	12.0000

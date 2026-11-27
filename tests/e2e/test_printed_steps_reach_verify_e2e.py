@@ -50,9 +50,9 @@ GRADE = """def classify(score, late):
     return "F"
 """
 
-# The deploy kit's reading, with room for the `python -m crapkit` spelling that a
-# process started without the console script prints.
-PRINTED = re.compile(r'(?:\brun|\bthen) `([^`]+)`|-> next: ((?:(?:"[^"]+"|\S+) -m )?crapkit[^\n`]*)')
+# The deploy kit's reading, with room for the `python -P -m crapkit` spelling that
+# a process started without the console script prints.
+PRINTED = re.compile(r'(?:\brun|\bthen) `([^`]+)`|-> next: ((?:(?:"[^"]+"|\S+) -P -m )?crapkit[^\n`]*)')
 CRAPKIT = re.compile(r"(?:^|\s)crapkit\s+(.+)$")
 LIMIT = 8
 

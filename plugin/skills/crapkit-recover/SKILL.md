@@ -1,6 +1,6 @@
 ---
 name: crapkit-recover
-description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, the seven causes behind a lane that wrote no artifact, the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge` and never to hand-resolution. Use when a crapkit command exits 3/4/5/6/7/8/9, a lane reports \"produced no artifact\" or \"wrote no artifact this run\", doctor says a shell \"cannot run\" a lane's first word or that a lane \"declares no results_artifact\", a run \"cannot serve as a baseline\", marks \"were recorded under\" another metric version, a ratchet regression names a function you never touched, verify reports a tainted baseline, seed or prune refuses an \"ambiguous legacy function identity\", git conflicts crapkit-ratchet.tsv, a command names a file git holds \"in bytes that are not UTF-8\", the \"measurement owner stopped\", `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
+description: "Recover a crapkit run that refused, and tell a real refusal from a line that only looks like one: which exit code means what, why a lane wrote no artifact, the tainted-baseline escape, and why a crapkit-ratchet.tsv conflict goes to `crapkit ratchet merge`, never a hand edit. Use when a crapkit command exits 3/4/5/6/7/8/9, the hook says functions \"rose past their ratchet mark\", a lane reports \"produced no artifact\" or \"wrote no artifact this run\", doctor says a shell \"cannot run\" a lane's first word or that a lane \"declares no results_artifact\", a run \"cannot serve as a baseline\", marks \"were recorded under\" another metric version, a ratchet regression names a function you never touched, verify reports a tainted baseline, seed or prune refuses an \"ambiguous legacy function identity\", git conflicts crapkit-ratchet.tsv, a command names a file git holds \"in bytes that are not UTF-8\", the \"measurement owner stopped\", `crapkit claude-hook` exits 2 with an advisory, or `crapkit doctor --plugin-root` reports drift."
 ---
 
 # Recovering a refused run
@@ -15,12 +15,17 @@ Start here. Each of these reads like a refusal and none of them stopped anything
 
 | What printed | What it means | What to do |
 |---|---|---|
-| "crapkit advisory: N function(s) over ceiling C in PATH (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` (added context on exit 0 in Cursor, Copilot CLI and VS Code) | The PostToolUse hook judged a function the edit changed. PostToolUse runs after the write and cannot block | Decompose that function now. The commit gate refuses it later, with more work stacked behind it |
+| "crapkit advisory: N function(s) over ceiling C in PATH (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` (added context on exit 0 in Cursor, Copilot CLI and VS Code) | The PostToolUse hook judged a function the edit changed. PostToolUse runs after the write and cannot block | Decompose that function now. The commit gate refuses it later, with more work stacked behind it. When an indented line under the function names twins or several candidates for a mark that left the file, run the `crapkit ratchet move --function` command it prints for the function the mark belongs to; a new mark is not the fix |
 | "crapkit advisory: PATH could not be read, so no function in it was judged (the edit landed; nothing was blocked)", exit 2 from `crapkit claude-hook` | The edit left a file no reader can read, so none of its functions was judged. The commit gate refuses that file once staged, with the same `UNREAD` line | Change what the reason names (for a TypeScript arrow, wrap its body in parentheses or a block), or list the file under `[exclude]` in `crapkit.toml`: [README: the gate](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#the-gate) |
 | "crapkit gate: N staged function(s) carry a ratchet mark and were not gated - `crapkit verify` fails a mark that rises" | The commit gate pardoned debt the ratchet already signed for. The commit went through | Nothing. Only `crapkit verify` judges whether a mark rose |
+| "crapkit gate: PATH NEW carries the mark M recorded for OLD; a passing verify re-keys it, or run crapkit ratchet move --function PATH \"OLD\" \"NEW\"", from `crapkit rescore --gate`, `crapkit verify` or the hooks | The function's signature changed, so its key did, and the one mark its file recorded under its bare name judged it. Its CRAP sits at or under that mark, so it passed | Nothing. A passing `crapkit verify` writes the mark under the new key; to do it now, run the `ratchet move --function` command the line prints: [docs: a signature change keeps its mark](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#a-signature-change-keeps-its-mark) |
+| "crapkit-ratchet.tsv: kept N mark(s) in PATH that no single function carries: OLD, ...; run crapkit ratchet move --function PATH OLD NEW", from `crapkit ratchet prune` or `crapkit ratchet seed` | Twins, or a name that several marks left or several unmarked functions took, so the carry cannot say which function each mark belongs to. prune kept the marks and seed marked none of those functions | Run `crapkit ratchet move --function PATH OLD NEW` with a kept mark as OLD and its function as NEW; the next prune prints no such line: [docs: pruning, and renames](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#pruning-and-renames) |
+| "crapkit gate: N staged marked function(s) rose in ccn and may pass their ratchet mark; `crapkit verify` judges them with coverage:", then one `ccn A -> B` row per function | Each named function's ccn rose since the diff base (`new` where the base had no such function) but still sits at or under its mark, so only coverage can say whether its CRAP passed the mark. The commit went through | Add tests that run the new branches, or decompose, then run `crapkit verify`, which judges each mark with coverage |
 | "crapkit doctor: the plugin at PATH is version X, and the crapkit its hooks spawn (CLI_PATH) is Y", exit 1 | The plugin and the crapkit on PATH ship as separate artifacts and drifted apart; the line names which executable answered | Update whichever is behind: the CLI, or the plugin with your agent's refresh lines, in Claude Code `claude plugin marketplace update crapkit` then `claude plugin update crapkit@crapkit --scope user`, in Codex `codex plugin marketplace remove crapkit`, then the README's `codex plugin marketplace add` line at the CLI's release tag, then `codex plugin add crapkit@crapkit`. A second `claude plugin install` only answers that the plugin is already installed |
 | "crapkit doctor: checking PATH", then nothing | You ran `--plugin-root` with no PATH, or named a directory above the plugin root, and doctor found the install (one line per install it checks). The line says which tree the verdict is about | Nothing. Exit 0 means the plugin and the CLI agree |
 | "WARN lane 'py' declares no results_artifact: the crashed-worker check and the no-new-failures check (exit 8) cannot run for it", from `crapkit doctor` | The lane measures coverage exactly as before. What it cannot feed are the two checks that read a test-results file | Add the junit flag and `results_artifact` the WARN prints. Until then exit 8 can never fire for that lane's scopes: [AGENTS: when a lane will not start](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#when-a-lane-will-not-start) |
+| "note lane 'js': runner unknown (npm run cov names none crapkit knows); runner-specific hints and refusals are off for it", from `crapkit doctor` | Not a failure, and doctor's exit code does not change. crapkit read no runner from the lane's command, the package.json script it runs, or devDependencies, so the hints and refusals that key on one runner skip this lane. The lane measures as before | Nothing, or name the runner in the command to turn those checks back on: `npx vitest run --coverage` in place of `npm run cov`: [docs: how crapkit reads a lane's runner](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#how-crapkit-reads-a-lanes-runner) |
+| "warning: crapkit-ratchet.tsv records one analysis number and no coverage mode, so verify read scope(s) NAME as measured by the coverage readers 0.8.x read for their lanes", from `crapkit verify` | A marks file 0.8.x wrote records no coverage mode, so verify inferred each marked scope's mode from its lanes and compared on. Not a failure | Nothing. The next seed or passing verify records each scope's mode, and the warning stops: [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp) |
 | "warning: crapkit-ratchet.tsv carries no metric stamp (written before stamping)", from `crapkit verify` | The marks file predates stamping, so nothing can be compared against it | Run `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`: seed stamps the metric of the run it reads: [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp) |
 | "crapkit: lane 'py': coverage.py report carries no branch data, so the coverage term is statement-based for this artifact - add --cov-branch to the lane command to measure branches", from `crapkit coverage` | The lane scored on statements instead of branches, so CRAP is understated on branchy functions. A report carrying neither branches nor statements is still exit 5 | Add `--cov-branch` to the lane command, then rerun `crapkit coverage`: [docs: pytest](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#pytest) |
 | "crapkit: lane 'py': coverage.py report has no function regions for 1 of 40 file(s) (tpl/page.html) - those files are skipped and the rest of the report is scored", from `crapkit coverage` | A plugin reporter, django or jinja templates, declares no code regions for those files. Every other file in the report scored. A report where no file carries regions is still exit 5 | Nothing, unless you expected those files measured: [docs: a file the report carries no regions for](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#a-file-the-report-carries-no-regions-for) |
@@ -61,11 +66,11 @@ in this version.
 
 | Exit | What refused | Owner | First command |
 |---|---|---|---|
-| 3 | config: `crapkit.toml` unparseable, a lane command the guard refuses, a metric-stamp mismatch, a `test-scoped` file under no templated scope, a scoped file whose name is not UTF-8 or a path argument naming a file whose name is not UTF-8 (rename it with `git mv`), a root `package.json` that `init` cannot read (`init wrote no file`; save it as one UTF-8 JSON object), a root on a Windows network share (map it with the `net use` line it prints) | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
+| 3 | config: `crapkit.toml` unparseable, a lane command the guard refuses, a metric-stamp mismatch, a `test-scoped` file under no templated scope, a scoped file whose name is not UTF-8 (`verify --json` lists it as an `unreadable_name` item in `findings`, with its `path`, `scope` and `reason`) or a path argument naming a file whose name is not UTF-8 (rename it with `git mv`), a root `package.json` that `init` cannot read (`init wrote no file`; save it as one UTF-8 JSON object), a root on a Windows network share (map it with the `net use` line it prints), a `ratchet move --function PATH OLD NEW` that left the marks file as it was: "no mark named OLD in PATH" lists PATH's marked key names, so run it again with one of them as OLD, and each of its other refusals names its own fix | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit doctor` |
 | 4 | git: not a repository, a repository with no commit yet or one git refuses to open (each refusal names its fix), a baseline commit rewritten out of the history or made on a branch HEAD does not contain, a baseline commit or fork point a shallow clone does not hold, or `crapkit ratchet report --enforce` with a debt key set in any shallow clone (mark ages and repayments need the whole history). The shallow ones end `set fetch-depth: 0 on the checkout or run git fetch --unshallow` | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit runs list`, or `git fetch --unshallow` when the line names a shallow clone |
 | 5 | a lane produced no artifact, produced one measuring a different tree or spelling this one absolutely, wrote a report crapkit refuses to read, timed out past its retries, or refused a container; the measurement owner stopped; or `crapkit verify --reuse-artifacts` found a lane's declared `results_artifact` missing or unreadable, stored no run, and ended `run verify without --reuse-artifacts so the lane writes it again`: run `crapkit verify` without the flag | [docs: what a failed lane does to scoring](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#what-a-failed-lane-does-to-scoring) | `crapkit coverage --lane NAME` |
 | 5, kind `internal` | "stopped: an internal check failed": a number crapkit calculated broke its documented bound, and crapkit stopped before storing or printing it. A crapkit bug, not the repo's: a rerun stops at the same check, and no crapkit.toml setting moves it | [docs: errors](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/agent-json.md#errors) | `crapkit --version`, then report it with the whole message at https://github.com/JeanFrancoisGagne/crapkit/issues |
-| 6 | gate: a function the diff touched is over its ceiling and above any ratchet mark it carries; or an `UNREAD` line names a changed file no reader could read (change what its reason names, or list it under `[exclude]`), and an override grants nothing until it is gone | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
+| 6 | gate: a function the diff touched is over its ceiling and above any ratchet mark it carries; or the commit hook's "rose past their ratchet mark" block names a marked function whose ccn alone passed its mark (bring the ccn back to the mark or under it: a mark only falls); or a GATE line ends with "no mark carries to ...": twins, or several marks or unmarked functions sharing the name, kept a signature edit from carrying its mark (run the `crapkit ratchet move --function` command it prints); or an `UNREAD` line names a changed file no reader could read (change what its reason names, or list it under `[exclude]`), and an override grants nothing until it is gone | [AGENTS: gate the edit](https://github.com/JeanFrancoisGagne/crapkit/blob/main/AGENTS.md#3-gate-the-edit) | `crapkit rescore FILE --gate` |
 | 7 | ratchet: a marked function scores worse than its recorded mark | [docs: how verify uses the ratchet](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#how-verify-uses-the-ratchet) | `crapkit explain PATH NAME` |
 | 8 | a test that passed in the baseline fails now | [README: exit codes](https://github.com/JeanFrancoisGagne/crapkit/blob/main/README.md#exit-codes) | `crapkit test-scoped FILE` |
 | 9 | more uncovered changed lines than `diff_uncovered_max` | [docs: configuration](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/configuration.md) | `crapkit verify --json` |
@@ -92,23 +97,38 @@ the OOM killer: rerun.
 
 Exit 3 fires before any lane runs, so nothing was measured and nothing was written.
 
-`ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] but this run
-measures [crapkit-analysis=13 lizard=1.24.0]` is the 0.8.1 upgrade, not a break. Version 13
+`ratchet marks were recorded under [crapkit-analysis=11 lizard=1.24.0] in crapkit-ratchet.tsv,
+and the rules have moved since in 1 scope(s): web (typescript analysis 11 to 13)` is the
+0.8.1 upgrade, not a break. Version 13
 moves numbers in every language but Python, and some of Python's cognitive and nesting, so
 CRAP scores from the two versions are not comparable:
 [docs: analysis version 13](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#analysis-version-13).
-Run `crapkit coverage`, then `crapkit ratchet prune`, then `crapkit ratchet seed`: prune
-drops a mark whose key the new analysis moved, and seed stamps the metric of the run it
-reads, so a seed from a run the older crapkit measured keeps the old stamp and verify keeps
-refusing. When a failed verify pins the baseline, plain prune and plain seed both read the
+The refusal names only the scopes that hold marks and whose rules moved, each with what
+moved: a language's `analysis` number, a parser's `reader` number, `lizard`, the `coverage`
+mode, or `no stamp recorded for this scope`, which is how a renamed scope reads. Run
+`crapkit coverage`, then `crapkit ratchet prune`, then the seed the refusal names for each
+scope: prune drops a mark whose key the new analysis moved, and seed stamps
+the metric of the run it reads, so a seed from a run the older crapkit measured keeps the old
+stamp and verify keeps refusing. When a failed verify pins the baseline, plain prune and plain seed both read the
 pinned run. Name the newer one to each: `crapkit ratchet prune --baseline N`, then
 `crapkit ratchet seed --baseline N`. On such a store a plain `crapkit verify` prints N in the
 taint warning above its refusal, and the refusal ends by saying a failed verify pins the plain
-seed; `crapkit verify --baseline N` ends with that seed itself. When the first bracket is the
-newer one, a newer crapkit or lizard wrote the marks (`the marks come from a newer crapkit
+seed; `crapkit verify --baseline N` ends with that seed itself. When a scope's old number is the
+higher one, a newer crapkit wrote the marks (`the marks come from a newer crapkit
 than this install`): upgrade this install, and never seed, since seed and prune refuse those
 marks and a seed would restamp the team's marks backwards:
 [docs: the metric stamp](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-metric-stamp).
+When the refusal names one scope, repair that scope alone: `crapkit coverage`, then
+`crapkit ratchet seed --scope NAME`, which rewrites only NAME's marks and stamp line. A seed
+that answers `recorded no metric for scope NAME` read a run from before 0.9.0: run
+`crapkit coverage` and seed again. A refusal that names `lizard` names the plain
+`crapkit ratchet seed`: the file records one lizard version for every scope, and
+`seed --scope` keeps it, so a scoped seed refuses that file:
+[docs: repairing one scope](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#repairing-one-scope---scope).
+A refusal whose last clause reads `so its marks hold no coverage yet: follow` and links the
+upgrade guide names a cc-only scope that a lane measures now. Follow that procedure: it
+compares the export with the marks before the scoped seed raises them:
+[docs: turning a cc-only scope into a measured one](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one).
 
 `lane 'py': positional argument 'slow'' narrows a full-suite coverage run ... (cmd.exe
 does not treat ' as a quote: write the value in double quotes)` is the lane guard reading
@@ -202,6 +222,31 @@ every declared lane fails, `coverage` prints a closing count, `crapkit: every la
 nothing to show and there is no partial run for `verify` to refuse against. Read the lane
 lines above that count; it repeats none of them.
 
+## A coverage artifact crapkit refuses, by format
+
+The lane wrote its artifact and crapkit refused to read it, exit 5. The line names the
+artifact and what is wrong with it.
+
+| Format | Signature | Cause and fix |
+|---|---|---|
+| lcov | `lcov.info is not UTF-8 (first bytes ff fe = UTF-16)` | `llvm-cov export ... > x.lcov` typed in Windows PowerShell 5.1 wrote UTF-16. `llvm-cov export` has no output-file option: run `cmd /c "llvm-cov export ... > x.lcov"` or pipe it through `Out-File -Encoding utf8 x.lcov` (cargo-llvm-cov writes its own file with `--output-path`), then rerun the lane |
+| lcov | `lcov artifact PATH: the record for SF:KEY has no end_of_record` | the run was killed while it wrote the tracefile, so its last record is cut off. Rerun the lane |
+| lcov | `measured N file(s), none of them under the paths its scopes declare` with absolute `SF:` paths | the `SF:` keys name another tree: see the next section. A relative key that misses every scope wants `path_prefix` |
+| cobertura | `cobertura artifact PATH is empty: the file holds no XML element` or a missing artifact | gcovr ran without `--cobertura FILE`, so it printed its text summary and wrote no XML. Add `--cobertura` with the lane's artifact path, then rerun the lane |
+| cobertura | `cobertura artifact PATH: the XML ends or breaks at line L, column C` | the run was killed while it wrote the report, so the XML is cut off. Rerun the lane |
+| cobertura | `measured N file(s), none of them under the paths its scopes declare` with absolute paths | the report's `<source>` root is another checkout: see the next section. A relative source that misses every scope wants `path_prefix` |
+| cobertura | `cobertura artifact PATH declares the entity NAME in its DTD` | the report's DTD declares an entity, which no Cobertura producer writes; crapkit expands none. Regenerate the report with its producer |
+| jacoco | a missing artifact after the tests passed | the report task never ran after `test`: the command runs `test` alone, or Maven's `report` goal came before `test`. Run `test jacocoTestReport` (Gradle) or `prepare-agent test report` (Maven), then rerun the lane |
+| jacoco | a missing artifact, with `build/reports/jacoco/test/html/` written | Gradle's `jacocoTestReport` writes no XML by default. Set `reports { xml.required = true }` on the task, then rerun the lane |
+| jacoco | `measured N file(s), none of them under the paths its scopes declare`, or functions the tests run at `cov` 0.0 | the report was built from another checkout's classes or `.exec` file (JaCoCo's log says `Execution data for class ... does not match`), or its package paths sit under a source root `path_prefix` does not name. Rebuild and rerun the lane here, with `path_prefix` at the source root (`src/main/java`) |
+| coverprofile | `measured N file(s), none of them under the paths its scopes declare`, or functions the tests run at `cov` 0.0 | the command's package list left out the scope's packages (`go test ./pkg/a` for a scope over `pkg/b`). Run `go test -coverprofile=... ./...` from the module, then rerun the lane |
+| coverprofile | `the first line ... is not a mode line` | a run killed before it wrote the profile, or a file that is not a Go coverprofile. Rerun the lane and let `go test` finish |
+| coverprofile | `no go.mod at its cwd ... or above it in this checkout` | the lane's `cwd` sits outside every module. Set `cwd` to the module's directory, one lane per module |
+| coverprofile | `N of the M file(s) in PATH sit outside module ...`, naming `command-line-arguments/` | a `go test file.go` run, whose blocks name no package, or a profile from another module. Test packages (`./...`) from the module, one lane per module |
+| jacoco | `N of the M sourcefile(s) in PATH name no file under path_prefix`, or `measured N file(s), none of them under the paths its scopes declare`, in a multi-module build | one lane over an aggregate report places only the module its `path_prefix` names, and the other modules' functions score untested. Declare one lane per module, each with `path_prefix` at that module's source root |
+
+[docs: lcov](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/lanes.md#lcov).
+
 ## "measured N file(s), none of them under the paths its scopes declare"
 
 The lane wrote a real artifact, and none of the paths in it reach the scopes the lane
@@ -214,7 +259,7 @@ them:
 |---|---|---|
 | absolute or drive-lettered (`C:/…`) and resolving **outside** this checkout, or climbing out of it (`../…`) | the lane FAILS, **exit 5**; its scopes fall back to `no-lane` | the run measured a different tree: a stale artifact, or the wrong environment. A `python -m pytest` lane binds to whatever venv the shell has active, which in a second worktree is the other checkout's: run the suite through the project's own manager (`uv run python -m pytest …`). On an istanbul lane the reader rebases every path under this checkout's root, so an escaped path means the artifact was written elsewhere: rerun the suite here rather than reusing one copied in or restored from a CI cache. A `../` climb lands here whatever it points at: it is relative to a working directory the artifact never recorded |
 | absolute or drive-lettered and resolving **under** this checkout | the lane FAILS, **exit 5**; its scopes fall back to `no-lane` | right tree, wrong spelling: the runner reported absolute paths and crapkit joins on root-relative ones, so the join finds nothing. Nothing about the environment is wrong. Turn the spelling off at the runner, then rerun the lane: coverage.py takes `relative_files = true` under `[tool.coverage.run]` in pyproject.toml (or `[run] relative_files = true` in .coveragerc), and an istanbul reporter takes its own `cwd`/`root` option |
-| repo-relative but rooted one level down (`faro/core.py` where the scope is `src`), or no paths at all | a **warning** on stderr and **exit 0**: the run scores on, with every function in those scopes `untested` | the runner reports relative to a subdirectory: set `path_prefix` on the lane (coveragepy only; the istanbul reader never reads that key). Or it is the greenfield shape, a suite that imports none of the scoped source yet, where `untested` is the right answer and there is nothing to fix |
+| repo-relative but rooted one level down (`faro/core.py` where the scope is `src`), or no paths at all | a **warning** on stderr and **exit 0**: the run scores on, with every function in those scopes `untested` | the runner reports relative to a subdirectory: set `path_prefix` on the lane (coveragepy and lcov; the istanbul reader never reads that key). Or it is the greenfield shape, a suite that imports none of the scoped source yet, where `untested` is the right answer and there is nothing to fix |
 
 So a green `crapkit coverage` can still be carrying this: `lane 'py' measured N file(s) …
 so every function in those scopes will score untested`. Nothing in either exit-5 row applies
@@ -233,6 +278,25 @@ Test rot, not code rot. A ratchet regression fires whether or not the diff touch
 function, which is the whole point: deleting the coverage behind an untouched function is
 enough to raise its CRAP. Start at `crapkit explain PATH NAME`, look for the test that
 stopped exercising it, and restore the coverage rather than the code.
+
+A RATCHET line that names two keys, `classify( a , b , c = None ): 7.0 -> 8.0 (mark
+recorded for classify( a , b ))`, means a signature edit carried the mark to the function
+and no passing verify has re-keyed it yet. The fix is the same as for an exact mark:
+restore what lowered the score.
+
+## Committing past a marked refusal
+
+The commit hook's "rose past their ratchet mark" block refuses a marked function whose ccn
+alone passed its mark. `CRAPKIT_OVERRIDE_REASON` passes that refusal through the full audit
+(alert line, store row), but it never raises the mark: the receipt line `crapkit: 1 ratchet
+mark kept as it was (a mark only falls)` names each mark it kept, and `crapkit-ratchet.tsv`
+stays out of the commit when the grant added no new mark. So the next `crapkit verify`
+reports the rise as a ratchet regression (exit 6 when the diff touched the function, 7 when
+not), and `verify --override` refuses it: no override grants a ratchet regression. Two ways
+out: bring the function back to its mark or under it, or raise the mark in
+`crapkit-ratchet.tsv` by hand in a commit a reviewer sees.
+
+Owner: [docs: overrides and the audit trail](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#overrides-and-the-audit-trail).
 
 ## Tainted baseline
 
@@ -297,6 +361,17 @@ which names no problem in either file. Run `git merge --abort`, upgrade crapkit,
 again: 0.8.1 merges the two files as a union, each mark both sides hold at the lower value.
 
 Owner: [docs: the git merge driver](https://github.com/JeanFrancoisGagne/crapkit/blob/main/docs/ratchet.md#the-git-merge-driver).
-When the driver itself refuses (`marks from different metric versions cannot merge`),
-run `crapkit coverage`, then `crapkit ratchet prune`, then re-baseline one side with
-`crapkit ratchet seed`, and merge again.
+The driver merges the stamps scope by scope and refuses only a scope both branches moved
+differently. Its refusal opens like this, then names the fix:
+
+    crapkit: ratchet merge refused: OURS and THEIRS moved a stamp differently - scope web: OURS records [lizard=1.24.0 analysis typescript=14; coverage istanbul=1] and THEIRS records [lizard=1.24.0 analysis typescript=15; coverage istanbul=1] - run ...
+
+Run `git merge --abort`. On one branch, run `crapkit coverage`, then the seed the line names:
+`ratchet seed --scope NAME` for each scope, or the plain `crapkit ratchet seed` when the two
+branches recorded different lizard versions. Commit, and merge again. A refusal that names
+no scope (an unstamped side, or two single-number stamps) asks for `crapkit coverage`,
+`crapkit ratchet prune` and `crapkit ratchet seed` on one branch instead.
+
+A merge that goes through can print `ratchet merge: scope NAME's stamp came from OURS and
+THEIRS changed N mark(s)`. It is no failure: if the next verify names that scope, run
+`ratchet seed --scope NAME`.

@@ -391,7 +391,7 @@ def route_1(box, repo: Path) -> None:
     grade.write_text(grade.read_text(encoding="utf-8") + GATE_BREACH, encoding="utf-8")
     box.run(["git", "add", "calc/grade.py"], cwd=repo, expect=0)
     refused = box.run(["git", "commit", "-q", "-m", "add breach"], cwd=repo, env=box.commit_env(), expect=1)
-    assert "crapkit gate: 1 staged function(s) exceed the complexity ceiling of 6" in said(refused)
+    assert "crapkit gate: 1 staged function(s) exceed the CRAP ceiling of 6" in said(refused)
     grade.write_text(grade.read_text(encoding="utf-8").replace(GATE_BREACH, "\n\ndef fine(a):\n    return a\n"),
                      encoding="utf-8")
     box.run(["git", "add", "calc/grade.py"], cwd=repo, expect=0)

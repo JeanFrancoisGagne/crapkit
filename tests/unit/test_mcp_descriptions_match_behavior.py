@@ -315,10 +315,11 @@ REPORT_GIT = {"log", "diff-tree", "ls-tree", "cat-file"}
 
 
 def _write_marks(root: Path) -> None:
-    from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+    from crapkit.ratchet import RatchetEntry
+    from stamps import marks_in
 
     marks = [RatchetEntry("src/app.ts", "dispatch ( kind )", 60.0)]
-    (root / "crapkit-ratchet.tsv").write_text(dump_ratchet(marks, stamp=metric_version()),
+    (root / "crapkit-ratchet.tsv").write_text(marks_in(root, marks),
                                               encoding="utf-8", newline="\n")
 
 

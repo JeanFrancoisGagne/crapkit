@@ -44,6 +44,7 @@ _SAME_RELEASE = "the same crapkit release as the plugin"
 _LINK = re.compile(re.escape(BLOB) + r"([\w./-]+?)(?:#([\w-]+))?\)")
 _HEADING = re.compile(r"^#{1,6} +(.+?)\s*$", re.MULTILINE)
 _NOT_IN_SLUG = re.compile(r"[^\w\- ]")
+_EXPLICIT_ANCHOR = re.compile(r'^<a id="([\w-]+)"></a>$', re.MULTILINE)
 
 
 @lru_cache(maxsize=None)
@@ -104,7 +105,11 @@ def _slug(heading: str) -> str:
 
 @lru_cache(maxsize=None)
 def _anchors(page: str) -> frozenset[str]:
-    return frozenset(_slug(heading) for heading in _HEADING.findall(_doc(page)))
+    """Each heading's slug, and each id an `<a id>` sets: a renamed heading
+    keeps its old anchor that way, so the links outside the repo still land."""
+    text = _doc(page)
+    return (frozenset(_slug(heading) for heading in _HEADING.findall(text))
+            | frozenset(_EXPLICIT_ANCHOR.findall(text)))
 
 
 def _link_is_broken(path: str, anchor: str) -> bool:
@@ -131,6 +136,18 @@ def test_the_slug_rule_matches_the_headings_it_is_pointed_at():
             == "a-lane-that-wrote-no-artifact-seven-causes")
     assert "exit-codes" in _anchors("README.md")
     assert "reportonfailure" in _anchors("docs/lanes.md")
+
+
+def test_a_renamed_heading_keeps_its_old_anchor_through_an_explicit_id():
+    """The commit-gate heading on the ratchet page was renamed in 0.9.0, and
+    links from other pages and other sites name its 0.4.0 anchor. No heading
+    slugs to that anchor now, so only the `<a id>` line above it can hold it."""
+    old = "the-commit-gate-skips-marked-functions"
+    headings = {_slug(heading) for heading in _HEADING.findall(_doc("docs/ratchet.md"))}
+
+    assert old not in headings
+    assert old in _anchors("docs/ratchet.md")
+    assert not _link_is_broken("docs/ratchet.md", old)
 
 
 _CODE = re.compile(r"^(```|~~~).*?^\1[^\n]*$|`+[^`\n]*`+", re.MULTILINE | re.DOTALL)

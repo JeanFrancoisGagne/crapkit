@@ -7,7 +7,7 @@ import pytest
 
 from crapkit.analyze import analyze_source
 from crapkit.cli import main
-from crapkit.ratchet import metric_version
+from stamps import running_in, stamp_lines
 from crapkit.score import score_rows
 from crapkit.snapshot import build_inventory_rows
 from crapkit.store import SnapshotStore
@@ -20,7 +20,7 @@ def _fixture(root, stamp=''):
     (root / 'crapkit.toml').write_text(
         '[crapkit]\ntarget=6\n[[scope]]\nname="web"\npaths=["."]\n'
         'languages=["typescript"]\ncoverage_optional=true\n', encoding='utf-8')
-    mark = f'# {metric_version()}\n' + stamp + 'path\tlong_name\tcrap\napp.ts\t(anonymous)#2\t99.0000\n'
+    mark = stamp_lines(running_in(root)) + stamp + 'path\tlong_name\tcrap\napp.ts\t(anonymous)#2\t99.0000\n'
     (root / 'crapkit-ratchet.tsv').write_text(mark, encoding='utf-8')
     return build_inventory_rows({'web': analyze_source('app.ts', source)})
 

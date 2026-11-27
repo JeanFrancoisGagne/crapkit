@@ -1,0 +1,21 @@
+{
+  "case": "marked_comment_edit",
+  "why": "A comment edit inside sprawl( n ), marked 10.0 at ccn 8: its range, 8 to 72, straddles the mark, and the edit touched it. Its ccn did not move from HEAD, so the edit cannot have raised its CRAP, and the commit gate passes it on the count line. Silence here keeps the advisory off every edit in a seeded repo.",
+  "fixture": "marked_comment_edit",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "    # a note",
+      "new_string": "    # a different note"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {"exit": 0, "stderr": []}
+}

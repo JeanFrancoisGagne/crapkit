@@ -1,13 +1,17 @@
-"""SARIF 2.1.0 and GitHub workflow-command emission. Pure builders.
+r"""SARIF 2.1.0 and GitHub workflow-command emission. Pure builders.
 
 Code-scanning UIs and PR annotation bots consume this; ruleIds, levels, and
-locations are contract. Every uri is repo-relative with forward slashes.
+locations are contract. Every uri is repo-relative with forward slashes, each
+byte of the name percent-encoded as git gives it: a name that is not UTF-8
+keeps its own bytes (`src/caf%E9.py`), and an annotation names that file the
+way every crapkit message does, `src/caf\xe9.py`.
 """
 from __future__ import annotations
 
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote_to_bytes
 
 from . import __version__
+from .repotext import backslashed
 from .score import over_ceiling
 
 _RULES = (
@@ -21,6 +25,8 @@ _RULES = (
      "shortDescription": {"text": "a changed line no lane ever ran"}},
     {"id": "crapkit/unread",
      "shortDescription": {"text": "a changed file no reader could read, so the gate judged none of it"}},
+    {"id": "crapkit/unreadable-name",
+     "shortDescription": {"text": "a file a scope takes whose name is not UTF-8, so no gate can judge it"}},
 )
 
 
@@ -29,10 +35,20 @@ def _result(rule_id: str, level: str, path: str, line: int, text: str) -> dict:
         "ruleId": rule_id, "level": level,
         "message": {"text": text},
         "locations": [{"physicalLocation": {
-            "artifactLocation": {"uri": quote(path, safe="/")},
+            "artifactLocation": {"uri": quote(_name_bytes(path), safe="/")},
             "region": {"startLine": line},
         }}],
     }
+
+
+def _name_bytes(path: str) -> bytes:
+    """The bytes git names the file in: each surrogate a name that is not UTF-8
+    holds goes back to its byte. A lone surrogate outside that range, which
+    only a Windows command line hands over, stays the broken UTF-16 it is."""
+    try:
+        return path.encode("utf-8", "surrogateescape")
+    except UnicodeEncodeError:
+        return path.encode("utf-8", "surrogatepass")
 
 
 def over_target_results(scored, scope_targets: dict, target: int) -> list[dict]:
@@ -48,38 +64,11 @@ def over_target_results(scored, scope_targets: dict, target: int) -> list[dict]:
     return out
 
 
-def gate_results(violations) -> list[dict]:
-    return [_result("crapkit/gate", "error", v.path, v.start,
-                    f"{v.long_name}: CRAP {v.crap:.1f} (ccn {v.ccn}, cov {v.cov:.0%}) -> {v.remedy}")
-            for v in violations]
-
-
-def unread_results(unread_files) -> list[dict]:
-    # no function was read, so line 1 anchors the file-level finding
-    return [_result("crapkit/unread", "error", u.path, 1,
-                    f"no reader could read this file, so the gate judged none of its "
-                    f"functions: {u.reason}")
-            for u in unread_files]
-
-
-def regression_results(regressions) -> list[dict]:
-    # the ratchet stores no line numbers; line 1 anchors the file-level finding
-    return [_result("crapkit/ratchet-regression", "error", r.path, 1,
-                    f"{r.long_name}: recorded {r.recorded} -> fresh {r.fresh_crap}")
-            for r in regressions]
-
-
-def diff_uncovered_results(uncovered) -> list[dict]:
-    """One finding per changed line no lane ran, from verify's own list.
-
-    A warning, not an error: the count is what `diff_uncovered_max` gates on,
-    and a single dark line is not a refusal by itself. Before this, these lines
-    reached stderr and nothing else, so the output a code-scanning UI reads
-    dropped every one of them.
-    """
-    return [_result("crapkit/diff-uncovered", "warning", path, line,
-                    "changed line has no coverage: no lane ran it")
-            for path, line in uncovered]
+def finding_result(form, entry) -> dict:
+    """One verdict finding as a result, in the SARIF form its kind's row gives
+    (`verify.FINDING_KINDS`): its rule, level, anchor and message."""
+    path, line = form.place(entry)
+    return _result(form.rule, form.level, path, line, form.message(entry))
 
 
 # Where OASIS publishes the SARIF 2.1.0 schema, and the id the schema declares for
@@ -116,6 +105,7 @@ def _property(text: str) -> str:
 
 def github_annotation(result: dict) -> str:
     loc = result["locations"][0]["physicalLocation"]
-    return (f"::{result['level']} file={_property(unquote(loc['artifactLocation']['uri']))},"
+    named = backslashed(unquote_to_bytes(loc["artifactLocation"]["uri"]))
+    return (f"::{result['level']} file={_property(named)},"
             f"line={loc['region']['startLine']},title={_property(result['ruleId'])}"
             f"::{_esc(result['message']['text'])}")

@@ -9,14 +9,19 @@ keeps refusing it until a fresh `coverage` and `ratchet seed` re-baseline the ma
 """
 from contextlib import closing
 
-from cli_inproc_repo import add_knotty, git, repo, seed_artifacts, template_repo  # noqa: F401
+from cli_inproc_repo import (KNOTTY, TOML, add_knotty, commit_all, git, repo,  # noqa: F401
+                             seed_artifacts, template_repo)
+from stamps import running_in, scoped
 
 from crapkit.cli import main
-from crapkit.ratchet import metric_version, read_stamp
+from crapkit.ratchet import RatchetEntry, dump_ratchet, read_stamp
 from crapkit.store import SnapshotStore
 
 MARKS = "crapkit-ratchet.tsv"
 STALE = "crapkit-analysis=7 lizard=1.17.10"
+# The mark crapkit 0.8.1's hook-precommit grant wrote for knotty in the cc-only
+# scope of test_a_hook_grant_in_a_cc_only_scope_writes_the_ccn, run on that fixture.
+GRANT_081 = "8.0000"
 
 
 def run(argv, repo, capsys):
@@ -64,11 +69,71 @@ def test_a_hook_grant_leaves_a_file_written_before_stamping_unstamped(repo, caps
     assert read_stamp(grant_knotty(repo, capsys, monkeypatch)) == ""
 
 
-def test_a_hook_grant_that_creates_the_marks_file_stamps_the_metric_it_ran_under(
+def test_a_hook_grant_that_creates_the_marks_file_signs_the_running_per_scope_stamp(
         repo, capsys, monkeypatch):
     """No marks were recorded, so the only numbers in the new file are the
     grant's own, scored by this crapkit."""
-    assert read_stamp(grant_knotty(repo, capsys, monkeypatch)) == metric_version()
+    assert read_stamp(grant_knotty(repo, capsys, monkeypatch)) == running_in(repo)
+
+
+def test_a_hook_grant_on_a_per_scope_file_keeps_every_scope_line_verbatim(repo, capsys, monkeypatch):
+    """web's line records typescript 12, which this crapkit no longer runs: the
+    grant adds no measured number, so that line stays as it was read."""
+    running = running_in(repo)
+    older = scoped(src=tuple(running.scopes["src"]), web=({"typescript": 12}, {"istanbul": 1}))
+    (repo / MARKS).write_text(dump_ratchet([RatchetEntry("src/app.ts", "dispatch ( kind )", 90.0)],
+                                           stamp=older, key_version=1, file_name=MARKS),
+                              encoding="utf-8", newline="\n")
+    before = scope_stamp_lines((repo / MARKS).read_text(encoding="utf-8"))
+
+    text = grant_knotty(repo, capsys, monkeypatch)
+
+    assert scope_stamp_lines(text) == before
+    assert "#scope\tweb\tanalysis typescript=12; coverage istanbul=1" in text
+    assert "knotty ( n )" in text
+
+
+def scope_stamp_lines(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line.startswith("#")]
+
+
+# src measures no coverage: the grant's mark is the function's ccn.
+CC_ONLY = TOML.replace('paths = ["src"]\nlanguages = ["typescript"]\n',
+                       'paths = ["src"]\nlanguages = ["typescript"]\ncoverage_optional = true\n')
+CC_ONLY = CC_ONLY.replace(CC_ONLY[CC_ONLY.index('[[lane]]\nname = "unit"'):CC_ONLY.index('[[lane]]\nname = "ui"')], "")
+
+
+def knotty_mark(text: str) -> str:
+    return next(line.split("\t")[2] for line in text.splitlines() if "\tknotty ( n )\t" in line)
+
+
+def test_a_hook_grant_in_a_cc_only_scope_writes_the_ccn(repo, capsys, monkeypatch):
+    """Three independent checks on the mark the grant writes for knotty, ccn 8.
+
+    1. Stock lizard, run outside crapkit, reports ccn 8, and a hand count agrees:
+       one path plus seven `if`s.
+    2. `coverage --export` scores knotty's CRAP in this cc-only scope at 8.
+    3. crapkit 0.8.1's hook-precommit grant on this fixture wrote 8.0000.
+    """
+    import lizard
+
+    (repo / "crapkit.toml").write_text(CC_ONLY, encoding="utf-8")
+    commit_all(repo, "src is cc-only")
+    hand_count = 1 + KNOTTY.count("if (")
+
+    text = grant_knotty(repo, capsys, monkeypatch)
+
+    stock = {f.name: f.cyclomatic_complexity
+             for f in lizard.analyze_file.analyze_source_code("app.ts", KNOTTY).function_list}
+    assert stock["knotty"] == hand_count == 8
+    assert knotty_mark(text) == f"{stock['knotty']:.4f}" == "8.0000"
+    seed_artifacts(repo)
+    export = repo / ".crapkit" / "export.tsv"
+    assert main(["coverage", "--reuse-artifacts", "--export", str(export), "--repo", str(repo)]) == 0
+    header, *rows = [line.split("\t") for line in export.read_text(encoding="utf-8").splitlines()]
+    scored = {row["long_name"]: row for row in (dict(zip(header, line)) for line in rows)}
+    assert f"{float(scored['knotty ( n )']['crap']):.4f}" == knotty_mark(text)
+    assert knotty_mark(text) == GRANT_081
 
 
 # An anonymous callback past the ceiling of 6: seven ifs, ccn 8.

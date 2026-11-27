@@ -98,6 +98,24 @@ def test_istanbul_lane_command_with_coverage_and_file_filter_is_rejected():
         load_config_text(bad)
 
 
+def test_a_wrapped_command_names_no_runner_and_loads():
+    """config load reads crapkit.toml alone, so a vitest run behind a
+    package.json script is not one the refusal can see. Naming vitest in the
+    command keeps the refusal."""
+    wrapped = LANE.replace(
+        'node scripts/run-vitest.mjs run --config test/vitest/vitest.unit.config.ts --coverage --coverage.reporter=json',
+        'npm run test -- --coverage src/foo.test.ts')
+    assert load_config_text(wrapped).lanes[0].name == "unit"
+
+
+def test_a_vitest_step_is_refused_whatever_the_lane_s_parser():
+    under_coveragepy = LANE.replace('parser = "istanbul"', 'parser = "coveragepy"').replace(
+        'run --config test/vitest/vitest.unit.config.ts --coverage --coverage.reporter=json',
+        'run --coverage src/thing.test.ts')
+    with pytest.raises(ConfigError, match="file filter 'src/thing.test.ts'"):
+        load_config_text(under_coveragepy)
+
+
 def test_lane_cwd_and_path_prefix_default_empty_and_parse():
     cfg = load_config_text(LANE)
     assert cfg.lanes[0].cwd == "" and cfg.lanes[0].path_prefix == ""

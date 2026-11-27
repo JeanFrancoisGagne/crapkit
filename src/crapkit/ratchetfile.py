@@ -5,8 +5,9 @@ picks a stamp of its own:
 
 - `kept`: the write adds no measured number (move, merge, prune, the hook's
   grant), so both recorded stamps stay.
-- `measured`: the write adds numbers one metric produced (verify's tighten and
-  its grant), and marks another metric recorded refuse it.
+- `measured`: the write adds numbers this crapkit measured (verify's tighten
+  and its grant), so it signs the running per-scope stamp, and a marked scope
+  whose rules moved refuses it.
 - `reseeded`: seed, the only write that replaces a recorded metric stamp, with
   the metric of the stored run it read.
 
@@ -20,6 +21,7 @@ since the rewrite would save U+FFFD in place of the name that held it.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 import hashlib
 import os
 from pathlib import Path
@@ -28,7 +30,8 @@ from tempfile import NamedTemporaryFile
 
 from .errors import ConfigError, ToolError
 from .locks import exclusive_lock
-from .ratchet import dump_ratchet, load_ratchet, read_key_version, read_stamp, stamp_conflict
+from .ratchet import (MetricStamp, ScopeStamps, StampConflict, dump_ratchet, load_ratchet,
+                      read_key_version, read_stamp, rescoped, stamp_conflict)
 from .repotext import marks_bytes, marks_codec, marks_text, unreadable_byte
 
 
@@ -116,55 +119,74 @@ class RatchetFile:
         marks, no stamp, no header. A file with a stamp and no rows is not blank."""
         return not (self.text or "").strip()
 
-    @property
+    @cached_property
     def entries(self) -> list:
+        """The marks, parsed once per read: verify's stamp guard places them in
+        scopes before its lanes run, and its verdict reads the same list."""
         try:
             return load_ratchet(self.text or "")
         except ValueError as exc:
             raise ConfigError(f"unreadable ratchet file {self.path.name}: {exc}") from exc
 
     @property
-    def metric_stamp(self) -> str:
-        """The metric the recorded marks were measured under; "" when none is recorded."""
+    def metric_stamp(self) -> MetricStamp:
+        """The metric the recorded marks were measured under; NONE when none is recorded."""
         return read_stamp(self.text or "")
 
-    def stamp_conflict(self, metric: str) -> str | None:
-        """Verify's refusal when these marks and numbers `metric` produced cannot be
-        compared; None when they can, or when no metric is recorded."""
-        return stamp_conflict(self.metric_stamp, metric)
+    def stamp_conflict(self, metric: MetricStamp,
+                       marked_scopes: frozenset = frozenset()) -> StampConflict | None:
+        """How these marks and numbers `metric` produced differ, as verify
+        weighs it; None when nothing does, or when no metric is recorded.
+        `marked_scopes` are the scopes the config places these marks in."""
+        return stamp_conflict(self.metric_stamp, metric, marked_scopes)
 
-    def kept(self, entries: list, *, keys: int | None = None, new_file_metric: str = "",
+    def kept(self, entries: list, *, keys: int | None = None,
+             new_file_stamp: MetricStamp = MetricStamp.NONE,
              read_with: tuple[RatchetFile, ...] = ()) -> str:
         """The text for a write that adds no measured number: both recorded stamps stay.
 
-        A file that does not exist yet records nothing, so it takes the metric its
-        first numbers came from. `keys` is a key format identity proof just
-        established; without one the recorded format stays. `read_with` are the
-        other files whose marks reach the text: the merge driver's THEIRS.
+        A single-number file writes back the line it read, and a per-scope file
+        its first line and every scope line. A file that does not exist yet
+        records nothing, so it takes `new_file_stamp`: the running per-scope
+        stamp, or the merge driver's merged stamp. `keys` is a key format
+        identity proof just established; without one the recorded format stays.
+        `read_with` are the other files whose marks reach the text: the merge
+        driver's THEIRS.
         """
-        metric = new_file_metric if self.text is None else self.metric_stamp
-        return self._dump(entries, metric, keys, read_with)
+        stamp = new_file_stamp if self.text is None else self.metric_stamp
+        return self._dump(entries, stamp, keys, read_with)
 
-    def measured(self, entries: list, metric: str, *, keys: int | None = None) -> str:
-        """The text for a write that adds numbers `metric` produced.
+    def measured(self, entries: list, running: ScopeStamps, marked_scopes: frozenset, *,
+                 keys: int | None = None) -> str:
+        """The text for a write that adds numbers this crapkit measured: it signs `running`.
 
-        Marks another metric recorded refuse it with the refusal verify gives
-        before its lanes run. A file written before stamping gains the stamp,
-        which is the tighten's `restamped`.
+        A marked scope whose rules moved refuses it with the refusal verify
+        gives before its lanes run; `marked_scopes` are the scopes the config
+        places the recorded marks in. Any other file takes `running` whole: an
+        unstamped file and a single-number file convert, which is the
+        tighten's `restamped`, and a per-scope file's unmarked scopes take the
+        running lines, since none of their marks vouches for an older rule.
         """
-        conflict = self.stamp_conflict(self._vouched(metric))
-        if conflict:
-            raise ConfigError(conflict)
-        return self._dump(entries, metric, keys)
+        running = self._vouched(running)
+        conflict = self.stamp_conflict(running, marked_scopes)
+        if conflict and conflict.refuses:
+            raise ConfigError(conflict.refusal(self.path.name))
+        return self._dump(entries, running, keys)
 
-    def reseeded(self, entries: list, metric: str, *, keys: int | None = None) -> str:
-        """seed's text, stamped with the metric of the run it read."""
-        return self._dump(entries, self._vouched(metric), keys)
+    def reseeded(self, entries: list, run_stamps: MetricStamp, *, scope: str | None = None,
+                 keys: int | None = None) -> str:
+        """seed's text, stamped with the metric of the run it read.
 
-    def _vouched(self, metric: str) -> str:
+        Without `scope` the file takes `run_stamps` whole, so every scope takes
+        the run's line and a scope the run does not hold drops its line. With
+        it, only that scope's line changes (`ratchet.rescoped`)."""
+        stamp = self._vouched(run_stamps) if scope is None else rescoped(self.metric_stamp, run_stamps, scope)
+        return self._dump(entries, stamp, keys)
+
+    def _vouched(self, metric: MetricStamp) -> MetricStamp:
         """A write that stamps numbers names the metric that produced them.
 
-        An empty one used to fall through to whatever stamp was there, so the
+        NONE used to fall through to whatever stamp was there, so the
         new numbers took a label nobody had checked.
         """
         if not metric:
@@ -172,12 +194,12 @@ class RatchetFile:
                               "metric, so it cannot vouch for them; the file was left unchanged")
         return metric
 
-    def _dump(self, entries: list, metric: str, keys: int | None, read_with=()) -> str:
+    def _dump(self, entries: list, metric: MetricStamp, keys: int | None, read_with=()) -> str:
         """The text a write would publish, refused here when it changes a file
         whose read replaced a byte: the override renders it before its alert
         fires, so a refusal leaves no alert and no audit row behind."""
         version = read_key_version(self.text or "") if keys is None else keys
-        text = dump_ratchet(entries, stamp=metric, key_version=version)
+        text = dump_ratchet(entries, stamp=metric, key_version=version, file_name=self.path.name)
         if _lf(text) != _lf(self.text):
             _refuse_replaced((self, *read_with))
         return text

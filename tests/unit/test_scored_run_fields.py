@@ -33,7 +33,7 @@ def run(monkeypatch) -> _ScoredRun:
                         lambda root, cfg, git: ("cafe123", ["raw row"], CORPUS, 3,
                                                 {"crapkit": "0.4.5"}))
     monkeypatch.setattr(scoring, "_run_lanes",
-                        lambda *a, **k: ({}, PROVENANCE, {"ui": "exit 2"}, []))
+                        lambda *a, **k: ({}, PROVENANCE, {"ui": "exit 2"}, [], {}))
     monkeypatch.setattr(crapkit.score, "score_rows", lambda rows, cov, **k: ["scored row"])
     monkeypatch.setattr(scoring, "_content_record",
                         lambda root, rows: RECORD if rows == ["raw row"] else None)

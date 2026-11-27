@@ -1,0 +1,27 @@
+{
+  "case": "bash_marked_rise",
+  "why": "The marked_past_mark edit written through a shell heredoc, so the event names no file. The Bash fallback takes the fresh dirty grade.py through the same per-file ladder an Edit takes, so it draws the same marked block and the same exit 2.",
+  "fixture": "bash_marked_rise",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "python - <<'PY'\nopen('calc/grade.py', 'w').write(SOURCE)\nPY",
+      "description": "Rewrite grade.py through the shell"
+    },
+    "tool_response": {"stdout": "", "stderr": "", "interrupted": false}
+  },
+  "expect": {
+    "exit": 2,
+    "stderr": [
+      "crapkit advisory: 1 marked function(s) rose past their ratchet mark in calc/grade.py (the edit landed; nothing was blocked)",
+      "  ccn 8  calc/grade.py:1  sprawl( n )  mark 7.0000",
+      "the commit gate refuses a ccn past its mark, and a mark only falls: bring the ccn back to its mark or under it"
+    ]
+  }
+}

@@ -180,8 +180,8 @@ def test_the_verify_payload_reads_each_finding_list_by_section(bundle, roster):
     verdict = surfaces.from_json(json.loads(bundle["verify_json"]), roster)
 
     assert bundle["verify"].code == 6
-    assert verdict[UNUSED]["gate_violations.crap"] == 12.0
-    assert verdict[UNUSED]["ratchet_regressions.recorded"] == 6.0
+    assert verdict[UNUSED]["findings.crap"] == 12.0
+    assert verdict[UNUSED]["findings.recorded"] == 6.0
 
 
 @pytest.mark.nightly

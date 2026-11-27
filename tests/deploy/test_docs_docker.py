@@ -54,7 +54,9 @@ git commit -qm adopt
 crapkit coverage
 chown -R "$1:$1" /repo
 """
-CACHE = "churn-cache-v2.json"
+# The churn cache by any format version, as the shell globs it: the version is
+# in the file name and moves with the format; who may save it does not.
+CACHE = "churn-cache-v*.json"
 
 needs_docker = pytest.mark.skipif(DOCKER is None or in_container(),
                                   reason="needs the host's Docker daemon; the nightly host job runs it")

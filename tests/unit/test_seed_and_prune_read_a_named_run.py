@@ -11,14 +11,16 @@ from pathlib import Path
 import lizard
 import pytest
 
-from crapkit.analyze import ANALYSIS_VERSION
+from crapkit.analyze import ANALYSIS_VERSION, ANALYSIS_VERSIONS
 from crapkit.cli import main
 from crapkit.cli.verifying import _named_baseline
 from crapkit.errors import CrapkitError
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
-MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version}
+# The stamps this crapkit records for the one python scope with no lane.
+MEASURED = {"analysis_version": str(ANALYSIS_VERSION), "lizard": lizard.version,
+            "scope_stamps": {"src": {"analysis": {"python": ANALYSIS_VERSIONS["python"]}, "coverage": "no-lane"}}}
 CONFIG = ('[crapkit]\ntarget = 6\n\n'
           '[[scope]]\nname = "src"\npaths = ["src"]\nlanguages = ["python"]\n')
 OLD_SHA = "bb83d64fc19a7e2d4c5b60718293a4b5c6d7e8f9"

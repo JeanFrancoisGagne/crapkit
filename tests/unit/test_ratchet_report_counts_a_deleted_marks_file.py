@@ -16,7 +16,8 @@ import pytest
 
 from cli_inproc_repo import commit_all, git, repo, seed_artifacts, template_repo  # noqa: F401
 from crapkit.cli import main
-from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import RatchetEntry
+from stamps import marks_in
 
 MARKS = "crapkit-ratchet.tsv"
 NAMES = ("dispatch ( kind )", "plain ( x )", "render ( n )", "knotty ( n )")
@@ -24,7 +25,7 @@ NAMES = ("dispatch ( kind )", "plain ( x )", "render ( n )", "knotty ( n )")
 
 def _write_marks(root: Path, names) -> None:
     entries = [RatchetEntry("src/app.ts", name, 20.0 + i) for i, name in enumerate(names)]
-    (root / MARKS).write_text(dump_ratchet(entries, stamp=metric_version()),
+    (root / MARKS).write_text(marks_in(root, entries),
                               encoding="utf-8", newline="\n")
 
 
@@ -134,8 +135,8 @@ ONLY_WHILE = ("verify judges against them only while its baseline run measured a
 
 
 def _mark_plain_then_delete(root: Path) -> None:
-    (root / MARKS).write_text(dump_ratchet([RatchetEntry("src/app.ts", "plain ( x )", 0.1)],
-                                           stamp=metric_version()), encoding="utf-8", newline="\n")
+    (root / MARKS).write_text(marks_in(root, [RatchetEntry("src/app.ts", "plain ( x )", 0.1)]),
+                              encoding="utf-8", newline="\n")
     commit_all(root, "mark plain at 0.1")
     _delete(root)
 

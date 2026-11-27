@@ -204,7 +204,7 @@ def _interpreter_spellings() -> list[str]:
     interpreter (crapkit.invocation), inside a JSON string and as printed."""
     interpreter = sys.executable.replace(os.sep, "/")
     quoted = f'"{interpreter}"' if " " in interpreter else interpreter
-    spelled = f"{quoted} -m crapkit"
+    spelled = f"{quoted} -P -m crapkit"
     return [json.dumps(spelled)[1:-1], spelled]
 
 

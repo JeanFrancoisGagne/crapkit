@@ -7,7 +7,11 @@ the statement lines likewise. `-` is an empty list; `absent` means the producer
 leaves the function out of its artifact and `excluded` that it keeps the function
 with every line excluded (a coverage.py pragma); `n/a` means the model says nothing,
 and only called-equals-idle is asserted. `producers` narrows a JS row to the
-`v8` or `istanbul` provider family; a Python table has no such column.
+`v8` or `istanbul` provider family; a Python table has no such column. An lcov
+arm (Rust, C++) is `<line>.<k>`, the k-th BRDA record on its line; a JaCoCo arm
+(Java) is `<line>.<k>` too, k counting the line's branches from 0. A Go
+coverprofile has no arms: its stmts are the lines of its blocks, under the line
+rule docs/lanes.md#coverprofile states.
 
 expected() is the README's coverage term over a row, and crapkit_expected() adds
 the README's floor: a Python def whose body starts on its signature's last line
@@ -31,6 +35,24 @@ FAMILIES = {
     "vitest-v8-5.0.1": "v8", "vitest-istanbul-5.0.1": "istanbul",
     "jest-babel-30.5.2": "istanbul", "nyc-18.0.0": "istanbul",
 }
+# The lcov recordings, worked from llvm's line and branch rules. Kept apart from
+# FAMILIES, whose JSON recordings test_dark_lines parses.
+LCOV_FAMILIES = {"cargo-llvm-cov-0.9.1": "llvm", "llvm-cov-19.1.7": "llvm"}
+# The Cobertura recordings. gcov states its own lines (no closing brace), so
+# they are scored against crapkit_expected, never stated line for line.
+COBERTURA_FAMILIES = {"gcovr-7.2": "gcov"}
+# The JaCoCo recordings of the Java probe, one run through Gradle and one
+# through Maven, worked from JaCoCo's line and branch counters.
+JACOCO_FAMILIES = {"jacoco-0.8.12-gradle-8.10.2": "jacoco", "jacoco-0.8.12-maven-3.9.9": "jacoco"}
+# The Go coverprofiles of one probe run in each cover mode, worked from cmd/cover's
+# blocks under crapkit's line rule.
+COVERPROFILE_FAMILIES = {"go-1.26.8-set": "gocover", "go-1.26.8-count": "gocover",
+                         "go-1.26.8-atomic": "gocover"}
+
+
+def family(producer: str) -> str:
+    return {**FAMILIES, **LCOV_FAMILIES, **COBERTURA_FAMILIES, **JACOCO_FAMILIES,
+            **COVERPROFILE_FAMILIES}[producer]
 
 
 @dataclass(frozen=True)
@@ -83,8 +105,7 @@ def _describes(row: Truth, scenario: str, probes: tuple, family: str) -> bool:
 
 def rows_for(producer: str, scenario: str, probes: tuple) -> list[Truth]:
     """The rows that describe one recording: its scenario, its files, its family."""
-    family = FAMILIES[producer]
-    return [row for row in _tables(probes) if _describes(row, scenario, probes, family)]
+    return [row for row in _tables(probes) if _describes(row, scenario, probes, family(producer))]
 
 
 def _tables(probes: tuple) -> list[Truth]:

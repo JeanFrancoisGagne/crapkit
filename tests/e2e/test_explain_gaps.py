@@ -262,7 +262,7 @@ def solo_of(artifact: dict):
 def test_istanbul_branches_outside_every_span_are_ignored():
     """`noloc` has no loc and sits on the `line` beside it, 95, outside solo
     too. A branch with neither refuses the artifact:
-    tests/unit/test_coverage_istanbul.py::test_a_branch_with_neither_loc_nor_line_refuses_the_artifact_naming_it"""
+    tests/unit/test_coverage_reader_contract.py::test_dropping_a_required_field_refuses_naming_it"""
     fn = solo_of(ISTANBUL)
     assert (fn.branches_total, fn.branches_covered) == (2, 1), \
         "only the line-12 arms belong to solo"

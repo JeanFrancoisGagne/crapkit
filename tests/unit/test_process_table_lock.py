@@ -14,6 +14,7 @@ old release runs.
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,14 @@ import process_table
 TESTS = Path(__file__).resolve().parents[1]
 LINUX_ONLY = pytest.mark.skipif(not sys.platform.startswith("linux"),
                                 reason="only Linux has a /proc an owner scans, so only Linux locks")
+
+
+@pytest.fixture
+def own_lock(tmp_path, monkeypatch):
+    """Points process_table.LOCK at a file under tmp_path. Under xdist another worker
+    holds the suite's lock while it runs an old release or names a host process, so a
+    mode test that read the suite's lock would see that worker's hold, not hold()'s."""
+    monkeypatch.setattr(process_table, "LOCK", tmp_path / "process-table.lock")
 
 
 def _try(mode: int) -> bool:
@@ -39,7 +48,7 @@ def _try(mode: int) -> bool:
 
 
 @LINUX_ONLY
-def test_a_test_naming_a_host_process_keeps_every_old_release_out():
+def test_a_test_naming_a_host_process_keeps_every_old_release_out(own_lock):
     import fcntl
 
     with process_table.hold(naming=True):
@@ -48,12 +57,28 @@ def test_a_test_naming_a_host_process_keeps_every_old_release_out():
 
 
 @LINUX_ONLY
-def test_old_releases_run_beside_each_other_but_not_beside_a_naming():
+def test_old_releases_run_beside_each_other_but_not_beside_a_naming(own_lock):
     import fcntl
 
     with process_table.hold(naming=False):
         assert _try(fcntl.LOCK_SH)
         assert not _try(fcntl.LOCK_EX)
+
+
+@LINUX_ONLY
+def test_every_session_holds_the_one_lock_file_in_the_temp_dir(monkeypatch):
+    """hold() locks process_table.LOCK as the suite sets it, in the system temp dir the
+    unit and e2e sessions share. flock only records here, so the suite's lock stays free."""
+    import fcntl
+
+    taken = []
+    monkeypatch.setattr(fcntl, "flock", lambda handle, mode: taken.append((Path(handle.name), mode)))
+
+    with process_table.hold(naming=True):
+        pass
+
+    assert taken == [(process_table.LOCK, fcntl.LOCK_EX)]
+    assert process_table.LOCK.parent == Path(tempfile.gettempdir())
 
 
 def test_elsewhere_holding_the_table_takes_no_lock(monkeypatch):

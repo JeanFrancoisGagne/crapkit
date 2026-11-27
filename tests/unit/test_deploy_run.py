@@ -120,7 +120,32 @@ def test_a_native_run_selects_by_os_alone():
     args = run.parse(["--native", "--os", "windows", "--cell", "win-pip-start", "-n", "2"])
 
     assert run.pytest_args(args) == ["-o", "junit_family=xunit1", "-m", "kit or (push and windows and not online)",
-                                     "--deploy-cell=win-pip-start", "-n", "2"]
+                                     "--deploy-cadence=push", "--deploy-cell=win-pip-start", "-n", "2"]
+
+
+@pytest.mark.parametrize("cadence", sorted(run.CADENCES))
+def test_every_run_tells_pytest_its_cadence_beside_the_marker_expression(cadence):
+    """tests/deploy/conftest.py reads it: a nightly run drops a core every-harness row's full-image items."""
+    argv = run.pytest_args(run.parse(["--cadence", cadence, "--os", "linux", "--image", "full"]))
+
+    assert argv[argv.index("-m") + 2] == f"--deploy-cadence={cadence}"
+
+
+def test_a_native_nightly_run_passes_its_cadence_as_a_container_run_does():
+    native = run.pytest_args(run.parse(["--native", "--os", "windows", "--cadence", "nightly"]))
+    container = run.pytest_args(run.parse(["--os", "linux", "--cadence", "nightly"]))
+
+    assert "--deploy-cadence=nightly" in native and "--deploy-cadence=nightly" in container
+
+
+def test_the_cadence_help_says_what_a_nightly_run_drops_and_what_every_other_cadence_keeps(capsys):
+    with pytest.raises(SystemExit):
+        run.parse(["--help"])
+    said = " ".join(capsys.readouterr().out.split())
+
+    assert ("a nightly run drops the items of a `core` every-harness row (tests/deploy/MAP.toml [every_harness]) "
+            "on the full image and the images built on it; every other cadence, release included, keeps every row "
+            "on every harness") in said
 
 
 def test_a_shard_run_passes_its_part_to_pytest():
@@ -138,16 +163,78 @@ def test_a_shard_that_is_not_part_over_parts_is_refused_before_any_build(given, 
     assert "PART/PARTS, 1 <= PART <= PARTS, such as 1/2" in capsys.readouterr().err
 
 
-def collected(*options):
-    """The test ids pytest collects from tests/deploy for ci.yml's Linux push
-    set in core, the way the container's pytest collects them."""
-    expression = run.marker_expression("push", "linux", "core", online=False)
-    env = {**os.environ, "CRAPKIT_DEPLOY": "1", "PYTHONDONTWRITEBYTECODE": "1"}
-    done = hang_guard.run([sys.executable, "-m", "pytest", "--collect-only", "-p", "no:randomly", "-m",
+def collecting(*options, cadence="push", image="core", env=()):
+    """pytest's collection of tests/deploy for run.py's Linux selection of this
+    cadence and image, the way the container's pytest collects it."""
+    expression = run.marker_expression(cadence, "linux", image, online=False)
+    env = {**os.environ, "CRAPKIT_DEPLOY": "1", "PYTHONDONTWRITEBYTECODE": "1", **dict(env)}
+    return hang_guard.run([sys.executable, "-m", "pytest", "--collect-only", "-p", "no:randomly", "-m",
                            expression, *options, "tests/deploy"], cwd=ROOT, env=env)
+
+
+def collected(*options, cadence="push", image="core", env=()):
+    """The test ids pytest collects from tests/deploy, by default for ci.yml's Linux push set in core."""
+    done = collecting(*options, cadence=cadence, image=image, env=env)
 
     assert done.returncode == 0, done.stdout.decode(errors="replace")[-2000:]
     return [line for line in done.stdout.decode().splitlines() if "::" in line]
+
+
+# A plugin that gives one cell's tests a row, as a row ticket's @cell(row=...)
+# will: it wraps conftest's own collection hook, so it marks the items first.
+PLANT = '''
+import os
+
+import pytest
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_collection_modifyitems(items):
+    cell, row = os.environ["DEPLOY_PLANT_ROW"].split("=")
+    for item in items:
+        mark = item.get_closest_marker("deploy_cell")
+        if mark is not None and mark.kwargs["id"].split("[")[0] == cell:
+            item.add_marker(pytest.mark.deploy_cell(**{**mark.kwargs, "row": row}), append=False)
+    return (yield)
+'''
+
+
+def planted(tmp_path, cell, row):
+    """pytest options and environment that plant `row` on `cell`'s tests."""
+    (tmp_path / "deploy_plant_row.py").write_text(PLANT, encoding="utf-8")
+    paths = os.pathsep.join([str(tmp_path), *filter(None, [os.environ.get("PYTHONPATH")])])
+    return ("-p", "deploy_plant_row"), {"DEPLOY_PLANT_ROW": f"{cell}={row}", "PYTHONPATH": paths}
+
+
+def full_image(cadence, *options, env=()):
+    return collected(*options, cadence=cadence, image="full", env=env)
+
+
+def test_a_nightly_run_drops_a_core_rows_full_image_items_and_a_release_run_keeps_them(tmp_path):
+    options, env = planted(tmp_path, "lin-gemini", "lanes-visible-04")
+    gemini = [test for test in full_image("release") if test.endswith("::test_lin_gemini")]
+    nightly = full_image("nightly", "--deploy-cadence=nightly", *options, env=env)
+    release = full_image("release", "--deploy-cadence=release", *options, env=env)
+
+    assert gemini and set(nightly) == set(full_image("nightly", "--deploy-cadence=nightly")) - set(gemini)
+    assert set(release) == set(full_image("release", "--deploy-cadence=release"))
+
+
+def test_an_all_rows_full_image_items_stay_in_a_nightly_run(tmp_path):
+    options, env = planted(tmp_path, "lin-gemini", "lanes-visible-06")
+
+    assert full_image("nightly", "--deploy-cadence=nightly", *options, env=env) == full_image(
+        "nightly", "--deploy-cadence=nightly")
+
+
+@pytest.mark.parametrize("cadence", ["nightly", "push", "release"])
+def test_an_item_whose_row_the_map_lacks_fails_the_collection_naming_the_row(tmp_path, cadence):
+    options, env = planted(tmp_path, "lin-gemini", "criterion-11")
+    done = collecting(f"--deploy-cadence={cadence}", *options, cadence=cadence, image="full", env=env)
+    said = done.stdout.decode(errors="replace") + done.stderr.decode(errors="replace")
+
+    assert done.returncode != 0
+    assert "'criterion-11'" in said and "[every_harness]" in said
 
 
 def test_the_shards_of_the_push_set_hold_each_selected_test_once_and_split_it_evenly():

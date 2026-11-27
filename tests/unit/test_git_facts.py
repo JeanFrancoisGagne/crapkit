@@ -198,6 +198,55 @@ def test_four_lanes_asking_at_the_same_instant_still_spawn_git_once(tmp_path, mo
     assert len(spawns) == 1
 
 
+def test_the_tracked_files_are_listed_once_however_often_they_are_read(tmp_path, monkeypatch):
+    """verify's claimed-name scan and the inventory read one list."""
+    listed = []
+    monkeypatch.setattr(gitio, "ls_files", lambda root: listed.append(root) or ["a.py", "b.py"])
+    facts = GitFacts(tmp_path)
+
+    assert facts.tracked_files() == ("a.py", "b.py")
+    assert facts.tracked_files() == ("a.py", "b.py")
+    assert listed == [tmp_path]
+
+
+def test_four_callers_listing_the_tracked_files_at_once_start_one_git(tmp_path, monkeypatch):
+    listed = []
+    barrier = threading.Barrier(4)
+
+    def slow_list(_root):
+        listed.append(1)
+        time.sleep(0.05)
+        return ["a.py"]
+
+    monkeypatch.setattr(gitio, "ls_files", slow_list)
+    facts = GitFacts(tmp_path)
+
+    def ask(_):
+        barrier.wait(timeout=HANG_SECONDS)
+        return facts.tracked_files()
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert list(pool.map(ask, range(4))) == [("a.py",)] * 4
+    assert len(listed) == 1
+
+
+def test_a_failed_listing_reaches_every_caller_and_is_never_memoized(tmp_path, monkeypatch):
+    attempts = []
+
+    def boom(_root):
+        attempts.append(1)
+        raise GitError("not a git repository")
+
+    monkeypatch.setattr(gitio, "ls_files", boom)
+    facts = GitFacts(tmp_path)
+    for _ in range(2):
+        with pytest.raises(GitError, match="not a git repository"):
+            facts.tracked_files()
+    assert len(attempts) == 2
+    monkeypatch.setattr(gitio, "ls_files", lambda _root: ["a.py"])
+    assert facts.tracked_files() == ("a.py",), "nothing was stored by the failures"
+
+
 def test_write_stamps_merges_into_what_is_already_recorded(tmp_path):
     write_stamps(tmp_path, {"a.json": {"commit": "aaa", "lane": "unit", "seconds": 3.0}})
     write_stamps(tmp_path, {"b.json": {"commit": "bbb", "lane": "py", "seconds": 4.0}})

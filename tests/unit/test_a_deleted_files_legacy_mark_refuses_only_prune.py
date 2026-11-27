@@ -16,7 +16,8 @@ import pytest
 
 from crapkit.cli import main
 from crapkit.cli._shared import _proved_paths
-from crapkit.ratchet import RatchetEntry, metric_version
+from crapkit.ratchet import RatchetEntry
+from stamps import running_in, stamp_lines
 from crapkit.score import ScoredRow
 from crapkit.store import SnapshotStore
 
@@ -45,7 +46,7 @@ def repo(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "a.ts").write_text(SOURCE, encoding="utf-8")
     (tmp_path / "crapkit-ratchet.tsv").write_text(
-        f"# {metric_version()}\npath\tlong_name\tcrap\n"
+        f"{stamp_lines(running_in(tmp_path))}path\tlong_name\tcrap\n"
         "src/a.ts\tf\t20.0000\nsrc/gone.ts\t(anonymous)#2\t99.0000\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "fixture")

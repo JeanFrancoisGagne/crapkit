@@ -133,12 +133,12 @@ _PYTEST_COV_NOTE = re.compile(r"names `([^`]+)`, which resolves here to (.+?) an
 def install_for_pytest_cov(note: str) -> str:
     """The install line, in backticks, a pytest_cov note must carry for the
     interpreter it names: `uv pip install --python WORD pytest-cov` when uv
-    made that interpreter's venv, `WORD -m pip install pytest-cov` otherwise."""
+    made that interpreter's venv, `WORD -P -m pip install pytest-cov` otherwise."""
     word, resolved = _PYTEST_COV_NOTE.search(note).groups()
     cfg = Path(resolved).parent.parent / "pyvenv.cfg"
     uv_made = cfg.is_file() and re.search(r"(?m)^uv\s*=", cfg.read_text(encoding="utf-8"))
     return (f"`uv pip install --python {word} pytest-cov`" if uv_made
-            else f"`{word} -m pip install pytest-cov`")
+            else f"`{word} -P -m pip install pytest-cov`")
 
 
 def git(repo: Path, *args: str) -> None:

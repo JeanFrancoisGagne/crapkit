@@ -3,9 +3,12 @@
 The oracle is a cold analysis: the same files in a fresh repo with no
 .crapkit/, so no cache entry and no stat stamp exists. README ("inventory"):
 one lizard pass over every in-scope file, cached by content hash. The cache
-module's docstring (src/crapkit/cache.py): the fingerprint bundles everything
-that changes analysis output for identical content (lizard pin, crapkit
-analysis version), and a fingerprint change drops the whole cache.
+module's docstring (src/crapkit/cache.py): a fingerprint change drops the whole
+cache. From 0.9.0 the fingerprint names crapkit's and lizard's versions, and
+each entry's key names the analysis number of its file's language
+(src/crapkit/analyze.py, ANALYSIS_VERSIONS), so a raise of one language's number
+drops that language's entries and serves the rest. Through 0.8.1 the
+fingerprint named the one analysis version.
 
 A warm run must equal the cold one after every kind of change: an edit, a
 touch that keeps the bytes, a rename, equal bytes under two languages, a
@@ -29,6 +32,8 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
+import sys
 from typing import NamedTuple
 
 from hypothesis import strategies as st
@@ -36,7 +41,8 @@ from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 import pytest
 
 from accuracy.analysis_oracles import analysis_inventory, analysis_tables
-from accuracy.kit import drive, repos
+from accuracy.corpus_goldens import surface_expect
+from accuracy.kit import drive, repos, surfaces
 from accuracy.kit.settings import process
 
 pytestmark = pytest.mark.process
@@ -99,11 +105,39 @@ def _rewrite_cache(root: Path, change) -> None:
     path.write_text(json.dumps(cache), encoding="utf-8")
 
 
-def _poison(cache: dict) -> None:
-    for records in cache["entries"].values():
+def _poison(cache: dict, language: str | None = None) -> None:
+    """Every entry's records, or only those keyed under `language`'s number."""
+    for key, records in cache["entries"].items():
+        if language is not None and language not in _key_numbers(key):
+            continue
         for record in records:
             for column in POISONED:
                 record[column] += POISON
+
+
+# An entry key's analysis numbers, `<language>-analysis=<number>` comma-joined,
+# sit between the reader's fields and the content hash (src/crapkit/analyze.py
+# _analysis_key); a key from a crapkit through 0.8.1 holds none.
+NUMBER = r"(?<=[:,])({language})-analysis=(\d+)(?=[:,])"
+
+
+def _key_numbers(key: str) -> dict:
+    return {found[1]: int(found[2]) for found in re.finditer(NUMBER.format(language="[a-z]+"), key)}
+
+
+def _older_number(cache: dict, language: str = "[a-z]+") -> None:
+    """Each entry keyed under `language`'s number (every language's by default)
+    as a crapkit with an older number keyed it."""
+    pattern = re.compile(NUMBER.format(language=language))
+    cache["entries"] = {pattern.sub(r"\1-analysis=\2-older", key): records
+                        for key, records in cache["entries"].items()}
+
+
+def _raise_go(cache: dict) -> None:
+    """The cache a raise of the go number alone meets: the Go entries keyed under
+    the older number, and poisoned, so a Go record served from it shows."""
+    _poison(cache, "go")
+    _older_number(cache, "go")
 
 
 # --- warm equals cold on the probe files --------------------------------------------------------
@@ -146,9 +180,23 @@ def warmed(tmp_path):
 
 
 def test_the_fingerprint_names_the_analysis_and_lizard_versions(warmed):
-    fp = json.loads((warmed.root / CACHE).read_text(encoding="utf-8"))["fp"]
-    assert re.search(r"(^|;)analysis=\d+(;|$)", fp), fp
+    """The cache names the analysis version: in the fingerprint through 0.8.1
+    (`analysis=N`), and from 0.9.0 per language in every entry's key."""
+    cache = json.loads((warmed.root / CACHE).read_text(encoding="utf-8"))
+    fp, keys = cache["fp"], list(cache["entries"])
+    in_fp = re.search(r"(^|;)analysis=\d+(;|$)", fp)
+    assert in_fp or (keys and all(map(_key_numbers, keys))), (fp, keys)
     assert f"lizard={metadata.version('lizard')}" in fp.split(";"), fp
+
+
+def test_each_entry_key_names_its_language_number_and_the_fingerprint_none(warmed):
+    cache = json.loads((warmed.root / CACHE).read_text(encoding="utf-8"))
+    named = {language for key in cache["entries"] for language in _key_numbers(key)}
+    languages = {analysis_inventory.SUFFIX_LANGUAGE[Path(path).suffix]
+                 for path in analysis_inventory.retro_tree(SMALL)}
+    assert named == languages, list(cache["entries"])
+    assert all(len(_key_numbers(key)) == 1 for key in cache["entries"]), list(cache["entries"])
+    assert not re.search(r"(^|;)analysis=", cache["fp"]), cache["fp"]
 
 
 def test_poisoned_entries_under_the_same_fingerprint_are_served(warmed):
@@ -164,6 +212,8 @@ def test_version_bump_reads_cold(field, warmed, tmp_path):
     def bump(cache):
         _poison(cache)
         cache["fp"] = re.sub(rf"(^|;){field}=([^;]*)", rf"\g<1>{field}=\g<2>-older", cache["fp"])
+        if field == "analysis":  # from 0.9.0 each entry's key holds its language's number
+            _older_number(cache)
     _rewrite_cache(warmed.root, bump)
     assert warmed.run().rows == _cold_of(warmed, tmp_path / "cold").rows
     # One hit per file the repo holds: a retro replay cuts SMALL to the languages
@@ -175,6 +225,111 @@ def test_a_torn_cache_file_reads_cold(warmed, tmp_path):
     path = warmed.root / CACHE
     path.write_bytes(path.read_bytes()[: len(path.read_bytes()) // 2])
     assert warmed.run().rows == _cold_of(warmed, tmp_path / "cold").rows
+
+
+# --- a raise of one language's number -----------------------------------------------------------
+
+def _python(rows) -> list:
+    return [row for row in rows if Path(row["path"]).suffix.lower() == ".py"]
+
+
+def test_a_go_only_raise_reads_the_go_file_again_and_serves_the_rest(warmed, tmp_path):
+    """After a raise of the go number alone, the Python rows come from the cache
+    and equal a cold run's, and the poisoned Go entry is not served."""
+    _rewrite_cache(warmed.root, _raise_go)
+    warm_rows = warmed.run().rows
+    cold_rows = _cold_of(warmed, tmp_path / "cold").rows
+    assert _python(warm_rows) == _python(cold_rows) != []
+    assert warm_rows == cold_rows
+    _rewrite_cache(warmed.root, _raise_go)
+    files = analysis_inventory.retro_tree(SMALL)
+    assert warmed.cache_hits() == len(files) - sum(Path(path).suffix == ".go" for path in files)
+
+
+# Stock lizard in an interpreter that imports no crapkit, so no crapkit reader
+# correction is registered: [path, start, standard ccn, modified ccn] per function.
+STOCK_LIZARD = """\
+import json, sys
+import lizard
+plain = lizard.FileAnalyzer(lizard.get_extensions([]))
+modified = lizard.FileAnalyzer(lizard.get_extensions(["modified"]))
+print(json.dumps([[path, std.start_line, std.cyclomatic_complexity, mod.cyclomatic_complexity]
+                  for path in sys.argv[1:]
+                  for std, mod in zip(plain(path).function_list, modified(path).function_list)]))
+"""
+# (path, start) of each small-corpus row where crapkit's reader corrects stock
+# lizard (read against 1.24.0, the release pyproject.toml pins), with the calc that pins the correction: defs whose body sits on the
+# colon line, which stock lizard does not list (oneline.py, grades.py's pick,
+# requests' @overload stubs), and signatures that run past their first `)`,
+# which stock lizard ends early at ccn 1. Every Go row agrees with stock lizard.
+PYTHON_READER = "Python reader: spans, names, inline_body, unread-def net"
+CORRECTIONS = {(path, start): PYTHON_READER for path, start in (
+    ("src/py/grades.py", 46), ("src/py/oneline.py", 4), ("src/py/oneline.py", 7),
+    ("src/py/oneline.py", 10), ("src/py/signatures.py", 9), ("src/py/signatures.py", 18),
+    ("src/py/signatures.py", 34), ("vendor/requests/cookies.py", 564),
+    ("vendor/requests/cookies.py", 572))}
+
+
+def _stock_lizard(root: Path, paths: list[str]) -> dict:
+    done = subprocess.run([sys.executable, "-I", "-c", STOCK_LIZARD, *paths], cwd=root,
+                          capture_output=True, text=True, check=True)
+    found: dict = {}
+    for path, start, std, mod in json.loads(done.stdout):
+        found.setdefault((path, start), []).append((std, mod))
+    return found
+
+
+def _at(row: dict) -> tuple[str, int]:
+    return row["path"], int(row["start"])
+
+
+def _calc_names() -> set:
+    tables = Path(__file__).resolve().parents[1].glob("*/calcs.tsv")
+    return {line.split("\t", 1)[0] for table in tables
+            for line in table.read_text(encoding="utf-8").splitlines()[1:]}
+
+
+def _go_sources(root: Path) -> list[str]:
+    """The .go files the small corpus's scopes take (its exclude globs drop tests/ and recorded/)."""
+    paths = (path.relative_to(root) for path in root.rglob("*.go"))
+    return [path.as_posix() for path in paths if path.parts[0] in ("src", "vendor")]
+
+
+def _scored_after_go_raise(small_corpus, work: Path) -> tuple[Path, list[dict]]:
+    root = small_corpus.private_copy(work / "repo")
+    driver = drive.Driver(root, date_now=small_corpus.date_now, spawn=True)
+    _rewrite_cache(root, _raise_go)
+    report = json.loads(driver.run("inventory", "--json").stdout)
+    assert report["cache_hits"] == report["files"] - len(_go_sources(root)), report
+    scored = driver.run("coverage", "--export", (work / "scored.tsv").as_posix())
+    assert scored.code == 0, scored.stderr
+    return root, surfaces.read_tsv((work / "scored.tsv").read_text(encoding="utf-8"))[1]
+
+
+def test_after_a_go_only_raise_the_rows_agree_with_coverage_py_and_stock_lizard(small_corpus,
+                                                                                tmp_path):
+    """The warm run after a raise of the go number alone, against tools that
+    share no code with crapkit: each measured Python row's cov is the ratio
+    coverage.py's own JSON report gives (oracles/corpus_counts.py reads it with
+    json.load), and each Python and Go row's ccn_std and ccn are stock lizard's
+    standard and modified counts, except the rows in CORRECTIONS."""
+    root, rows = _scored_after_go_raise(small_corpus, tmp_path)
+
+    measured = [(row, item) for row, item in zip(rows, surface_expect.per_row(rows))
+                if item.flag == "measured" and row in _python(rows)]
+    assert measured
+    assert [(row["path"], row["start"], row["cov"], float(item.cov)) for row, item in measured
+            if float(row["cov"]) != float(item.cov)] == []
+
+    read = [row for row in rows if Path(row["path"]).suffix.lower() in (".py", ".go")]
+    stock = _stock_lizard(root, sorted({row["path"] for row in read}))
+    off = {_at(row) for row in read
+           if (int(row["ccn_std"]), int(row["ccn"])) not in stock.get(_at(row), [])}
+    shown = "\n".join(f"{row['path']}:{row['start']} {row['long_name']} ccn_std {row['ccn_std']} "
+                      f"ccn {row['ccn']}, stock lizard {stock.get(_at(row))}"
+                      for row in read if _at(row) in off ^ CORRECTIONS.keys())
+    assert sorted(off) == sorted(CORRECTIONS), shown
+    assert set(CORRECTIONS.values()) <= _calc_names()
 
 
 # --- a cache from the reader before whole template literals (R45) ---------------------------------

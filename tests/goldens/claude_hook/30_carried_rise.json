@@ -1,0 +1,28 @@
+{
+  "case": "carried_rise",
+  "why": "The signature probe's mark of 7.0000 carried to classify( a , b , c = None ), and the edit adds a branch: ccn 8 in a cc-only scope puts the CRAP past the mark at any coverage. The marked block names the function under its new key, the mark, and the key the mark was recorded under, and the commit gate refuses the same function.",
+  "fixture": "carried_rise",
+  "argv": ["claude-hook", "--protocol", "1"],
+  "payload": {
+    "session_id": "6f8a1d2e-0b3c-4d5e-8f90-1a2b3c4d5e6f",
+    "transcript_path": "{REPO}/.claude/transcript.jsonl",
+    "cwd": "{REPO}",
+    "permission_mode": "acceptEdits",
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "{REPO}/calc/grade.py",
+      "old_string": "    return b",
+      "new_string": "    if a == 6:\n        return 6\n    return b"
+    },
+    "tool_response": {"filePath": "{REPO}/calc/grade.py", "success": true}
+  },
+  "expect": {
+    "exit": 2,
+    "stderr": [
+      "crapkit advisory: 1 marked function(s) rose past their ratchet mark in calc/grade.py (the edit landed; nothing was blocked)",
+      "  ccn 8  calc/grade.py:1  classify( a , b , c = None )  mark 7.0000 (carried from classify( a , b ))",
+      "the commit gate refuses a ccn past its mark, and a mark only falls: bring the ccn back to its mark or under it"
+    ]
+  }
+}

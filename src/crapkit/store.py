@@ -26,7 +26,7 @@ import zlib
 from pathlib import Path
 from typing import NamedTuple
 
-from .keys import (claim_holds, claim_in_run, claim_key, expression_group,
+from .keys import (claim_holds, claim_in_run, claim_key, expression_group, expression_language,
                    expression_reader_current, key_names, position,
                    refuse_ambiguous, split_ordinal)
 from .dup import SHINGLE_FORMAT
@@ -905,7 +905,7 @@ class SnapshotStore:
             self._codes[table] = _read_codes(self._conn, table)
         return self._codes[table].ids
 
-    def write_run(self, *, commit: str, tool_versions: dict[str, str], rows: list,
+    def write_run(self, *, commit: str, tool_versions: dict, rows: list,
                   lanes: dict | None = None, kind: str = "coverage",
                   sources: dict[str, str] | None = None) -> int:
         """One run and its rows in one transaction. `sources` is the run's
@@ -1400,12 +1400,17 @@ class SnapshotStore:
         return cur.lastrowid
 
     def _claim_key_version(self, path: str, name: str, source_run_id: int | None) -> int:
+        """1 when the source run's number for the path's language proves
+        expression reader 10: its `analysis_versions` entry, else the single
+        `analysis_version` a 0.8.x run recorded; 0 when neither proves it."""
         if not expression_group(path, name):
             return 1
         row = self._conn.execute("SELECT tool_versions FROM runs WHERE id = ?",
                                  (source_run_id,)).fetchone()
         versions = json.loads(row[0]) if row else {}
-        return int(expression_reader_current(versions.get("analysis_version")))
+        number = versions.get("analysis_versions", {}).get(expression_language(path),
+                                                           versions.get("analysis_version"))
+        return int(expression_reader_current(number))
 
     def _claim_conflict(self, path: str, name: str, key: tuple | None) -> bool:
         cur = self._conn.execute(

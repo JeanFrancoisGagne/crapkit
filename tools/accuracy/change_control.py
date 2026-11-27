@@ -11,9 +11,14 @@
 The files it keeps, under tests/accuracy/change_control/:
 
 - CHANGES.tsv: one row per declared change: id, date, kind (fix, definition,
-  feature or none), calcs, analysis_version, lizard_version, changelog, reason.
-  changelog is the version of the CHANGELOG.md section that holds the change's
-  line, empty for kind none.
+  feature or none), calcs, analysis_version, lizard_version, changelog, reason,
+  analysis_versions, reader_versions. changelog is the version of the
+  CHANGELOG.md section that holds the change's line, empty for kind none.
+  analysis_version is the revision (ANALYSIS_VERSION in analyze.py);
+  analysis_versions holds analyze.ANALYSIS_VERSIONS, one number per language
+  (`cpp=13;go=13;...`), and reader_versions coverage_format.READER_VERSIONS
+  (`coveragepy=1;istanbul=1`). A row from before those two columns reads them
+  empty: the single-number era.
 - changes/<id>.moved.tsv: each golden cell the change moved (golden, path,
   handle, column, old, new), the outside oracle that judged it, the oracle's
   value, and the ruling that covers a disagreement.
@@ -21,7 +26,7 @@ The files it keeps, under tests/accuracy/change_control/:
   it. LOCKED lists what is locked: the goldens, every rulings, hand, probe,
   ground-truth, equivalence and definitions table, the retro probes, and every
   oracle and adapter.
-- metric-digests.tsv: one row per (ANALYSIS_VERSION, lizard version, small
+- metric-digests.tsv: one row per (revision ANALYSIS_VERSION, lizard version, small
   corpus digest), with a digest over every small-corpus scored row's path,
   handle, ccn_std, ccn_mod, ccn, cognitive, nesting, nloc, params, start, end,
   CRAP at 4 dp and cov. The corpus column digests the corpus bytes, recorded
@@ -54,7 +59,8 @@ before it only the in-tree rules do, since no change can be declared yet.
   adds under an analysis and lizard version the base holds comes with scored
   rows that appear and nothing else.
 - B2 every row of CHANGES.tsv, bugs.tsv, triage.tsv, every retro.tsv and the
-  kit's seed-changes.tsv is still there byte for byte, every (id, test) row of
+  kit's seed-changes.tsv is still there byte for byte (a header may only grow
+  columns at its end), every (id, test) row of
   ledger.tsv is still there (a replay re-records its own row), and no rulings id
   is gone. A bug the base's bugs.tsv marks `open` waits on a fix off main, which
   lands as other commits, so its rows may change or go as long as it keeps a
@@ -68,7 +74,8 @@ before it only the in-tree rules do, since no change can be declared yet.
 - B6 a diff that touches a module a calcs.tsv row names needs a fresh change naming
   one of that module's calcs, or a fresh kind none change; each kind none change
   gives a reason, and when every fresh change is kind none no golden cell moved.
-  An analyze.py whose only edit is the ANALYSIS_VERSION line touches no calc.
+  An analyze.py or coverage_format.py whose only edits are ANALYSIS_VERSION and
+  entries of ANALYSIS_VERSIONS or READER_VERSIONS touches no calc.
 - B7 each fresh fix change comes with a fresh bugs.tsv row, and each fresh bug id
   has a retro.tsv row naming its test.
 - B8 a fresh definition change edits a docs file (DOCS), each of its moved.tsv
@@ -85,6 +92,15 @@ before it only the in-tree rules do, since no change can be declared yet.
 - B11 each fresh change's moved.tsv lists exactly the cells it moved, each
   oracle value is what the oracle says now, and each disagreement names a
   ruling of that calc and oracle.
+- B12 the analysis-bump rule, per number: each moved ccn, cognitive or nesting
+  cell needs a rise of the number of a language whose suffixes claim its path
+  (languages.LANGUAGE_EXTENSIONS), each moved cov cell a rise of the reader
+  number of a lane that measures its scope in the corpus's crapkit.toml, and
+  either needs ANALYSIS_VERSION to rise with it. A rise of another number
+  excuses nothing: a moved Go ccn with only ANALYSIS_VERSIONS["python"] raised
+  fails and names ANALYSIS_VERSIONS["go"]. A golden table or row that appears,
+  a key that enters a table at its first number and a corpus whose input
+  changed raise nothing; a base with no tables is judged by the revision alone.
 
 A moved cell is a golden scored.tsv or inventory.tsv cell whose value differs
 between base and head, read by (path, handle); a golden table that is new or gone
@@ -109,8 +125,10 @@ base for a row that goes). A cell the oracle disagrees with stops the declare
 names a rulings row of that calc whose oracle cell names that oracle. A cell no
 oracle here answers (another language, or a start line the oracle finds no
 function at) is recorded with no oracle, and its packet's oracle checks judge it.
-When the metric digest moves, the running ANALYSIS_VERSION must be new to
-metric-digests.tsv (default A1: a move bumps it), except when the only scored
+declare holds B12 too, and when the metric digest moves, the running
+ANALYSIS_VERSION must be new to metric-digests.tsv: the refusal names each
+language and reader number that covers the moved rows, and the revision,
+except when the only scored
 cells that moved are rows that appear: a function crapkit starts to score, in a
 file of a known language it did not read before, moves no function that was
 there, so the digest takes a second row under the running version. A golden a fresh change already
@@ -168,6 +186,8 @@ SMALL_GOLDENS = ("tests/accuracy/corpus_goldens/goldens/small",
 CORPUS_ENV = "CRAPKIT_ACCURACY_CORPUS"
 REGENERATE = "tools/accuracy/regenerate.py"
 ANALYZE = "src/crapkit/analyze.py"
+COVERAGE_FORMAT = "src/crapkit/coverage_format.py"
+LANGUAGE_MAP = "src/crapkit/languages.py"
 CHANGELOG = "CHANGELOG.md"
 # The section a declared change's CHANGELOG line goes in: the newest `## X.Y.Z
 # <dash> unreleased` heading, the one tools/release/release.py dates at release time.
@@ -1174,23 +1194,42 @@ def changelog_problems(tree) -> list[Problem]:
 
 @dataclass(frozen=True)
 class Running:
+    """The revision and lizard version a tree runs under, and its two number
+    tables as CHANGES cells (goldens.number_cell)."""
     analysis: str
     lizard: str
+    languages: str = ""
+    readers: str = ""
+
+
+def literal(tree, path: str, name: str):
+    """The value a module-level `name = <literal>` in `path` assigns, read with
+    ast.literal_eval and no import; None when the tree has no such line."""
+    for node in ast.parse(tree.read(path) or b"").body:
+        targets = [getattr(target, "id", "") for target in getattr(node, "targets", [])]
+        if name in targets:
+            return ast.literal_eval(node.value)
+    return None
 
 
 def analysis_version(tree) -> str:
     """ANALYSIS_VERSION as src/crapkit/analyze.py assigns it, read without importing it."""
-    source = tree.read(ANALYZE)
-    tree_ = ast.parse(source or b"")
-    for node in tree_.body:
-        targets = [getattr(target, "id", "") for target in getattr(node, "targets", [])]
-        if "ANALYSIS_VERSION" in targets:
-            return str(ast.literal_eval(node.value))
-    return ""
+    value = literal(tree, ANALYZE, "ANALYSIS_VERSION")
+    return "" if value is None else str(value)
+
+
+def tree_numbers(tree) -> goldens.Numbers:
+    """The tree's revision, ANALYSIS_VERSIONS and READER_VERSIONS; empty tables
+    in a tree from the single-number era."""
+    return goldens.Numbers(int(analysis_version(tree) or 0),
+                           literal(tree, ANALYZE, goldens.LANGUAGES) or {},
+                           literal(tree, COVERAGE_FORMAT, goldens.READERS) or {})
 
 
 def running(tree, lizard: str | None = None) -> Running:
-    return Running(analysis_version(tree), lizard or importlib.metadata.version("lizard"))
+    held = tree_numbers(tree)
+    return Running(analysis_version(tree), lizard or importlib.metadata.version("lizard"),
+                   goldens.number_cell(held.languages), goldens.number_cell(held.readers))
 
 
 def small_goldens(tree) -> str | None:
@@ -1274,8 +1313,10 @@ def digest_problems(tree, now: Running) -> list[Problem]:
         return []
     found = rows(tree.read(DIGESTS))
     texts = _digest_shape(found) + _last_row(tree, found, now)
-    fix = (f"declare the move with `{declare_command('<id>', '<kind>', ())}` after bumping "
-           f"ANALYSIS_VERSION in {ANALYZE}; never edit an old row")
+    fix = (f"declare the move with `{declare_command('<id>', '<kind>', ())}` after raising the "
+           f"number of each language ({goldens.LANGUAGES} in {ANALYZE}) or coverage reader "
+           f"({goldens.READERS} in {COVERAGE_FORMAT}) it moves and {goldens.REVISION}; never "
+           "edit an old row")
     return [Problem("T5", f"metric-digests.tsv: {text}", fix) for text in texts]
 
 
@@ -1283,6 +1324,67 @@ def in_tree(tree, now: Running) -> list[Problem]:
     """T2 to T5 on one tree."""
     return (changes_problems(tree) + lock_problems(tree) + changelog_problems(tree)
             + digest_problems(tree, now))
+
+
+# --- the analysis-bump rule, per number ------------------------------------------------------
+
+def corpus_config(tree, name: str) -> str:
+    """A corpus's crapkit.toml: the small corpus's in the tree, a member's under
+    CRAPKIT_ACCURACY_CORPUS; empty when neither is at hand."""
+    small = name == "small"
+    data = tree.read(f"{SMALL_CORPUS}/crapkit.toml") if small else _outside(name, "crapkit.toml")
+    return (data or b"").decode("utf-8")
+
+
+def _member(tree, name: str):
+    data = tree.read(CORPUS_TOML)
+    return tomllib.loads(data.decode("utf-8")).get("member", {}).get(name) if data else None
+
+
+def corpus_held(base, head, name: str) -> bool:
+    """Whether a corpus measured the same input on both sides: the small corpus's
+    bytes, or a member's corpus.toml entry. An edited corpus moves cells and
+    raises no number."""
+    if name == "small":
+        return corpus_digest(base) == corpus_digest(head)
+    return _member(base, name) == _member(head, name)
+
+
+def _moves(tree, cells: list[Cell]) -> list[goldens.Move]:
+    """The cells as the kit's moves, each with its row's scope at `tree`."""
+    tables = {golden: _table_rows(tree.read(golden)) for golden in {cell.golden for cell in cells}}
+    return [goldens.Move(cell.golden, cell.path, tables[cell.golden].get(
+        (cell.path, cell.handle), {}).get("scope", ""), cell.column) for cell in cells]
+
+
+def _by_corpus(tree, cells: list[Cell]) -> dict[str, list[Cell]]:
+    groups: dict[str, list[Cell]] = {}
+    for cell in cells:
+        groups.setdefault(corpus_name(tree, cell.golden), []).append(cell)
+    return groups
+
+
+def unraised(base, head, cells: list[Cell], fix: str) -> list[str]:
+    """goldens.unraised over the moved cells of each corpus whose input held,
+    each language read from the head's languages.LANGUAGE_EXTENSIONS and each
+    reader from the corpus's lanes."""
+    before, after = tree_numbers(base), tree_numbers(head)
+    claims = literal(head, LANGUAGE_MAP, "LANGUAGE_EXTENSIONS") or {}
+    return [line for name, group in sorted(_by_corpus(head, cells).items())
+            if corpus_held(base, head, name)
+            for line in goldens.unraised(_moves(head, group), before, after, claims,
+                                         goldens.lanes_of(corpus_config(head, name)), fix)]
+
+
+def to_raise(head, cells: list[Cell]) -> str:
+    """The numbers that cover the moved cells, then the revision: what a moved
+    metric digest asks to raise."""
+    claims = literal(head, LANGUAGE_MAP, "LANGUAGE_EXTENSIONS") or {}
+    found = {number for name, group in _by_corpus(head, cells).items()
+             for move in _moves(head, group)
+             for number in goldens.covering(move, claims, goldens.lanes_of(
+                 corpus_config(head, name)))}
+    return ", ".join([*map(goldens.label, sorted(found)), goldens.REVISION])
 
 
 # --- base-aware rules -------------------------------------------------------------------------
@@ -1347,7 +1449,7 @@ def _unbumped(diff: Diff) -> list[Problem]:
     return [Problem("B1", f"{DIGESTS} adds a row under analysis {row['analysis_version']}, "
                           f"lizard {row['lizard_version']}, which the base holds, while scored "
                           "rows that were there moved",
-                    f"bump ANALYSIS_VERSION in {ANALYZE}, then declare the move again")]
+                    f"raise {to_raise(diff.head, diff.cells)}, then declare the move again")]
 
 
 def _kept(path: str, rows_: list[str]) -> list[str]:
@@ -1378,9 +1480,15 @@ def _named_by_twins(path: str, old: list[str], twins: dict[str, str]) -> list[st
     return old[:1] + [_renamed(row, twins) for row in old[1:]]
 
 
+def _header_kept(old: list[str], new: list[str]) -> bool:
+    """The header holds, or grows columns at its end: an old row then reads the
+    new cells empty and keeps its bytes."""
+    return new[:1] == old[:1] or bool(old and new) and new[0].startswith(old[0] + "\t")
+
+
 def _lost_rows(path: str, old: list[str], new: list[str]) -> Problem | None:
     lost = Counter(_kept(path, old[1:])) - Counter(_kept(path, new[1:]))
-    if new[:1] != old[:1]:
+    if not _header_kept(old, new):
         lost = Counter({f"header {old[0]}": 1})
     if not lost:
         return None
@@ -1534,14 +1642,21 @@ def rule_b5(diff: Diff) -> list[Problem]:
     return _lock_rule(diff, LOCK, CHANGES) + _lock_rule(diff, SEED_LOCK, SEED_CHANGES)
 
 
+_NUMBER_LINES = re.compile(rb"(?m)^(?:ANALYSIS_VERSION\s*=.*$|"
+                           rb"(?:ANALYSIS_VERSIONS|READER_VERSIONS)\s*=\s*\{[^}]*\})")
+
+
 def _unversioned(data: bytes | None) -> bytes:
-    return re.sub(rb"(?m)^ANALYSIS_VERSION\s*=.*$", b"", data or b"")
+    """The module without its ANALYSIS_VERSION line and its number tables."""
+    return _NUMBER_LINES.sub(b"", data or b"")
 
 
 def _version_only(module: str, base, head) -> bool:
-    """analyze.py with only its ANALYSIS_VERSION line moved: the bump A1 asks of any
-    change that moves a metric, which changes no calc that module holds."""
-    return module == ANALYZE and _unversioned(base.read(module)) == _unversioned(head.read(module))
+    """analyze.py or coverage_format.py with only the revision and the entries
+    of ANALYSIS_VERSIONS or READER_VERSIONS moved: the raise a moved metric
+    asks for, which changes no calc that module holds."""
+    numbered = module in (ANALYZE, COVERAGE_FORMAT)
+    return numbered and _unversioned(base.read(module)) == _unversioned(head.read(module))
 
 
 def touched_calcs(calc_rows: list[CalcRow], changed, base, head) -> dict[str, list[str]]:
@@ -1871,8 +1986,14 @@ def rule_b11(diff: Diff) -> list[Problem]:
     return found
 
 
+def rule_b12(diff: Diff) -> list[Problem]:
+    fix = declare_command(next_id(diff.head_changes), "fix", ())
+    return [Problem("B12", line, "raise each number it names by one in this change")
+            for line in unraised(diff.base, diff.head, diff.cells, fix)]
+
+
 RULES = (rule_b1, rule_b2, rule_b3, rule_b4, rule_b5, rule_b6, rule_b7, rule_b8, rule_b9,
-         rule_b10, rule_b11)
+         rule_b10, rule_b11, rule_b12)
 
 
 def base_aware(base, head) -> bool:
@@ -1924,7 +2045,10 @@ def check(repo: Path, base: str, head: str = "HEAD", moved: Path | None = None,
 
 
 def _check_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="change_control.py", description="Judge a diff.")
+    parser = argparse.ArgumentParser(prog="change_control.py", description=(
+        "Judge a diff. A moved golden needs its own number raised with ANALYSIS_VERSION: "
+        "its language's in ANALYSIS_VERSIONS for a ccn, cognitive or nesting cell, its "
+        "coverage reader's in READER_VERSIONS for a cov cell (rule B12)."))
     parser.add_argument("--base", required=True, help="the ref to compare with (merge base)")
     parser.add_argument("--head", default="HEAD")
     parser.add_argument("--repo", type=Path, default=Path.cwd())
@@ -2082,15 +2206,16 @@ def _unbumped_move(found: list[dict], row: dict, added: bool) -> bool:
     return _digest_key(row) in set(map(_digest_key, found)) and not added
 
 
-def _digest_refusal(found: list[dict], row: dict, now: Running,
-                    added: bool = False) -> list[str]:
-    """A digest that moved under a version the table holds asks for the bump
-    (A1), unless the move is scored rows that appear and nothing else."""
+def _digest_refusal(found: list[dict], row: dict, now: Running, added: bool = False,
+                    to_raise_: str = goldens.REVISION) -> list[str]:
+    """A digest that moved under a revision the table holds asks to raise the
+    numbers that cover the moved rows and the revision (`to_raise_`), unless
+    the move is scored rows that appear and nothing else."""
     last = _last(found)
     if _unbumped_move(found, row, added):
         return [f"the metric digest moved from {last.get('digest')} to {row['digest']} under "
-                f"analysis {now.analysis}, lizard {now.lizard}: bump ANALYSIS_VERSION in "
-                f"{ANALYZE} to {int(now.analysis or 0) + 1} (A1), then rerun this declare"]
+                f"analysis {now.analysis}, lizard {now.lizard}: raise {to_raise_} by one "
+                f"(ANALYSIS_VERSION to {int(now.analysis or 0) + 1}), then rerun this declare"]
     if found and _order(row) < _order(last):
         return [f"analysis {now.analysis}, lizard {now.lizard} is older than the last "
                 f"metric-digests row ({last.get('analysis_version')}, "
@@ -2106,7 +2231,8 @@ def _digest_row(head, now: Running, change_id: str,
     row = _new_digest_row(head, now, change_id)
     if _same_metrics(found, row):
         return None, []
-    return row, _digest_refusal(found, row, now, only_added_rows(list(cells), head))
+    return row, _digest_refusal(found, row, now, only_added_rows(list(cells), head),
+                                to_raise(head, list(cells)))
 
 
 @dataclass
@@ -2177,7 +2303,8 @@ def plan_declare(base, head, request: Request, now: Running,
     lock, relocked = _relock(head, request.id)
     digest, stale = _digest_row(head, now, request.id, moves.cells)
     refusals += (bad + _declaration_problems(request, head, moves)
-                 + _nothing_moved(request, moves) + stale)
+                 + _nothing_moved(request, moves) + stale
+                 + unraised(base, head, moves.cells, "rerun this declare"))
     if refusals:
         raise ChangeControlError("declare refused:\n" + "\n".join(f"  {text}" for text in refusals)
                                  + "\n" + "\n".join(moved_block(head, moves.cells, moves.surfaces,
@@ -2186,8 +2313,17 @@ def plan_declare(base, head, request: Request, now: Running,
 
 
 
+def _grown(data: bytes, columns) -> bytes:
+    """The table with a header that lacks the newer columns grown to `columns`;
+    every row keeps its bytes (B2)."""
+    first, _, rest = data.partition(b"\n")
+    wanted = "\t".join(columns).encode("utf-8")
+    grows = first.removesuffix(b"\r") != wanted and wanted.startswith(first + b"\t")
+    return wanted + b"\n" + rest if grows else data
+
+
 def _append(path: Path, columns, record) -> None:
-    data = path.read_bytes() if path.is_file() else b""
+    data = _grown(path.read_bytes(), columns) if path.is_file() else b""
     header = b"" if data.strip() else ("\t".join(columns) + "\n").encode("utf-8")
     data = data if not data or data.endswith(b"\n") else data + b"\n"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2231,7 +2367,8 @@ def write_plan(root: Path, plan: Plan, now: Running) -> None:
     request = plan.request
     _append(root / CHANGES, CHANGE_COLUMNS, [request.id, request.today, request.kind,
                                              "; ".join(request.calcs), now.analysis, now.lizard,
-                                             changelog_cell(root, request.kind), request.reason])
+                                             changelog_cell(root, request.kind), request.reason,
+                                             now.languages, now.readers])
     (root / LOCK).write_bytes(table_bytes(LOCK_COLUMNS, ((path, *plan.lock[path])
                                                          for path in sorted(plan.lock))))
     _write_moved(root, plan)
@@ -2333,8 +2470,12 @@ def _today() -> str:
 
 
 def _declare_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="change_control.py declare",
-                                     description="Judge and record a change that moves goldens.")
+    parser = argparse.ArgumentParser(prog="change_control.py declare", description=(
+        "Judge and record a change that moves goldens. A moved cell needs the number of its "
+        "language (ANALYSIS_VERSIONS in analyze.py, for ccn, cognitive and nesting) or "
+        "coverage reader (READER_VERSIONS in coverage_format.py, for cov) raised with "
+        "ANALYSIS_VERSION; a new language, extension or reader adds goldens and raises "
+        "nothing."))
     parser.add_argument("id")
     parser.add_argument("--kind", required=True, choices=KINDS)
     parser.add_argument("--calcs", default="", help="the moved calcs, `;` or `,` separated")
@@ -2396,7 +2537,7 @@ def lock_initial(root: Path, now: Running, today: str, counts: dict[str, int]) -
                                  f"`{TOOL} declare`")
     _append(root / CHANGES, CHANGE_COLUMNS, ["C1", today, "none", "", now.analysis, now.lizard, "",
                                              "the first lock over every golden and "
-                                             "expected-value file"])
+                                             "expected-value file", now.languages, now.readers])
     files = lockable(tree)
     (root / LOCK).write_bytes(table_bytes(LOCK_COLUMNS, ((path, files[path], "C1")
                                                          for path in sorted(files))))

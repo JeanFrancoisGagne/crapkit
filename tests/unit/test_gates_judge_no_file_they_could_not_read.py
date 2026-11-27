@@ -128,8 +128,8 @@ def test_verify_override_refuses_before_it_grants_when_a_changed_file_went_unrea
 
     payload = json.loads(out)
     assert code == 6, out + err
-    assert payload["overridden"] == []
-    assert [g["long_name"] for g in payload["gate_violations"]] == ["knotty ( n )"]
+    assert [item for item in payload["findings"] if item["kind"] == "overridden"] == []
+    assert [g["long_name"] for g in payload["findings"] if g["kind"] == "gate_violation"] == ["knotty ( n )"]
     assert "override refused: 1 unread file (src/a.ts: " in err and REASON in err, err
     assert ADVICE in err, err
     assert not (scored / MARKS).exists()
@@ -187,8 +187,9 @@ def test_verify_fails_a_changed_file_it_could_not_read(scored, capsys):
     payload = json.loads(out)
     assert code == 6, out + err
     assert payload["ok"] is False
-    assert [(u["path"], u["dirty"]) for u in payload["unread_files"]] == [("src/app.ts", False)]
-    assert REASON in payload["unread_files"][0]["reason"]
+    unread = [item for item in payload["findings"] if item["kind"] == "unread_file"]
+    assert [(u["path"], u["dirty"]) for u in unread] == [("src/app.ts", False)]
+    assert REASON in unread[0]["reason"]
 
 
 def test_verify_prints_the_unread_file_as_a_finding(scored, capsys):
@@ -212,7 +213,7 @@ def test_verify_passes_an_unread_file_outside_the_change(scored, capsys):
     code, out, err = run(["verify", "--reuse-artifacts", "--json"], scored, capsys)
 
     assert code == 0, out + err
-    assert json.loads(out)["unread_files"] == []
+    assert [item for item in json.loads(out)["findings"] if item["kind"] == "unread_file"] == []
 
 
 def test_the_pages_quote_the_override_refusal_an_unread_file_prints():

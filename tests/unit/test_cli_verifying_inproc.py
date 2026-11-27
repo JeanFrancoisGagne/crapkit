@@ -16,6 +16,7 @@ from pathlib import Path
 
 from cli_inproc_repo import (add_knotty, commit_all, git, istanbul,  # noqa: F401
                              repo, seed_artifacts, template_repo)
+from stamps import running_in, single_number
 
 import pytest
 
@@ -24,7 +25,7 @@ from crapkit.cli.verifying import _verify_exit_code
 from crapkit.cli import main
 from crapkit.cli import verifying
 from crapkit.invocation import _self
-from crapkit.ratchet import RatchetEntry, dump_ratchet, metric_version
+from crapkit.ratchet import MetricStamp, RatchetEntry, dump_ratchet, read_stamp
 from crapkit.store import SnapshotStore
 from crapkit.verify import GateViolation, RatchetRegression, Verdict, parse_baseline_tsv
 
@@ -38,6 +39,16 @@ def run(argv: list[str], repo, capsys) -> tuple[int, str, str]:
     return code, out.out, out.err
 
 
+def found(payload: dict, kind: str) -> list[dict]:
+    """verify --json's findings items of one kind."""
+    return [item for item in payload["findings"] if item["kind"] == kind]
+
+
+def new_failure_ids(payload: dict) -> list[str]:
+    """The test ids of verify --json's new_failure items."""
+    return [item["test"] for item in found(payload, "new_failure")]
+
+
 def store_of(repo) -> SnapshotStore:
     return SnapshotStore(repo / ".crapkit" / "crap.sqlite")
 
@@ -46,11 +57,11 @@ def head(repo) -> str:
     return git(repo, "rev-parse", "HEAD").strip()
 
 
-def write_marks(repo, *entries: tuple[str, str, float], stamp: str | None = None,
+def write_marks(repo, *entries: tuple[str, str, float], stamp: MetricStamp | None = None,
                 key_version: int = 0) -> None:
     (repo / MARKS).write_text(
-        dump_ratchet([RatchetEntry(*e) for e in entries],
-                     stamp=metric_version() if stamp is None else stamp, key_version=key_version),
+        dump_ratchet([RatchetEntry(*e) for e in entries], file_name=MARKS,
+                     stamp=running_in(repo) if stamp is None else stamp, key_version=key_version),
         encoding="utf-8", newline="\n")
 
 
@@ -251,7 +262,7 @@ def test_a_failure_the_baseline_had_is_forgiven_under_its_portable_record(failin
     payload = json.loads(out)
 
     assert code == 0, payload
-    assert payload["new_failures"] == []
+    assert new_failure_ids(payload) == []
     assert payload["forgiven_failures"] == ["src/app.test.ts::renders"]
 
 
@@ -382,21 +393,21 @@ def test_the_json_verdict_carries_the_receipt_that_dates_it(baselined, capsys):
     assert payload["tool_versions"]["crapkit"]
     assert len(payload["ratchet_sha256"]) == 64
     assert payload["committed_findings"] == 0 and payload["dirty_findings"] == 0
-    assert payload["diff_uncovered_count"] == 0
+    assert payload["counts"]["diff_uncovered_count"] == 0
 
 
 def test_the_json_verdict_carries_the_diff_coverage_ceiling(baselined, capsys):
     """The count alone cannot say whether exit 9 is near: the ceiling it is
     judged against travels with it, null when the repo set none (warn only)."""
     _, out, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
-    assert json.loads(out)["diff_uncovered_max"] is None
+    assert json.loads(out)["counts"]["diff_uncovered_max"] is None
 
     text = (baselined / "crapkit.toml").read_text(encoding="utf-8")
     (baselined / "crapkit.toml").write_text(
         text.replace("target = 6", "target = 6\ndiff_uncovered_max = 1"), encoding="utf-8")
 
     _, out, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
-    assert json.loads(out)["diff_uncovered_max"] == 1
+    assert json.loads(out)["counts"]["diff_uncovered_max"] == 1
 
 
 def test_a_function_this_tree_pushed_over_the_ceiling_fails_the_verdict(baselined, capsys):
@@ -572,15 +583,15 @@ def test_a_granted_override_names_the_mark_it_wrote_and_asks_for_git_add(baselin
 
 
 def test_a_granted_override_keeps_ratchet_changes_null_under_json(baselined, capsys):
-    """`ratchet_changes` counts what a tighten did; a grant is listed under
-    `overridden` and is not counted twice."""
+    """`ratchet_changes` counts what a tighten did; a grant is listed as an
+    `overridden` findings item and is not counted twice."""
     code, out, _ = run(["verify", "--reuse-artifacts", "--override", "shipping the spike",
                         "--json"], _knotty(baselined), capsys)
 
     payload = json.loads(out)
     assert code == 0
     assert payload["ratchet_changes"] is None
-    assert [v["long_name"] for v in payload["overridden"]] == ["knotty ( n )"]
+    assert [v["long_name"] for v in found(payload, "overridden")] == ["knotty ( n )"]
 
 
 def test_an_override_never_grants_a_ratchet_regression(baselined, capsys):
@@ -610,7 +621,7 @@ def test_a_mark_that_rose_is_its_own_exit_code(baselined, capsys):
 def test_marks_recorded_under_another_metric_are_refused_before_the_lanes_run(baselined, capsys):
     """Finding this out after a 40-minute lane run is too late, so the guard runs
     first. A metric bump that silently kept 40k old marks is what it exists for."""
-    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp="lizard 0.0.1 analysis 0")
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp=MetricStamp.parse("lizard 0.0.1 analysis 0"))
 
     code, _, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
 
@@ -619,8 +630,57 @@ def test_marks_recorded_under_another_metric_are_refused_before_the_lanes_run(ba
     assert "crapkit ratchet seed" in err
 
 
+def _cut_after(text: str, line_start: str) -> str:
+    """`text` cut off right after `line_start`, as a write stopped mid-line leaves it."""
+    return text[:text.index(line_start) + len(line_start)]
+
+
+def _respelled(text: str, line_start: str, rest: str) -> str:
+    """`text` with the rest of the line that opens with `line_start` replaced."""
+    return "\n".join(line_start + rest if line.startswith(line_start) else line
+                     for line in text.split("\n"))
+
+
+# A per-scope marks file whose stamp lines a cut write or a hand edit left
+# unreadable, and the complaint seed and prune refuse it with.
+UNREADABLE_STAMP_LINES = {
+    "cut-scope-line": (lambda text: _cut_after(text, "#scope\tsrc\t"),
+                       "ratchet line 3 has an unreadable scope stamp: '#scope\\tsrc\\t'"),
+    "garbage-scope-line": (lambda text: _respelled(text, "#scope\tsrc\t", "analysis typescript=thirteen"),
+                           "ratchet line 3 has an unreadable scope stamp: "
+                           "'#scope\\tsrc\\tanalysis typescript=thirteen'"),
+    "cut-first-line": (lambda text: _respelled(text, "# crapkit-stamp=2 ", "liz"),
+                       "ratchet line 3 is a scope stamp, but line 1 stamps the file [crapkit-stamp=2 liz]; "
+                       "a marks file holds one stamp form, single-number or per scope"),
+}
+
+
+@pytest.mark.parametrize("how", list(UNREADABLE_STAMP_LINES))
+def test_an_unreadable_stamp_line_is_named_by_verify_and_doctor_as_seed_and_prune_name_it(
+        baselined, capsys, how):
+    """verify read the line as marks another metric measured and named coverage,
+    prune and seed, and seed and prune refuse that same line: the remedy could
+    not run. Every command now names the line, and doctor fails on it as on any
+    marks file verify cannot read."""
+    degrade, complaint = UNREADABLE_STAMP_LINES[how]
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), key_version=1)
+    marks = baselined / MARKS
+    marks.write_text(degrade(marks.read_text(encoding="utf-8")), encoding="utf-8", newline="\n")
+    refusal = f"unreadable ratchet file {MARKS}: {complaint}"
+
+    for argv in (["ratchet", "seed"], ["ratchet", "prune"], ["verify", "--reuse-artifacts"]):
+        code, _, err = run(argv, baselined, capsys)
+        assert (code, err) == (3, f"crapkit: {refusal}\n"), argv
+    code, out, _ = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
+    assert (code, json.loads(out)["error"]["message"]) == (3, refusal)
+    code, out, _ = run(["doctor", "--json"], baselined, capsys)
+    payload = json.loads(out)
+    named = {kind: [text for text in payload[kind] if MARKS in text] for kind in ("problems", "warnings")}
+    assert (code, named) == (1, {"problems": [refusal], "warnings": []}), payload
+
+
 def test_a_marks_file_written_before_stamping_warns_and_still_verifies(baselined, capsys):
-    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp="")
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp=MetricStamp.NONE)
 
     code, _, err = run(["verify", "--reuse-artifacts"], baselined, capsys)
 
@@ -631,7 +691,7 @@ def test_a_marks_file_written_before_stamping_warns_and_still_verifies(baselined
 def test_a_clean_pass_tightens_the_marks(baselined, capsys):
     """On a commit the store has never scored, the tighten has nothing to
     compare this measurement against, so no mark is held back."""
-    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0))
+    write_marks(baselined, ("src/app.ts", "plain ( x )", 9.0), stamp=running_in(baselined))
     git(baselined, "-c", "user.email=t@example.com", "-c", "user.name=t",
         "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "empty")
 
@@ -924,7 +984,7 @@ def test_a_clean_tree_does_not_walk_the_artifacts_for_diff_coverage(
     code, out, err = run(["verify", "--reuse-artifacts", "--json"], baselined, capsys)
 
     assert (code, err) == (0, "")
-    assert json.loads(out)["diff_uncovered_count"] == 0
+    assert json.loads(out)["counts"]["diff_uncovered_count"] == 0
 
 
 def test_an_empty_diff_cannot_breach_the_diff_coverage_ceiling(repo, capsys):
@@ -1045,7 +1105,7 @@ def test_a_rerun_that_leaves_no_readable_result_keeps_every_failure(baselined, c
 
     payload = json.loads(out)
     assert code == 8, (out, err)
-    assert payload["new_failures"] == ["src/app.test.ts::renders"]
+    assert new_failure_ids(payload) == ["src/app.test.ts::renders"]
     assert payload["retried_passes"] == []
 
 
@@ -1163,7 +1223,7 @@ def test_a_staged_function_over_the_ceiling_refuses_the_commit(repo, capsys):
     code, out, err = run(["hook-precommit"], repo, capsys)
 
     assert (code, err) == (6, "")
-    assert "1 staged function(s) exceed the complexity ceiling of 6" in out, out
+    assert "1 staged function(s) exceed the CRAP ceiling of 6" in out, out
     assert "ccn   8  src/app.ts:" in out and "knotty" in out, out
     assert "decompose before committing" in out
 
@@ -1183,9 +1243,9 @@ def test_a_fix_the_developer_forgot_to_stage_is_named_as_such(repo, capsys):
 
 
 def test_a_staged_function_the_repo_already_signed_for_is_not_gated(repo, capsys):
-    """Existence, not the numeric rule: a blob carries no coverage, so the only
-    question the hook can answer is whether the repo already signed for this
-    function. `verify` keeps the numeric check."""
+    """A blob carries no coverage, so the hook reads knotty's CRAP as the range
+    from ccn 8 to 72, its CRAP untested. A mark of 72 holds the whole range,
+    so the repo already signed for it. `verify` keeps the numeric check."""
     add_knotty(repo)
     stage(repo, "src/app.ts")
     write_marks(repo, ("src/app.ts", "knotty ( n )", 72.0))
@@ -1194,6 +1254,33 @@ def test_a_staged_function_the_repo_already_signed_for_is_not_gated(repo, capsys
 
     assert (code, out) == (0, "")
     assert "1 staged function(s) carry a ratchet mark and were not gated" in err, err
+
+
+def test_a_staged_function_whose_ccn_passed_its_mark_refuses_the_commit(repo, capsys):
+    """ccn 8 against a mark of 7.5: CRAP is never under ccn, so the mark rose
+    at any coverage and the hook refuses, naming the mark it passed."""
+    add_knotty(repo)
+    stage(repo, "src/app.ts")
+    write_marks(repo, ("src/app.ts", "knotty ( n )", 7.5))
+
+    code, out, err = run(["hook-precommit"], repo, capsys)
+
+    assert (code, err) == (6, "")
+    assert "crapkit gate: 1 staged function(s) rose past their ratchet mark:" in out, out
+    assert "ccn   8  src/app.ts:" in out and "knotty ( n )  mark 7.5000" in out, out
+    assert "bring each one's ccn back to its mark or under it" in out, out
+
+
+def test_a_marked_rise_whose_fix_was_never_staged_is_named_as_such(repo, capsys):
+    add_knotty(repo)
+    stage(repo, "src/app.ts")
+    add_knotty(repo, "src/app.ts")
+    write_marks(repo, ("src/app.ts", "knotty ( n )", 7.5))
+
+    code, out, _ = run(["hook-precommit"], repo, capsys)
+
+    assert code == 6
+    assert "note: src/app.ts differs from the working tree" in out, out
 
 
 def test_staged_source_no_scope_claims_is_named_and_not_gated(repo, capsys):
@@ -1335,7 +1422,7 @@ def test_a_refused_override_under_json_keeps_stdout_one_object(baselined, capsys
                          _knotty(baselined), capsys)
 
     assert code == 6
-    assert json.loads(out)["overridden"] == []
+    assert found(json.loads(out), "overridden") == []
     assert REFUSED_REGRESSION in err, err
 
 
@@ -1390,7 +1477,7 @@ def marked_debt(repo, capsys):
 
 def test_a_green_run_that_moved_marks_says_so_and_asks_for_git_add(marked_debt, capsys):
     write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 100.0),
-                ("src/app.ts", "plain ( x )", 9.0))
+                ("src/app.ts", "plain ( x )", 9.0), stamp=running_in(marked_debt))
 
     code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
 
@@ -1407,14 +1494,62 @@ def test_the_json_receipt_counts_what_the_tighten_did(marked_debt, capsys):
 
     _, out, _ = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
 
-    assert json.loads(out)["ratchet_changes"] == {"dropped": 1, "tightened": 1}
+    assert json.loads(out)["ratchet_changes"] == {"dropped": 1, "tightened": 1, "rekeyed": 0}
+
+
+# A mark recorded before knotty's signature changed: it carries to `knotty ( n )`.
+CARRIED_MARK = ("src/app.ts", "knotty ( n , m )", 100.0)
+
+
+def test_a_green_run_re_keys_a_carried_mark_and_counts_it(marked_debt, capsys):
+    write_marks(marked_debt, CARRIED_MARK, stamp=running_in(marked_debt), key_version=1)
+
+    code, out, _ = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+
+    assert code == 0
+    assert out.splitlines()[0].endswith(f"ratchet: 0 dropped, 1 tightened, 1 re-keyed -> git add {MARKS}")
+    text = (marked_debt / MARKS).read_text(encoding="utf-8")
+    assert "knotty ( n )\t16.0000" in text and "knotty ( n , m )" not in text, text
+
+
+@pytest.mark.parametrize("encoding, bom", [("utf-16-le", b"\xff\xfe"), ("utf-8", b"")])
+def test_a_re_key_keeps_the_file_s_encoding_line_endings_and_stamp_lines(marked_debt, capsys, encoding, bom):
+    text = dump_ratchet([RatchetEntry(*CARRIED_MARK)], file_name=MARKS, stamp=running_in(marked_debt),
+                        key_version=1).replace("\n", "\r\n")
+    (marked_debt / MARKS).write_bytes(bom + text.encode(encoding))
+
+    code, _, _ = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+
+    after = (marked_debt / MARKS).read_bytes()
+    assert code == 0 and after.startswith(bom)
+    written = after[len(bom):].decode(encoding)
+    assert "knotty ( n )\t16.0000\r\n" in written and "knotty ( n , m )" not in written
+    assert [line for line in written.split("\r\n") if line.startswith("#")] == [
+        line for line in text.split("\r\n") if line.startswith("#")]
+
+
+def test_a_marks_file_whose_key_identity_is_unproved_re_keys_nothing(marked_debt, capsys):
+    """Key version 0 holds the carried mark under its own key. The same mark in
+    a file whose key identity is proved re-keys, so the hold comes from the key
+    version and not from a re-key that never runs."""
+    write_marks(marked_debt, CARRIED_MARK, stamp=running_in(marked_debt))
+    before = (marked_debt / MARKS).read_bytes()
+
+    code, out, _ = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
+
+    assert (code, json.loads(out)["ratchet_changes"]) == (0, None)
+    assert (marked_debt / MARKS).read_bytes() == before
+    write_marks(marked_debt, CARRIED_MARK, stamp=running_in(marked_debt), key_version=1)
+    _, proved, _ = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
+    assert json.loads(proved)["ratchet_changes"] == {"dropped": 0, "tightened": 1, "rekeyed": 1}
 
 
 def test_a_green_run_with_nothing_to_move_leaves_the_marks_file_alone(marked_debt, capsys):
     """Written only when its text would change: a mark already at its measured
     value is not a tighten, and rewriting the file dirtied a clean checkout with
     a diff of nothing."""
-    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), key_version=1)
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp=running_in(marked_debt),
+                key_version=1)
     before = (marked_debt / MARKS).stat().st_mtime_ns
 
     code, out, err = run(["verify", "--reuse-artifacts", "--json"], marked_debt, capsys)
@@ -1425,17 +1560,52 @@ def test_a_green_run_with_nothing_to_move_leaves_the_marks_file_alone(marked_deb
 
 
 def test_a_green_run_with_nothing_to_move_prints_no_ratchet_suffix(marked_debt, capsys):
-    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), key_version=1)
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp=running_in(marked_debt),
+                key_version=1)
 
     _, out, _ = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
 
     assert "ratchet:" not in out and "git add" not in out, out
 
 
+def test_a_single_number_file_this_crapkit_runs_converts_on_the_first_passing_verify(
+        marked_debt, capsys):
+    """A 0.8.1 file whose one number this crapkit runs needs no reseed: the
+    pass that moves no mark rewrites it with one stamp per scope and says
+    `restamped`, and the next verify passes with no warning and no rewrite."""
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0),
+                stamp=single_number(13, running_in(marked_debt).lizard), key_version=1)
+
+    code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+
+    assert code == 0, out + err
+    assert f"ratchet: restamped -> git add {MARKS}" in out, out
+    text = (marked_debt / MARKS).read_text(encoding="utf-8")
+    assert read_stamp(text) == running_in(marked_debt), text
+    assert "src/app.ts\tknotty ( n )\t16.0000\n" in text
+    converted = (marked_debt / MARKS).read_bytes()
+    code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
+    assert (code, err) == (0, ""), out + err
+    assert "ratchet:" not in out and (marked_debt / MARKS).read_bytes() == converted, out
+
+
+def test_no_tighten_leaves_a_single_number_file_byte_identical(marked_debt, capsys):
+    """So a 0.8.x checkout that shares the file still reads it."""
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0),
+                stamp=single_number(13, running_in(marked_debt).lizard), key_version=1)
+    before = (marked_debt / MARKS).read_bytes()
+
+    code, out, err = run(["verify", "--reuse-artifacts", "--no-tighten"], marked_debt, capsys)
+
+    assert code == 0, out + err
+    assert (marked_debt / MARKS).read_bytes() == before
+    assert "ratchet:" not in out, out
+
+
 def _crlf_marks(repo, *entries: tuple[str, str, float]) -> bytes:
     """The marks file as a Windows checkout under core.autocrlf=true holds it."""
-    data = dump_ratchet([RatchetEntry(*e) for e in entries], stamp=metric_version(),
-                        key_version=1).replace("\n", "\r\n").encode("utf-8")
+    data = dump_ratchet([RatchetEntry(*e) for e in entries], stamp=running_in(repo), key_version=1,
+                        file_name=MARKS).replace("\n", "\r\n").encode("utf-8")
     (repo / MARKS).write_bytes(data)
     return data
 
@@ -1467,14 +1637,14 @@ def test_a_crlf_checkout_keeps_its_line_endings_through_a_tighten(marked_debt, c
 def test_a_marks_file_written_before_stamping_is_restamped_and_says_so(marked_debt, capsys):
     """The one rewrite that moves no mark: a legacy file gains the stamp line.
     `0 dropped, 0 tightened` explained nothing about the dirty file it left."""
-    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp="")
+    write_marks(marked_debt, ("src/app.ts", "knotty ( n )", 16.0), stamp=MetricStamp.NONE)
 
     code, out, err = run(["verify", "--reuse-artifacts"], marked_debt, capsys)
 
     assert code == 0
     assert "carries no metric stamp" in err, err
     assert f"(0 changed files) ratchet: restamped -> git add {MARKS}" in out, out
-    assert (marked_debt / MARKS).read_text(encoding="utf-8").startswith("# crapkit-analysis=")
+    assert read_stamp((marked_debt / MARKS).read_text(encoding="utf-8")) == running_in(marked_debt)
 
 
 def test_a_green_run_never_creates_a_marks_file_to_hold_zero_marks(baselined, capsys):

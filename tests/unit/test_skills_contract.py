@@ -114,7 +114,7 @@ def test_prose_that_merely_names_crapkit_is_not_read_as_a_call():
 # A description quoting a string the code no longer prints is a pointer that
 # never fires. Both are pinned against the module that emits them.
 
-GATE_REFUSAL = "exceed the complexity ceiling"
+GATE_REFUSAL = "exceed the CRAP ceiling"
 LANE_REFUSAL = "produced no artifact"
 
 

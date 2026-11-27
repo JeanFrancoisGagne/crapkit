@@ -60,9 +60,17 @@ def expected(base: vw.World, fresh: vw.World) -> model.Failures:
     return model.failures(failing, set(_lanes_failing(base)), set(), _passed_retry(fresh, failing))
 
 
+def new_failures(payload: dict) -> list[str]:
+    """The test ids of verify --json's new_failure items. A crapkit before
+    0.9.0, which a retro replay runs, listed them under `new_failures`."""
+    if "findings" not in payload:
+        return payload["new_failures"]
+    return [item["test"] for item in payload["findings"] if item["kind"] == "new_failure"]
+
+
 def got(payload: dict) -> model.Failures:
-    return model.Failures(*(tuple(sorted(payload[key])) for key in
-                            ("new_failures", "forgiven_failures", "retried_passes")))
+    return model.Failures(tuple(sorted(new_failures(payload))), tuple(sorted(payload["forgiven_failures"])),
+                          tuple(sorted(payload["retried_passes"])))
 
 
 @pytest.fixture(scope="module")
@@ -136,7 +144,7 @@ def test_retried_pass_never_forgives_a_later_failure(clean, tmp_path):
     scenario.set(world({("a", "flaky", ""): True}))
     second = scenario.run("verify", "--json")
 
-    assert (second.code, second.json()["new_failures"], second.json()["forgiven_failures"]) == \
+    assert (second.code, new_failures(second.json()), second.json()["forgiven_failures"]) == \
         (8, ["tests.test_a::flaky"], [])
 
 
@@ -159,9 +167,9 @@ def test_a_retried_pass_is_not_forgiven(clean, tmp_path):
 @pytest.mark.parametrize("retried", cadence.tiered([True, False], push={"retried"},
                                                    ids=["retried", "not-retried"]))
 def test_dirty_failures_drop_a_retried_pass(clean, tmp_path, retried):
-    """agent-json.md, Dirty attribution: dirty_failures is the subset of
-    new_failures whose test file has uncommitted edits; a retried pass is not
-    a new failure, so it is not dirty either."""
+    """agent-json.md, Dirty attribution: dirty_failures lists the new_failure
+    items whose test file has uncommitted edits; a retried pass is not a new
+    failure, so it is not dirty either."""
     passing = {"tests.test_a::flaky"} if retried else set()
     fresh = world({("a", "flaky", ""): True, ("a", "real", ""): True}, {"a"}, passing)
     scenario = clean.copy(tmp_path / "r")
@@ -171,7 +179,7 @@ def test_dirty_failures_drop_a_retried_pass(clean, tmp_path, retried):
     payload = scenario.run("verify", "--json").json()
 
     new = sorted(expected(BASE, fresh).new)
-    assert (payload["new_failures"], payload["dirty_failures"]) == \
+    assert (new_failures(payload), payload["dirty_failures"]) == \
         (new, model.dirty_failures(new, {"tests/test_a.py"}))
 
 

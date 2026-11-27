@@ -61,7 +61,7 @@ def test_every_step_crapkit_prints_runs_as_printed(box, templates):
     commands = [command for command, _ in ran]
 
     assert len(ran) < LIMIT
-    assert commands[:2] == ["crapkit init", "python3 -m pip install pytest-cov"]
+    assert commands[:2] == ["crapkit init", "python3 -P -m pip install pytest-cov"]
     assert commands[2:] == ["crapkit coverage", "crapkit worklist", "crapkit ratchet seed", "crapkit verify"]
     assert printed_steps(said(ran[-1][1])) == []
     assert all(step.exit == 0 for _, step in ran)

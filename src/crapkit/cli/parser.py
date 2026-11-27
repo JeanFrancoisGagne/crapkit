@@ -256,9 +256,11 @@ def _print_version_json() -> int:
 # The fix sentence is merge.UNREAD_ADVICE, spelled out here because the parser
 # loads on every command and merge is not worth that import; a test holds the two equal.
 _HOOK_PRECOMMIT = (
-    "Gate the staged functions of a commit at min-CCN <= their scope ceiling, read from the "
-    "staged blobs. A function with a mark in the working tree's marks file passes, whether or "
-    "not the mark is staged. Exit 6 on a staged function over its ceiling or a staged file no "
+    "Gate the staged functions of a commit at their scope ceiling, read from the staged blobs: "
+    "ccn alone, since a blob carries no coverage. A function over its ceiling with a mark in the "
+    "working tree's marks file, whether or not the mark is staged, passes while its ccn sits at "
+    "or under that mark, and exits 6 once its ccn passes it, since its CRAP is then past the mark "
+    "at any coverage. Exit 6 on a staged function over its ceiling or a staged file no "
     "reader could read. An UNREAD line names such a file "
     "and the reader's reason: change what the reason names so a reader can parse the file, or "
     "list it under [exclude] globs in crapkit.toml to leave it ungated. Outside a commit (git "
@@ -464,6 +466,46 @@ def build_parser() -> argparse.ArgumentParser:
                           "own selection, minus functions at or under their ratchet mark")
     rsc.set_defaults(func=_Handler("scoring", "cmd_rescore"))
 
+    scr = sub.add_parser(
+        "score", help="CRAP per function from a coverage file you already have, with no "
+                      "crapkit.toml; writes nothing",
+        description="Score the git-tracked source under each PATH against an existing coverage "
+                    "file, in memory: no crapkit.toml, no lane, no store, nothing written under "
+                    "the repo but the --junit report. Prints the functions over the limit, "
+                    "worst first, then "
+                    "`N functions, M over LIMIT`. The format is sniffed from the file's first "
+                    "bytes: an LCOV tracefile (TN: or SF: lines), a coverage.py JSON report "
+                    "(meta and files) or an Istanbul JSON report (entries that hold "
+                    "statementMap). Exit 0: the "
+                    "report, and no function over --fail-above. Exit 3: an unknown or "
+                    "unrecognized format (name it with --format) or a PATH with no tracked "
+                    "source. Exit 4: not a git repository. Exit 5: the coverage file measured "
+                    "no tracked file under PATH. Exit 6: a function scores above --fail-above.")
+    scr.add_argument("paths", nargs="+", metavar="PATH",
+                     help="directory or file to score, repo-relative; an untracked source file "
+                          "under it is skipped and named")
+    scr.add_argument("--repo", default=None,
+                     help="repository to score (default: the current directory; score reads "
+                          "no crapkit.toml, so it never walks up); a leading ~ is your home "
+                          "directory")
+    scr.add_argument("--coverage", required=True, metavar="FILE",
+                     help="the coverage file, relative to the repo or absolute" + _TYPED)
+    scr.add_argument("--format", default=None, metavar="NAME",
+                     help="the file's format when the sniff cannot tell, spelled as a lane's "
+                          "parser key spells it (default: sniffed); a name crapkit has no reader "
+                          "for exits 3 and lists the names it takes")
+    scr.add_argument("--fail-above", type=int, default=None, metavar="N",
+                     help="list the functions whose CRAP is above N, and exit 6 when there is one "
+                          "(default: list those above the default ceiling of 6, exit 0)")
+    scr.add_argument("--top", type=int, default=None, metavar="K",
+                     help="print only the worst K of them (default: all)")
+    scr.add_argument("--junit", default=None, metavar="FILE",
+                     help="also write a JUnit XML report, one test case per scored function and "
+                          "a failure for each one over the limit, for CI systems that show test "
+                          "reports; written whatever the exit, relative to the repo or absolute"
+                          + _TYPED)
+    scr.set_defaults(func=_Handler("score", "cmd_score"))
+
     dig = sub.add_parser("digest", help="delta between the last two scored runs; silent when unchanged")
     dig.add_argument("--repo", **_REPO_FLAG)
     dig.add_argument("--alert", action="store_true", help="pipe a non-quiet digest through alert_command")
@@ -520,8 +562,9 @@ def build_parser() -> argparse.ArgumentParser:
     ver.add_argument("--json", action="store_true", help="print the verdict as JSON")
     ver.set_defaults(func=_Handler("verifying", "cmd_verify"))
 
-    hook = sub.add_parser("hook-precommit", help="gate staged functions at min-CCN <= target; exit 6 on a function over it "
-                                "or a staged file no reader could read", description=_HOOK_PRECOMMIT)
+    hook = sub.add_parser("hook-precommit", help="gate staged functions at their scope ceiling; exit 6 when a "
+                                "function's ccn passes the ceiling and any ratchet mark it carries, or on a "
+                                "staged file no reader could read", description=_HOOK_PRECOMMIT)
     hook.add_argument("--base", metavar="REF",
                       help="compare the index with merge-base(REF, HEAD), for CI checkouts")
     hook.add_argument("--repo", **_REPO_FLAG)
@@ -591,11 +634,15 @@ def build_parser() -> argparse.ArgumentParser:
                      help="seed: mark over-target functions from the run verify would compare "
                           "against; "
                           "prune: drop marks whose functions left the codebase "
-                          "(a mark whose file git renamed follows it instead); "
+                          "(a mark whose file git renamed follows it instead, a mark a signature "
+                          "edit carried re-keys to its function at its recorded value, and a mark "
+                          "no single function carries stays, named with the move --function that "
+                          "re-keys it); "
                           "merge: 3-way git merge driver (BASE OURS THEIRS), which a "
                           "clone running crapkit through uvx configures as "
                           "`uvx crapkit ratchet merge %%O %%A %%B`; "
-                          "move: re-path marks at their recorded values (OLD NEW); "
+                          "move: re-path marks at their recorded values (OLD NEW), or re-key "
+                          "one function's mark (--function PATH OLD NEW); "
                           "report: the burn-down: open marks are the file's rows, committed or "
                           "not, or the rows its history last held when it is missing or blank, "
                           "and ages and repayments come from its git history")
@@ -607,10 +654,23 @@ def build_parser() -> argparse.ArgumentParser:
                      help="for merge: the three files git passes as %%O %%A %%B; "
                           "for move: OLD NEW" + _WHERE
                           + ", where a trailing '/' on OLD moves a directory")
+    # Three values on the flag, not a flag before FILE: argparse before 3.12.7
+    # gives a `*` positional nothing once an option precedes it, and refuses the
+    # three words keys' carry refusal prints for the user to paste.
+    rat.add_argument("--function", nargs=3, default=None, metavar=("PATH", "OLD", "NEW"),
+                     help="move only: re-key the mark of function OLD in file PATH to function NEW "
+                          "at its recorded value, after an edit to its signature; OLD names a mark "
+                          "in PATH by its key name, or a function name with #N for the Nth twin; "
+                          "NEW names a function the working tree's PATH holds, by name, handle or "
+                          "start line; reads PATH and the marks file only, no run; PATH" + _WHERE)
     rat.add_argument("--baseline", type=int, default=None, metavar="ID",
                      help="seed and prune: read run ID instead of the run verify would pick, "
                           "the audited way past a failed verify; refused for a failed verify, "
                           "a hook, a partial or an inventory run")
+    rat.add_argument("--scope", default=None, metavar="NAME",
+                     help="seed only: repair one scope's marks and stamp: rewrite the marks the "
+                          "config places in scope NAME and NAME's stamp line, and leave every "
+                          "other scope's marks and stamp line as they are")
     rat.add_argument("--json", action="store_true", help="machine output (report)")
     rat.add_argument("--enforce", action="store_true",
                      help="report: exit 1 on debt policy violations (age, repayment quota)")

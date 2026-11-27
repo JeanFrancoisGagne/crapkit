@@ -184,3 +184,23 @@ def test_the_factor_is_read_off_the_config():
             'paths = ["src"]\nlanguages = ["python"]\n')
 
     assert load_config_text(text).tighten_max_jump == 5.0
+
+
+OLD_KEY = "_judge( )"  # the mark's key before the signature gained `raw`
+
+
+def test_a_carried_mark_whose_carrier_jumped_is_held_under_its_old_key():
+    """The carrier's two same-commit measurements are read under its own key,
+    and the refusal names the mark's key, so the mark stays where it is."""
+    marks = [RatchetEntry(JUDGE, OLD_KEY, 90.0)]
+
+    refusals, after = held(marks, [scored(20.0)], {(JUDGE, NAME): 72.0})
+
+    assert [(r.long_name, r.previous, r.fresh) for r in refusals] == [(OLD_KEY, 72.0, 20.0)]
+    assert after == {(JUDGE, OLD_KEY): 90.0}
+
+
+def test_a_carried_mark_whose_carrier_held_steady_re_keys_and_tightens():
+    refusals, after = held([RatchetEntry(JUDGE, OLD_KEY, 90.0)], [scored(72.0)], {(JUDGE, NAME): 72.0})
+
+    assert (refusals, after) == ([], {(JUDGE, NAME): 72.0})

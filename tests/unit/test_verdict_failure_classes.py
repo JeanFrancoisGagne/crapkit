@@ -55,7 +55,7 @@ def _grant(monkeypatch, verdict, reason):
     granted = []
     monkeypatch.setattr("crapkit.override.record_override",
                         lambda **kw: granted.append(kw["violations"]))
-    cfg = SimpleNamespace(ratchet_file="crapkit-ratchet.tsv", alert_command=None)
+    cfg = SimpleNamespace(ratchet_file="crapkit-ratchet.tsv", alert_command=None, scopes=())
     return verifying._apply_verify_override(None, 7, Path("."), cfg, verdict, reason), granted
 
 

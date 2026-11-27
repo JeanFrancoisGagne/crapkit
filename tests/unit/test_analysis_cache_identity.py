@@ -131,15 +131,22 @@ def test_malformed_stat_index_shapes_do_not_break_analysis(tmp_path, stamps):
 
 # --- what the fingerprint holds ------------------------------------------------
 #
-# Every input that can move a record turns the whole cache cold: crapkit's
-# version, the analysis version and lizard's version. The Python version is
-# left out on purpose, because lizard tokenizes with its own regular
-# expressions and no record moves with it; the golden below holds that on every
-# Python the CI matrix runs.
+# Every input that can move a record turns its entries cold: crapkit's version
+# and lizard's version every entry, the analysis number of a file's language
+# (in the entry's key) that language's entries. The Python version is left out
+# on purpose, because lizard tokenizes with its own regular expressions and no
+# record moves with it; the golden below holds that on every Python the CI
+# matrix runs.
+
+
+def _raise_shell(mp):
+    """A raise of the shell number, with the revision raised with it."""
+    mp.setitem(analyze.ANALYSIS_VERSIONS, 'shell', analyze.ANALYSIS_VERSIONS['shell'] + 1)
+    mp.setattr(analyze, 'ANALYSIS_VERSION', analyze.ANALYSIS_VERSION + 1)
 
 
 @pytest.mark.parametrize('bump', [
-    lambda mp: mp.setattr(analyze, 'ANALYSIS_VERSION', analyze.ANALYSIS_VERSION + 1),
+    _raise_shell,
     lambda mp: mp.setattr(lizard, 'version', lizard.version + '.post1'),
     lambda mp: mp.setattr(crapkit, '__version__', crapkit.__version__ + '.post1'),
 ], ids=['analysis-version', 'lizard-version', 'crapkit-version'])

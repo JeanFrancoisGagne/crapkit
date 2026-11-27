@@ -2,7 +2,7 @@
 
 lizard 1.24.0's PythonReader ends a def inside its own signature in two shapes,
 and the def then reads as two lines at ccn 1 whatever its body holds, so it
-passes the complexity ceiling, the commit hook, `rescore --gate` and `verify`:
+passes the CRAP ceiling at the commit hook, `rescore --gate` and `verify`:
 
     def f(value: int) -> tuple[        def make(cls_name, *, bases=(),
         int, int                                slots=False):
