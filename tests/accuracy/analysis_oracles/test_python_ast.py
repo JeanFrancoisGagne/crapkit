@@ -165,8 +165,12 @@ def _names(rows: list[tuple]) -> list[tuple]:
 # the refusal head line the hook and rescore --gate share (mission-4-10)
 # added 1, prune and seed keeping a carried mark (mission-4-07) added 8,
 # and brief, explain and the worklist reading a carried mark (mission-4-08)
-# added 7, and the sync met at 4,239.
-SRC_DEFS = 4239
+# added 7, and the sync met at 4,239. The repair that leaves a single-number
+# stamp only ever read (metric-stamp-11) added 1, and the sync met at 4,240.
+# The unread-def net's record of the defs lizard ends and of those it never
+# ended (_note_ends, its wrapper and _never_ended), synced from main, added
+# 3, and the sync met at 4,243.
+SRC_DEFS = 4243
 
 
 def test_spans_match_ast(src_corpus, src_inventory, py_shape_inventory):

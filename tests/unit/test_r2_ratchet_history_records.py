@@ -2,7 +2,7 @@
 import pytest
 
 from crapkit.marks_history import marks_history
-from crapkit.ratchet import RatchetEntry, dump_ratchet
+from crapkit.ratchet import MetricStamp, RatchetEntry, dump_ratchet
 from crapkit.ratchet_report import mark_events, report_from_events
 from raw_git import commit, repository
 from test_marks_history import _same_events_both_ways
@@ -11,7 +11,7 @@ from test_marks_history import _same_events_both_ways
 @pytest.mark.parametrize("path", ["#source.py", "src/a\u2028b.py", "src/a\x85b.py"])
 @pytest.mark.parametrize("encoded", [False, True])
 def test_ratchet_history_replays_raw_and_encoded_rows(tmp_path, path, encoded):
-    row = dump_ratchet([RatchetEntry(path, "f( )", 12)], stamp="").split("\n")[1]
+    row = dump_ratchet([RatchetEntry(path, "f( )", 12)], stamp=MetricStamp.NONE).split("\n")[1]
     if not encoded:
         row = f"{path}\tf( )\t12.0000"
     root = repository(tmp_path)

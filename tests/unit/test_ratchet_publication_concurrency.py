@@ -7,7 +7,7 @@ import pytest
 from cli_inproc_repo import add_knotty, repo, template_repo  # noqa: F401
 from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet
 from hang_guard import communicate
-from stamps import FIXED, MARKS, running_in
+from stamps import FIXED, MARKS, running_in, single_number
 from state_concurrency_worker import wait_for
 from test_cli_verifying_inproc import baselined, marked_debt  # noqa: F401
 
@@ -150,7 +150,7 @@ def test_verify_does_not_adopt_marks_changed_while_lanes_run(marked_debt, capsys
                                  stamp=running_in(marked_debt), key_version=1, file_name=MARKS),
                     encoding="utf-8")
     changed = dump_ratchet([RatchetEntry("src/app.ts", "knotty ( n )", 90)],
-                           stamp="crapkit-analysis=999 lizard=1.24.0", key_version=1)
+                           stamp=single_number(999), key_version=1)
     original = verifying._scored_run
 
     def replace_marks(*args, **kwargs):

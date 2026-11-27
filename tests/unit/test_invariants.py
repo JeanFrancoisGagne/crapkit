@@ -282,20 +282,20 @@ def test_a_hand_typed_mark_reads_at_the_four_decimals_the_file_holds(typed, read
     """docs/ratchet.md#what-a-mark-is: CRAP to four decimals. A mark typed with more
     reads as what the next write gives it, so a move or a prune of such a file
     passes the dump check instead of stopping as an internal bug."""
-    from crapkit.ratchet import dump_ratchet, load_ratchet
+    from crapkit.ratchet import MetricStamp, dump_ratchet, load_ratchet
 
     (entry,) = load_ratchet(f"path\tlong_name\tcrap\nsrc/a.py\tf( x )\t{typed}\n")
 
     assert entry.crap == read
-    assert dump_ratchet([entry], stamp="").endswith(f"\t{read:.4f}\n")
+    assert dump_ratchet([entry], stamp=MetricStamp.NONE).endswith(f"\t{read:.4f}\n")
 
 
 def test_an_unstamped_file_still_dumps():
     """docs/ratchet.md "The metric stamp": prune, move and the merge driver keep
     the recorded stamp, and a file written before stamping has none."""
-    from crapkit.ratchet import dump_ratchet
+    from crapkit.ratchet import MetricStamp, dump_ratchet
 
-    assert dump_ratchet([mark(8.0)], stamp="") == "path\tlong_name\tcrap\nsrc/a.py\tf( x )\t8.0000\n"
+    assert dump_ratchet([mark(8.0)], stamp=MetricStamp.NONE) == "path\tlong_name\tcrap\nsrc/a.py\tf( x )\t8.0000\n"
 
 
 # --- the worklist ------------------------------------------------------------------------

@@ -122,3 +122,25 @@ CORRECTED = [
 def test_the_corrected_reader_is_refused_only_where_a_signature_has_no_body(name, source, expected):
     register()
     assert _verdict(source) == expected
+
+
+# A def the reader never ends is never on lizard's list, so the checks above have
+# no row to judge and the file scored without it. The stock reader does this to a
+# def whose body sits on its colon line (test_lizardpython.py pins it). crapkit's
+# reader did it to every def from a bracketed default on under lizard 1.24.2 and
+# later (test_python_bracketed_defaults.py).
+NEVER_LISTED = "def f(x): return x\n\n\ndef h(a):\n" + BODY
+
+
+def test_a_def_lizard_never_lists_refuses_the_file(stock_reader):
+    records = analyze_source("net.py", NEVER_LISTED)
+    assert isinstance(records, UnanalyzableFile)
+    assert "reached no body for 1 def(s): net.py:1 f( x );" in records.reason
+
+
+def test_a_def_lizard_forgives_stays_off_the_list_and_the_file_is_scored():
+    """`#lizard forgive` tells lizard to leave the next def it ends off its list.
+    lizard ended that def, so the net has nothing to refuse."""
+    register()
+    source = "def f(a):\n    #lizard forgive\n" + BODY + "\n\ndef h(a):\n" + BODY
+    assert _verdict(source) == [(11, 17, 4)]

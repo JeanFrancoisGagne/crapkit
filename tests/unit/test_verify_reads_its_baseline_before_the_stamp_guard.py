@@ -11,6 +11,7 @@ from pathlib import Path
 
 from cli_inproc_repo import repo, template_repo  # noqa: F401
 from pinned_store import pinned, stale_marks, write_run, twin
+from stamps import single_number
 
 import lizard
 
@@ -95,7 +96,7 @@ def test_the_ratchet_page_prints_the_refusal_a_named_baseline_gets(monkeypatch):
     src = {"analysis": {"python": 10}, "coverage": "cc-only"}
     running = ratchet.ScopeStamps("1.24.0", {"src": ratchet.ScopeStamp(**src)})
     named = {"id": 12, "tool_versions": {"lizard": "1.24.0", "scope_stamps": {"src": src}}}
-    conflict = ratchet.stamp_conflict(ratchet.SingleNumberStamp(9, "1.24.0"), running, frozenset({"src"}))
+    conflict = ratchet.stamp_conflict(single_number(9, "1.24.0"), running, frozenset({"src"}))
 
     refusal = _stamp_refusal(conflict, "crapkit-ratchet.tsv", named)
 

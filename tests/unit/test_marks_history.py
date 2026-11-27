@@ -34,7 +34,7 @@ from crapkit.errors import GitError
 from crapkit.gitio import blob_at, file_revisions
 from crapkit.marks_history import (Move, MarksRevision, held_history, marks_at, marks_history,
                                    moves, newest_committed_marks)
-from crapkit.ratchet import KEY_VERSION, RatchetEntry, dump_ratchet, read_ratchet
+from crapkit.ratchet import KEY_VERSION, MetricStamp, RatchetEntry, dump_ratchet, read_ratchet
 from stamps import FIXED, stamp_lines
 from crapkit.ratchet_report import crap_by_key, held_event, mark_events, report_from_events
 from crapkit.ratchetfile import RatchetFile
@@ -689,7 +689,7 @@ def test_the_new_rule_gives_the_0_8_1_events_on_a_crlf_history(tmp_path):
 def test_the_new_rule_gives_the_0_8_1_events_on_record_v1_rows(tmp_path):
     """Rows the portable record encoding writes as `@crapkit-record-v1` lines."""
     names = ["#src/a.py", "src/a b.py"]
-    _commit_bytes(tmp_path, [dump_ratchet([RatchetEntry(path, "f( )", 12.0)], stamp="").encode()
+    _commit_bytes(tmp_path, [dump_ratchet([RatchetEntry(path, "f( )", 12.0)], stamp=MetricStamp.NONE).encode()
                              for path in names])
 
     events = _same_events_both_ways(tmp_path)

@@ -14,9 +14,9 @@ from crapkit.cli.ratchet_cmds import _publish_checked
 from crapkit.errors import ConfigError
 from crapkit.lizardtypescript import LizardExtension
 from crapkit.override import record_override
-from crapkit.ratchet import (RatchetEntry, ScopeStamp, ScopeStamps, SingleNumberStamp, check_reader_keys,
+from crapkit.ratchet import (RatchetEntry, ScopeStamp, ScopeStamps, check_reader_keys,
                              dump_ratchet, load_ratchet)
-from stamps import FIXED
+from stamps import FIXED, single_number
 from crapkit.ratchetfile import RatchetFile
 from crapkit.score import score_rows
 from crapkit.snapshot import build_inventory_rows
@@ -234,8 +234,8 @@ def _refused(seam, text, root) -> str | None:
 
 @pytest.mark.parametrize('seam', SEAMS, ids=lambda seam: seam.__name__.strip('_'))
 @pytest.mark.parametrize('stamp, refused', [
-    (SingleNumberStamp(9, '1.24.0'), 'app.ts'),
-    (SingleNumberStamp(10, '1.24.0'), None),
+    (single_number(9), 'app.ts'),
+    (single_number(10), None),
     (_web(typescript=9), 'app.ts'),
     (_web(typescript=10), None),
     (_web(javascript=13, tsx=13, typescript=13), None),

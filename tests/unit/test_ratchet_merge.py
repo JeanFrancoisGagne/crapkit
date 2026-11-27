@@ -11,11 +11,11 @@ import pytest
 
 from crapkit import invocation
 from crapkit.cli import main
-from crapkit.ratchet import (KEY_VERSION, RatchetEntry, ScopeStamps, SingleNumberStamp, changed_marks,
-                             dump_ratchet, load_ratchet, merge_ratchets, merge_stamps,
+from crapkit.ratchet import (KEY_VERSION, RatchetEntry, ScopeStamps, changed_marks, dump_ratchet,
+                             load_ratchet, merge_ratchets, merge_stamps,
                              read_key_version, read_stamp)
 from merge_oracle import three_way_marks
-from stamps import FIXED
+from stamps import FIXED, single_number
 
 
 def e(name: str, crap: float) -> RatchetEntry:
@@ -344,8 +344,8 @@ def test_a_single_number_side_compares_on_its_number_and_lizard_only():
     moved, and a scope the per-scope side moved wins over it."""
     ours = stamp_of(scoped(api=API13, web=WEB14))
 
-    for theirs in (SingleNumberStamp(13, LIZARD), stamp_of(single(13))):
-        merged = merge_stamps(SingleNumberStamp(13, LIZARD), ours, theirs)
+    for theirs in (single_number(13, LIZARD), stamp_of(single(13))):
+        merged = merge_stamps(single_number(13, LIZARD), ours, theirs)
         assert (type(merged.stamp), merged.stamp.scopes) == (ScopeStamps, ours.scopes)
 
 

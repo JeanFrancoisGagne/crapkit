@@ -4,7 +4,8 @@ import sys
 
 import pytest
 
-from crapkit.ratchet import RatchetEntry, dump_ratchet, load_ratchet, read_key_version, read_stamp
+from crapkit.ratchet import (MetricStamp, RatchetEntry, dump_ratchet, load_ratchet, read_key_version,
+                             read_stamp)
 
 
 def _run(root, *args):
@@ -14,7 +15,7 @@ def _run(root, *args):
 
 def _marks(value=20, version=0):
     return dump_ratchet([RatchetEntry("a.ts", "f( x )#2", value)],
-                        stamp="crapkit-analysis=7 lizard=older", key_version=version)
+                        stamp=MetricStamp.parse("crapkit-analysis=7 lizard=older"), key_version=version)
 
 
 @pytest.mark.parametrize("version", [0, 1])

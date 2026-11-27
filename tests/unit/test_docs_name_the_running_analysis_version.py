@@ -1,8 +1,8 @@
 """Every page that names the current analysis version names the one crapkit runs.
 
-The reader moved to analysis version 11 while five pages still said 10: the
-README's upgrade note, the doctor field, the marks-file example and its stamp
-row, and the ratchet page's pointer to the current reader. A reader comparing
+The reader moved to analysis version 11 while the README's upgrade note, the
+doctor field, the marks-file example and the ratchet page's pointer to the
+current reader still said 10. A reader comparing
 a stamp against the docs then took a current marks file for a stale one. The
 ratchet page's seed and verify sessions keep their own crapkit, one that
 measures analysis 10 (test_verify_reads_its_baseline_before_the_stamp_guard pins
@@ -26,7 +26,6 @@ CLAIMS = [
     ("docs/ratchet.md", r"## What a mark is\s+```\s+# crapkit-stamp=2 [^\n]*\n# crapkit-keys=1\n"
                         r"#scope\t\w+\tanalysis python=(\d+);"),
     ("docs/ratchet.md", r"the current reader uses version (\d+)"),
-    ("docs/ratchet.md", r"\| `# crapkit-analysis=(\d+) lizard=[^`]*` \| The reader"),
     ("docs/upgrading.md", r"^###? Analysis version (\d+)"),
 ]
 
