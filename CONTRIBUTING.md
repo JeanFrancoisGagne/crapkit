@@ -246,8 +246,10 @@ advisory reads the new suffixes once the map has them. Name the language in the 
 intro and the handbook standfirst, give it a `cc-only` row in the handbook's language
 table (`<table id="languages">`) listing its suffixes, and add its display name to
 `DISPLAY` in `tests/unit/test_polyglot_constants.py`, whose tests pin all four to the
-language set. Bump `ANALYSIS_VERSION` in `analyze.py` so existing stores re-analyze. Coverage joins only where a parser exists, so a new language's scopes declare
-`coverage_optional = true` until one does.
+language set. Bump `ANALYSIS_VERSION` in `analyze.py` so existing stores re-analyze. A new
+language's scopes declare `coverage_optional = true` until a lane's runner writes one of the
+six coverage formats crapkit reads (`coverage_format._FORMATS`). Adding a seventh format
+follows the steps in `src/crapkit/coverage_format.py`'s module docstring.
 
 Bumping `ANALYSIS_VERSION` touches `analyze.py`, which `calcs.tsv` rows name, so declare
 the change: `python tools/accuracy/change_control.py declare <id> --kind feature --calcs

@@ -523,12 +523,12 @@ def _run_shape(lanes, cfg, run: _ScoredRun) -> _RunShape:
 def _refuse_empty_lane_run(cfg, requested) -> None:
     """Refuse a run that selected no lane, unless running with none is right.
 
-    Right for a repo whose every scope declares `coverage_optional`: nine of the
-    fourteen languages have no coverage parser at all, such a repo is scored
-    from complexity alone, and demanding a lane refused exactly the repos that
-    can never supply one. Wrong the moment one scope has neither, which is what
-    the message names — the scopes, not the empty list, because the list is a
-    symptom and the scopes are the gap.
+    Right for a repo whose every scope declares `coverage_optional`: a scope
+    whose runner writes none of the formats coverage_format reads, or that no
+    lane measures yet, is scored from complexity alone, and demanding a lane
+    refused exactly the repos that cannot supply one. Wrong the moment one scope
+    has neither, which is what the message names: the scopes, not the empty
+    list, because the list is a symptom and the scopes are the gap.
     """
     if requested is not None:
         raise ConfigError(f"no lane named {requested!r}")

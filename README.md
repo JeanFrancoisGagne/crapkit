@@ -14,9 +14,9 @@ crapkit scores every function in your repo on complexity times uncovered risk, r
 worst ones by how often the file changes, and blocks commits that add more. It reads
 Python, TypeScript, TSX, JavaScript, Swift, Go, Rust, shell, PowerShell, C and C++,
 Objective-C, Vue, Java and Zig through [lizard](https://github.com/terryyin/lizard), and
-joins per-function branch coverage from the istanbul or coverage.py artifact your own test
-command already writes. JSON commands use sorted keys and a versioned schema for
-scripts, coding agents and the optional MCP server.
+joins per-function branch coverage from the artifact your own test command already writes:
+coverage.py JSON, istanbul JSON, lcov, Cobertura XML, JaCoCo XML or a Go coverprofile.
+JSON commands use sorted keys and a versioned schema for scripts, coding agents and the optional MCP server.
 
 ```
 CRAP = ccn^2 * (1 - cov)^3 + ccn
@@ -533,8 +533,8 @@ the file it goes in and where the agent starts the server.
 
 ## Languages
 
-14 languages, three coverage parsers. Coverage joins where a parser exists; everything else
-scores on complexity alone.
+14 languages, six coverage formats. Coverage joins where a lane's runner writes one of
+them; everything else scores on complexity alone.
 
 | Language | Files | Coverage |
 |---|---|---|

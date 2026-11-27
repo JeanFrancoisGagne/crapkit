@@ -5,8 +5,8 @@ it. Three other places spell the same names out: the lane `parser` enum
 admission checks a crapkit.toml against, and the `parser` row of the lane key
 table in docs/configuration.md and in docs/lanes.md. A maintainer who adds a
 reader edits the registry and the enum; this test then names every place that
-still lists the old set. The CLI help names no parser at all, so a new reader
-never edits it.
+still lists the old set. The CLI help and the MCP brief schema's lane `parser`
+description name no parser at all, so a new reader never edits them.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from crapkit import config_contract, coverage_format
+from crapkit import agent_fields, config_contract, coverage_format, mcp_server
 from crapkit.cli.parser import _help_topics, build_parser
 from crapkit.config import load_config_text
 from crapkit.errors import ConfigError
@@ -106,6 +106,29 @@ def test_no_help_screen_names_a_parser():
     named = [f"{screen}: {name}" for screen, text in _help_screens().items()
              for name in names if re.search(rf"\b{re.escape(name)}\b", text)]
     assert named == []
+
+
+def _formats_named(text: str) -> list[str]:
+    return [name for name in sorted(coverage_format._FORMATS)
+            if re.search(rf"\b{re.escape(name)}\b", text)]
+
+
+def _brief_lane_parser() -> str:
+    """The lane `parser` description get_function_brief's outputSchema serves."""
+    tool = next(t for t in mcp_server.tool_listing() if t["name"] == "get_function_brief")
+    return tool["outputSchema"]["properties"]["lane"]["properties"]["parser"]["description"]
+
+
+def test_the_mcp_brief_lane_parser_description_names_no_format():
+    assert _formats_named(_brief_lane_parser()) == []
+
+
+def test_the_mcp_clause_fails_on_the_description_that_listed_two_formats(monkeypatch):
+    parser = agent_fields.PAYLOADS["brief --json"]["lane"]["properties"]["parser"]
+    monkeypatch.setitem(parser, "description", "artifact parser, coveragepy or istanbul")
+
+    with pytest.raises(AssertionError):
+        test_the_mcp_brief_lane_parser_description_names_no_format()
 
 
 _LANE_TOML = ('[[scope]]\nname = "py"\npaths = ["pkg"]\nlanguages = ["python"]\n'

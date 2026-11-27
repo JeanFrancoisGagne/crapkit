@@ -36,15 +36,23 @@ The coverprofile cells (row `m1-readers-07`) do the same over the Go module of
 tests/fixtures/coverage/coverprofile and the profile Go 1.26.8 wrote for it:
 fresh and upgrade under every harness, and `lin-up-0.8.1-cc-only-go` for the
 0.8.1 cc-only upgrade, its flip and the scoped reseed that clears it.
+
+The polyglot cells (row `m1-readers-09`) run the README's 60-second start
+verbatim under every harness on a repo holding a pytest suite, a Go module, a
+Gradle project and a Cargo crate, and read POLYGLOT_TRANSCRIPT's lines in what
+each step prints: init's live pytest lane beside the commented go, gradle and
+rust lanes, doctor's three notes, exit 0 at every step, and MCP check_config
+with no problem.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 
 import pytest
 
-from kit import profiles, state, wheels
+from kit import installers, profiles, repos, state, wheels
 from kit.cells import cell
 from kit.mcp_client import McpClient
 from kit.state import output
@@ -499,3 +507,116 @@ def test_lin_up_0_8_1_cc_only_go(box, candidate):
     assert refusal.count("ratchet seed --scope cmd") == 1, box.transcript.text()
     box.run(["crapkit", "ratchet", "seed", "--scope", "cmd"], cwd=repo, expect=0)
     state.verify(box, repo)
+
+
+# --- m1-readers-09: the README's 60-second start on a polyglot repo -------------------------------
+
+POLYGLOT_ROW = "m1-readers-09"
+POLYGLOT_USE_CASES = "60-second start, init, doctor, coverage, worklist, ratchet seed, verify, check_config"
+# Beside py-pytest's suite: a Go module, a Gradle project and a Cargo workspace,
+# each marked at the repo root, so init leaves each one's lane commented.
+POLYGLOT = {
+    "go.mod": "module example.com/polyglot\n\ngo 1.26\n",
+    "go/sign.go": ("package sign\n\nfunc Sign(n int) int {\n\tif n > 0 {\n\t\treturn 1\n\t}\n"
+                   "\tif n < 0 {\n\t\treturn -1\n\t}\n\treturn 0\n}\n"),
+    "build.gradle": "plugins {\n    id 'java'\n    id 'jacoco'\n}\n\nsourceSets.main.java.srcDirs = ['java']\n",
+    "java/Sign.java": ("public class Sign {\n    public static int sign(int n) {\n        if (n > 0) {\n"
+                       "            return 1;\n        }\n        return n < 0 ? -1 : 0;\n    }\n}\n"),
+    "Cargo.toml": '[workspace]\nmembers = ["rust"]\n',
+    "rust/Cargo.toml": '[package]\nname = "sign"\nversion = "0.1.0"\nedition = "2021"\n',
+    "rust/src/lib.rs": ("pub fn sign(n: i32) -> i32 {\n    if n > 0 {\n        return 1;\n    }\n"
+                        "    if n < 0 {\n        return -1;\n    }\n    0\n}\n"),
+}
+# The start on that repo, recorded with this checkout's crapkit: `...` stands for
+# lines that name the machine, <sha> for a commit id and <n> for a run number.
+POLYGLOT_TRANSCRIPT = """\
+$ crapkit init
+wrote crapkit.toml with 4 scope(s): calc, go, java, rust
+detected 1 lane(s) from this repo's own files: py - next: run `crapkit coverage`
+added to .gitignore: .crapkit/, .coverage
+$ crapkit doctor
+...
+ok   scope 'calc': 2 files
+ok   scope 'go': 1 file
+ok   scope 'java': 1 file
+ok   scope 'rust': 1 file
+ok   every tracked source file belongs to a scope
+ok   1 lane(s) declared
+...
+note scope 'go' is cc-only, and a reader can measure go through parser = "coverprofile" from go test; \
+adding that lane and deleting coverage_optional measures it \
+(docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one)
+note scope 'java' is cc-only, and a reader can measure java through parser = "jacoco" from gradle; \
+adding that lane and deleting coverage_optional measures it \
+(docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one)
+note scope 'rust' is cc-only, and a reader can measure rust through parser = "lcov" from cargo llvm-cov; \
+adding that lane and deleting coverage_optional measures it \
+(docs/upgrading.md#turning-a-cc-only-scope-into-a-measured-one)
+ok   lizard 1.24.0
+...
+$ crapkit coverage
+...
+-> next: crapkit worklist
+$ crapkit worklist
+...
+-> next: crapkit ratchet seed
+$ crapkit ratchet seed
+crapkit-ratchet.tsv: added 1, tightened 0 - 1 mark(s) vs run <n> (<sha>)
+-> next: commit crapkit-ratchet.tsv, then run `crapkit verify`
+$ git add crapkit.toml crapkit-ratchet.tsv .gitignore
+$ git commit -m "adopt crapkit"
+$ crapkit verify
+verify OK @ <sha> vs baseline <sha> (3 changed files)
+  changed files: .gitignore, crapkit-ratchet.tsv, crapkit.toml
+"""
+# What init wrote: the live pytest lane, then the commented rust, gradle and go lanes.
+POLYGLOT_LANES = ('parser = "coveragepy"\nscopes = ["calc"]\n',
+                  '# parser = "lcov"\n# scopes = ["rust"]\n',
+                  '# parser = "jacoco"\n# path_prefix = "src/main/java"\n# scopes = ["java"]\n',
+                  '# parser = "coverprofile"\n# scopes = ["go"]\n')
+
+
+def _transcript_lines() -> list[re.Pattern]:
+    """Each printed line of POLYGLOT_TRANSCRIPT as a pattern; commands and elisions drop out."""
+    kept = [line for line in POLYGLOT_TRANSCRIPT.splitlines() if not line.startswith(("$ ", "..."))]
+    return [re.compile(re.escape(line).replace("<sha>", "[0-9a-f]{11}").replace("<n>", r"\d+"))
+            for line in kept]
+
+
+def _polyglot_repo(box, templates) -> Path:
+    repo = repos.checkout(box, "py-pytest", cache=templates)
+    (repo / "go").mkdir()
+    (repo / "java").mkdir()
+    (repo / "rust" / "src").mkdir(parents=True)
+    state.write(repo, POLYGLOT)
+    profiles.commit(box, repo, "a Go module, a Gradle project and a Cargo crate beside the suite")
+    return repo
+
+
+def _printed(steps: dict) -> str:
+    """Every line the start printed, each step's output in order."""
+    return "\n".join(installers.said(step) for step in steps.values())
+
+
+@pytest.mark.parametrize("key", _harness_cells(
+    "lin-polyglot", "fresh: README 60-second start verbatim on a polyglot repo (pytest, go.mod, Gradle, "
+                    "Cargo.toml): init writes the live pytest lane and commented go, gradle and rust lanes, "
+                    "doctor notes the three cc-only scopes, every step exits 0, and check_config reports no "
+                    "problem", row=POLYGLOT_ROW, use_cases=POLYGLOT_USE_CASES))
+def test_the_readme_start_on_a_polyglot_repo(box, templates, key):
+    profiles.session_crapkit(box, templates)
+    repo = _polyglot_repo(box, templates)
+    _in_the_harness_shell(box, key)
+    printed = _printed(installers.readme_start(box, repo))
+    with McpClient.in_box(box, ["crapkit", "mcp"], cwd=repo) as client:
+        client.initialize()
+        checked = client.call("check_config", {})
+
+    lines = printed.splitlines()
+    missing = [wanted.pattern for wanted in _transcript_lines()
+               if not any(wanted.fullmatch(line) for line in lines)]
+    assert missing == [], box.transcript.text()
+    config = (repo / "crapkit.toml").read_text(encoding="utf-8")
+    assert [lane for lane in POLYGLOT_LANES if lane not in config] == [], config
+    assert not checked["isError"], checked
+    assert json.loads(checked["content"][0]["text"])["problems"] == [], checked

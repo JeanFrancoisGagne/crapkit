@@ -885,7 +885,8 @@ _BRIEF = {
                 "description": "coverage artifact path it writes"},
             "parser": {
                 "type": "string",
-                "description": "artifact parser, coveragepy or istanbul"},
+                "description": ("the coverage format crapkit reads the lane's artifact "
+                "with: crapkit.toml `parser`")},
             "cwd": {
                 "type": "string",
                 "description": "working directory the lane runs in, empty for the root"},
