@@ -45,6 +45,20 @@ lizard ends for the same signature written on one line: `_state_first_line`
 after `):`, `_state_global` after a return annotation or after a signature
 lizard had closed early.
 
+Defaults that open a bracket
+----------------------------
+lizard 1.24.2 hands a parameter default that opens with `(`, `{` or `lambda` to
+`PythonStates._state_default_value`, which reads it to its closing bracket and
+returns to `_dec`. That state is not one of these overrides, so `depth` counted
+the default's `(` and never its `)`: the parameter list's own `)` then read as
+one lizard had closed early, the body colon sat at depth 1, and the reader
+stayed in the signature to the end of the file. No later line set a nesting
+level, so lizard listed none of the defs from there on. `_dec` now reads these
+tokens as lizard 1.24.0 does, as parameter tokens it keeps, so every token of
+the signature passes a state that counts it, and a def reads the same under
+each lizard 1.24 release. analyze.py's net refuses a file with a def the reader
+never ends, so a reader stranded this way again is named, not passed.
+
 What moves, only around a def lizard cut off: its end line, ccn, nloc, token
 count and cognitive score now cover its body, while its long name stays; an
 enclosing def gives back the conditions lizard had charged to it from the
@@ -138,6 +152,9 @@ with deferred_pygments():  # lizard's Erlang reader would load pygments here
 
 _OPENERS = frozenset("([{")
 _CLOSERS = frozenset(")]}")
+# The tokens that open a parameter default lizard 1.24.2 reads in a state of
+# its own: see "Defaults that open a bracket" above.
+_DEFAULT_OPENERS = frozenset({"(", "{", "lambda"})
 # Keywords that start a statement and never sit inside brackets.
 _BODY_ENDERS = frozenset({"def", "class"})
 
@@ -227,6 +244,11 @@ class PythonSignatureStates(PythonStates):
             self._state = self._rest_of_signature
             return
         self.depth += _depth_change(token)
+        if token in _DEFAULT_OPENERS:
+            # lizard 1.24.0 reads it as a parameter token and stays here; 1.24.2
+            # moves to a state that counts no depth. See "Defaults that open a bracket".
+            self.context.parameter(token)
+            return
         super()._dec(token)
 
     def _state_parameterized_type_annotation(self, token):
